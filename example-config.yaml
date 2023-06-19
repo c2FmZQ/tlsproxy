@@ -1,0 +1,40 @@
+# The HTTP address must be reachable from the internet via port 80.
+httpAddr: ":10080"
+
+# The TLS address will receive TLS connections and forward them to your
+# backends.
+tlsAddr: ":10443"
+
+# Each backend has a list of server names (DNS names that clients connect to),
+# and addresses (where to forward connections).
+backends:
+- serverNames: 
+  - example.com
+  - www.example.com
+  addresses: 
+  - 192.168.0.10:80
+  - 192.168.0.11:80
+  - 192.168.0.12:80
+
+- serverNames:
+  - other.example.com
+  addresses:
+  - 192.168.1.100:443
+  useTLS: true
+  insecureSkipVerify: true
+
+- serverNames:
+  - secure.example.com
+  clientAuth: true
+  clientCAs: |
+    -----BEGIN CERTIFICATE-----
+    .....
+    -----END CERTIFICATE-----
+  addresses:
+  - 192.168.2.200:443
+  useTLS: true
+  forwardServerName: secure-internal.example.com
+  forwardRootCAs: |
+    -----BEGIN CERTIFICATE-----
+    .....
+    -----END CERTIFICATE-----
