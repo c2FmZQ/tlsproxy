@@ -44,7 +44,10 @@ import (
 // Proxy receives TLS connections and forwards them to the configured
 // backends.
 type Proxy struct {
-	cm       *autocert.Manager
+	certManager interface {
+		HTTPHandler(fallback http.Handler) http.Handler
+		TLSConfig() *tls.Config
+	}
 	cfg      *Config
 	ctx      context.Context
 	cancel   func()
@@ -58,7 +61,7 @@ type Proxy struct {
 // New returns a new initialized Proxy.
 func New(cfg *Config) (*Proxy, error) {
 	p := &Proxy{
-		cm: &autocert.Manager{
+		certManager: &autocert.Manager{
 			Prompt: autocert.AcceptTOS,
 			Cache:  autocert.DirCache(cfg.CacheDir),
 			Email:  cfg.Email,
@@ -89,7 +92,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			mapping[sn] = be
 		}
 		if be.ClientAuth {
-			tc := p.cm.TLSConfig()
+			tc := p.certManager.TLSConfig()
 			tc.ClientAuth = tls.RequireAndVerifyClientCert
 			if be.ClientCAs != "" {
 				c, err := loadCerts(be.ClientCAs)
@@ -119,7 +122,7 @@ func (p *Proxy) Start(ctx context.Context) error {
 	var httpServer *http.Server
 	if p.cfg.HTTPAddr != "" {
 		httpServer = &http.Server{
-			Handler: p.cm.HTTPHandler(nil),
+			Handler: p.certManager.HTTPHandler(nil),
 		}
 		httpListener, err := net.Listen("tcp", p.cfg.HTTPAddr)
 		if err != nil {
@@ -132,7 +135,7 @@ func (p *Proxy) Start(ctx context.Context) error {
 		}()
 	}
 
-	tc := p.cm.TLSConfig()
+	tc := p.certManager.TLSConfig()
 	tc.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 		be, err := p.backend(hello.ServerName)
 		if err != nil {
@@ -161,6 +164,10 @@ func (p *Proxy) Start(ctx context.Context) error {
 		for {
 			conn, err := p.listener.Accept()
 			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					log.Print("INFO Accept loop terminated")
+					break
+				}
 				log.Printf("ERR Accept: %v", err)
 				continue
 			}

@@ -27,14 +27,46 @@ backends:
   - secure.example.com
   clientAuth: true
   clientCAs: |
-    -----BEGIN CERTIFICATE-----
-    .....
-    -----END CERTIFICATE-----
+        -----BEGIN CERTIFICATE-----
+        MIIDHDCCAgSgAwIBAgIEM5G30zANBgkqhkiG9w0BAQsFADAeMRwwGgYDVQQDExNy
+        b290LWNhLmV4YW1wbGUuY29tMB4XDTIzMDYyNDAyNTIyMloXDTIzMDYyNDAzNTIy
+        MlowHjEcMBoGA1UEAxMTcm9vdC1jYS5leGFtcGxlLmNvbTCCASIwDQYJKoZIhvcN
+        AQEBBQADggEPADCCAQoCggEBAKJC2vmBdHwbzMIqWS6GIZOhk5FEtoIssLOUMwkS
+        zeLhDCrxsqiHxBOlzwZEgx6Knd9HhyuoHtuNl5AxL2btlgyk4dJ9MI2cOxrvZYeA
+        Bphh6OZx6hiMfz+cVcf7IpuXlc8juw3RVZ+JDtSq1w7JfjVe6NPhWxowr3v7XWSZ
+        00VB5ZAkGP1UXs5CjQAVFFfVPqn1hOdqoIzqW2BnKE6MORf4Kw9W4lr3WE4VW++Y
+        l/8W0yCKHzmURNLRCeGPAsgMlwwbs3eoyEWl1F7A7Hq0QCMpvSqA1HeCXj0fsTkS
+        zM/CBhPa5QtmWCzsmZJF7rB2gd75A725p0wQlHrxGxsTWIkCAwEAAaNiMGAwDgYD
+        VR0PAQH/BAQDAgIEMA8GA1UdEwEB/wQFMAMBAf8wHQYDVR0OBBYEFB5ey0fLDEXe
+        8kpdaCLMzehkrAYyMB4GA1UdEQQXMBWCE3Jvb3QtY2EuZXhhbXBsZS5jb20wDQYJ
+        KoZIhvcNAQELBQADggEBAGcuR8u4PiML7YZj7IhSkI4LBcglgARIXR6MLXAL4+sp
+        nF4rxqTI/rUGySJpo53IVYywjoRI5Xbe8nK+adYBOJn4PTs6E4a3mQt5lzQHqIPv
+        rjfaLLMkfP/nQXHkETpfFn8RXu0FJBXkN/MESttPVle6GObK8a7cvoiHTdfhXIIZ
+        XMHYmr+S/8GGos/Ps5Dpf7MlagwtQQmEXa0qjONu05GPEQXHMKGSK8mvJUMCWdFM
+        +aodrAnXId8L3GpKDr1jW/GSuyucebjTCVMazUkuIRA6ty/mAbm2KUv9UXniROj7
+        Au1hFufDZDNab/FH91MEj6hwIkT8blxhd2Kuj8r/+X8=
+        -----END CERTIFICATE-----
   addresses:
   - 192.168.2.200:443
   useTLS: true
   forwardServerName: secure-internal.example.com
   forwardRootCAs: |
-    -----BEGIN CERTIFICATE-----
-    .....
-    -----END CERTIFICATE-----
+        -----BEGIN CERTIFICATE-----
+        MIIDHDCCAgSgAwIBAgIEM5G30zANBgkqhkiG9w0BAQsFADAeMRwwGgYDVQQDExNy
+        b290LWNhLmV4YW1wbGUuY29tMB4XDTIzMDYyNDAyNTIyMloXDTIzMDYyNDAzNTIy
+        MlowHjEcMBoGA1UEAxMTcm9vdC1jYS5leGFtcGxlLmNvbTCCASIwDQYJKoZIhvcN
+        AQEBBQADggEPADCCAQoCggEBAKJC2vmBdHwbzMIqWS6GIZOhk5FEtoIssLOUMwkS
+        zeLhDCrxsqiHxBOlzwZEgx6Knd9HhyuoHtuNl5AxL2btlgyk4dJ9MI2cOxrvZYeA
+        Bphh6OZx6hiMfz+cVcf7IpuXlc8juw3RVZ+JDtSq1w7JfjVe6NPhWxowr3v7XWSZ
+        00VB5ZAkGP1UXs5CjQAVFFfVPqn1hOdqoIzqW2BnKE6MORf4Kw9W4lr3WE4VW++Y
+        l/8W0yCKHzmURNLRCeGPAsgMlwwbs3eoyEWl1F7A7Hq0QCMpvSqA1HeCXj0fsTkS
+        zM/CBhPa5QtmWCzsmZJF7rB2gd75A725p0wQlHrxGxsTWIkCAwEAAaNiMGAwDgYD
+        VR0PAQH/BAQDAgIEMA8GA1UdEwEB/wQFMAMBAf8wHQYDVR0OBBYEFB5ey0fLDEXe
+        8kpdaCLMzehkrAYyMB4GA1UdEQQXMBWCE3Jvb3QtY2EuZXhhbXBsZS5jb20wDQYJ
+        KoZIhvcNAQELBQADggEBAGcuR8u4PiML7YZj7IhSkI4LBcglgARIXR6MLXAL4+sp
+        nF4rxqTI/rUGySJpo53IVYywjoRI5Xbe8nK+adYBOJn4PTs6E4a3mQt5lzQHqIPv
+        rjfaLLMkfP/nQXHkETpfFn8RXu0FJBXkN/MESttPVle6GObK8a7cvoiHTdfhXIIZ
+        XMHYmr+S/8GGos/Ps5Dpf7MlagwtQQmEXa0qjONu05GPEQXHMKGSK8mvJUMCWdFM
+        +aodrAnXId8L3GpKDr1jW/GSuyucebjTCVMazUkuIRA6ty/mAbm2KUv9UXniROj7
+        Au1hFufDZDNab/FH91MEj6hwIkT8blxhd2Kuj8r/+X8=
+        -----END CERTIFICATE-----
