@@ -89,10 +89,8 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			mapping[sn] = be
 		}
 		if be.ClientAuth {
-			tc := &tls.Config{
-				GetCertificate: p.cm.GetCertificate,
-				ClientAuth:     tls.RequireAndVerifyClientCert,
-			}
+			tc := p.cm.TLSConfig()
+			tc.ClientAuth = tls.RequireAndVerifyClientCert
 			if be.ClientCAs != "" {
 				c, err := loadCerts(be.ClientCAs)
 				if err != nil {
@@ -134,16 +132,15 @@ func (p *Proxy) Start(ctx context.Context) error {
 		}()
 	}
 
-	listener, err := tls.Listen("tcp", p.cfg.TLSAddr, &tls.Config{
-		GetCertificate: p.cm.GetCertificate,
-		GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
-			be, err := p.backend(hello.ServerName)
-			if err != nil {
-				return nil, err
-			}
-			return be.tlsConfig, nil
-		},
-	})
+	tc := p.cm.TLSConfig()
+	tc.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+		be, err := p.backend(hello.ServerName)
+		if err != nil {
+			return nil, err
+		}
+		return be.tlsConfig, nil
+	}
+	listener, err := tls.Listen("tcp", p.cfg.TLSAddr, tc)
 	if err != nil {
 		return err
 	}
