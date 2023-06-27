@@ -37,6 +37,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 	yaml "gopkg.in/yaml.v3"
 )
@@ -91,8 +92,8 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		for _, sn := range be.ServerNames {
 			mapping[sn] = be
 		}
+		tc := p.baseTLSConfig()
 		if be.ClientAuth {
-			tc := p.certManager.TLSConfig()
 			tc.ClientAuth = tls.RequireAndVerifyClientCert
 			if be.ClientCAs != "" {
 				c, err := loadCerts(be.ClientCAs)
@@ -101,8 +102,11 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				}
 				tc.ClientCAs = c
 			}
-			be.tlsConfig = tc
 		}
+		if be.ALPNProtos != nil {
+			tc.NextProtos = *be.ALPNProtos
+		}
+		be.tlsConfig = tc
 		if be.ForwardRootCAs != "" {
 			c, err := loadCerts(be.ForwardRootCAs)
 			if err != nil {
@@ -135,15 +139,22 @@ func (p *Proxy) Start(ctx context.Context) error {
 		}()
 	}
 
-	tc := p.certManager.TLSConfig()
+	tc := p.baseTLSConfig()
 	tc.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+		setSNI(hello.Conn, hello.ServerName)
 		be, err := p.backend(hello.ServerName)
 		if err != nil {
 			return nil, err
 		}
+		if len(hello.SupportedProtos) > 0 && hello.SupportedProtos[0] == acme.ALPNProto {
+			setACMEOnly(hello.Conn)
+			tc := p.baseTLSConfig()
+			tc.NextProtos = []string{acme.ALPNProto}
+			return tc, nil
+		}
 		return be.tlsConfig, nil
 	}
-	listener, err := tls.Listen("tcp", p.cfg.TLSAddr, tc)
+	listener, err := tlsListen("tcp", p.cfg.TLSAddr, tc)
 	if err != nil {
 		return err
 	}
@@ -185,6 +196,16 @@ func (p *Proxy) Stop() {
 	}
 }
 
+func (p *Proxy) baseTLSConfig() *tls.Config {
+	tc := p.certManager.TLSConfig()
+	// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
+	tc.NextProtos = []string{
+		"h2", "http/1.1",
+	}
+	tc.MinVersion = tls.VersionTLS12
+	return tc
+}
+
 func (p *Proxy) incNumOpen(n int) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -204,26 +225,28 @@ func (p *Proxy) handleConnection(extConn *tls.Conn) {
 		return
 	}
 	setKeepAlive(extConn.NetConn())
-	hsCtx, cancel := context.WithTimeout(p.ctx, time.Minute)
+	hsCtx, cancel := context.WithTimeout(p.ctx, 2*time.Minute)
 	defer cancel()
 	if err := extConn.HandshakeContext(hsCtx); err != nil {
-		log.Printf("ERR %s: %v", extConn.RemoteAddr(), err)
-		return
-	}
-	if err := extConn.Handshake(); err != nil {
-		log.Printf("ERR %s: %v", extConn.RemoteAddr(), err)
+		log.Printf("ERR %s ➔  %q Handshake: %v", extConn.RemoteAddr(), sniFromConn(extConn), err)
 		return
 	}
 	tlsTime := time.Since(start)
 	cs := extConn.ConnectionState()
 	sni := cs.ServerName
+	proto := cs.NegotiatedProtocol
 	be, err := p.backend(sni)
 	if err != nil {
 		log.Printf("ERR %s: received unexpected SNI %q", extConn.RemoteAddr(), sni)
 		return
 	}
-	intConn, err := be.dial()
+	if acmeOnly(extConn) {
+		log.Printf("INFO ACME %s ➔  %s", extConn.RemoteAddr(), sni)
+		return
+	}
+	intConn, err := be.dial(proto)
 	if err != nil {
+		log.Printf("ERR %s ➔  %q Dial: %v", extConn.RemoteAddr(), sniFromConn(extConn), err)
 		return
 	}
 	dialTime := time.Since(start)
@@ -233,17 +256,21 @@ func (p *Proxy) handleConnection(extConn *tls.Conn) {
 	if len(cs.PeerCertificates) > 0 {
 		peer = cs.PeerCertificates[0].Subject.String()
 	}
-	desc := fmt.Sprintf("[%s] %s ➔ %s ➔ %s", peer, extConn.RemoteAddr(), sni, intConn.RemoteAddr())
+	var protoStr string
+	if proto != "" {
+		protoStr = "/" + proto
+	}
+	desc := fmt.Sprintf("[%s] %s ➔  %s%s ➔  %s", peer, extConn.RemoteAddr(), sni, protoStr, intConn.RemoteAddr())
 	log.Printf("BEGIN %s", desc)
 	ch := make(chan error)
 	go func() {
 		ch <- forward(extConn, intConn)
 	}()
-	if err := forward(intConn, extConn); err != nil {
-		log.Printf("ERR %s [ext ➔ int]: %v", desc, err)
+	if err := forward(intConn, extConn); err != nil && !errors.Is(err, net.ErrClosed) {
+		log.Printf("ERR %s [ext➔ int]: %v", desc, err)
 	}
-	if err := <-ch; err != nil {
-		log.Printf("ERR %s [int ➔ ext]: %v", desc, err)
+	if err := <-ch; err != nil && !errors.Is(err, net.ErrClosed) {
+		log.Printf("ERR %s [int➔ ext]: %v", desc, err)
 	}
 	log.Printf("END   %s; HS:%s Dial:%s Total:%s", desc, tlsTime, dialTime-tlsTime, time.Since(start))
 }
@@ -285,7 +312,7 @@ func (t timeout) Read(b []byte) (int, error) {
 }
 
 func (t timeout) Write(b []byte) (int, error) {
-	t.Conn.SetWriteDeadline(time.Now().Add(1 * time.Minute))
+	t.Conn.SetWriteDeadline(time.Now().Add(5 * time.Minute))
 	return t.Conn.Write(b)
 }
 
@@ -320,12 +347,12 @@ func (p *Proxy) backend(sni string) (*Backend, error) {
 	defer p.mu.Unlock()
 	be, ok := p.mapping[sni]
 	if !ok {
-		return nil, fmt.Errorf("unexpected SNI: %q", sni)
+		return nil, errors.New("unexpected SNI")
 	}
 	return be, nil
 }
 
-func (be *Backend) dial() (net.Conn, error) {
+func (be *Backend) dial(proto string) (net.Conn, error) {
 	var max int
 	for {
 		be.mu.Lock()
@@ -344,9 +371,14 @@ func (be *Backend) dial() (net.Conn, error) {
 		var c net.Conn
 		var err error
 		if be.UseTLS {
+			var protos []string
+			if proto != "" {
+				protos = append(protos, proto)
+			}
 			tc := &tls.Config{
 				InsecureSkipVerify: be.InsecureSkipVerify,
 				ServerName:         be.ForwardServerName,
+				NextProtos:         protos,
 			}
 			if be.forwardRootCAs != nil {
 				tc.RootCAs = be.forwardRootCAs
@@ -356,9 +388,9 @@ func (be *Backend) dial() (net.Conn, error) {
 			c, err = dialer.Dial("tcp", addr)
 		}
 		if err != nil {
-			log.Printf("ERR dial %q: %v", addr, err)
 			max--
 			if max > 0 {
+				log.Printf("ERR dial %q: %v", addr, err)
 				continue
 			}
 			return nil, err

@@ -53,6 +53,9 @@ func TestProxyBackends(t *testing.T) {
 	// Backends with TLS enabled.
 	be3 := newTCPServer(t, ctx, "backend3", intCA)
 	be4 := newTCPServer(t, ctx, "backend4", intCA)
+	// Backends with special proto.
+	be5 := newTCPServer(t, ctx, "backend5", intCA)
+	be6 := newTCPServer(t, ctx, "backend6", intCA)
 
 	cfg := &Config{
 		HTTPAddr: "localhost:0",
@@ -97,13 +100,39 @@ func TestProxyBackends(t *testing.T) {
 				ClientAuth:        true,
 				ClientCAs:         string(intCA.caCertPEM),
 			},
+			// TLS backend with imap proto.
+			{
+				ServerNames: []string{
+					"imap.example.com",
+				},
+				Addresses: []string{
+					be5.listener.Addr().String(),
+				},
+				UseTLS:            true,
+				ForwardRootCAs:    string(intCA.caCertPEM),
+				ForwardServerName: "imap-internal.example.com",
+				ALPNProtos:        &[]string{"imap"},
+			},
+			// TLS backend without ALPN.
+			{
+				ServerNames: []string{
+					"noproto.example.com",
+				},
+				Addresses: []string{
+					be6.listener.Addr().String(),
+				},
+				UseTLS:            true,
+				ForwardRootCAs:    string(intCA.caCertPEM),
+				ForwardServerName: "noproto-internal.example.com",
+				ALPNProtos:        &[]string{},
+			},
 		},
 	}
 	proxy := newTestProxy(cfg, extCA)
 	if err := proxy.Start(ctx); err != nil {
 		t.Fatalf("proxy.Start: %v", err)
 	}
-	get := func(host, certName string) (string, error) {
+	get := func(host, certName string, protos []string) (string, error) {
 		var certs []tls.Certificate
 		if certName != "" {
 			c, err := intCA.getCertificate(certName)
@@ -112,7 +141,7 @@ func TestProxyBackends(t *testing.T) {
 			}
 			certs = append(certs, *c)
 		}
-		body, err := tlsGet(host, proxy.listener.Addr().String(), extCA, certs)
+		body, err := tlsGet(host, proxy.listener.Addr().String(), extCA, certs, protos)
 		if err != nil {
 			return "", err
 		}
@@ -122,18 +151,28 @@ func TestProxyBackends(t *testing.T) {
 	for _, tc := range []struct {
 		desc, host, want string
 		certName         string
+		protos           []string
 		expError         bool
 	}{
 		{desc: "Hit backend1", host: "example.com", want: "Hello from backend1\n"},
 		{desc: "Hit backend2", host: "example.com", want: "Hello from backend2\n"},
+		{desc: "Hit backend1 http2", host: "example.com", want: "Hello from backend1\n", protos: []string{"h2", "http/1.1"}},
+		{desc: "Hit backend2 http/1.1", host: "example.com", want: "Hello from backend2\n", protos: []string{"http/1.1"}},
 		{desc: "Hit backend1 again", host: "www.example.com", want: "Hello from backend1\n"},
 		{desc: "Hit backend2 again", host: "www.example.com", want: "Hello from backend2\n"},
 		{desc: "Hit backend3", host: "other.example.com", want: "Hello from backend3\n"},
+		{desc: "Hit backend3 http2", host: "other.example.com", want: "Hello from backend3\n", protos: []string{"h2"}},
 		{desc: "Hit backend4", host: "secure.example.com", want: "Hello from backend4\n", certName: "client.example.com"},
 		{desc: "Hit backend4 no cert", host: "secure.example.com", expError: true},
+		{desc: "Hit backend4 bad proto", host: "secure.example.com", certName: "client.example.com", protos: []string{"ftp"}, expError: true},
+		{desc: "Hit backend5", host: "imap.example.com", want: "Hello from backend5\n"},
+		{desc: "Hit backend5 proto:imap", host: "imap.example.com", want: "Hello from backend5\n", protos: []string{"imap"}},
+		{desc: "Hit backend5 proto:h2", host: "imap.example.com", protos: []string{"h2"}, expError: true},
+		{desc: "Hit backend6", host: "noproto.example.com", want: "Hello from backend6\n"},
+		{desc: "Hit backend6 random proto", host: "noproto.example.com", want: "Hello from backend6\n", protos: []string{"foo", "bar"}},
 		{desc: "Unknown server name", host: "foo.example.com", expError: true},
 	} {
-		got, err := get(tc.host, tc.certName)
+		got, err := get(tc.host, tc.certName, tc.protos)
 		if tc.expError != (err != nil) {
 			t.Errorf("%s: Got error %v, want %v", tc.desc, (err != nil), tc.expError)
 			continue
@@ -153,11 +192,12 @@ func newTestProxy(cfg *Config, ca *testCA) *Proxy {
 	return p
 }
 
-func tlsGet(name, addr string, rootCA *testCA, clientCerts []tls.Certificate) (string, error) {
+func tlsGet(name, addr string, rootCA *testCA, clientCerts []tls.Certificate, protos []string) (string, error) {
 	c, err := tls.Dial("tcp", addr, &tls.Config{
 		ServerName:   name,
 		RootCAs:      rootCA.pool,
 		Certificates: clientCerts,
+		NextProtos:   protos,
 	})
 	if err != nil {
 		return "", err

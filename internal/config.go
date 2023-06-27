@@ -52,6 +52,13 @@ type Backend struct {
 	ServerNames []string `yaml:"serverNames"`
 	ClientAuth  bool     `yaml:"clientAuth"`
 	ClientCAs   string   `yaml:"clientCAs"`
+	// ALPNProtos specifies the list of ALPN procotols supported by this
+	// backend. The ACME acme-tls/1 protocol doesn't need to be specified.
+	// The default values are: h2, http/1.1
+	// Set the value to an empty slice to disable ALPN.
+	// The negotiated protocol is forwarded to the backends that use TLS.
+	// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
+	ALPNProtos *[]string `yaml:"alpnProtos,omitempty"`
 
 	Addresses          []string      `yaml:"addresses"`
 	UseTLS             bool          `yaml:"useTLS"`
@@ -87,9 +94,6 @@ func ReadConfig(filename string) (*Config, error) {
 			return nil, errors.New("CacheDir must be set in config")
 		}
 		cfg.CacheDir = filepath.Join(d, "tlsproxy", "letsencrypt")
-	}
-	if cfg.HTTPAddr == "" {
-		cfg.HTTPAddr = ":10080"
 	}
 	if cfg.TLSAddr == "" {
 		cfg.TLSAddr = ":10443"
@@ -135,7 +139,7 @@ func ReadConfig(filename string) (*Config, error) {
 			}
 		}
 		if be.ForwardTimeout == 0 {
-			be.ForwardTimeout = 5 * time.Second
+			be.ForwardTimeout = 30 * time.Second
 		}
 		be.ForwardServerName = strings.ToLower(be.ForwardServerName)
 	}
