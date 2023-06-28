@@ -39,6 +39,7 @@ import (
 
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
+	"golang.org/x/exp/slices"
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -149,7 +150,7 @@ func (p *Proxy) Start(ctx context.Context) error {
 		if err != nil {
 			return nil, err
 		}
-		if len(hello.SupportedProtos) > 0 && hello.SupportedProtos[0] == acme.ALPNProto {
+		if slices.Contains(hello.SupportedProtos, acme.ALPNProto) {
 			setACMEOnly(hello.Conn)
 			tc := p.baseTLSConfig()
 			tc.NextProtos = []string{acme.ALPNProto}
@@ -250,6 +251,16 @@ func (p *Proxy) handleConnection(extConn *tls.Conn) {
 	if err := be.limiter.Wait(p.ctx); err != nil {
 		log.Printf("ERR %s ➔  %q Wait: %v", extConn.RemoteAddr(), sniFromConn(extConn), err)
 		return
+	}
+	if be.ClientACL != nil {
+		var subject string
+		if len(cs.PeerCertificates) > 0 {
+			subject = cs.PeerCertificates[0].Subject.String()
+		}
+		if err := be.authorize(subject); err != nil {
+			log.Printf("ERR %s ➔  %q Authorize(%q): %v", extConn.RemoteAddr(), sniFromConn(extConn), subject, err)
+			return
+		}
 	}
 
 	intConn, err := be.dial(proto)
@@ -405,4 +416,14 @@ func (be *Backend) dial(proto string) (net.Conn, error) {
 		}
 		return c, nil
 	}
+}
+
+func (be *Backend) authorize(subject string) error {
+	if be.ClientACL == nil {
+		return nil
+	}
+	if subject == "" || !slices.Contains(*be.ClientACL, subject) {
+		return errors.New("permission denied")
+	}
+	return nil
 }

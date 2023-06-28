@@ -50,9 +50,10 @@ type Config struct {
 
 // Backend encapsulates the data of one backend.
 type Backend struct {
-	ServerNames []string `yaml:"serverNames"`
-	ClientAuth  bool     `yaml:"clientAuth"`
-	ClientCAs   string   `yaml:"clientCAs"`
+	ServerNames []string  `yaml:"serverNames"`
+	ClientAuth  bool      `yaml:"clientAuth"`
+	ClientACL   *[]string `yaml:"clientACL"`
+	ClientCAs   string    `yaml:"clientCAs"`
 	// ALPNProtos specifies the list of ALPN procotols supported by this
 	// backend. The ACME acme-tls/1 protocol doesn't need to be specified.
 	// The default values are: h2, http/1.1
@@ -64,7 +65,7 @@ type Backend struct {
 	Addresses          []string      `yaml:"addresses"`
 	UseTLS             bool          `yaml:"useTLS"`
 	InsecureSkipVerify bool          `yaml:"insecureSkipVerify"`
-	ForwardRateLimit   int           `yaml:"rateLimit"`
+	ForwardRateLimit   int           `yaml:"forwardRateLimit"`
 	ForwardServerName  string        `yaml:"forwardServerName"`
 	ForwardRootCAs     string        `yaml:"forwardRootCAs"`
 	ForwardTimeout     time.Duration `yaml:"forwardTimeout"`
