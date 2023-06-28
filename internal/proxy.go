@@ -83,6 +83,9 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	if bytes.Equal(a, b) {
 		return nil
 	}
+	if err := cfg.Check(); err != nil {
+		return err
+	}
 	if p.cfg != nil {
 		log.Print("INFO Configuration changed")
 	}
@@ -237,13 +240,18 @@ func (p *Proxy) handleConnection(extConn *tls.Conn) {
 	proto := cs.NegotiatedProtocol
 	be, err := p.backend(sni)
 	if err != nil {
-		log.Printf("ERR %s: received unexpected SNI %q", extConn.RemoteAddr(), sni)
+		log.Printf("ERR %s ➔  %q: %v", extConn.RemoteAddr(), sni, err)
 		return
 	}
 	if acmeOnly(extConn) {
 		log.Printf("INFO ACME %s ➔  %s", extConn.RemoteAddr(), sni)
 		return
 	}
+	if err := be.limiter.Wait(p.ctx); err != nil {
+		log.Printf("ERR %s ➔  %q Wait: %v", extConn.RemoteAddr(), sniFromConn(extConn), err)
+		return
+	}
+
 	intConn, err := be.dial(proto)
 	if err != nil {
 		log.Printf("ERR %s ➔  %q Dial: %v", extConn.RemoteAddr(), sniFromConn(extConn), err)

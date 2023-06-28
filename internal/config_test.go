@@ -72,7 +72,8 @@ func TestReadConfig(t *testing.T) {
 					"192.168.0.11:80",
 					"192.168.0.12:80",
 				},
-				ForwardTimeout: 30 * time.Second,
+				ForwardRateLimit: 5,
+				ForwardTimeout:   30 * time.Second,
 			},
 			{
 				ServerNames: []string{
@@ -81,6 +82,7 @@ func TestReadConfig(t *testing.T) {
 				Addresses: []string{
 					"192.168.1.100:443",
 				},
+				ForwardRateLimit:   5,
 				UseTLS:             true,
 				InsecureSkipVerify: true,
 				ForwardTimeout:     30 * time.Second,
@@ -92,6 +94,7 @@ func TestReadConfig(t *testing.T) {
 				Addresses: []string{
 					"192.168.2.200:443",
 				},
+				ForwardRateLimit:  5,
 				UseTLS:            true,
 				ClientAuth:        true,
 				ClientCAs:         demoCert,
