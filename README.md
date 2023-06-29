@@ -6,8 +6,6 @@ Its functionality is similar to an [stunnel](https://www.stunnel.org/) server, b
 
 Example config:
 
-[example-config.yaml](https://github.com/c2FmZQ/tlsproxy/blob/main/example-config.yaml)
-
 ```yaml
 # The HTTP address must be reachable from the internet via port 80 for the
 # letsencrypt ACME http-01 challenge to work. If the httpAddr is empty, the
@@ -50,7 +48,10 @@ backends:
   forwardServerName: secure-internal.example.com
 ```
 
-Run with:
+See [example-config.yaml](https://github.com/c2FmZQ/tlsproxy/blob/main/example-config.yaml) and [internal/config.go](https://github.com/c2FmZQ/tlsproxy/blob/main/internal/config.go#L41) for more details.
+
+
+Run the proxy with:
 ```console
 go run ./proxy --config=config.yaml
 ```
