@@ -9,12 +9,12 @@ Example config:
 ```yaml
 # The HTTP address must be reachable from the internet via port 80 for the
 # letsencrypt ACME http-01 challenge to work. If the httpAddr is empty, the
-# proxy will only use tls-alpn-01.
+# proxy will only use tls-alpn-01 and tlsAddr must be reachable on port 443.
 # See https://letsencrypt.org/docs/challenge-types/
 httpAddr: ":10080"
 
-# The TLS address will receive TLS connections and forward them to your
-# backends.
+# The proxy will receive TLS connections at this address and forward them to
+# the backends.
 tlsAddr: ":10443"
 
 # Each backend has a list of server names (DNS names that clients connect to),
@@ -48,7 +48,7 @@ backends:
   forwardServerName: secure-internal.example.com
 ```
 
-See [example-config.yaml](https://github.com/c2FmZQ/tlsproxy/blob/main/example-config.yaml) and [internal/config.go](https://github.com/c2FmZQ/tlsproxy/blob/main/internal/config.go#L41) for more details.
+See the [examples](https://github.com/c2FmZQ/tlsproxy/blob/main/examples) directory and [internal/config.go](https://github.com/c2FmZQ/tlsproxy/blob/main/internal/config.go#L41) for more details.
 
 
 Run the proxy with:
@@ -69,7 +69,7 @@ docker run                      \
   c2fmzq/tlsproxy:latest
 ```
 
-Store the config in `${CONFIGDIR}/config.yaml`.
+The proxy reads the config from `${CONFIGDIR}/config.yaml`.
 
 > :warning: `${CACHEDIR}` is used to store TLS secrets. It should only be accessible by the UID running tlsproxy.
 

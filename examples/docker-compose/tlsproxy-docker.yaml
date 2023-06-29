@@ -1,0 +1,36 @@
+services:
+  tlsproxy:
+    container_name: tlsproxy
+    image: c2fmzq/tlsproxy:latest
+    user: 10001:10001
+    volumes:
+      - ./data/tlsproxy/cache:/.cache
+      - ./data/tlsproxy/config:/config
+    ports:
+      - 80:10080
+      - 443:10443
+
+  c2fmzq-server:
+    container_name: c2fmzq-server
+    image: c2fmzq/c2fmzq-server:latest
+    user: 10002:10002
+    environment:
+      - C2FMZQ_ADDRESS=:8080
+      - C2FMZQ_ALLOW_NEW_ACCOUNTS=true
+      - C2FMZQ_AUTO_APPROVE_NEW_ACCOUNTS=true
+      - C2FMZQ_PASSPHRASE=<secret passphrase>
+      - C2FMZQ_PASSPHRASE_FILE=
+    volumes:
+      - ./data/c2fmzq-server:/data
+
+  nginx:
+    container_name: nginx
+    image: nginx:latest
+    volumes:
+      - ./data/nginx:/usr/share/nginx/html:ro
+
+  apache:
+    container_name: apache
+    image: httpd:latest
+    volumes:
+      - ./data/apache:/usr/local/apache2/htdocs:ro

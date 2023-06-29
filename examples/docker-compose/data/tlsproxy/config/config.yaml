@@ -1,0 +1,22 @@
+httpAddr: ":10080"
+tlsAddr: ":10443"
+
+backends:
+  - serverNames:
+    - photos.example.com
+    addresses:
+    - c2fmzq-server:8080
+
+  - serverNames:
+    - www.example.com
+    addresses:
+    - nginx:80
+    # The default nginx image doesn't support http/2.
+    alpnProtos: []
+
+  - serverNames:
+    - www2.example.com
+    addresses:
+    - apache:80
+    # The default apache image doesn't support http/2.
+    alpnProtos: []

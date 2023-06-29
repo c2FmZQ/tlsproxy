@@ -51,7 +51,7 @@ Au1hFufDZDNab/FH91MEj6hwIkT8blxhd2Kuj8r/+X8=
 `
 
 func TestReadConfig(t *testing.T) {
-	got, err := ReadConfig("../example-config.yaml")
+	got, err := ReadConfig("../examples/example-config.yaml")
 	if err != nil {
 		t.Fatalf("ReadConfig: %v", err)
 	}
