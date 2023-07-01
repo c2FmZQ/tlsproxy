@@ -40,20 +40,41 @@ import (
 
 // Config is the TLS proxy configuration.
 type Config struct {
-	HTTPAddr string     `yaml:"httpAddr"`
-	TLSAddr  string     `yaml:"tlsAddr"`
-	CacheDir string     `yaml:"cacheDir"`
+	// HTTPAddr must be reachable from the internet via port 80 for the
+	// letsencrypt ACME http-01 challenge to work. If the httpAddr is empty,
+	// the proxy will only use tls-alpn-01 and tlsAddr must be reachable on
+	// port 443.
+	// See https://letsencrypt.org/docs/challenge-types/
+	HTTPAddr string `yaml:"httpAddr"`
+	// TLSAddr is the address where the proxy will receive TLS connections
+	// and forward them to the backends.
+	TLSAddr string `yaml:"tlsAddr"`
+	// CacheDir is the directory where the proxy stores TLS certificates.
+	CacheDir string `yaml:"cacheDir"`
+	// Backends is the list of service backends.
 	Backends []*Backend `yaml:"backends"`
-	Email    string     `yaml:"email"`
-	MaxOpen  int        `yaml:"maxOpen"`
+	// Email is optionally included in the requests to letsencrypt.
+	Email string `yaml:"email"`
+	// MaxOpen is the maximum number of open incoming connections.
+	MaxOpen int `yaml:"maxOpen"`
 }
 
 // Backend encapsulates the data of one backend.
 type Backend struct {
-	ServerNames []string  `yaml:"serverNames"`
-	ClientAuth  bool      `yaml:"clientAuth"`
-	ClientACL   *[]string `yaml:"clientACL"`
-	ClientCAs   string    `yaml:"clientCAs"`
+	// ServerNames is the list of all the server names for this service,
+	// e.g. example.com, www.example.com.
+	ServerNames []string `yaml:"serverNames"`
+	// ClientAuth indicates whether TLS client authentication is required
+	// for this service.
+	ClientAuth bool `yaml:"clientAuth"`
+	// ClientACL optionally specifies which client identities are allowed
+	// to use this service. A nil value disabled the authorization check and
+	// allows any valid client certificate. Otherwise, the value is a slice
+	// of Subject strings from the client X509 certificate.
+	ClientACL *[]string `yaml:"clientACL"`
+	// ClientCAs is either a file name or a set of PEM-encoded CA
+	// certificates that are used to authenticate clients.
+	ClientCAs string `yaml:"clientCAs"`
 	// ALPNProtos specifies the list of ALPN procotols supported by this
 	// backend. The ACME acme-tls/1 protocol doesn't need to be specified.
 	// The default values are: h2, http/1.1
@@ -61,14 +82,32 @@ type Backend struct {
 	// The negotiated protocol is forwarded to the backends that use TLS.
 	// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
 	ALPNProtos *[]string `yaml:"alpnProtos,omitempty"`
-
-	Addresses          []string      `yaml:"addresses"`
-	UseTLS             bool          `yaml:"useTLS"`
-	InsecureSkipVerify bool          `yaml:"insecureSkipVerify"`
-	ForwardRateLimit   int           `yaml:"forwardRateLimit"`
-	ForwardServerName  string        `yaml:"forwardServerName"`
-	ForwardRootCAs     string        `yaml:"forwardRootCAs"`
-	ForwardTimeout     time.Duration `yaml:"forwardTimeout"`
+	// Addresses is a list of server addresses where requests are forwarded.
+	// When more than one address are specified, requests are distributed
+	// using a simple round robin.
+	Addresses []string `yaml:"addresses"`
+	// UseTLS indicates whether TLS should be used to establish the
+	// connections to the backend addresses.
+	UseTLS bool `yaml:"useTLS"`
+	// InsecureSkipVerify disabled the verification of the backend server's
+	// TLS certificate. See https://pkg.go.dev/crypto/tls#Config
+	InsecureSkipVerify bool `yaml:"insecureSkipVerify"`
+	// ForwardRateLimit specifies how fast requests can be forwarded to the
+	// backend servers. The default value is 5 requests per second.
+	ForwardRateLimit int `yaml:"forwardRateLimit"`
+	// ForwardServerName is the ServerName to send in the TLS handshake with
+	// the backend server. It is also used to verify the server's identify.
+	// This is particularly useful when the addresses use IP addresses
+	// instead of hostnames.
+	ForwardServerName string `yaml:"forwardServerName"`
+	// ForwardRootCAs is either a file name or a set of PEM-encoded CA
+	// certificates that are used to authenticate backend servers.
+	ForwardRootCAs string `yaml:"forwardRootCAs"`
+	// ForwardTimeout is the connection timeout to backend servers. If
+	// Addresses contains multiple addresses, this timeout indicates how
+	// long to wait before trying the next address in the list. The default
+	// value is 30 seconds.
+	ForwardTimeout time.Duration `yaml:"forwardTimeout"`
 
 	tlsConfig      *tls.Config
 	forwardRootCAs *x509.CertPool
