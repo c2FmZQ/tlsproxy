@@ -8,6 +8,8 @@ on:
 jobs:
   build-and-run-tests:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
     - uses: actions/checkout@v3
     - name: Set up Go
@@ -15,7 +17,7 @@ jobs:
       with:
         go-version-file: go.mod
     - name: Build
-      run: go build -v ./...
+      run: go build ./...
     - name: Run go vet
       run: go vet ./...
     - name: Run go tests
@@ -23,4 +25,27 @@ jobs:
     - name: Run go tests (-race)
       run: go test -race -v ./...
     - name: Build docker image
-      run: docker build -t c2fmzq/tlsproxy .
+      run: |
+        touch version.sh
+        docker build -t c2fmzq/tlsproxy:test .
+        docker run --rm --interactive c2fmzq/tlsproxy:test -v
+
+    - name: Build release binaries
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        export CGO_ENABLED=0
+        flag="-ldflags=-s -w -X main.Version=${GITHUB_REF_NAME}"
+        for arch in amd64 arm arm64; do 
+          GOARCH="${arch}" go build -trimpath "${flag}" -o "tlsproxy-linux-${arch}" ./proxy
+          sha256sum "tlsproxy-linux-${arch}" | cut -d " " -f1 > "tlsproxy-linux-${arch}.sha256"
+        done
+    - name: Create release
+      # https://github.com/softprops/action-gh-release/tree/v0.1.15
+      uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844
+      if: startsWith(github.ref, 'refs/tags/v')
+      with:
+        draft: true
+        generate_release_notes: true
+        fail_on_unmatched_files: true
+        files: |
+          tlsproxy-linux-*

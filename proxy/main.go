@@ -1,6 +1,7 @@
 // MIT License
 //
 // Copyright (c) 2023 TTBT Enterprises LLC
+// Copyright (c) 2023 Robin Thellend <rthellend@thellend.com>
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -30,22 +31,32 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
 	"github.com/c2FmZQ/tlsproxy/internal"
 )
 
+// Version is set with -ldflags="-X main.Version=${VERSION}"
+var Version = "dev"
+
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	configFile := flag.String("config", "", "The config file name")
+	versionFlag := flag.Bool("v", false, "Show the version")
 	flag.Parse()
 
+	if *versionFlag {
+		os.Stdout.WriteString(Version + " " + runtime.Version() + "\n")
+		return
+	}
 	if *configFile == "" {
 		log.Fatal("--config must be set")
 	}
+	log.Printf("INFO tlsproxy %s %s", Version, runtime.Version())
 	cfg, err := internal.ReadConfig(*configFile)
 	if err != nil {
 		log.Fatalf("ERR %v", err)

@@ -10,8 +10,9 @@ RUN go mod download
 
 ADD proxy /app/go/src/tlsproxy/proxy
 ADD internal /app/go/src/tlsproxy/internal
+ADD version.sh /app/go/src/tlsproxy
 WORKDIR /app/go/src/tlsproxy
-RUN go install ./proxy
+RUN source version.sh && go install -ldflags="-s -w -X main.Version=${VERSION:-dev}" ./proxy
 
 FROM scratch
 WORKDIR /
