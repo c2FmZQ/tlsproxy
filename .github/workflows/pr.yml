@@ -5,6 +5,7 @@ on:
 jobs:
   build-and-run-tests:
     name: Build & run tests
+    if: github.ref_type == 'branch'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
