@@ -1,9 +1,12 @@
-name: Go
+name: release
 on: 
-  - push
-  - pull_request
+  push:
+    tags:
+      - "v*.*"
+
 jobs:
   build-and-run-tests:
+    name: Build & run tests
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
@@ -26,7 +29,7 @@ jobs:
         docker run --rm --interactive c2fmzq/tlsproxy:test -v
 
   create-release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    name: Create release
     needs: build-and-run-tests
     runs-on: ubuntu-latest
     permissions:
@@ -55,12 +58,11 @@ jobs:
         files: |
           tlsproxy-linux-*
 
-  push_to_registry:
-    if: startsWith(github.ref, 'refs/tags/v')
+  push-to-registry:
+    name: Push image to docker hub
     needs:
       - build-and-run-tests
       - create-release
-    name: Push docker image to docker hub
     runs-on: ubuntu-latest
     steps:
     - name: Check out the repo
