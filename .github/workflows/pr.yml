@@ -1,0 +1,27 @@
+name: PR
+on: 
+  - pull_request
+  - push
+jobs:
+  build-and-run-tests:
+    name: Build & run tests
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version-file: go.mod
+    - name: Build
+      run: go build ./...
+    - name: Run go vet
+      run: go vet ./...
+    - name: Run go tests
+      run: go test -v ./...
+    - name: Run go tests (-race)
+      run: go test -race -v ./...
+    - name: Build test docker image
+      run: |
+        touch version.sh
+        docker build -t c2fmzq/tlsproxy:test .
+        docker run --rm --interactive c2fmzq/tlsproxy:test -v
