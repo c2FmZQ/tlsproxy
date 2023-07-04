@@ -1,6 +1,7 @@
 // MIT License
 //
 // Copyright (c) 2023 TTBT Enterprises LLC
+// Copyright (c) 2023 Robin Thellend <rthellend@rthellend.com>
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -33,7 +34,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sys/unix"
 	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
 )
@@ -131,15 +131,11 @@ func (cfg *Config) Check() error {
 		cfg.TLSAddr = ":10443"
 	}
 	if cfg.MaxOpen == 0 {
-		var rl unix.Rlimit
-		if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &rl); err != nil {
-			return err
+		n, err := openFileLimit()
+		if err != nil {
+			return errors.New("MaxOpen: value must be set")
 		}
-		rl.Cur = rl.Max
-		if err := unix.Setrlimit(unix.RLIMIT_NOFILE, &rl); err != nil {
-			return err
-		}
-		cfg.MaxOpen = int(rl.Cur/2 - 100)
+		cfg.MaxOpen = n/2 - 100
 	}
 
 	serverNames := make(map[string]bool)
