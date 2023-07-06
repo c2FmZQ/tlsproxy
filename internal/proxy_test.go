@@ -25,29 +25,29 @@ package internal
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"net"
-	"net/http"
-	"sync"
 	"testing"
-	"time"
+
+	"github.com/c2FmZQ/tlsproxy/internal/certmanager"
+	"github.com/c2FmZQ/tlsproxy/internal/netw"
 )
 
 func TestProxyBackends(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	extCA := newTestCA(t, "root-ca.example.com")
-	intCA := newTestCA(t, "internal-ca.example.com")
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	intCA, err := certmanager.New("internal-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
 	// Backends without TLS.
 	be1 := newTCPServer(t, ctx, "backend1", nil)
 	be2 := newTCPServer(t, ctx, "backend2", nil)
@@ -57,6 +57,8 @@ func TestProxyBackends(t *testing.T) {
 	// Backends with special proto.
 	be5 := newTCPServer(t, ctx, "backend5", intCA)
 	be6 := newTCPServer(t, ctx, "backend6", intCA)
+	// Backend for TLS passthrough
+	be7 := newTCPServer(t, ctx, "backend7", extCA)
 
 	cfg := &Config{
 		HTTPAddr: "localhost:0",
@@ -83,8 +85,8 @@ func TestProxyBackends(t *testing.T) {
 				Addresses: []string{
 					be3.listener.Addr().String(),
 				},
-				UseTLS:            true,
-				ForwardRootCAs:    string(intCA.caCertPEM),
+				Mode:              "TLS",
+				ForwardRootCAs:    intCA.RootCAPEM(),
 				ForwardServerName: "other-internal.example.com",
 			},
 			// TLS backends, require clients to present a certificate.
@@ -95,11 +97,11 @@ func TestProxyBackends(t *testing.T) {
 				Addresses: []string{
 					be4.listener.Addr().String(),
 				},
-				UseTLS:            true,
-				ForwardRootCAs:    string(intCA.caCertPEM),
+				Mode:              "TLS",
+				ForwardRootCAs:    intCA.RootCAPEM(),
 				ForwardServerName: "secure-internal.example.com",
 				ClientAuth:        true,
-				ClientCAs:         string(intCA.caCertPEM),
+				ClientCAs:         intCA.RootCAPEM(),
 			},
 			// TLS backend with imap proto.
 			{
@@ -109,8 +111,8 @@ func TestProxyBackends(t *testing.T) {
 				Addresses: []string{
 					be5.listener.Addr().String(),
 				},
-				UseTLS:            true,
-				ForwardRootCAs:    string(intCA.caCertPEM),
+				Mode:              "TLS",
+				ForwardRootCAs:    intCA.RootCAPEM(),
 				ForwardServerName: "imap-internal.example.com",
 				ALPNProtos:        &[]string{"imap"},
 			},
@@ -122,10 +124,20 @@ func TestProxyBackends(t *testing.T) {
 				Addresses: []string{
 					be6.listener.Addr().String(),
 				},
-				UseTLS:            true,
-				ForwardRootCAs:    string(intCA.caCertPEM),
+				Mode:              "TLS",
+				ForwardRootCAs:    intCA.RootCAPEM(),
 				ForwardServerName: "noproto-internal.example.com",
 				ALPNProtos:        &[]string{},
+			},
+			// TLS passthrough
+			{
+				ServerNames: []string{
+					"passthrough.example.com",
+				},
+				Addresses: []string{
+					be7.listener.Addr().String(),
+				},
+				Mode: "TLSPASSTHROUGH",
 			},
 		},
 	}
@@ -136,9 +148,9 @@ func TestProxyBackends(t *testing.T) {
 	get := func(host, certName string, protos []string) (string, error) {
 		var certs []tls.Certificate
 		if certName != "" {
-			c, err := intCA.getCertificate(certName)
+			c, err := intCA.GetCert(certName)
 			if err != nil {
-				t.Fatalf("intCA.getCertificate: %v", err)
+				t.Fatalf("intCA.GetCert: %v", err)
 			}
 			certs = append(certs, *c)
 		}
@@ -172,6 +184,7 @@ func TestProxyBackends(t *testing.T) {
 		{desc: "Hit backend6", host: "noproto.example.com", want: "Hello from backend6\n"},
 		{desc: "Hit backend6 random proto", host: "noproto.example.com", want: "Hello from backend6\n", protos: []string{"foo", "bar"}},
 		{desc: "Unknown server name", host: "foo.example.com", expError: true},
+		{desc: "Hit backend7", host: "passthrough.example.com", want: "Hello from backend7\n"},
 	} {
 		got, err := get(tc.host, tc.certName, tc.protos)
 		if tc.expError != (err != nil) {
@@ -187,16 +200,19 @@ func TestProxyBackends(t *testing.T) {
 	}
 }
 
-func newTestProxy(cfg *Config, ca *testCA) *Proxy {
-	p := &Proxy{certManager: ca}
+func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
+	p := &Proxy{
+		certManager: cm,
+		connections: make(map[connKey]*netw.Conn),
+	}
 	p.Reconfigure(cfg)
 	return p
 }
 
-func tlsGet(name, addr string, rootCA *testCA, clientCerts []tls.Certificate, protos []string) (string, error) {
+func tlsGet(name, addr string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate, protos []string) (string, error) {
 	c, err := tls.Dial("tcp", addr, &tls.Config{
 		ServerName:   name,
-		RootCAs:      rootCA.pool,
+		RootCAs:      rootCA.RootCACertPool(),
 		Certificates: clientCerts,
 		NextProtos:   protos,
 	})
@@ -204,6 +220,9 @@ func tlsGet(name, addr string, rootCA *testCA, clientCerts []tls.Certificate, pr
 		return "", err
 	}
 	defer c.Close()
+	if _, err := c.Write([]byte("Hello\n")); err != nil {
+		return "", err
+	}
 	b, err := io.ReadAll(c)
 	if err != nil {
 		return "", err
@@ -211,7 +230,7 @@ func tlsGet(name, addr string, rootCA *testCA, clientCerts []tls.Certificate, pr
 	return string(b), nil
 }
 
-func newTCPServer(t *testing.T, ctx context.Context, name string, ca *testCA) *tcpServer {
+func newTCPServer(t *testing.T, ctx context.Context, name string, ca *certmanager.CertManager) *tcpServer {
 	var l net.Listener
 	var err error
 	if ca == nil {
@@ -252,118 +271,4 @@ func newTCPServer(t *testing.T, ctx context.Context, name string, ca *testCA) *t
 type tcpServer struct {
 	t        *testing.T
 	listener net.Listener
-}
-
-type testCA struct {
-	t *testing.T
-
-	name      string
-	key       *rsa.PrivateKey
-	caCert    *x509.Certificate
-	caCertPEM []byte
-	pool      *x509.CertPool
-
-	mu    sync.Mutex
-	certs map[string]*tls.Certificate
-}
-
-func newTestCA(t *testing.T, name string) *testCA {
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("rsa.GenerateKey: %v", err)
-	}
-	sn, _ := rand.Int(rand.Reader, big.NewInt(1<<32))
-	now := time.Now()
-	templ := &x509.Certificate{
-		PublicKeyAlgorithm:    x509.RSA,
-		SerialNumber:          sn,
-		Issuer:                pkix.Name{CommonName: name},
-		Subject:               pkix.Name{CommonName: name},
-		NotBefore:             now,
-		NotAfter:              now.Add(time.Hour),
-		KeyUsage:              x509.KeyUsageCertSign,
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-		DNSNames:              []string{name},
-	}
-	b, err := x509.CreateCertificate(rand.Reader, templ, templ, key.Public(), key)
-	if err != nil {
-		t.Fatalf("x509.CreateCertificate: %v", err)
-	}
-	caCert, err := x509.ParseCertificate(b)
-	if err != nil {
-		t.Fatalf("x509.ParseCertificate: %v", err)
-	}
-	caCertPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: b,
-	})
-	pool := x509.NewCertPool()
-	pool.AddCert(caCert)
-	//t.Logf("[%s] CERT\n%s", name, caCertPEM)
-
-	return &testCA{
-		t:         t,
-		name:      name,
-		key:       key,
-		caCert:    caCert,
-		caCertPEM: caCertPEM,
-		pool:      pool,
-		certs:     make(map[string]*tls.Certificate),
-	}
-}
-
-func (ca *testCA) TLSConfig() *tls.Config {
-	return &tls.Config{
-		GetCertificate: ca.GetCertificate,
-	}
-}
-
-func (ca *testCA) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	return ca.getCertificate(hello.ServerName)
-}
-
-func (ca *testCA) getCertificate(name string) (*tls.Certificate, error) {
-	t := ca.t
-	ca.mu.Lock()
-	defer ca.mu.Unlock()
-	if c := ca.certs[name]; c != nil {
-		return c, nil
-	}
-
-	t.Logf("[%s] getCertificate(%q)", ca.name, name)
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("rsa.GenerateKey: %v", err)
-	}
-	sn, _ := rand.Int(rand.Reader, big.NewInt(1<<32))
-	now := time.Now()
-	templ := &x509.Certificate{
-		PublicKeyAlgorithm:    x509.RSA,
-		SerialNumber:          sn,
-		Subject:               pkix.Name{CommonName: name},
-		NotBefore:             now,
-		NotAfter:              now.Add(time.Hour),
-		KeyUsage:              x509.KeyUsageDataEncipherment | x509.KeyUsageDigitalSignature,
-		BasicConstraintsValid: true,
-		DNSNames:              []string{name},
-	}
-	b, err := x509.CreateCertificate(rand.Reader, templ, ca.caCert, key.Public(), ca.key)
-	if err != nil {
-		t.Fatalf("x509.CreateCertificate: %v", err)
-	}
-	cert, err := x509.ParseCertificate(b)
-	if err != nil {
-		t.Fatalf("x509.ParseCertificate: %v", err)
-	}
-	ca.certs[name] = &tls.Certificate{
-		Certificate: [][]byte{b},
-		PrivateKey:  key,
-		Leaf:        cert,
-	}
-	return ca.certs[name], nil
-}
-
-func (ca *testCA) HTTPHandler(fallback http.Handler) http.Handler {
-	return fallback
 }

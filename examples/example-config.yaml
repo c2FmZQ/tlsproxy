@@ -20,7 +20,7 @@ backends:
   - other.example.com
   addresses:
   - 192.168.1.100:443
-  useTLS: true
+  mode: tls
   insecureSkipVerify: true
 
 - serverNames:
@@ -48,7 +48,7 @@ backends:
         -----END CERTIFICATE-----
   addresses:
   - 192.168.2.200:443
-  useTLS: true
+  mode: tls
   forwardServerName: secure-internal.example.com
   forwardRootCAs: |
         -----BEGIN CERTIFICATE-----

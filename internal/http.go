@@ -24,77 +24,73 @@
 package internal
 
 import (
-	"crypto/tls"
+	"context"
+	"log"
 	"net"
+	"net/http"
 	"sync"
+	"time"
 )
 
-func tlsListen(network, laddr string, config *tls.Config) (net.Listener, error) {
-	l, err := net.Listen(network, laddr)
-	if err != nil {
-		return nil, err
+func startInternalHTTPServer(ctx context.Context, handler http.Handler, conns <-chan net.Conn) *http.Server {
+	l := &proxyListener{
+		ctx: ctx,
+		ch:  conns,
 	}
-	return tls.NewListener(&proxyListener{l}, config), nil
+	s := &http.Server{
+		Handler:      handler,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  30 * time.Second,
+	}
+	go func() {
+		log.Print("INFO internal http server started")
+		log.Printf("INFO internal http server exited: %v", s.Serve(l))
+	}()
+	return s
 }
 
 type proxyListener struct {
-	net.Listener
+	ctx  context.Context
+	ch   <-chan net.Conn
+	addr net.Addr
+
+	mu     sync.Mutex
+	closed bool
 }
 
 func (l *proxyListener) Accept() (net.Conn, error) {
-	c, err := l.Listener.Accept()
-	return &proxyConn{Conn: c}, err
-}
-
-type proxyConn struct {
-	net.Conn
-
-	mu       sync.RWMutex
-	sni      string
-	acmeOnly bool
-}
-
-func unwrapProxyConn(c net.Conn) *proxyConn {
-	switch conn := c.(type) {
-	case *proxyConn:
-		return conn
-	case *tls.Conn:
-		return unwrapProxyConn(conn.NetConn())
-	default:
-		return nil
+	select {
+	case c, ok := <-l.ch:
+		if !ok {
+			l.Close()
+			return nil, net.ErrClosed
+		}
+		return c, nil
+	case <-l.ctx.Done():
+		l.Close()
+		return nil, net.ErrClosed
 	}
 }
 
-func setSNI(c net.Conn, sni string) {
-	if conn := unwrapProxyConn(c); conn != nil {
-		conn.mu.Lock()
-		defer conn.mu.Unlock()
-		conn.sni = sni
+func (l *proxyListener) Close() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.closed {
+		l.closed = true
+		go func() {
+			for {
+				select {
+				case <-l.ch:
+				case <-l.ctx.Done():
+					return
+				}
+			}
+		}()
 	}
+	return nil
 }
 
-func sniFromConn(c net.Conn) string {
-	if conn := unwrapProxyConn(c); conn != nil {
-		conn.mu.RLock()
-		defer conn.mu.RUnlock()
-		return conn.sni
-	}
-	return ""
-}
-
-func setACMEOnly(c net.Conn) {
-	if conn := unwrapProxyConn(c); conn != nil {
-		conn.mu.Lock()
-		defer conn.mu.Unlock()
-		conn.acmeOnly = true
-	}
-}
-
-func acmeOnly(c net.Conn) bool {
-	if conn := unwrapProxyConn(c); conn != nil {
-		conn.mu.RLock()
-		defer conn.mu.RUnlock()
-		return conn.acmeOnly
-	}
-	return false
+func (l *proxyListener) Addr() net.Addr {
+	return l.addr
 }

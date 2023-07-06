@@ -47,6 +47,7 @@ func main() {
 
 	configFile := flag.String("config", "", "The config file name")
 	versionFlag := flag.Bool("v", false, "Show the version")
+	testFlag := flag.Bool("use-ephemeral-certificate-manager", false, "Use an ephemeral certificate manager. This is for testing purposes only.")
 	flag.Parse()
 
 	if *versionFlag {
@@ -61,7 +62,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("ERR %v", err)
 	}
-	proxy, err := internal.New(cfg)
+	var proxy *internal.Proxy
+	if *testFlag {
+		log.Print("WARN Using ephemeral certificate manager")
+		proxy, err = internal.NewTestProxy(cfg)
+	} else {
+		proxy, err = internal.New(cfg)
+	}
 	if err != nil {
 		log.Fatal(err)
 	}

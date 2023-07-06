@@ -34,8 +34,25 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
+)
+
+const (
+	ModePlaintext      = "PLAINTEXT"
+	ModeTLS            = "TLS"
+	ModeTLSPassthrough = "TLSPASSTHROUGH"
+	ModeConsole        = "CONSOLE"
+)
+
+var (
+	validModes = []string{
+		ModePlaintext,
+		ModeTLS,
+		ModeTLSPassthrough,
+		ModeConsole,
+	}
 )
 
 // Config is the TLS proxy configuration.
@@ -51,6 +68,9 @@ type Config struct {
 	TLSAddr string `yaml:"tlsAddr"`
 	// CacheDir is the directory where the proxy stores TLS certificates.
 	CacheDir string `yaml:"cacheDir"`
+	// DefaultServerName is the server name to use when the TLS client
+	// doesn't use the Server Name Indication (SNI) extension.
+	DefaultServerName string `yaml:"defaultServerName"`
 	// Backends is the list of service backends.
 	Backends []*Backend `yaml:"backends"`
 	// Email is optionally included in the requests to letsencrypt.
@@ -82,13 +102,32 @@ type Backend struct {
 	// The negotiated protocol is forwarded to the backends that use TLS.
 	// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
 	ALPNProtos *[]string `yaml:"alpnProtos,omitempty"`
+	// Mode controls how the proxy communicates with the backend.
+	// - PLAINTEXT: Use a plaintext, non-encrypted, TCP connection. This is
+	//     the default mode.
+	//        CLIENT --TLS--> PROXY ----> BACKEND SERVER
+	// - TLS: Open a new TLS connection. Set ForwardServerName, ForwardRootCAs,
+	//     and/or InsecureSkipVerify to verify the identity of the server.
+	//        CLIENT --TLS--> PROXY --TLS--> BACKEND SERVER
+	// - TLSPASSTHROUGH: Forward the whole TLS connection to the backend.
+	//     In this mode, the proxy terminates the TCP connection, but not
+	//     the TLS connection. The proxy uses the information from the TLS
+	//     ClientHello message to route the TLS data to the right backend.
+	//     It cannot see the plaintext data, and it cannot enforce client
+	//     authentication & authorization.
+	//                +-TCP-PROXY-TCP-+
+	//        CLIENT -+------TLS------+-> BACKEND SERVER
+	// - CONSOLE: Indicates that this backend is handled by the proxy itself
+	//     to report its status and metrics. It is strongly recommended
+	//     to use it with ClientAuth and ClientACL. Otherwise, information
+	//     from the proxy's configuration can be leaked to anyone who knows
+	//     the backend's server name.
+	//        CLIENT --TLS--> PROXY CONSOLE
+	Mode string `yaml:"mode"`
 	// Addresses is a list of server addresses where requests are forwarded.
 	// When more than one address are specified, requests are distributed
 	// using a simple round robin.
 	Addresses []string `yaml:"addresses"`
-	// UseTLS indicates whether TLS should be used to establish the
-	// connections to the backend addresses.
-	UseTLS bool `yaml:"useTLS"`
 	// InsecureSkipVerify disabled the verification of the backend server's
 	// TLS certificate. See https://pkg.go.dev/crypto/tls#Config
 	InsecureSkipVerify bool `yaml:"insecureSkipVerify"`
@@ -108,6 +147,41 @@ type Backend struct {
 	// long to wait before trying the next address in the list. The default
 	// value is 30 seconds.
 	ForwardTimeout time.Duration `yaml:"forwardTimeout"`
+
+	// TCP connections consist of two streams of data:
+	//
+	//    CLIENT --> SERVER
+	//    CLIENT <-- SERVER
+	//
+	// The CLIENT and the SERVER can send data to each other at the same.
+	// When one stream is closed, the other one can remain open and continue
+	// to transmit data indefinitely. The TCP connection is closed when both
+	// streams are closed. (Either end can close the whole connection at any
+	// time too)
+	//
+	// This is a normal feature of TCP connections, but very few
+	// applications / protocols use half-close connections.
+	//
+	// There are some broken clients and network devices doing Network
+	// Address Translation (NAT) that never close their end of the
+	// connection. This can result in TCP connections staying open doing
+	// nothing, but still using resources for a very long time.
+	//
+	// The parameters below can be used to control the behavior of the proxy
+	// when connections are half-closed. The default values should be
+	// appropriate for well-behaved servers and occasionally broken clients.
+
+	// ServerCloseEndsConnection indicates that the proxy will close the
+	// whole TCP connection when the server closes its end of it. The
+	// default value is true.
+	ServerCloseEndsConnection *bool `yaml:"serverCloseEndsConnection,omitempty"`
+	// ClientCloseEndsConnection indicates that the proxy will close the
+	// whole TCP connection when the client closes its end of it. The
+	// default value is false.
+	ClientCloseEndsConnection *bool `yaml:"clientCloseEndsConnection,omitempty"`
+	// HalfCloseTimeout is the amount of time to keep the TCP connection
+	// open when one stream is closed. The default value is 1 minute.
+	HalfCloseTimeout *time.Duration `yaml:"halfCloseTimeout,omitempty"`
 
 	tlsConfig      *tls.Config
 	forwardRootCAs *x509.CertPool
@@ -140,11 +214,24 @@ func (cfg *Config) Check() error {
 
 	serverNames := make(map[string]bool)
 	for i, be := range cfg.Backends {
+		be.Mode = strings.ToUpper(be.Mode)
+		if be.Mode == "" {
+			be.Mode = ModePlaintext
+		}
+		if !slices.Contains(validModes, be.Mode) {
+			return fmt.Errorf("backend[%d].Mode: value %q must be one of %v", i, be.Mode, validModes)
+		}
+		if be.Mode == ModeTLSPassthrough && be.ClientAuth {
+			return fmt.Errorf("backend[%d].ClientAuth: client auth is not compatible with TLS Passthrough", i)
+		}
 		if len(be.ServerNames) == 0 {
 			return fmt.Errorf("backend[%d].ServerNames: backend must have at least one server name", i)
 		}
-		if len(be.Addresses) == 0 {
+		if len(be.Addresses) == 0 && be.Mode != ModeConsole {
 			return fmt.Errorf("backend[%d].Addresses: backend must have at least one address", i)
+		}
+		if len(be.Addresses) > 0 && be.Mode == ModeConsole {
+			return fmt.Errorf("backend[%d].Addresses: Addresses should be empty when Mode is CONSOLE", i)
 		}
 		for j, sn := range be.ServerNames {
 			sn = strings.ToLower(sn)
