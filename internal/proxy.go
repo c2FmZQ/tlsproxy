@@ -216,6 +216,7 @@ func (p *Proxy) Start(ctx context.Context) error {
 			return err
 		}
 		go func() {
+			httpServer.SetKeepAlivesEnabled(false)
 			if err := httpServer.Serve(httpListener); err != http.ErrServerClosed {
 				log.Fatalf("http: %v", err)
 			}
