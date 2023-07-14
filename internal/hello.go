@@ -42,7 +42,7 @@ func peekClientHello(c *netw.Conn) (hello ClientHello, err error) {
 	// Handshake packet header
 	buf := make([]byte, 5)
 	if _, err := c.Peek(buf); err != nil {
-		return hello, fmt.Errorf("Peek(%d): %v", len(buf), err)
+		return hello, fmt.Errorf("packet header: %v", err)
 	}
 	if buf[0] != 0x16 { // TLS Handshake
 		return hello, fmt.Errorf("content type 0x%x != 0x16 (%q)", buf[0], buf)
@@ -53,11 +53,11 @@ func peekClientHello(c *netw.Conn) (hello ClientHello, err error) {
 	}
 	var length uint16
 	if !s.ReadUint16(&length) || length > 16384 {
-		return hello, fmt.Errorf("length %d > 16384", length)
+		return hello, fmt.Errorf("packet length %d > 16384", length)
 	}
 	buf = make([]byte, 5+length)
 	if _, err := c.Peek(buf); err != nil {
-		return hello, fmt.Errorf("Peek(%d): %v", len(buf), err)
+		return hello, fmt.Errorf("read packet: %v", err)
 	}
 	buf = buf[5:]
 
@@ -210,7 +210,7 @@ func sendCloseNotify(w io.Writer) error {
 }
 
 func sendHandshakeFailure(w io.Writer) error {
-	return sendAlert(w, 0x2 /* fatal */, 0x46 /* Handshake failure */)
+	return sendAlert(w, 0x2 /* fatal */, 0x28 /* Handshake failure */)
 }
 
 func sendInternalError(w io.Writer) error {

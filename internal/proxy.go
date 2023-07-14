@@ -176,7 +176,11 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				}
 				subject := cs.PeerCertificates[0].Subject.String()
 				if err := be.authorize(subject); err != nil {
+					p.recordEvent(fmt.Sprintf("deny [%s] to %s", subject, cs.ServerName))
 					return fmt.Errorf("%w [%s]", err, subject)
+				}
+				if subject != "" {
+					p.recordEvent(fmt.Sprintf("allow [%s] to %s", subject, cs.ServerName))
 				}
 				return nil
 			}
@@ -400,14 +404,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		}
 		events = append(events, k)
 	}
-	sort.Slice(events, func(i, j int) bool {
-		a := p.events[events[i]]
-		b := p.events[events[j]]
-		if a == b {
-			return events[i] < events[j]
-		}
-		return a < b
-	})
+	sort.Strings(events)
 	for _, e := range events {
 		fmt.Fprintf(w, "  %*s %6d\n", -(max + 1), e+":", p.events[e])
 	}
@@ -471,7 +468,6 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	if err != nil {
 		p.recordEvent("invalid ClientHello")
 		log.Printf("ERR   %s ➔  %q: invalid ClientHello: %v", conn.RemoteAddr(), hello.ServerName, err)
-		sendCloseNotify(conn)
 		return
 	}
 	serverName := hello.ServerName
@@ -491,6 +487,9 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	conn.SetAnnotation(modeKey, be.Mode)
 	switch {
 	case be.Mode == ModeTLSPassthrough:
+		if err := p.checkIP(be, conn, serverName); err != nil {
+			return
+		}
 		p.handleTLSPassthroughConnection(conn, serverName)
 
 	case slices.Contains(hello.ALPNProtos, acme.ALPNProto):
@@ -499,12 +498,30 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		p.handleACMEConnection(tls.Server(conn, tc), serverName)
 
 	case be.Mode == ModeConsole:
+		if err := p.checkIP(be, conn, serverName); err != nil {
+			return
+		}
 		p.handleConsoleConnection(tls.Server(conn, be.tlsConfig), serverName)
 		closeConnNeeded = false
 
 	default:
+		if err := p.checkIP(be, conn, serverName); err != nil {
+			return
+		}
 		p.handleTLSConnection(tls.Server(conn, be.tlsConfig), serverName)
 	}
+}
+
+// checkIP is just a wrapper around be.checkIP. It must be called before the TLS
+// handshake completes.
+func (p *Proxy) checkIP(be *Backend, conn net.Conn, serverName string) error {
+	if err := be.checkIP(conn.RemoteAddr()); err != nil {
+		p.recordEvent(err.Error())
+		log.Printf("ERR   %s ➔  %q CheckIP: %v", conn.RemoteAddr(), serverName, err)
+		sendUnrecognizedName(conn)
+		return err
+	}
+	return nil
 }
 
 func (p *Proxy) handleACMEConnection(conn *tls.Conn, serverName string) {
@@ -822,6 +839,32 @@ func (be *Backend) authorize(subject string) error {
 	return nil
 }
 
+func (be *Backend) checkIP(addr net.Addr) error {
+	var ip net.IP
+	switch a := addr.(type) {
+	case *net.TCPAddr:
+		ip = a.IP
+	default:
+		return fmt.Errorf("can't get IP address from %T", addr)
+	}
+	if be.denyIPs != nil {
+		for _, n := range *be.denyIPs {
+			if n.Contains(ip) {
+				return errAccessDenied
+			}
+		}
+	}
+	if be.allowIPs != nil {
+		for _, n := range *be.allowIPs {
+			if n.Contains(ip) {
+				return nil
+			}
+		}
+		return errAccessDenied
+	}
+	return nil
+}
+
 func (be *Backend) bridgeConns(client, server net.Conn) error {
 	serverClose := true
 	if be.ServerCloseEndsConnection != nil {
@@ -841,10 +884,10 @@ func (be *Backend) bridgeConns(client, server net.Conn) error {
 	}()
 	var retErr error
 	if err := forward(server, client, clientClose, timeout); err != nil && !errors.Is(err, net.ErrClosed) {
-		retErr = fmt.Errorf("[ext➔ int]: %v", err)
+		retErr = fmt.Errorf("[ext➔ int]: %v", unwrapErr(err))
 	}
 	if err := <-ch; err != nil && !errors.Is(err, net.ErrClosed) {
-		retErr = fmt.Errorf("[int➔ ext]: %v", err)
+		retErr = fmt.Errorf("[int➔ ext]: %v", unwrapErr(err))
 	}
 	return retErr
 }
@@ -899,4 +942,11 @@ func closeRead(c net.Conn) error {
 		return closeRead(cc.Conn)
 	}
 	return nil
+}
+
+func unwrapErr(err error) error {
+	if e, ok := err.(*net.OpError); ok {
+		return unwrapErr(e.Err)
+	}
+	return err
 }

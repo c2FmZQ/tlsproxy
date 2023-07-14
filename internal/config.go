@@ -28,6 +28,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,6 +96,21 @@ type Backend struct {
 	// ClientCAs is either a file name or a set of PEM-encoded CA
 	// certificates that are used to authenticate clients.
 	ClientCAs string `yaml:"clientCAs"`
+	// AllowIPs specifies a list of IP network addresses to allow, in CIDR
+	// format, e.g. 192.168.0.0/24.
+	//
+	// The rules are applied in this order:
+	// * If DenyIPs is specified, the remote addr must not match any of the
+	//   IP addresses in the list.
+	// * If AllowIPs is specified, the remote addr must match at least one
+	//   of the IP addresses on the list.
+	//
+	// If an IP address is blocked, the client receives a TLS "unrecognized
+	// name" alert, as if it connected to an unknown server name.
+	AllowIPs *[]string `yaml:"allowIPs,omitempty"`
+	// DenyIPs specifies a list of IP network addresses to deny, in CIDR
+	// format, e.g. 192.168.0.0/24. See AllowIPs.
+	DenyIPs *[]string `yaml:"denyIPs,omitempty"`
 	// ALPNProtos specifies the list of ALPN procotols supported by this
 	// backend. The ACME acme-tls/1 protocol doesn't need to be specified.
 	// The default values are: h2, http/1.1
@@ -187,6 +203,9 @@ type Backend struct {
 	forwardRootCAs *x509.CertPool
 	limiter        *rate.Limiter
 
+	allowIPs *[]*net.IPNet
+	denyIPs  *[]*net.IPNet
+
 	mu   sync.Mutex
 	next int
 }
@@ -255,6 +274,28 @@ func (cfg *Config) Check() error {
 		}
 		if be.ForwardTimeout == 0 {
 			be.ForwardTimeout = 30 * time.Second
+		}
+		if be.AllowIPs != nil {
+			ips := make([]*net.IPNet, 0, len(*be.AllowIPs))
+			for j, c := range *be.AllowIPs {
+				_, n, err := net.ParseCIDR(c)
+				if err != nil {
+					return fmt.Errorf("backend[%d].AllowIPs[%d]: %w", i, j, err)
+				}
+				ips = append(ips, n)
+			}
+			be.allowIPs = &ips
+		}
+		if be.DenyIPs != nil {
+			ips := make([]*net.IPNet, 0, len(*be.DenyIPs))
+			for j, c := range *be.DenyIPs {
+				_, n, err := net.ParseCIDR(c)
+				if err != nil {
+					return fmt.Errorf("backend[%d].DenyIPs[%d]: %w", i, j, err)
+				}
+				ips = append(ips, n)
+			}
+			be.denyIPs = &ips
 		}
 		be.ForwardServerName = strings.ToLower(be.ForwardServerName)
 		if be.ForwardRateLimit == 0 {

@@ -11,6 +11,7 @@ Overview of features:
 * Terminate TLS connections, and forward the data to any TLS server. The data is encrypted in transit, but the proxy sees the plaintext.
 * Terminate _TCP_ connections, and forward the TLS connection to any TLS server (passthrough). The proxy doesn't see the plaintext.
 * TLS client authentication & authorization (when the proxy terminates the TLS connections).
+* Access control by IP address.
 * Routing based on Server Name Indication (SNI), with optional default route when SNI isn't used.
 * Simple round-robin load balancing between servers.
 * Support for HTTP/2 and any ALPN protocol.
@@ -60,7 +61,7 @@ backends:
   forwardServerName: secure-internal.example.com
 ```
 
-See the [examples](https://github.com/c2FmZQ/tlsproxy/blob/main/examples) directory and [internal/config.go](https://github.com/c2FmZQ/tlsproxy/blob/main/internal/config.go#L41) for more details.
+See the [examples](https://github.com/c2FmZQ/tlsproxy/blob/main/examples) directory and [config.go](https://github.com/c2FmZQ/tlsproxy/blob/main/internal/config.go#L59) for more details.
 
 
 Run the proxy with:

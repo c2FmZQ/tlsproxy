@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"testing"
 
 	"github.com/c2FmZQ/tlsproxy/internal/certmanager"
@@ -154,7 +155,7 @@ func TestProxyBackends(t *testing.T) {
 			}
 			certs = append(certs, *c)
 		}
-		body, err := tlsGet(host, proxy.listener.Addr().String(), extCA, certs, protos)
+		body, err := tlsGet(host, proxy.listener.Addr().String(), "Hello!\n", extCA, certs, protos)
 		if err != nil {
 			return "", err
 		}
@@ -200,6 +201,198 @@ func TestProxyBackends(t *testing.T) {
 	}
 }
 
+func TestAuthnAuthz(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	intCA, err := certmanager.New("internal-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	cfg := &Config{
+		HTTPAddr: "localhost:0",
+		TLSAddr:  "localhost:0",
+		CacheDir: t.TempDir(),
+		MaxOpen:  100,
+		Backends: []*Backend{
+			{
+				ServerNames: []string{
+					"noacl.example.com",
+				},
+				Mode:       "CONSOLE",
+				ClientAuth: true,
+				ClientCAs:  intCA.RootCAPEM(),
+			},
+			{
+				ServerNames: []string{
+					"emptyacl.example.com",
+				},
+				Mode:       "CONSOLE",
+				ClientAuth: true,
+				ClientCAs:  intCA.RootCAPEM(),
+				ClientACL:  &[]string{},
+			},
+			{
+				ServerNames: []string{
+					"acl.example.com",
+				},
+				Mode:       "CONSOLE",
+				ClientAuth: true,
+				ClientCAs:  intCA.RootCAPEM(),
+				ClientACL: &[]string{
+					"CN=client1",
+					"CN=client2",
+				},
+			},
+		},
+	}
+	proxy := newTestProxy(cfg, extCA)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	get := func(host, certName string) (string, error) {
+		var certs []tls.Certificate
+		if certName != "" {
+			c, err := intCA.GetCert(certName)
+			if err != nil {
+				t.Fatalf("intCA.GetCert: %v", err)
+			}
+			certs = append(certs, *c)
+		}
+		body, err := httpGet(host, proxy.listener.Addr().String(), extCA, certs)
+		if err != nil {
+			return "", err
+		}
+		return body, nil
+	}
+
+	for _, tc := range []struct {
+		desc, host, want string
+		certName         string
+		expError         bool
+	}{
+		{desc: "no ACL, no cert", host: "noacl.example.com", expError: true},
+		{desc: "no ACL, with cert", host: "noacl.example.com", certName: "foo", want: "HTTP/1.0 200 OK"},
+		{desc: "empty ACL, with cert", host: "emptyacl.example.com", certName: "foo", expError: true},
+		{desc: "ACL, no cert", host: "acl.example.com", expError: true},
+		{desc: "ACL, client1", host: "acl.example.com", certName: "client1", want: "HTTP/1.0 200 OK"},
+		{desc: "ACL, client2", host: "acl.example.com", certName: "client2", want: "HTTP/1.0 200 OK"},
+		{desc: "ACL, wrong cert", host: "acl.example.com", certName: "foo", expError: true},
+		{desc: "Check console1", host: "acl.example.com", certName: "client1", want: "allow [CN=client1] to acl.example.com"},
+		{desc: "Check console2", host: "acl.example.com", certName: "client1", want: "allow [CN=client2] to acl.example.com"},
+		{desc: "Check console3", host: "acl.example.com", certName: "client1", want: "allow [CN=foo] to noacl.example.com"},
+		{desc: "Check console4", host: "acl.example.com", certName: "client1", want: "deny [CN=foo] to acl.example.com"},
+		{desc: "Check console5", host: "acl.example.com", certName: "client1", want: "deny [CN=foo] to emptyacl.example.com"},
+	} {
+		got, err := get(tc.host, tc.certName)
+		if tc.expError != (err != nil) {
+			t.Errorf("%s: Got error %v, want %v", tc.desc, (err != nil), tc.expError)
+			continue
+		}
+		if err != nil {
+			continue
+		}
+		if !strings.Contains(got, tc.want) {
+			t.Errorf("%s: Got %q, want %q", tc.desc, got, tc.want)
+		}
+	}
+}
+
+func TestCheckIP(t *testing.T) {
+	cfg := &Config{
+		HTTPAddr: "localhost:0",
+		TLSAddr:  "localhost:0",
+		CacheDir: t.TempDir(),
+		MaxOpen:  100,
+		Backends: []*Backend{
+			{
+				ServerNames: []string{"example.com"},
+				Addresses:   []string{"192.168.0.1:80"},
+				AllowIPs: &[]string{
+					"192.168.10.0/24",
+				},
+				DenyIPs: &[]string{
+					"192.168.10.1/32",
+				},
+			},
+			{
+				ServerNames: []string{"www.example.com"},
+				Addresses:   []string{"192.168.0.2:80"},
+				AllowIPs: &[]string{
+					"192.168.20.0/24",
+				},
+			},
+			{
+				ServerNames: []string{"foo.example.com"},
+				Addresses:   []string{"192.168.0.3:80"},
+				DenyIPs: &[]string{
+					"192.168.30.0/24",
+				},
+			},
+		},
+	}
+	if err := cfg.Check(); err != nil {
+		t.Fatalf("cfg.Check: %v", err)
+	}
+	for _, tc := range []struct {
+		desc  string
+		addr  net.Addr
+		allow bool
+		be    *Backend
+	}{
+		{
+			desc:  "BE0 Deny 127.0.0.1",
+			addr:  &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)},
+			allow: false,
+			be:    cfg.Backends[0],
+		},
+		{
+			desc:  "BE0 Deny 192.168.10.1",
+			addr:  &net.TCPAddr{IP: net.IPv4(192, 168, 10, 1)},
+			allow: false,
+			be:    cfg.Backends[0],
+		},
+		{
+			desc:  "BE0 Allow 192.168.10.2",
+			addr:  &net.TCPAddr{IP: net.IPv4(192, 168, 10, 2)},
+			allow: true,
+			be:    cfg.Backends[0],
+		},
+		{
+			desc:  "BE1 Allow 192.168.20.111",
+			addr:  &net.TCPAddr{IP: net.IPv4(192, 168, 20, 111)},
+			allow: true,
+			be:    cfg.Backends[1],
+		},
+		{
+			desc:  "BE1 Deny 5.5.5.5",
+			addr:  &net.TCPAddr{IP: net.IPv4(5, 5, 5, 5)},
+			allow: false,
+			be:    cfg.Backends[1],
+		},
+		{
+			desc:  "BE2 Deny 192.168.30.111",
+			addr:  &net.TCPAddr{IP: net.IPv4(192, 168, 30, 111)},
+			allow: false,
+			be:    cfg.Backends[2],
+		},
+		{
+			desc:  "BE2 Allow 40.40.40.40",
+			addr:  &net.TCPAddr{IP: net.IPv4(40, 40, 40, 40)},
+			allow: true,
+			be:    cfg.Backends[2],
+		},
+	} {
+		if got := tc.be.checkIP(tc.addr); (got == nil) != tc.allow {
+			t.Errorf("%s: Got %v, want error %v", tc.desc, got, tc.allow)
+		}
+	}
+}
+
 func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 	p := &Proxy{
 		certManager: cm,
@@ -209,7 +402,7 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 	return p
 }
 
-func tlsGet(name, addr string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate, protos []string) (string, error) {
+func tlsGet(name, addr, msg string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate, protos []string) (string, error) {
 	c, err := tls.Dial("tcp", addr, &tls.Config{
 		ServerName:   name,
 		RootCAs:      rootCA.RootCACertPool(),
@@ -220,7 +413,7 @@ func tlsGet(name, addr string, rootCA *certmanager.CertManager, clientCerts []tl
 		return "", err
 	}
 	defer c.Close()
-	if _, err := c.Write([]byte("Hello\n")); err != nil {
+	if _, err := c.Write([]byte(msg)); err != nil {
 		return "", err
 	}
 	b, err := io.ReadAll(c)
@@ -228,6 +421,10 @@ func tlsGet(name, addr string, rootCA *certmanager.CertManager, clientCerts []tl
 		return "", err
 	}
 	return string(b), nil
+}
+
+func httpGet(name, addr string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate) (string, error) {
+	return tlsGet(name, addr, "GET / HTTP/1.0\nHost: "+name+"\n\n", rootCA, clientCerts, nil)
 }
 
 func newTCPServer(t *testing.T, ctx context.Context, name string, ca *certmanager.CertManager) *tcpServer {
