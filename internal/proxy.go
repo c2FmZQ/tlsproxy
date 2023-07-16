@@ -36,6 +36,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -287,6 +288,8 @@ func (p *Proxy) startConsoleIfNeeded() {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", p.metricsHandler)
+	addPProfHandlers(mux)
+
 	p.consoleChan = make(chan net.Conn)
 	p.consoleServer = startInternalHTTPServer(p.ctx, mux, p.consoleChan)
 }
@@ -354,6 +357,12 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	host := strings.Split(req.Host, ":")[0]
 	log.Printf("INFO  [%s] %s ➔  %s (Console) ➔  %s %s", peer, req.RemoteAddr, host, req.Method, req.RequestURI)
 	w.Header().Set("content-type", "text/plain; charset=utf-8")
+	req.ParseForm()
+	if v := req.Form.Get("refresh"); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			w.Header().Set("refresh", strconv.Itoa(i))
+		}
+	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -530,7 +539,7 @@ func (p *Proxy) handleACMEConnection(conn *tls.Conn, serverName string) {
 	defer cancel()
 	if err := conn.HandshakeContext(ctx); err != nil {
 		p.recordEvent("tls handshake failed")
-		log.Printf("ERR   %s ➔  %q Handshake: %v", conn.RemoteAddr(), serverName, err)
+		log.Printf("ERR   %s ➔  %q Handshake: %v", conn.RemoteAddr(), serverName, unwrapErr(err))
 	}
 	log.Printf("INFO ACME %s ➔ %s", conn.RemoteAddr(), serverName)
 }
@@ -547,7 +556,7 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn, serverName string) bool {
 		default:
 			p.recordEvent("tls handshake failed")
 		}
-		log.Printf("ERR   %s ➔  %q Handshake: %v", conn.RemoteAddr(), serverName, err)
+		log.Printf("ERR   %s ➔  %q Handshake: %v", conn.RemoteAddr(), serverName, unwrapErr(err))
 		return false
 	}
 	netwConn := conn.NetConn().(*netw.Conn)
@@ -885,10 +894,10 @@ func (be *Backend) bridgeConns(client, server net.Conn) error {
 	}()
 	var retErr error
 	if err := forward(server, client, clientClose, timeout); err != nil && !errors.Is(err, net.ErrClosed) {
-		retErr = fmt.Errorf("[ext➔ int]: %v", unwrapErr(err))
+		retErr = fmt.Errorf("[ext➔ int]: %w", unwrapErr(err))
 	}
 	if err := <-ch; err != nil && !errors.Is(err, net.ErrClosed) {
-		retErr = fmt.Errorf("[int➔ ext]: %v", unwrapErr(err))
+		retErr = fmt.Errorf("[int➔ ext]: %w", unwrapErr(err))
 	}
 	return retErr
 }
