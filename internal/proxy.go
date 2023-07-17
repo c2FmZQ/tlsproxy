@@ -364,6 +364,9 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	var buf bytes.Buffer
+	defer buf.WriteTo(w)
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -396,16 +399,16 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		serverNames = append(serverNames, k)
 	}
 	sort.Strings(serverNames)
-	fmt.Fprintln(w, "Backend metrics:")
-	fmt.Fprintln(w)
-	fmt.Fprintf(w, "  %*s %12s %12s %12s\n", -maxLen, "Server", "Count", "Sent", "Recv")
+	fmt.Fprintln(&buf, "Backend metrics:")
+	fmt.Fprintln(&buf)
+	fmt.Fprintf(&buf, "  %*s %12s %12s %12s\n", -maxLen, "Server", "Count", "Sent", "Recv")
 	for _, s := range serverNames {
-		fmt.Fprintf(w, "  %*s %12d %12d %12d\n", -maxLen, s, totals[s].numConnections, totals[s].numBytesSent, totals[s].numBytesReceived)
+		fmt.Fprintf(&buf, "  %*s %12d %12d %12d\n", -maxLen, s, totals[s].numConnections, totals[s].numBytesSent, totals[s].numBytesReceived)
 	}
 
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Event counts:")
-	fmt.Fprintln(w)
+	fmt.Fprintln(&buf)
+	fmt.Fprintln(&buf, "Event counts:")
+	fmt.Fprintln(&buf)
 	events := make([]string, 0, len(p.events))
 	max := 0
 	for k := range p.events {
@@ -416,12 +419,12 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	}
 	sort.Strings(events)
 	for _, e := range events {
-		fmt.Fprintf(w, "  %*s %6d\n", -(max + 1), e+":", p.events[e])
+		fmt.Fprintf(&buf, "  %*s %6d\n", -(max + 1), e+":", p.events[e])
 	}
 
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Current connections:")
-	fmt.Fprintln(w)
+	fmt.Fprintln(&buf)
+	fmt.Fprintln(&buf, "Current connections:")
+	fmt.Fprintln(&buf)
 	keys := make([]connKey, 0, len(p.connections))
 	for k := range p.connections {
 		keys = append(keys, k)
@@ -443,7 +446,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		startTime := c.Annotation(startTimeKey, time.Time{}).(time.Time)
 		totalTime := time.Since(startTime)
 
-		fmt.Fprintf(w, "  %s; Start:%s (%s) Recv:%d Sent:%d\n", desc,
+		fmt.Fprintf(&buf, "  %s; Start:%s (%s) Recv:%d Sent:%d\n", desc,
 			startTime.Format(time.DateTime), totalTime, c.BytesReceived(), c.BytesSent())
 	}
 }
