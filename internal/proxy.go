@@ -35,9 +35,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"sort"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -311,146 +308,6 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 	return tc
 }
 
-func (p *Proxy) recordEvent(msg string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.events == nil {
-		p.events = make(map[string]int64)
-	}
-	p.events[msg]++
-}
-
-func (p *Proxy) addConn(c *netw.Conn) int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.connections[connKey{c.LocalAddr(), c.RemoteAddr()}] = c
-	return len(p.connections)
-}
-
-func (p *Proxy) removeConn(c *netw.Conn) int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	delete(p.connections, connKey{c.LocalAddr(), c.RemoteAddr()})
-
-	if sn := c.Annotation(serverNameKey, "").(string); sn != "" && p.backends[sn] != nil {
-		if p.metrics == nil {
-			p.metrics = make(map[string]*backendMetrics)
-		}
-		m := p.metrics[sn]
-		if m == nil {
-			m = &backendMetrics{}
-			p.metrics[sn] = m
-		}
-		m.numConnections++
-		m.numBytesSent += c.BytesSent()
-		m.numBytesReceived += c.BytesReceived()
-	}
-
-	return len(p.connections)
-}
-
-func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
-	peer := "-"
-	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 {
-		peer = req.TLS.PeerCertificates[0].Subject.String()
-	}
-	host := strings.Split(req.Host, ":")[0]
-	log.Printf("INFO  [%s] %s ➔  %s (Console) ➔  %s %s", peer, req.RemoteAddr, host, req.Method, req.RequestURI)
-	w.Header().Set("content-type", "text/plain; charset=utf-8")
-	req.ParseForm()
-	if v := req.Form.Get("refresh"); v != "" {
-		if i, err := strconv.Atoi(v); err == nil {
-			w.Header().Set("refresh", strconv.Itoa(i))
-		}
-	}
-
-	var buf bytes.Buffer
-	defer buf.WriteTo(w)
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	totals := make(map[string]*backendMetrics)
-	for k, v := range p.metrics {
-		m := *v
-		totals[k] = &m
-	}
-	for _, c := range p.connections {
-		sn := c.Annotation(serverNameKey, "").(string)
-		if sn == "" || p.backends[sn] == nil {
-			continue
-		}
-		m := totals[sn]
-		if m == nil {
-			m = &backendMetrics{}
-			totals[sn] = m
-		}
-		m.numConnections++
-		m.numBytesSent += c.BytesSent()
-		m.numBytesReceived += c.BytesReceived()
-	}
-
-	var serverNames []string
-	var maxLen int
-	for k := range totals {
-		if n := len(k); n > maxLen {
-			maxLen = n
-		}
-		serverNames = append(serverNames, k)
-	}
-	sort.Strings(serverNames)
-	fmt.Fprintln(&buf, "Backend metrics:")
-	fmt.Fprintln(&buf)
-	fmt.Fprintf(&buf, "  %*s %12s %12s %12s\n", -maxLen, "Server", "Count", "Sent", "Recv")
-	for _, s := range serverNames {
-		fmt.Fprintf(&buf, "  %*s %12d %12d %12d\n", -maxLen, s, totals[s].numConnections, totals[s].numBytesSent, totals[s].numBytesReceived)
-	}
-
-	fmt.Fprintln(&buf)
-	fmt.Fprintln(&buf, "Event counts:")
-	fmt.Fprintln(&buf)
-	events := make([]string, 0, len(p.events))
-	max := 0
-	for k := range p.events {
-		if len(k) > max {
-			max = len(k)
-		}
-		events = append(events, k)
-	}
-	sort.Strings(events)
-	for _, e := range events {
-		fmt.Fprintf(&buf, "  %*s %6d\n", -(max + 1), e+":", p.events[e])
-	}
-
-	fmt.Fprintln(&buf)
-	fmt.Fprintln(&buf, "Current connections:")
-	fmt.Fprintln(&buf)
-	keys := make([]connKey, 0, len(p.connections))
-	for k := range p.connections {
-		keys = append(keys, k)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		sa := p.connections[keys[i]].Annotation(serverNameKey, "").(string)
-		sb := p.connections[keys[j]].Annotation(serverNameKey, "").(string)
-		if sa == sb {
-			a := keys[i].src.String() + " " + keys[i].dst.String()
-			b := keys[j].src.String() + " " + keys[j].dst.String()
-			return a < b
-		}
-		return sa < sb
-	})
-	for _, k := range keys {
-		c := p.connections[k]
-		desc := formatConnDesc(c)
-
-		startTime := c.Annotation(startTimeKey, time.Time{}).(time.Time)
-		totalTime := time.Since(startTime)
-
-		fmt.Fprintf(&buf, "  %s; Start:%s (%s) Recv:%d Sent:%d\n", desc,
-			startTime.Format(time.DateTime), totalTime, c.BytesReceived(), c.BytesSent())
-	}
-}
-
 func (p *Proxy) handleConnection(conn *netw.Conn) {
 	closeConnNeeded := true
 	defer func() {
@@ -505,7 +362,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		}
 		p.handleTLSPassthroughConnection(conn, serverName)
 
-	case slices.Contains(hello.ALPNProtos, acme.ALPNProto):
+	case len(hello.ALPNProtos) == 1 && hello.ALPNProtos[0] == acme.ALPNProto && hello.ServerName != "":
 		tc := p.baseTLSConfig()
 		tc.NextProtos = []string{acme.ALPNProto}
 		p.handleACMEConnection(tls.Server(conn, tc), serverName)
@@ -540,11 +397,11 @@ func (p *Proxy) checkIP(be *Backend, conn net.Conn, serverName string) error {
 func (p *Proxy) handleACMEConnection(conn *tls.Conn, serverName string) {
 	ctx, cancel := context.WithTimeout(p.ctx, 2*time.Minute)
 	defer cancel()
+	log.Printf("INFO ACME %s ➔ %s", conn.RemoteAddr(), serverName)
 	if err := conn.HandshakeContext(ctx); err != nil {
 		p.recordEvent("tls handshake failed")
 		log.Printf("ERR   %s ➔  %q Handshake: %v", conn.RemoteAddr(), serverName, unwrapErr(err))
 	}
-	log.Printf("INFO ACME %s ➔ %s", conn.RemoteAddr(), serverName)
 }
 
 func (p *Proxy) authorizeTLSConnection(conn *tls.Conn, serverName string) bool {
@@ -757,6 +614,7 @@ func formatConnDesc(c *netw.Conn) string {
 			buf.WriteString("/" + proto)
 		}
 		if intConn != nil {
+			buf.WriteString("|" + intConn.LocalAddr().String())
 			buf.WriteString(" ➔  ")
 			buf.WriteString(intConn.RemoteAddr().String())
 		}
