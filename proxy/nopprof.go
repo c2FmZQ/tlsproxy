@@ -21,14 +21,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-//go:build !unix
+//go:build !pprof
 
-package internal
+package proxy
 
-import (
-	"errors"
-)
+import "net/http"
 
-func openFileLimit() (int, error) {
-	return 0, errors.New("unable to get the limit of open files")
+func addPProfHandlers(mux *http.ServeMux) {
 }

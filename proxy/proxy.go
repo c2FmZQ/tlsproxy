@@ -21,7 +21,10 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package internal
+// Package proxy implements a simple lightweight TLS termination proxy that uses
+// Let's Encrypt to provide TLS encryption for any number of TCP servers and
+// server names concurrently on the same port.
+package proxy
 
 import (
 	"bytes"
@@ -43,8 +46,8 @@ import (
 	"golang.org/x/exp/slices"
 	yaml "gopkg.in/yaml.v3"
 
-	"github.com/c2FmZQ/tlsproxy/internal/certmanager"
-	"github.com/c2FmZQ/tlsproxy/internal/netw"
+	"github.com/c2FmZQ/tlsproxy/certmanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
 
 const (

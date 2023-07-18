@@ -21,7 +21,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package internal
+package proxy
 
 import (
 	"context"
@@ -33,8 +33,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/c2FmZQ/tlsproxy/internal/certmanager"
-	"github.com/c2FmZQ/tlsproxy/internal/netw"
+	"github.com/c2FmZQ/tlsproxy/certmanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
 
 func TestProxyBackends(t *testing.T) {

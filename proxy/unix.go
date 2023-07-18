@@ -21,19 +21,22 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-//go:build pprof
+//go:build unix
 
-package internal
+package proxy
 
 import (
-	"net/http"
-	"net/http/pprof"
+	"golang.org/x/sys/unix"
 )
 
-func addPProfHandlers(mux *http.ServeMux) {
-	mux.HandleFunc("/debug/pprof/", pprof.Index)
-	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+func openFileLimit() (int, error) {
+	var rl unix.Rlimit
+	if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &rl); err != nil {
+		return 0, err
+	}
+	rl.Cur = rl.Max
+	if err := unix.Setrlimit(unix.RLIMIT_NOFILE, &rl); err != nil {
+		return 0, err
+	}
+	return int(rl.Cur), nil
 }

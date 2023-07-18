@@ -21,7 +21,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package internal
+package proxy
 
 import (
 	"errors"
@@ -29,16 +29,18 @@ import (
 	"io"
 
 	"golang.org/x/crypto/cryptobyte"
-
-	"github.com/c2FmZQ/tlsproxy/internal/netw"
 )
 
-type ClientHello struct {
+type peeker interface {
+	Peek([]byte) (int, error)
+}
+
+type clientHello struct {
 	ServerName string
 	ALPNProtos []string
 }
 
-func peekClientHello(c *netw.Conn) (hello ClientHello, err error) {
+func peekClientHello(c peeker) (hello clientHello, err error) {
 	// Handshake packet header
 	buf := make([]byte, 5)
 	if _, err := c.Peek(buf); err != nil {

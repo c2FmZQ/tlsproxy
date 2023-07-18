@@ -21,7 +21,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package internal
+package proxy
 
 import (
 	"bytes"
@@ -34,7 +34,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/c2FmZQ/tlsproxy/internal/netw"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
 
 func (p *Proxy) recordEvent(msg string) {

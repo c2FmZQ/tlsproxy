@@ -29,7 +29,7 @@ import (
 	"encoding/pem"
 	"testing"
 
-	"github.com/c2FmZQ/tlsproxy/internal/certmanager"
+	"github.com/c2FmZQ/tlsproxy/certmanager"
 )
 
 func TestCertsAreValid(t *testing.T) {

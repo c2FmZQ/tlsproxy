@@ -45,7 +45,7 @@ jobs:
         export CGO_ENABLED=0
         flag="-ldflags=-s -w -X main.Version=${GITHUB_REF_NAME}"
         for arch in amd64 arm arm64; do 
-          GOARCH="${arch}" go build -trimpath "${flag}" -o "tlsproxy-linux-${arch}" ./proxy
+          GOARCH="${arch}" go build -trimpath "${flag}" -o "tlsproxy-linux-${arch}" .
           sha256sum "tlsproxy-linux-${arch}" | cut -d " " -f1 > "tlsproxy-linux-${arch}.sha256"
         done
     - name: Create release

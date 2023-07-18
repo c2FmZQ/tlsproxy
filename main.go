@@ -35,7 +35,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/c2FmZQ/tlsproxy/internal"
+	"github.com/c2FmZQ/tlsproxy/proxy"
 )
 
 // Version is set with -ldflags="-X main.Version=${VERSION}"
@@ -58,21 +58,21 @@ func main() {
 		log.Fatal("--config must be set")
 	}
 	log.Printf("INFO tlsproxy %s %s", Version, runtime.Version())
-	cfg, err := internal.ReadConfig(*configFile)
+	cfg, err := proxy.ReadConfig(*configFile)
 	if err != nil {
 		log.Fatalf("ERR %v", err)
 	}
-	var proxy *internal.Proxy
+	var p *proxy.Proxy
 	if *testFlag {
 		log.Print("WARN Using ephemeral certificate manager")
-		proxy, err = internal.NewTestProxy(cfg)
+		p, err = proxy.NewTestProxy(cfg)
 	} else {
-		proxy, err = internal.New(cfg)
+		p, err = proxy.New(cfg)
 	}
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := proxy.Start(ctx); err != nil {
+	if err := p.Start(ctx); err != nil {
 		log.Fatal(err)
 	}
 	go func() {
@@ -82,12 +82,12 @@ func main() {
 				return
 			case <-time.After(30 * time.Second):
 			}
-			cfg, err := internal.ReadConfig(*configFile)
+			cfg, err := proxy.ReadConfig(*configFile)
 			if err != nil {
 				log.Printf("ERR %v", err)
 				continue
 			}
-			if err := proxy.Reconfigure(cfg); err != nil {
+			if err := p.Reconfigure(cfg); err != nil {
 				log.Printf("ERR %v", err)
 			}
 		}

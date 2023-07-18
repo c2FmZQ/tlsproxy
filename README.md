@@ -61,12 +61,12 @@ backends:
   forwardServerName: secure-internal.example.com
 ```
 
-See the [examples](https://github.com/c2FmZQ/tlsproxy/blob/main/examples) directory and [config.go](https://github.com/c2FmZQ/tlsproxy/blob/main/internal/config.go#L59) for more details.
+See the [examples](https://github.com/c2FmZQ/tlsproxy/blob/main/examples) directory and [config.go](https://github.com/c2FmZQ/tlsproxy/blob/main/proxy/config.go#L59) for more details.
 
 
 Run the proxy with:
 ```console
-go run ./proxy --config=config.yaml
+go run . --config=config.yaml
 ```
 
 Or, use the [docker image](https://hub.docker.com/r/c2fmzq/tlsproxy), e.g.
