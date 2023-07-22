@@ -38,9 +38,13 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/c2FmZQ/storage"
+	"github.com/c2FmZQ/storage/autocertcache"
+	"github.com/c2FmZQ/storage/crypto"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/exp/slices"
@@ -101,11 +105,26 @@ type backendMetrics struct {
 }
 
 // New returns a new initialized Proxy.
-func New(cfg *Config) (*Proxy, error) {
+func New(cfg *Config, passphrase []byte) (*Proxy, error) {
+	opts := []crypto.Option{
+		crypto.WithAlgo(crypto.PickFastest),
+		crypto.WithLogger(logger{}),
+	}
+	mkFile := filepath.Join(cfg.CacheDir, "masterkey")
+	mk, err := crypto.ReadMasterKey(passphrase, mkFile, opts...)
+	if errors.Is(err, os.ErrNotExist) {
+		if mk, err = crypto.CreateMasterKey(opts...); err != nil {
+			return nil, errors.New("failed to create master key")
+		}
+		err = mk.Save(passphrase, mkFile)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("masterkey: %w", err)
+	}
 	p := &Proxy{
 		certManager: &autocert.Manager{
 			Prompt: autocert.AcceptTOS,
-			Cache:  autocert.DirCache(cfg.CacheDir),
+			Cache:  autocertcache.New("autocert", storage.New(cfg.CacheDir, mk)),
 			Email:  cfg.Email,
 		},
 		connections: make(map[connKey]*netw.Conn),
@@ -413,7 +432,7 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn, serverName string) bool {
 	if err := conn.HandshakeContext(ctx); err != nil {
 		switch {
 		case err.Error() == "tls: client didn't provide a certificate":
-			p.recordEvent("no client certificate")
+			p.recordEvent(fmt.Sprintf("deny no cert to %s", serverName))
 		case errors.Is(err, errAccessDenied):
 			p.recordEvent("access denied")
 		default:
@@ -823,4 +842,34 @@ func unwrapErr(err error) error {
 		return unwrapErr(e.Err)
 	}
 	return err
+}
+
+type logger struct{}
+
+func (logger) Debug(args ...any) {}
+
+func (logger) Debugf(f string, args ...any) {}
+
+func (logger) Info(args ...any) {
+	log.Print(append([]any{"INFO "}, args)...)
+}
+
+func (logger) Infof(f string, args ...any) {
+	log.Printf("INFO "+f, args...)
+}
+
+func (logger) Error(args ...any) {
+	log.Print(append([]any{"ERROR "}, args)...)
+}
+
+func (logger) Errorf(f string, args ...any) {
+	log.Printf("ERROR "+f, args...)
+}
+
+func (logger) Fatal(args ...any) {
+	log.Fatal(append([]any{"FATAL "}, args)...)
+}
+
+func (logger) Fatalf(f string, args ...any) {
+	log.Fatalf("FATAL "+f, args...)
 }

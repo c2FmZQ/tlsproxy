@@ -1,3 +1,5 @@
+github.com/c2FmZQ/storage v0.0.1 h1:fyIDTMp3iaYR0je2KJXP42CVJekAkR49gzeWgXDJT1w=
+github.com/c2FmZQ/storage v0.0.1/go.mod h1:rKT3TTRmsAFp5IcI3hV3KNCQYqfDy9oOJ7uZxkyjSS8=
 github.com/go-test/deep v1.1.0 h1:WOcxcdHcvdgThNXjw0t76K42FXTU7HpNQWHpA2HHNlg=
 github.com/go-test/deep v1.1.0/go.mod h1:5C2ZWiW0ErCdrYzpqxLbTX7MG14M9iiw8DgHncVwcsE=
 golang.org/x/crypto v0.11.0 h1:6Ewdq3tDic1mg5xRO4milcWCfMVQhI4NkqWWvqejpuA=

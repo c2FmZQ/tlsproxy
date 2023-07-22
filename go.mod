@@ -3,6 +3,7 @@ module github.com/c2FmZQ/tlsproxy
 go 1.20
 
 require (
+	github.com/c2FmZQ/storage v0.0.1
 	github.com/go-test/deep v1.1.0
 	golang.org/x/crypto v0.11.0
 	golang.org/x/exp v0.0.0-20230711023510-fffb14384f22

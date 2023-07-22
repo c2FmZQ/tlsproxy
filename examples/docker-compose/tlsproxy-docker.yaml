@@ -3,6 +3,8 @@ services:
     container_name: tlsproxy
     image: c2fmzq/tlsproxy:latest
     user: 10001:10001
+    environment:
+      - TLSPROXY_PASSPHRASE="<secret passphrase>"
     volumes:
       - ./data/tlsproxy/cache:/.cache
       - ./data/tlsproxy/config:/config
@@ -18,7 +20,7 @@ services:
       - C2FMZQ_ADDRESS=:8080
       - C2FMZQ_ALLOW_NEW_ACCOUNTS=true
       - C2FMZQ_AUTO_APPROVE_NEW_ACCOUNTS=true
-      - C2FMZQ_PASSPHRASE=<secret passphrase>
+      - C2FMZQ_PASSPHRASE="<secret passphrase>"
       - C2FMZQ_PASSPHRASE_FILE=
     volumes:
       - ./data/c2fmzq-server:/data

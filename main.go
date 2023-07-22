@@ -47,6 +47,7 @@ func main() {
 
 	configFile := flag.String("config", "", "The config file name")
 	versionFlag := flag.Bool("v", false, "Show the version")
+	passphraseFlag := flag.String("passphrase", os.Getenv("TLSPROXY_PASSPHRASE"), "The passphrase to encrypt the TLS keys on disk.")
 	testFlag := flag.Bool("use-ephemeral-certificate-manager", false, "Use an ephemeral certificate manager. This is for testing purposes only.")
 	flag.Parse()
 
@@ -67,10 +68,13 @@ func main() {
 		log.Print("WARN Using ephemeral certificate manager")
 		p, err = proxy.NewTestProxy(cfg)
 	} else {
-		p, err = proxy.New(cfg)
+		if *passphraseFlag == "" {
+			log.Fatal("--passphrase or $TLSPROXY_PASSPHRASE must be set")
+		}
+		p, err = proxy.New(cfg, []byte(*passphraseFlag))
 	}
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("FATAL %v", err)
 	}
 	if err := p.Start(ctx); err != nil {
 		log.Fatal(err)

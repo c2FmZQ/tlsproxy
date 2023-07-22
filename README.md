@@ -66,23 +66,24 @@ See the [examples](https://github.com/c2FmZQ/tlsproxy/blob/main/examples) direct
 
 Run the proxy with:
 ```console
-go run . --config=config.yaml
+TLSPROXY_PASSPHRASE="<passphrase>" go run . --config=config.yaml
 ```
 
 Or, use the [docker image](https://hub.docker.com/r/c2fmzq/tlsproxy), e.g.
 ```console
-docker run                      \
-  --name=tlsproxy               \
-  --user=1000:1000              \
-  --restart=always              \
-  --volume=${CONFIGDIR}:/config \
-  --volume=${CACHEDIR}:/.cache  \
-  --publish=80:10080            \
-  --publish=443:10443           \
+docker run                                 \
+  --name=tlsproxy                          \
+  --user=1000:1000                         \
+  --restart=always                         \
+  --volume=${CONFIGDIR}:/config            \
+  --volume=${CACHEDIR}:/.cache             \
+  --publish=80:10080                       \
+  --publish=443:10443                      \
+  --env=TLSPROXY_PASSPHRASE="<passphrase>" \
   c2fmzq/tlsproxy:latest
 ```
 
 The proxy reads the config from `${CONFIGDIR}/config.yaml`.
 
-> :warning: `${CACHEDIR}` is used to store TLS secrets. It should only be accessible by the UID running tlsproxy.
+:warning: `${TLSPROXY_PASSPHRASE}` is used to encrypt the TLS secrets.
 
