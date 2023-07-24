@@ -58,6 +58,10 @@ var (
 
 // Config is the TLS proxy configuration.
 type Config struct {
+	// Definitions is a section where yaml anchors can be defined. It is
+	// otherwise ignored by the proxy.
+	Definitions any `yaml:"definitions,omitempty"`
+
 	// HTTPAddr must be reachable from the internet via port 80 for the
 	// letsencrypt ACME http-01 challenge to work. If the httpAddr is empty,
 	// the proxy will only use tls-alpn-01 and tlsAddr must be reachable on
