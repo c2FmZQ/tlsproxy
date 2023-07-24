@@ -217,6 +217,7 @@ type Backend struct {
 // Check checks that the Config is valid, sets some default values, and
 // initializes internal data structures.
 func (cfg *Config) Check() error {
+	cfg.Definitions = nil
 	if cfg.CacheDir == "" {
 		d, err := os.UserCacheDir()
 		if err != nil {
