@@ -18,4 +18,4 @@ EXPOSE 10080 10443
 USER 1000:1000
 VOLUME ["/config", "/.cache"]
 
-ENTRYPOINT ["/bin/tlsproxy", "--config=/config/config.yaml"]
+ENTRYPOINT ["/bin/tlsproxy", "--config=/config/config.yaml", "--stdout"]

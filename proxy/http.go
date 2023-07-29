@@ -25,33 +25,42 @@ package proxy
 
 import (
 	"context"
+	"crypto/tls"
 	"log"
 	"net"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
 
-func startInternalHTTPServer(ctx context.Context, handler http.Handler, conns <-chan net.Conn) *http.Server {
+type ctxKey int
+
+var connCtxKey ctxKey = 1
+
+func startInternalHTTPServer(handler http.Handler, conns <-chan net.Conn) *http.Server {
 	l := &proxyListener{
-		ctx: ctx,
-		ch:  conns,
+		ch: conns,
 	}
 	s := &http.Server{
 		Handler:      handler,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  30 * time.Second,
+		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
+			return context.WithValue(ctx, connCtxKey, c)
+		},
 	}
 	go func() {
-		log.Print("INFO internal http server started")
-		log.Printf("INFO internal http server exited: %v", s.Serve(l))
+		if err := s.Serve(l); err != net.ErrClosed {
+			log.Printf("ERR internal http server exited: %v", err)
+		}
 	}()
 	return s
 }
 
 type proxyListener struct {
-	ctx  context.Context
 	ch   <-chan net.Conn
 	addr net.Addr
 
@@ -60,17 +69,12 @@ type proxyListener struct {
 }
 
 func (l *proxyListener) Accept() (net.Conn, error) {
-	select {
-	case c, ok := <-l.ch:
-		if !ok {
-			l.Close()
-			return nil, net.ErrClosed
-		}
-		return c, nil
-	case <-l.ctx.Done():
+	c, ok := <-l.ch
+	if !ok {
 		l.Close()
 		return nil, net.ErrClosed
 	}
+	return c, nil
 }
 
 func (l *proxyListener) Close() error {
@@ -79,12 +83,7 @@ func (l *proxyListener) Close() error {
 	if !l.closed {
 		l.closed = true
 		go func() {
-			for {
-				select {
-				case <-l.ch:
-				case <-l.ctx.Done():
-					return
-				}
+			for range l.ch {
 			}
 		}()
 	}
@@ -93,4 +92,10 @@ func (l *proxyListener) Close() error {
 
 func (l *proxyListener) Addr() net.Addr {
 	return l.addr
+}
+
+func logRequest(req *http.Request) {
+	tlsConn := req.Context().Value(connCtxKey).(*tls.Conn)
+	desc := formatConnDesc(tlsConn.NetConn().(*netw.Conn))
+	log.Printf("REQ %s ➔ %s %s", desc, req.Method, req.URL)
 }

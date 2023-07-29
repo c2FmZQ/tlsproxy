@@ -25,15 +25,15 @@ backends:
 
   - serverNames:
     - www.example.com
+    mode: http
     addresses:
     - nginx:80
-    alpnProtos: []
 
   - serverNames:
     - www2.example.com
+    mode: http
     addresses:
     - apache:80
-    alpnProtos: []
 ```
 
 ## Change directory permissions

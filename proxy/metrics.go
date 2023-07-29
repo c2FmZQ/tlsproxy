@@ -25,17 +25,21 @@ package proxy
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
-	"log"
 	"net/http"
 	"runtime"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
+
+	yaml "gopkg.in/yaml.v3"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
+
+//go:embed c2.png
+var iconBytes []byte
 
 func (p *Proxy) recordEvent(msg string) {
 	p.mu.Lock()
@@ -76,12 +80,10 @@ func (p *Proxy) removeConn(c *netw.Conn) int {
 }
 
 func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
-	peer := "-"
-	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 {
-		peer = req.TLS.PeerCertificates[0].Subject.String()
+	if req.URL.Path != "/" {
+		http.NotFound(w, req)
+		return
 	}
-	host := strings.Split(req.Host, ":")[0]
-	log.Printf("INFO  [%s] %s ➔  %s (Console) ➔  %s %s", peer, req.RemoteAddr, host, req.Method, req.RequestURI)
 	w.Header().Set("content-type", "text/plain; charset=utf-8")
 	req.ParseForm()
 	if v := req.Form.Get("refresh"); v != "" {
@@ -170,10 +172,10 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		desc := formatConnDesc(c)
 
 		startTime := c.Annotation(startTimeKey, time.Time{}).(time.Time)
-		totalTime := time.Since(startTime)
+		totalTime := time.Since(startTime).Truncate(time.Millisecond)
 
-		fmt.Fprintf(&buf, "  %s; Start:%s (%s) Recv:%d Sent:%d\n", desc,
-			startTime.Format(time.DateTime), totalTime, c.BytesReceived(), c.BytesSent())
+		fmt.Fprintf(&buf, "  %s; Dur:%s Recv:%d Sent:%d\n", desc,
+			totalTime, c.BytesReceived(), c.BytesSent())
 	}
 
 	fmt.Fprintln(&buf)
@@ -214,4 +216,21 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	} else {
 		fmt.Fprintf(&buf, "Too many MemProfile records: %d\n", n)
 	}
+}
+
+func (p *Proxy) configHandler(w http.ResponseWriter, req *http.Request) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	w.Header().Set("content-type", "text/plain; charset=utf-8")
+	enc := yaml.NewEncoder(w)
+	enc.SetIndent(2)
+	enc.Encode(p.cfg)
+	enc.Close()
+}
+
+func (p *Proxy) faviconHandler(w http.ResponseWriter, req *http.Request) {
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(iconBytes)))
+	w.Header().Set("Cache-Control", "public, max-age=86400, immutable")
+	w.Write(iconBytes)
 }

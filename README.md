@@ -1,21 +1,22 @@
 # TLS Termination Proxy
 
-This repo contains a simple lightweight [TLS termination proxy](https://en.wikipedia.org/wiki/TLS_termination_proxy) that uses letsencrypt to provide TLS encryption for any number of TCP servers and server names concurrently on the same port.
+This repo contains a simple lightweight [TLS termination proxy](https://en.wikipedia.org/wiki/TLS_termination_proxy) that uses letsencrypt to provide TLS encryption for any number of TCP or HTTP servers and server names concurrently on the same port.
 
-Its functionality is similar to an [stunnel](https://www.stunnel.org/) server, but without the need to configure and run [certbot](https://certbot.eff.org/) separately. It is intended to work smoothly with [c2fmzq-server](https://github.com/c2FmZQ/c2FmZQ), and should also work with any TCP server.
+Its functionality is similar to an [stunnel](https://www.stunnel.org/) server, but without the need to configure and run [certbot](https://certbot.eff.org/) separately. It is intended to work smoothly with [c2fmzq-server](https://github.com/c2FmZQ/c2FmZQ), and should also work with most other servers.
 
 Overview of features:
 
-* Use [Let's Encrypt](https://letsencrypt.org/) automatically to get TLS certificates (http-01 & tls-alpn-01).
-* Terminate TLS connections, and forward the data to any TCP server in plaintext.
-* Terminate TLS connections, and forward the data to any TLS server. The data is encrypted in transit, but the proxy sees the plaintext.
-* Terminate _TCP_ connections, and forward the TLS connection to any TLS server (passthrough). The proxy doesn't see the plaintext.
-* TLS client authentication & authorization (when the proxy terminates the TLS connections).
-* Access control by IP address.
-* Routing based on Server Name Indication (SNI), with optional default route when SNI isn't used.
-* Simple round-robin load balancing between servers.
-* Support for HTTP/2 and any ALPN protocol.
-* Use the same TCP address (IPAddr:port) for any number of server names, e.g. xxx.xxx.xxx.xxx:443.
+* [x] Use [Let's Encrypt](https://letsencrypt.org/) automatically to get TLS certificates (http-01 & tls-alpn-01 challenges).
+* [x] Terminate TLS connections, and forward the data to any TCP server in plaintext.
+* [x] Terminate TLS connections, and forward the data to any TLS server. The data is encrypted in transit, but the proxy sees the plaintext.
+* [x] Terminate _TCP_ connections, and forward the TLS connection to any TLS server (passthrough). The proxy doesn't see the plaintext.
+* [x] Terminate HTTPS connections, and forward the requests to HTTP or HTTPS servers (http/1 only, not recommended with c2fmzq-server).
+* [x] TLS client authentication & authorization (when the proxy terminates the TLS connections).
+* [x] Access control by IP address.
+* [x] Routing based on Server Name Indication (SNI), with optional default route when SNI isn't used.
+* [x] Simple round-robin load balancing between servers.
+* [x] Support any ALPN protocol in TLS, TLSPASSTHROUGH, or PLAINTEXT mode.
+* [x] Use the same TCP address (IPAddr:port) for any number of server names, e.g. xxx.xxx.xxx.xxx:443.
 
 Example config:
 
@@ -36,6 +37,7 @@ backends:
 - serverNames: 
   - example.com
   - www.example.com
+  mode: http
   addresses: 
   - 192.168.0.10:80
   - 192.168.0.11:80
@@ -43,13 +45,14 @@ backends:
 
 - serverNames:
   - other.example.com
+  mode: https
   addresses:
   - 192.168.1.100:443
-  mode: TLS
   insecureSkipVerify: true
 
 - serverNames:
   - secure.example.com
+  mode: tls
   clientAuth: true
   clientCAs: |
     -----BEGIN CERTIFICATE-----
@@ -57,7 +60,6 @@ backends:
     -----END CERTIFICATE-----
   addresses:
   - 192.168.2.200:443
-  mode: TLS
   forwardServerName: secure-internal.example.com
 ```
 

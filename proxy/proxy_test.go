@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -60,6 +61,9 @@ func TestProxyBackends(t *testing.T) {
 	be6 := newTCPServer(t, ctx, "backend6", intCA)
 	// Backend for TLS passthrough
 	be7 := newTCPServer(t, ctx, "backend7", extCA)
+	// Backends for HTTP and HTTPS.
+	be8 := newHTTPServer(t, ctx, "backend8", nil)
+	be9 := newHTTPServer(t, ctx, "backend9", intCA)
 
 	cfg := &Config{
 		HTTPAddr: "localhost:0",
@@ -140,13 +144,35 @@ func TestProxyBackends(t *testing.T) {
 				},
 				Mode: "TLSPASSTHROUGH",
 			},
+			// HTTP
+			{
+				ServerNames: []string{
+					"http.example.com",
+				},
+				Addresses: []string{
+					be8.String(),
+				},
+				Mode: "HTTP",
+			},
+			// HTTPS
+			{
+				ServerNames: []string{
+					"https.example.com",
+				},
+				Addresses: []string{
+					be9.String(),
+				},
+				Mode:              "HTTPS",
+				ForwardRootCAs:    intCA.RootCAPEM(),
+				ForwardServerName: "https-internal.example.com",
+			},
 		},
 	}
 	proxy := newTestProxy(cfg, extCA)
 	if err := proxy.Start(ctx); err != nil {
 		t.Fatalf("proxy.Start: %v", err)
 	}
-	get := func(host, certName string, protos []string) (string, error) {
+	get := func(host, certName string, protos []string, http bool) (string, error) {
 		var certs []tls.Certificate
 		if certName != "" {
 			c, err := intCA.GetCert(certName)
@@ -155,7 +181,13 @@ func TestProxyBackends(t *testing.T) {
 			}
 			certs = append(certs, *c)
 		}
-		body, err := tlsGet(host, proxy.listener.Addr().String(), "Hello!\n", extCA, certs, protos)
+		var body string
+		var err error
+		if http {
+			body, err = httpGet(host, proxy.listener.Addr().String(), extCA, certs)
+		} else {
+			body, err = tlsGet(host, proxy.listener.Addr().String(), "Hello!\n", extCA, certs, protos)
+		}
 		if err != nil {
 			return "", err
 		}
@@ -166,6 +198,7 @@ func TestProxyBackends(t *testing.T) {
 		desc, host, want string
 		certName         string
 		protos           []string
+		http             bool
 		expError         bool
 	}{
 		{desc: "Hit backend1", host: "example.com", want: "Hello from backend1\n"},
@@ -186,8 +219,10 @@ func TestProxyBackends(t *testing.T) {
 		{desc: "Hit backend6 random proto", host: "noproto.example.com", want: "Hello from backend6\n", protos: []string{"foo", "bar"}},
 		{desc: "Unknown server name", host: "foo.example.com", expError: true},
 		{desc: "Hit backend7", host: "passthrough.example.com", want: "Hello from backend7\n"},
+		{desc: "Hit backend8", host: "http.example.com", want: "[backend8] /", http: true},
+		{desc: "Hit backend9", host: "https.example.com", want: "[backend9] /", http: true},
 	} {
-		got, err := get(tc.host, tc.certName, tc.protos)
+		got, err := get(tc.host, tc.certName, tc.protos, tc.http)
 		if tc.expError != (err != nil) {
 			t.Errorf("%s: Got error %v, want %v", tc.desc, (err != nil), tc.expError)
 			continue
@@ -195,7 +230,11 @@ func TestProxyBackends(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		if got != tc.want {
+		if tc.http {
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("%s: Got %q, want %q", tc.desc, got, tc.want)
+			}
+		} else if got != tc.want {
 			t.Errorf("%s: Got %q, want %q", tc.desc, got, tc.want)
 		}
 	}
@@ -425,6 +464,30 @@ func tlsGet(name, addr, msg string, rootCA *certmanager.CertManager, clientCerts
 
 func httpGet(name, addr string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate) (string, error) {
 	return tlsGet(name, addr, "GET / HTTP/1.0\nHost: "+name+"\n\n", rootCA, clientCerts, nil)
+}
+
+func newHTTPServer(t *testing.T, ctx context.Context, name string, ca *certmanager.CertManager) net.Addr {
+	var l net.Listener
+	var err error
+	if ca == nil {
+		l, err = net.Listen("tcp", "localhost:0")
+	} else {
+		l, err = tls.Listen("tcp", "localhost:0", ca.TLSConfig())
+	}
+	if err != nil {
+		t.Fatalf("[%s] Listen: %v", name, err)
+	}
+	s := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, "[%s] %s\n", name, r.RequestURI)
+		}),
+	}
+	go s.Serve(l)
+	go func() {
+		<-ctx.Done()
+		s.Close()
+	}()
+	return l.Addr()
 }
 
 func newTCPServer(t *testing.T, ctx context.Context, name string, ca *certmanager.CertManager) *tcpServer {

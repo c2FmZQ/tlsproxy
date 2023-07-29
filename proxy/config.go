@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,6 +45,8 @@ const (
 	ModePlaintext      = "PLAINTEXT"
 	ModeTLS            = "TLS"
 	ModeTLSPassthrough = "TLSPASSTHROUGH"
+	ModeHTTP           = "HTTP"
+	ModeHTTPS          = "HTTPS"
 	ModeConsole        = "CONSOLE"
 )
 
@@ -52,6 +55,8 @@ var (
 		ModePlaintext,
 		ModeTLS,
 		ModeTLSPassthrough,
+		ModeHTTP,
+		ModeHTTPS,
 		ModeConsole,
 	}
 )
@@ -67,21 +72,21 @@ type Config struct {
 	// the proxy will only use tls-alpn-01 and tlsAddr must be reachable on
 	// port 443.
 	// See https://letsencrypt.org/docs/challenge-types/
-	HTTPAddr string `yaml:"httpAddr"`
+	HTTPAddr string `yaml:"httpAddr,omitempty"`
 	// TLSAddr is the address where the proxy will receive TLS connections
 	// and forward them to the backends.
 	TLSAddr string `yaml:"tlsAddr"`
 	// CacheDir is the directory where the proxy stores TLS certificates.
-	CacheDir string `yaml:"cacheDir"`
+	CacheDir string `yaml:"cacheDir,omitempty"`
 	// DefaultServerName is the server name to use when the TLS client
 	// doesn't use the Server Name Indication (SNI) extension.
-	DefaultServerName string `yaml:"defaultServerName"`
+	DefaultServerName string `yaml:"defaultServerName,omitempty"`
 	// Backends is the list of service backends.
 	Backends []*Backend `yaml:"backends"`
 	// Email is optionally included in the requests to letsencrypt.
-	Email string `yaml:"email"`
+	Email string `yaml:"email,omitempty"`
 	// MaxOpen is the maximum number of open incoming connections.
-	MaxOpen int `yaml:"maxOpen"`
+	MaxOpen int `yaml:"maxOpen,omitempty"`
 }
 
 // Backend encapsulates the data of one backend.
@@ -91,15 +96,15 @@ type Backend struct {
 	ServerNames []string `yaml:"serverNames"`
 	// ClientAuth indicates whether TLS client authentication is required
 	// for this service.
-	ClientAuth bool `yaml:"clientAuth"`
+	ClientAuth bool `yaml:"clientAuth,omitempty"`
 	// ClientACL optionally specifies which client identities are allowed
 	// to use this service. A nil value disabled the authorization check and
 	// allows any valid client certificate. Otherwise, the value is a slice
 	// of Subject strings from the client X509 certificate.
-	ClientACL *[]string `yaml:"clientACL"`
+	ClientACL *[]string `yaml:"clientACL,omitempty"`
 	// ClientCAs is either a file name or a set of PEM-encoded CA
 	// certificates that are used to authenticate clients.
-	ClientCAs string `yaml:"clientCAs"`
+	ClientCAs string `yaml:"clientCAs,omitempty"`
 	// AllowIPs specifies a list of IP network addresses to allow, in CIDR
 	// format, e.g. 192.168.0.0/24.
 	//
@@ -137,6 +142,14 @@ type Backend struct {
 	//     authentication & authorization.
 	//                +-TCP-PROXY-TCP-+
 	//        CLIENT -+------TLS------+-> BACKEND SERVER
+	// - HTTP: Parses the incoming connection as HTTPS and forwards the
+	//     requests to the backends as HTTP requests. Only HTTP/1 is
+	//     supported.
+	//        CLIENT --HTTPS--> PROXY --HTTP--> BACKEND SERVER
+	// - HTTPS: Parses the incoming connection as HTTPS and forwards the
+	//     requests to the backends as HTTPS requests. Only HTTP/1 is
+	//     supported.
+	//        CLIENT --HTTPS--> PROXY --HTTPS--> BACKEND SERVER
 	// - CONSOLE: Indicates that this backend is handled by the proxy itself
 	//     to report its status and metrics. It is strongly recommended
 	//     to use it with ClientAuth and ClientACL. Otherwise, information
@@ -144,13 +157,16 @@ type Backend struct {
 	//     the backend's server name.
 	//        CLIENT --TLS--> PROXY CONSOLE
 	Mode string `yaml:"mode"`
+	// AddClientCertHeader indicates that the HTTP Client-Cert header should
+	// be added to the request when Mode is HTTP or HTTPS.
+	AddClientCertHeader bool `yaml:"addClientCertHeader,omitempty"`
 	// Addresses is a list of server addresses where requests are forwarded.
 	// When more than one address are specified, requests are distributed
 	// using a simple round robin.
-	Addresses []string `yaml:"addresses"`
+	Addresses []string `yaml:"addresses,omitempty"`
 	// InsecureSkipVerify disabled the verification of the backend server's
 	// TLS certificate. See https://pkg.go.dev/crypto/tls#Config
-	InsecureSkipVerify bool `yaml:"insecureSkipVerify"`
+	InsecureSkipVerify bool `yaml:"insecureSkipVerify,omitempty"`
 	// ForwardRateLimit specifies how fast requests can be forwarded to the
 	// backend servers. The default value is 5 requests per second.
 	ForwardRateLimit int `yaml:"forwardRateLimit"`
@@ -158,10 +174,10 @@ type Backend struct {
 	// the backend server. It is also used to verify the server's identify.
 	// This is particularly useful when the addresses use IP addresses
 	// instead of hostnames.
-	ForwardServerName string `yaml:"forwardServerName"`
+	ForwardServerName string `yaml:"forwardServerName,omitempty"`
 	// ForwardRootCAs is either a file name or a set of PEM-encoded CA
 	// certificates that are used to authenticate backend servers.
-	ForwardRootCAs string `yaml:"forwardRootCAs"`
+	ForwardRootCAs string `yaml:"forwardRootCAs,omitempty"`
 	// ForwardTimeout is the connection timeout to backend servers. If
 	// Addresses contains multiple addresses, this timeout indicates how
 	// long to wait before trying the next address in the list. The default
@@ -210,6 +226,9 @@ type Backend struct {
 	allowIPs *[]*net.IPNet
 	denyIPs  *[]*net.IPNet
 
+	httpServer   *http.Server
+	httpConnChan chan net.Conn
+
 	mu   sync.Mutex
 	next int
 }
@@ -247,6 +266,9 @@ func (cfg *Config) Check() error {
 		}
 		if be.Mode == ModeTLSPassthrough && be.ClientAuth {
 			return fmt.Errorf("backend[%d].ClientAuth: client auth is not compatible with TLS Passthrough", i)
+		}
+		if be.Mode == ModeHTTP || be.Mode == ModeHTTPS {
+			be.ALPNProtos = &[]string{"http/1.1", "http/1.0"}
 		}
 		if len(be.ServerNames) == 0 {
 			return fmt.Errorf("backend[%d].ServerNames: backend must have at least one server name", i)

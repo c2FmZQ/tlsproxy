@@ -74,7 +74,8 @@ func TestReadConfig(t *testing.T) {
 					"192.168.0.12:80",
 				},
 				ForwardRateLimit: 5,
-				Mode:             "PLAINTEXT",
+				Mode:             "HTTP",
+				ALPNProtos:       &[]string{"http/1.1", "http/1.0"},
 				ForwardTimeout:   30 * time.Second,
 			},
 			{
@@ -85,7 +86,8 @@ func TestReadConfig(t *testing.T) {
 					"192.168.1.100:443",
 				},
 				ForwardRateLimit:   5,
-				Mode:               "TLS",
+				Mode:               "HTTPS",
+				ALPNProtos:         &[]string{"http/1.1", "http/1.0"},
 				InsecureSkipVerify: true,
 				ForwardTimeout:     30 * time.Second,
 			},
@@ -103,6 +105,30 @@ func TestReadConfig(t *testing.T) {
 				ForwardServerName: "secure-internal.example.com",
 				ForwardRootCAs:    demoCert,
 				ForwardTimeout:    30 * time.Second,
+			},
+			{
+				ServerNames: []string{
+					"ssh.example.com",
+				},
+				Addresses: []string{
+					"192.168.8.20:22",
+				},
+				ForwardRateLimit: 5,
+				Mode:             "PLAINTEXT",
+				ClientAuth:       true,
+				ClientCAs:        demoCert,
+				ForwardTimeout:   30 * time.Second,
+			},
+			{
+				ServerNames: []string{
+					"c2fmzq-server.example.com",
+				},
+				Addresses: []string{
+					"192.168.3.30:5443",
+				},
+				ForwardRateLimit: 5,
+				Mode:             "TLSPASSTHROUGH",
+				ForwardTimeout:   30 * time.Second,
 			},
 		},
 	}

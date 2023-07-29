@@ -45,27 +45,31 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	configFile := flag.String("config", "", "The config file name")
-	versionFlag := flag.Bool("v", false, "Show the version")
+	configFile := flag.String("config", "", "The config file name.")
+	versionFlag := flag.Bool("v", false, "Show the version.")
 	passphraseFlag := flag.String("passphrase", os.Getenv("TLSPROXY_PASSPHRASE"), "The passphrase to encrypt the TLS keys on disk.")
 	testFlag := flag.Bool("use-ephemeral-certificate-manager", false, "Use an ephemeral certificate manager. This is for testing purposes only.")
+	stdoutFlag := flag.Bool("stdout", false, "Log to STDOUT.")
 	flag.Parse()
 
 	if *versionFlag {
 		os.Stdout.WriteString(Version + " " + runtime.Version() + "\n")
 		return
 	}
+	if *stdoutFlag {
+		log.SetOutput(os.Stdout)
+	}
 	if *configFile == "" {
 		log.Fatal("--config must be set")
 	}
-	log.Printf("INFO tlsproxy %s %s", Version, runtime.Version())
+	log.Printf("INF tlsproxy %s %s", Version, runtime.Version())
 	cfg, err := proxy.ReadConfig(*configFile)
 	if err != nil {
 		log.Fatalf("ERR %v", err)
 	}
 	var p *proxy.Proxy
 	if *testFlag {
-		log.Print("WARN Using ephemeral certificate manager")
+		log.Print("WRN Using ephemeral certificate manager")
 		p, err = proxy.NewTestProxy(cfg)
 	} else {
 		if *passphraseFlag == "" {
@@ -101,5 +105,5 @@ func main() {
 	signal.Notify(ch, syscall.SIGINT)
 	signal.Notify(ch, syscall.SIGTERM)
 	sig := <-ch
-	log.Printf("INFO Received signal %d (%s)", sig, sig)
+	log.Printf("INF Received signal %d (%s)", sig, sig)
 }

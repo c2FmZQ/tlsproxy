@@ -1,3 +1,26 @@
+# Use this section to define YAML anchors.
+definitions:
+  - &myCA |
+        -----BEGIN CERTIFICATE-----
+        MIIDHDCCAgSgAwIBAgIEM5G30zANBgkqhkiG9w0BAQsFADAeMRwwGgYDVQQDExNy
+        b290LWNhLmV4YW1wbGUuY29tMB4XDTIzMDYyNDAyNTIyMloXDTIzMDYyNDAzNTIy
+        MlowHjEcMBoGA1UEAxMTcm9vdC1jYS5leGFtcGxlLmNvbTCCASIwDQYJKoZIhvcN
+        AQEBBQADggEPADCCAQoCggEBAKJC2vmBdHwbzMIqWS6GIZOhk5FEtoIssLOUMwkS
+        zeLhDCrxsqiHxBOlzwZEgx6Knd9HhyuoHtuNl5AxL2btlgyk4dJ9MI2cOxrvZYeA
+        Bphh6OZx6hiMfz+cVcf7IpuXlc8juw3RVZ+JDtSq1w7JfjVe6NPhWxowr3v7XWSZ
+        00VB5ZAkGP1UXs5CjQAVFFfVPqn1hOdqoIzqW2BnKE6MORf4Kw9W4lr3WE4VW++Y
+        l/8W0yCKHzmURNLRCeGPAsgMlwwbs3eoyEWl1F7A7Hq0QCMpvSqA1HeCXj0fsTkS
+        zM/CBhPa5QtmWCzsmZJF7rB2gd75A725p0wQlHrxGxsTWIkCAwEAAaNiMGAwDgYD
+        VR0PAQH/BAQDAgIEMA8GA1UdEwEB/wQFMAMBAf8wHQYDVR0OBBYEFB5ey0fLDEXe
+        8kpdaCLMzehkrAYyMB4GA1UdEQQXMBWCE3Jvb3QtY2EuZXhhbXBsZS5jb20wDQYJ
+        KoZIhvcNAQELBQADggEBAGcuR8u4PiML7YZj7IhSkI4LBcglgARIXR6MLXAL4+sp
+        nF4rxqTI/rUGySJpo53IVYywjoRI5Xbe8nK+adYBOJn4PTs6E4a3mQt5lzQHqIPv
+        rjfaLLMkfP/nQXHkETpfFn8RXu0FJBXkN/MESttPVle6GObK8a7cvoiHTdfhXIIZ
+        XMHYmr+S/8GGos/Ps5Dpf7MlagwtQQmEXa0qjONu05GPEQXHMKGSK8mvJUMCWdFM
+        +aodrAnXId8L3GpKDr1jW/GSuyucebjTCVMazUkuIRA6ty/mAbm2KUv9UXniROj7
+        Au1hFufDZDNab/FH91MEj6hwIkT8blxhd2Kuj8r/+X8=
+        -----END CERTIFICATE-----
+
 # The HTTP address must be reachable from the internet via port 80.
 httpAddr: ":10080"
 
@@ -11,6 +34,7 @@ backends:
 - serverNames: 
   - example.com
   - www.example.com
+  mode: http
   addresses: 
   - 192.168.0.10:80
   - 192.168.0.11:80
@@ -18,55 +42,30 @@ backends:
 
 - serverNames:
   - other.example.com
+  mode: https
   addresses:
   - 192.168.1.100:443
-  mode: tls
   insecureSkipVerify: true
 
 - serverNames:
   - secure.example.com
   clientAuth: true
-  clientCAs: |
-        -----BEGIN CERTIFICATE-----
-        MIIDHDCCAgSgAwIBAgIEM5G30zANBgkqhkiG9w0BAQsFADAeMRwwGgYDVQQDExNy
-        b290LWNhLmV4YW1wbGUuY29tMB4XDTIzMDYyNDAyNTIyMloXDTIzMDYyNDAzNTIy
-        MlowHjEcMBoGA1UEAxMTcm9vdC1jYS5leGFtcGxlLmNvbTCCASIwDQYJKoZIhvcN
-        AQEBBQADggEPADCCAQoCggEBAKJC2vmBdHwbzMIqWS6GIZOhk5FEtoIssLOUMwkS
-        zeLhDCrxsqiHxBOlzwZEgx6Knd9HhyuoHtuNl5AxL2btlgyk4dJ9MI2cOxrvZYeA
-        Bphh6OZx6hiMfz+cVcf7IpuXlc8juw3RVZ+JDtSq1w7JfjVe6NPhWxowr3v7XWSZ
-        00VB5ZAkGP1UXs5CjQAVFFfVPqn1hOdqoIzqW2BnKE6MORf4Kw9W4lr3WE4VW++Y
-        l/8W0yCKHzmURNLRCeGPAsgMlwwbs3eoyEWl1F7A7Hq0QCMpvSqA1HeCXj0fsTkS
-        zM/CBhPa5QtmWCzsmZJF7rB2gd75A725p0wQlHrxGxsTWIkCAwEAAaNiMGAwDgYD
-        VR0PAQH/BAQDAgIEMA8GA1UdEwEB/wQFMAMBAf8wHQYDVR0OBBYEFB5ey0fLDEXe
-        8kpdaCLMzehkrAYyMB4GA1UdEQQXMBWCE3Jvb3QtY2EuZXhhbXBsZS5jb20wDQYJ
-        KoZIhvcNAQELBQADggEBAGcuR8u4PiML7YZj7IhSkI4LBcglgARIXR6MLXAL4+sp
-        nF4rxqTI/rUGySJpo53IVYywjoRI5Xbe8nK+adYBOJn4PTs6E4a3mQt5lzQHqIPv
-        rjfaLLMkfP/nQXHkETpfFn8RXu0FJBXkN/MESttPVle6GObK8a7cvoiHTdfhXIIZ
-        XMHYmr+S/8GGos/Ps5Dpf7MlagwtQQmEXa0qjONu05GPEQXHMKGSK8mvJUMCWdFM
-        +aodrAnXId8L3GpKDr1jW/GSuyucebjTCVMazUkuIRA6ty/mAbm2KUv9UXniROj7
-        Au1hFufDZDNab/FH91MEj6hwIkT8blxhd2Kuj8r/+X8=
-        -----END CERTIFICATE-----
+  clientCAs: *myCA
+  mode: tls
   addresses:
   - 192.168.2.200:443
-  mode: tls
   forwardServerName: secure-internal.example.com
-  forwardRootCAs: |
-        -----BEGIN CERTIFICATE-----
-        MIIDHDCCAgSgAwIBAgIEM5G30zANBgkqhkiG9w0BAQsFADAeMRwwGgYDVQQDExNy
-        b290LWNhLmV4YW1wbGUuY29tMB4XDTIzMDYyNDAyNTIyMloXDTIzMDYyNDAzNTIy
-        MlowHjEcMBoGA1UEAxMTcm9vdC1jYS5leGFtcGxlLmNvbTCCASIwDQYJKoZIhvcN
-        AQEBBQADggEPADCCAQoCggEBAKJC2vmBdHwbzMIqWS6GIZOhk5FEtoIssLOUMwkS
-        zeLhDCrxsqiHxBOlzwZEgx6Knd9HhyuoHtuNl5AxL2btlgyk4dJ9MI2cOxrvZYeA
-        Bphh6OZx6hiMfz+cVcf7IpuXlc8juw3RVZ+JDtSq1w7JfjVe6NPhWxowr3v7XWSZ
-        00VB5ZAkGP1UXs5CjQAVFFfVPqn1hOdqoIzqW2BnKE6MORf4Kw9W4lr3WE4VW++Y
-        l/8W0yCKHzmURNLRCeGPAsgMlwwbs3eoyEWl1F7A7Hq0QCMpvSqA1HeCXj0fsTkS
-        zM/CBhPa5QtmWCzsmZJF7rB2gd75A725p0wQlHrxGxsTWIkCAwEAAaNiMGAwDgYD
-        VR0PAQH/BAQDAgIEMA8GA1UdEwEB/wQFMAMBAf8wHQYDVR0OBBYEFB5ey0fLDEXe
-        8kpdaCLMzehkrAYyMB4GA1UdEQQXMBWCE3Jvb3QtY2EuZXhhbXBsZS5jb20wDQYJ
-        KoZIhvcNAQELBQADggEBAGcuR8u4PiML7YZj7IhSkI4LBcglgARIXR6MLXAL4+sp
-        nF4rxqTI/rUGySJpo53IVYywjoRI5Xbe8nK+adYBOJn4PTs6E4a3mQt5lzQHqIPv
-        rjfaLLMkfP/nQXHkETpfFn8RXu0FJBXkN/MESttPVle6GObK8a7cvoiHTdfhXIIZ
-        XMHYmr+S/8GGos/Ps5Dpf7MlagwtQQmEXa0qjONu05GPEQXHMKGSK8mvJUMCWdFM
-        +aodrAnXId8L3GpKDr1jW/GSuyucebjTCVMazUkuIRA6ty/mAbm2KUv9UXniROj7
-        Au1hFufDZDNab/FH91MEj6hwIkT8blxhd2Kuj8r/+X8=
-        -----END CERTIFICATE-----
+  forwardRootCAs: *myCA
+
+- serverNames:
+  - ssh.example.com
+  clientAuth: true
+  clientCAs: *myCA
+  addresses:
+  - 192.168.8.20:22
+
+- serverNames:
+  - c2fmzq-server.example.com
+  mode: tlspassthrough
+  addresses:
+  - 192.168.3.30:5443
