@@ -34,6 +34,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"regexp"
+	"strings"
 	"time"
 
 	"golang.org/x/exp/slices"
@@ -44,6 +46,15 @@ import (
 const (
 	hstsHeader = "Strict-Transport-Security"
 	hstsValue  = "max-age=2592000" // 30 days
+
+	viaHeader           = "Via"
+	hostHeader          = "Host"
+	xForwardedForHeader = "X-Forwarded-For"
+	clientCertHeader    = "Client-Cert"
+)
+
+var (
+	commaRE = regexp.MustCompile(`, *`)
 )
 
 func (be *Backend) dial(proto string) (net.Conn, error) {
@@ -162,12 +173,15 @@ func (be *Backend) bridgeConns(client, server net.Conn) error {
 func (be *Backend) reverseProxy() *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Director: be.reverseProxyDirector,
-		Transport: &http.Transport{
-			DialContext:           be.reverseProxyDial,
-			DialTLSContext:        be.reverseProxyDial,
-			MaxIdleConns:          100,
-			IdleConnTimeout:       30 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
+		Transport: &cleanRoundTripper{
+			serverNames: be.ServerNames,
+			RoundTripper: &http.Transport{
+				DialContext:           be.reverseProxyDial,
+				DialTLSContext:        be.reverseProxyDial,
+				MaxIdleConns:          100,
+				IdleConnTimeout:       30 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+			},
 		},
 		ModifyResponse: be.reverseProxyModifyResponse,
 	}
@@ -188,12 +202,19 @@ func (be *Backend) reverseProxyDirector(req *http.Request) {
 	}
 	req.URL.Host = host
 	req.Host = host
-	req.Header.Set("Host", host)
-	req.Header.Del("X-Forwarded-For")
-	req.Header.Del("Client-Cert")
+	req.Header.Set(hostHeader, host)
+	req.Header.Del(xForwardedForHeader)
+	req.Header.Del(clientCertHeader)
+
+	var via []string
+	if v := req.Header.Get(viaHeader); v != "" {
+		via = commaRE.Split(req.Header.Get(viaHeader), -1)
+	}
+	via = append(via, req.Proto+" "+req.Context().Value(connCtxKey).(*tls.Conn).LocalAddr().String())
+	req.Header.Set(viaHeader, strings.Join(via, ", "))
 
 	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 && be.AddClientCertHeader {
-		req.Header.Set("Client-Cert", base64.StdEncoding.EncodeToString(req.TLS.PeerCertificates[0].Raw))
+		req.Header.Set(clientCertHeader, base64.StdEncoding.EncodeToString(req.TLS.PeerCertificates[0].Raw))
 	}
 }
 
@@ -207,10 +228,70 @@ func (be *Backend) reverseProxyModifyResponse(resp *http.Response) error {
 	}
 	log.Printf("PRX %s ➔ %s %s ➔ status:%d%s", desc, req.Method, req.URL, resp.StatusCode, cl)
 
-	if resp.Header.Get(hstsHeader) == "" {
+	if resp.StatusCode != http.StatusMisdirectedRequest && resp.Header.Get(hstsHeader) == "" {
 		resp.Header.Set(hstsHeader, hstsValue)
 	}
 	return nil
+}
+
+// cleanRoundTripper detects loop with the via http header, and ensures that the
+// request's Host value is valid before sending the request to the backend
+// server. If the Host has an unexpected value, it returns a 421 immediately.
+type cleanRoundTripper struct {
+	serverNames []string
+	http.RoundTripper
+}
+
+func (rt *cleanRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	hops := commaRE.Split(req.Header.Get(viaHeader), -1)
+	_, me, _ := strings.Cut(hops[len(hops)-1], " ")
+	hops = hops[:len(hops)-1]
+	for _, via := range hops {
+		_, via, _ = strings.Cut(via, " ")
+		if via != me {
+			continue
+		}
+		if req.Body != nil {
+			req.Body.Close()
+		}
+		msg := req.Header.Get(viaHeader)
+		hdr := http.Header{}
+		hdr.Set("content-type", "text/plain")
+		hdr.Set("content-length", fmt.Sprintf("%d", len(msg)))
+		return &http.Response{
+			StatusCode:    http.StatusLoopDetected,
+			ProtoMajor:    1,
+			ProtoMinor:    1,
+			Header:        hdr,
+			Body:          io.NopCloser(strings.NewReader(msg)),
+			ContentLength: int64(len(msg)),
+			Request:       req,
+		}, nil
+	}
+
+	host := req.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if !slices.Contains(rt.serverNames, host) {
+		if req.Body != nil {
+			req.Body.Close()
+		}
+		msg := ""
+		hdr := http.Header{}
+		hdr.Set("content-type", "text/html")
+		hdr.Set("content-length", fmt.Sprintf("%d", len(msg)))
+		return &http.Response{
+			StatusCode:    http.StatusMisdirectedRequest,
+			ProtoMajor:    1,
+			ProtoMinor:    1,
+			Header:        hdr,
+			Body:          io.NopCloser(strings.NewReader(msg)),
+			ContentLength: int64(len(msg)),
+			Request:       req,
+		}, nil
+	}
+	return rt.RoundTripper.RoundTrip(req)
 }
 
 func forward(out net.Conn, in net.Conn, closeWhenDone bool, halfClosedTimeout time.Duration) error {

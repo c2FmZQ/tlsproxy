@@ -50,6 +50,20 @@ func TestProxyBackends(t *testing.T) {
 	if err != nil {
 		t.Fatalf("certmanager.New: %v", err)
 	}
+
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: "localhost:0",
+			TLSAddr:  "localhost:0",
+			CacheDir: t.TempDir(),
+			MaxOpen:  100,
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+
 	// Backends without TLS.
 	be1 := newTCPServer(t, ctx, "backend1", nil)
 	be2 := newTCPServer(t, ctx, "backend2", nil)
@@ -66,10 +80,8 @@ func TestProxyBackends(t *testing.T) {
 	be9 := newHTTPServer(t, ctx, "backend9", intCA)
 
 	cfg := &Config{
-		HTTPAddr: "localhost:0",
-		TLSAddr:  "localhost:0",
-		CacheDir: t.TempDir(),
-		MaxOpen:  100,
+		MaxOpen:           100,
+		DefaultServerName: "http.example.com",
 		Backends: []*Backend{
 			// Plaintext backends.
 			{
@@ -166,12 +178,24 @@ func TestProxyBackends(t *testing.T) {
 				ForwardRootCAs:    intCA.RootCAPEM(),
 				ForwardServerName: "https-internal.example.com",
 			},
+			// HTTPS loop
+			{
+				ServerNames: []string{
+					"loop.example.com",
+				},
+				Addresses: []string{
+					proxy.listener.Addr().String(),
+				},
+				Mode:              "HTTPS",
+				ForwardRootCAs:    extCA.RootCAPEM(),
+				ForwardServerName: "loop.example.com",
+			},
 		},
 	}
-	proxy := newTestProxy(cfg, extCA)
-	if err := proxy.Start(ctx); err != nil {
-		t.Fatalf("proxy.Start: %v", err)
+	if err := proxy.Reconfigure(cfg); err != nil {
+		t.Fatalf("proxy.Reconfigure: %v", err)
 	}
+
 	get := func(host, certName string, protos []string, http bool) (string, error) {
 		var certs []tls.Certificate
 		if certName != "" {
@@ -221,10 +245,13 @@ func TestProxyBackends(t *testing.T) {
 		{desc: "Hit backend7", host: "passthrough.example.com", want: "Hello from backend7\n"},
 		{desc: "Hit backend8", host: "http.example.com", want: "[backend8] /", http: true},
 		{desc: "Hit backend9", host: "https.example.com", want: "[backend9] /", http: true},
+		{desc: "Hit loop", host: "loop.example.com", want: "508 Loop Detected", http: true},
+		{desc: "Hit default backend with IP address as host", host: "", want: "421 Misdirected Request", http: true},
 	} {
 		got, err := get(tc.host, tc.certName, tc.protos, tc.http)
 		if tc.expError != (err != nil) {
 			t.Errorf("%s: Got error %v, want %v", tc.desc, (err != nil), tc.expError)
+			t.Logf("Body: %q err: %v", got, err)
 			continue
 		}
 		if err != nil {
@@ -443,10 +470,11 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 
 func tlsGet(name, addr, msg string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate, protos []string) (string, error) {
 	c, err := tls.Dial("tcp", addr, &tls.Config{
-		ServerName:   name,
-		RootCAs:      rootCA.RootCACertPool(),
-		Certificates: clientCerts,
-		NextProtos:   protos,
+		ServerName:         name,
+		InsecureSkipVerify: name == "",
+		RootCAs:            rootCA.RootCACertPool(),
+		Certificates:       clientCerts,
+		NextProtos:         protos,
 	})
 	if err != nil {
 		return "", err
@@ -463,7 +491,11 @@ func tlsGet(name, addr, msg string, rootCA *certmanager.CertManager, clientCerts
 }
 
 func httpGet(name, addr string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate) (string, error) {
-	return tlsGet(name, addr, "GET / HTTP/1.0\nHost: "+name+"\n\n", rootCA, clientCerts, nil)
+	host := name
+	if host == "" {
+		host = addr
+	}
+	return tlsGet(name, addr, "GET / HTTP/1.0\nHost: "+host+"\n\n", rootCA, clientCerts, nil)
 }
 
 func newHTTPServer(t *testing.T, ctx context.Context, name string, ca *certmanager.CertManager) net.Addr {
