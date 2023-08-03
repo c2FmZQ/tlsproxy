@@ -410,7 +410,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		p.handleHTTPConnection(tls.Server(conn, be.tlsConfig), serverName)
 		closeConnNeeded = false
 
-	case be.Mode == ModePlaintext || be.Mode == ModeTLS:
+	case be.Mode == ModeTCP || be.Mode == ModeTLS:
 		if err := p.checkIP(be, conn, serverName); err != nil {
 			return
 		}

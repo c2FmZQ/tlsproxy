@@ -114,7 +114,7 @@ func TestReadConfig(t *testing.T) {
 					"192.168.8.20:22",
 				},
 				ForwardRateLimit: 5,
-				Mode:             "PLAINTEXT",
+				Mode:             "TCP",
 				ClientAuth:       true,
 				ClientCAs:        demoCert,
 				ForwardTimeout:   30 * time.Second,

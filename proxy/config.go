@@ -43,6 +43,7 @@ import (
 
 const (
 	ModePlaintext      = "PLAINTEXT"
+	ModeTCP            = "TCP"
 	ModeTLS            = "TLS"
 	ModeTLSPassthrough = "TLSPASSTHROUGH"
 	ModeHTTP           = "HTTP"
@@ -52,7 +53,7 @@ const (
 
 var (
 	validModes = []string{
-		ModePlaintext,
+		ModeTCP,
 		ModeTLS,
 		ModeTLSPassthrough,
 		ModeHTTP,
@@ -258,8 +259,8 @@ func (cfg *Config) Check() error {
 	serverNames := make(map[string]bool)
 	for i, be := range cfg.Backends {
 		be.Mode = strings.ToUpper(be.Mode)
-		if be.Mode == "" {
-			be.Mode = ModePlaintext
+		if be.Mode == "" || be.Mode == ModePlaintext {
+			be.Mode = ModeTCP
 		}
 		if !slices.Contains(validModes, be.Mode) {
 			return fmt.Errorf("backend[%d].Mode: value %q must be one of %v", i, be.Mode, validModes)
