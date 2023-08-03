@@ -81,6 +81,7 @@ type Proxy struct {
 	listener net.Listener
 
 	mu            sync.Mutex
+	idle          *sync.Cond
 	defServerName string
 	backends      map[string]*Backend
 	connections   map[connKey]*netw.Conn
@@ -237,12 +238,15 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	if p.cfg != nil {
 		for _, be := range p.cfg.Backends {
 			if be.httpServer != nil {
-				go func(be *Backend) {
-					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-					defer cancel()
-					be.httpServer.Shutdown(ctx)
+				if p.ctx == nil {
+					be.httpServer.Close()
 					close(be.httpConnChan)
-				}(be)
+				} else {
+					go func(be *Backend) {
+						be.httpServer.Shutdown(p.ctx)
+						close(be.httpConnChan)
+					}(be)
+				}
 			}
 		}
 	}
@@ -254,6 +258,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 // Start starts a TLS proxy with the given configuration. The proxy runs
 // in background until the context is canceled.
 func (p *Proxy) Start(ctx context.Context) error {
+	p.idle = sync.NewCond(&p.mu)
 	var httpServer *http.Server
 	if p.cfg.HTTPAddr != "" {
 		httpServer = &http.Server{
@@ -280,17 +285,10 @@ func (p *Proxy) Start(ctx context.Context) error {
 
 	go func() {
 		<-p.ctx.Done()
-		p.cancel()
 		if httpServer != nil {
 			httpServer.Close()
 		}
-		p.listener.Close()
-		for _, be := range p.cfg.Backends {
-			if be.httpServer != nil {
-				be.httpServer.Close()
-				close(be.httpConnChan)
-			}
-		}
+		p.Stop()
 	}()
 
 	go func() {
@@ -311,12 +309,65 @@ func (p *Proxy) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop signals the background goroutines to exit.
+// Stop closes all connections and stops all goroutines.
 func (p *Proxy) Stop() {
+	p.mu.Lock()
 	if p.cancel != nil {
 		p.cancel()
-		p.cancel = nil
 	}
+	p.listener.Close()
+	backends := p.cfg.Backends
+	p.cfg.Backends = nil
+	conns := make([]net.Conn, 0, len(p.connections))
+	for _, conn := range p.connections {
+		conns = append(conns, conn)
+	}
+	p.mu.Unlock()
+	for _, be := range backends {
+		if be.httpServer != nil {
+			be.httpServer.Close()
+			close(be.httpConnChan)
+		}
+	}
+	for _, conn := range conns {
+		conn.Close()
+	}
+}
+
+// Shutdown gracefully shuts down the proxy, waiting for all existing
+// connections to close or ctx to be canceled.
+func (p *Proxy) Shutdown(ctx context.Context) {
+	p.mu.Lock()
+	p.listener.Close()
+	for _, be := range p.cfg.Backends {
+		if be.httpServer == nil {
+			continue
+		}
+		s := be.httpServer
+		be.httpServer = nil
+		ch := be.httpConnChan
+		go func() {
+			s.Shutdown(ctx)
+			close(ch)
+		}()
+	}
+	p.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if n := len(p.connections); n > 0 {
+			log.Printf("INF Waiting for active connections to close: %d", n)
+			p.idle.Wait()
+		}
+		close(done)
+	}()
+	select {
+	case <-ctx.Done():
+	case <-done:
+	}
+	p.Stop()
 }
 
 func (p *Proxy) baseTLSConfig() *tls.Config {

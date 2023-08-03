@@ -48,6 +48,7 @@ func main() {
 	configFile := flag.String("config", "", "The config file name.")
 	versionFlag := flag.Bool("v", false, "Show the version.")
 	passphraseFlag := flag.String("passphrase", os.Getenv("TLSPROXY_PASSPHRASE"), "The passphrase to encrypt the TLS keys on disk.")
+	shutdownGraceFlag := flag.Duration("shutdown-grace-period", time.Minute, "The shutdown grace period.")
 	testFlag := flag.Bool("use-ephemeral-certificate-manager", false, "Use an ephemeral certificate manager. This is for testing purposes only.")
 	stdoutFlag := flag.Bool("stdout", false, "Log to STDOUT.")
 	flag.Parse()
@@ -106,4 +107,8 @@ func main() {
 	signal.Notify(ch, syscall.SIGTERM)
 	sig := <-ch
 	log.Printf("INF Received signal %d (%s)", sig, sig)
+
+	ctx, canc := context.WithTimeout(ctx, *shutdownGraceFlag)
+	defer canc()
+	p.Shutdown(ctx)
 }
