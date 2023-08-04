@@ -1,3 +1,7 @@
+[![pr](https://github.com/c2FmZQ/tlsproxy/actions/workflows/pr.yml/badge.svg?branch=main)](https://github.com/c2FmZQ/tlsproxy/actions/workflows/pr.yml)
+[![release](https://github.com/c2FmZQ/tlsproxy/actions/workflows/release.yml/badge.svg)](https://github.com/c2FmZQ/tlsproxy/actions/workflows/release.yml)
+[![CodeQL](https://github.com/c2FmZQ/tlsproxy/actions/workflows/github-code-scanning/codeql/badge.svg?branch=main)](https://github.com/c2FmZQ/tlsproxy/actions/workflows/github-code-scanning/codeql)
+
 # TLS Termination Proxy
 
 This repo contains a simple lightweight [TLS termination proxy](https://en.wikipedia.org/wiki/TLS_termination_proxy) that uses letsencrypt to provide TLS encryption for any number of TCP or HTTP servers and server names concurrently on the same port.
@@ -106,7 +110,7 @@ backends:
   - 192.168.5.66:8443
 ```
 
-See the [examples](https://github.com/c2FmZQ/tlsproxy/blob/main/examples) directory and [config.go](https://github.com/c2FmZQ/tlsproxy/blob/main/proxy/config.go#L64) for more details.
+See the [godoc](https://pkg.go.dev/github.com/c2FmZQ/tlsproxy/proxy#section-documentation) and the [examples](https://github.com/c2FmZQ/tlsproxy/blob/main/examples) directory for more details.
 
 
 ## How to download and run tlsproxy
