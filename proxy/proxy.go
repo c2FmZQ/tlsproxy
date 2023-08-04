@@ -81,7 +81,7 @@ type Proxy struct {
 	listener net.Listener
 
 	mu            sync.Mutex
-	idle          *sync.Cond
+	connClosed    *sync.Cond
 	defServerName string
 	backends      map[string]*Backend
 	connections   map[connKey]*netw.Conn
@@ -258,7 +258,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 // Start starts a TLS proxy with the given configuration. The proxy runs
 // in background until the context is canceled.
 func (p *Proxy) Start(ctx context.Context) error {
-	p.idle = sync.NewCond(&p.mu)
+	p.connClosed = sync.NewCond(&p.mu)
 	var httpServer *http.Server
 	if p.cfg.HTTPAddr != "" {
 		httpServer = &http.Server{
@@ -355,11 +355,18 @@ func (p *Proxy) Shutdown(ctx context.Context) {
 
 	done := make(chan struct{})
 	go func() {
+		connLeft := func() bool {
+			for _, c := range p.connections {
+				if mode := c.Annotation(modeKey, "").(string); mode != ModeTCP && mode != ModeTLS && mode != ModeTLSPassthrough {
+					return true
+				}
+			}
+			return false
+		}
 		p.mu.Lock()
 		defer p.mu.Unlock()
-		if n := len(p.connections); n > 0 {
-			log.Printf("INF Waiting for active connections to close: %d", n)
-			p.idle.Wait()
+		for connLeft() {
+			p.connClosed.Wait()
 		}
 		close(done)
 	}()

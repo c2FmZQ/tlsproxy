@@ -76,11 +76,8 @@ func (p *Proxy) removeConn(c *netw.Conn) int {
 		m.numBytesReceived += c.BytesReceived()
 	}
 
-	n := len(p.connections)
-	if n == 0 {
-		p.idle.Broadcast()
-	}
-	return n
+	p.connClosed.Broadcast()
+	return len(p.connections)
 }
 
 func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
