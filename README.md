@@ -19,7 +19,7 @@ Overview of features:
 * [x] Access control by IP address.
 * [x] Routing based on Server Name Indication (SNI), with optional default route when SNI isn't used.
 * [x] Simple round-robin load balancing between servers.
-* [x] Support any ALPN protocol in TLS, TLSPASSTHROUGH, or PLAINTEXT mode.
+* [x] Support any ALPN protocol in TLS, TLSPASSTHROUGH, or TCP mode.
 * [x] Use the same TCP address (IPAddr:port) for any number of server names, e.g. xxx.xxx.xxx.xxx:443.
 
 ## Example config:
