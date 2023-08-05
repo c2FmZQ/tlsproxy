@@ -1,4 +1,4 @@
-name: PR
+name: Tests
 on: 
   - pull_request
   - push
@@ -17,6 +17,14 @@ jobs:
       run: go build ./...
     - name: Run go vet
       run: go vet ./...
+    - name: Run go fmt
+      run: |
+        out="$(go fmt ./...)"
+        if [[ -n "${out}" ]]; then
+          echo "Need to run `go fmt` on:"
+          echo "${out}"
+          exit 1
+        fi
     - name: Run go tests
       run: go test -v ./...
     - name: Run go tests (-race)
