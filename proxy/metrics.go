@@ -76,7 +76,6 @@ func (p *Proxy) removeConn(c *netw.Conn) int {
 		m.numBytesReceived += c.BytesReceived()
 	}
 
-	p.connClosed.Broadcast()
 	return len(p.connections)
 }
 
@@ -216,6 +215,44 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		}
 	} else {
 		fmt.Fprintf(&buf, "Too many MemProfile records: %d\n", n)
+	}
+	fmt.Fprintln(&buf)
+	goProf := make([]runtime.StackRecord, runtime.NumGoroutine()+10)
+	if n, ok := runtime.GoroutineProfile(goProf); ok {
+		count := make(map[string]int)
+		for _, p := range goProf[:n] {
+			var funcs []string
+			for i := range p.Stack0 {
+				if p.Stack0[i] == 0 {
+					break
+				}
+				funcs = append(funcs, runtime.FuncForPC(p.Stack0[i]).Name())
+			}
+			if len(funcs) < 2 {
+				continue
+			}
+			count[funcs[len(funcs)-2]]++
+		}
+		type item struct {
+			n int
+			f string
+		}
+		items := make([]item, 0, len(count))
+		for k, v := range count {
+			items = append(items, item{v, k})
+
+		}
+		sort.Slice(items, func(i, j int) bool {
+			if items[i].n == items[j].n {
+				return items[i].f < items[j].f
+			}
+			return items[i].n > items[j].n
+		})
+		for _, item := range items {
+			fmt.Fprintf(&buf, "  %4d %s()\n", item.n, item.f)
+		}
+	} else {
+		fmt.Fprintf(&buf, "Too many GoroutineProfile records: %d\n", n)
 	}
 }
 

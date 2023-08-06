@@ -53,12 +53,14 @@ func startInternalHTTPServer(handler http.Handler, conns <-chan net.Conn) *http.
 			return context.WithValue(ctx, connCtxKey, c)
 		},
 	}
-	go func() {
-		if err := s.Serve(l); err != net.ErrClosed && err != http.ErrServerClosed {
-			log.Printf("ERR internal http server exited: %v", err)
-		}
-	}()
+	go serveHTTP(s, l)
 	return s
+}
+
+func serveHTTP(s *http.Server, l net.Listener) {
+	if err := s.Serve(l); err != net.ErrClosed && err != http.ErrServerClosed {
+		log.Printf("ERR http server exited: %v", err)
+	}
 }
 
 type proxyListener struct {

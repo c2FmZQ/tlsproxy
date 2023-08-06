@@ -230,8 +230,10 @@ type Backend struct {
 	httpServer   *http.Server
 	httpConnChan chan net.Conn
 
-	mu   sync.Mutex
-	next int
+	mu       sync.Mutex
+	next     int
+	inFlight int
+	shutdown bool
 }
 
 // Check checks that the Config is valid, sets some default values, and

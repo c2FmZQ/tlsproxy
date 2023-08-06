@@ -21,8 +21,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Proxy is a simple TLS terminating proxy that uses letsencrypt to provide TLS
-// encryption for any TCP servers.
+// tlsproxy is a simple TLS terminating proxy that uses Let's Encrypt to provide
+// TLS encryption for any TCP and HTTP servers.
 package main
 
 import (
@@ -84,23 +84,7 @@ func main() {
 	if err := p.Start(ctx); err != nil {
 		log.Fatal(err)
 	}
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(30 * time.Second):
-			}
-			cfg, err := proxy.ReadConfig(*configFile)
-			if err != nil {
-				log.Printf("ERR %v", err)
-				continue
-			}
-			if err := p.Reconfigure(cfg); err != nil {
-				log.Printf("ERR %v", err)
-			}
-		}
-	}()
+	go configLoop(ctx, p, *configFile)
 
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGINT)
@@ -111,4 +95,22 @@ func main() {
 	ctx, canc := context.WithTimeout(ctx, *shutdownGraceFlag)
 	defer canc()
 	p.Shutdown(ctx)
+}
+
+func configLoop(ctx context.Context, p *proxy.Proxy, file string) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(30 * time.Second):
+		}
+		cfg, err := proxy.ReadConfig(file)
+		if err != nil {
+			log.Printf("ERR %v", err)
+			continue
+		}
+		if err := p.Reconfigure(cfg); err != nil {
+			log.Printf("ERR %v", err)
+		}
+	}
 }

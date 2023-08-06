@@ -57,6 +57,37 @@ var (
 	commaRE = regexp.MustCompile(`, *`)
 )
 
+func (be *Backend) incInFlight(delta int) int {
+	be.mu.Lock()
+	defer be.mu.Unlock()
+	be.inFlight += delta
+	if be.inFlight == 0 && be.shutdown {
+		close(be.httpConnChan)
+		be.httpServer = nil
+	}
+	return be.inFlight
+}
+
+func (be *Backend) close(ctx context.Context) {
+	be.mu.Lock()
+	defer be.mu.Unlock()
+	if be.httpServer == nil {
+		return
+	}
+	if ctx == nil {
+		be.httpServer.Close()
+		close(be.httpConnChan)
+		be.httpServer = nil
+		return
+	}
+	go be.httpServer.Shutdown(ctx)
+	be.shutdown = true
+	if be.inFlight == 0 {
+		close(be.httpConnChan)
+		be.httpServer = nil
+	}
+}
+
 func (be *Backend) dial(proto string) (net.Conn, error) {
 	if len(be.Addresses) == 0 {
 		return nil, errors.New("no backend addresses")

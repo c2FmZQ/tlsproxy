@@ -22,8 +22,8 @@
 // SOFTWARE.
 
 // Package proxy implements a simple lightweight TLS termination proxy that uses
-// Let's Encrypt to provide TLS encryption for any number of TCP servers and
-// server names concurrently on the same port.
+// Let's Encrypt to provide TLS encryption for any number of TCP and HTTP
+// servers and server names concurrently on the same port.
 package proxy
 
 import (
@@ -57,11 +57,11 @@ const (
 	handshakeDoneKey = "h"
 	dialDoneKey      = "d"
 	serverNameKey    = "sn"
-	modeKey          = "m"
 	protoKey         = "p"
 	subjectKey       = "sub"
 	internalConnKey  = "ic"
 	reportEndKey     = "re"
+	backendKey       = "be"
 )
 
 var (
@@ -237,18 +237,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	}
 	if p.cfg != nil {
 		for _, be := range p.cfg.Backends {
-			if be.httpServer == nil {
-				continue
-			}
-			if p.ctx == nil {
-				be.httpServer.Close()
-				close(be.httpConnChan)
-				continue
-			}
-			go func(be *Backend) {
-				be.httpServer.Shutdown(p.ctx)
-				close(be.httpConnChan)
-			}(be)
+			be.close(p.ctx)
 		}
 	}
 	p.backends = backends
@@ -269,12 +258,8 @@ func (p *Proxy) Start(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		go func() {
-			httpServer.SetKeepAlivesEnabled(false)
-			if err := httpServer.Serve(httpListener); err != http.ErrServerClosed {
-				log.Fatalf("http: %v", err)
-			}
-		}()
+		httpServer.SetKeepAlivesEnabled(false)
+		go serveHTTP(httpServer, httpListener)
 	}
 
 	listener, err := netw.Listen("tcp", p.cfg.TLSAddr)
@@ -284,30 +269,33 @@ func (p *Proxy) Start(ctx context.Context) error {
 	p.listener = listener
 	p.ctx, p.cancel = context.WithCancel(ctx)
 
-	go func() {
-		<-p.ctx.Done()
-		if httpServer != nil {
-			httpServer.Close()
-		}
-		p.Stop()
-	}()
-
-	go func() {
-		log.Printf("INF Accepting TLS connections on %s", p.listener.Addr())
-		for {
-			conn, err := p.listener.Accept()
-			if err != nil {
-				if errors.Is(err, net.ErrClosed) {
-					log.Print("INF Accept loop terminated")
-					break
-				}
-				log.Printf("ERR Accept: %v", err)
-				continue
-			}
-			go p.handleConnection(conn.(*netw.Conn))
-		}
-	}()
+	go p.ctxWait(httpServer)
+	go p.acceptLoop()
 	return nil
+}
+
+func (p *Proxy) ctxWait(s *http.Server) {
+	<-p.ctx.Done()
+	if s != nil {
+		s.Close()
+	}
+	p.Stop()
+}
+
+func (p *Proxy) acceptLoop() {
+	log.Printf("INF Accepting TLS connections on %s", p.listener.Addr())
+	for {
+		conn, err := p.listener.Accept()
+		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				log.Print("INF Accept loop terminated")
+				break
+			}
+			log.Printf("ERR Accept: %v", err)
+			continue
+		}
+		go p.handleConnection(conn.(*netw.Conn))
+	}
 }
 
 // Stop closes all connections and stops all goroutines.
@@ -325,10 +313,7 @@ func (p *Proxy) Stop() {
 	}
 	p.mu.Unlock()
 	for _, be := range backends {
-		if be.httpServer != nil {
-			be.httpServer.Close()
-			close(be.httpConnChan)
-		}
+		be.close(nil)
 	}
 	for _, conn := range conns {
 		conn.Close()
@@ -341,16 +326,7 @@ func (p *Proxy) Shutdown(ctx context.Context) {
 	p.mu.Lock()
 	p.listener.Close()
 	for _, be := range p.cfg.Backends {
-		if be.httpServer == nil {
-			continue
-		}
-		s := be.httpServer
-		be.httpServer = nil
-		ch := be.httpConnChan
-		go func() {
-			s.Shutdown(ctx)
-			close(ch)
-		}()
+		be.close(ctx)
 	}
 	p.mu.Unlock()
 
@@ -358,7 +334,7 @@ func (p *Proxy) Shutdown(ctx context.Context) {
 	go func() {
 		connLeft := func() bool {
 			for _, c := range p.connections {
-				if mode := c.Annotation(modeKey, "").(string); mode != ModeTCP && mode != ModeTLS && mode != ModeTLSPassthrough {
+				if mode := connMode(c); mode != ModeTCP && mode != ModeTLS && mode != ModeTLSPassthrough {
 					return true
 				}
 			}
@@ -399,8 +375,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	defer func() {
 		if r := recover(); r != nil {
 			p.recordEvent("panic")
-			subject := conn.Annotation(subjectKey, "-").(string)
-			log.Printf("ERR [%s] %s: PANIC: %v", subject, conn.RemoteAddr(), r)
+			log.Printf("ERR [%s] %s: PANIC: %v", connSubject(conn), conn.RemoteAddr(), r)
 			conn.Close()
 		}
 	}()
@@ -420,6 +395,10 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 				formatConnDesc(conn), time.Since(startTime).Truncate(time.Millisecond),
 				conn.BytesReceived(), conn.BytesSent())
 		}
+		if be := connBackend(conn); be != nil {
+			be.incInFlight(-1)
+		}
+		p.connClosed.Broadcast()
 	})
 	if numOpen >= p.cfg.MaxOpen {
 		p.recordEvent("too many open connections")
@@ -449,31 +428,32 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		sendUnrecognizedName(conn)
 		return
 	}
-	conn.SetAnnotation(modeKey, be.Mode)
+	conn.SetAnnotation(backendKey, be)
+	be.incInFlight(1)
 	switch {
 	case be.Mode == ModeTLSPassthrough:
-		if err := p.checkIP(be, conn, serverName); err != nil {
+		if err := p.checkIP(conn); err != nil {
 			return
 		}
-		p.handleTLSPassthroughConnection(conn, serverName)
+		p.handleTLSPassthroughConnection(conn)
 
 	case len(hello.ALPNProtos) == 1 && hello.ALPNProtos[0] == acme.ALPNProto && hello.ServerName != "":
 		tc := p.baseTLSConfig()
 		tc.NextProtos = []string{acme.ALPNProto}
-		p.handleACMEConnection(tls.Server(conn, tc), serverName)
+		p.handleACMEConnection(tls.Server(conn, tc))
 
 	case be.Mode == ModeConsole || be.Mode == ModeHTTP || be.Mode == ModeHTTPS:
-		if err := p.checkIP(be, conn, serverName); err != nil {
+		if err := p.checkIP(conn); err != nil {
 			return
 		}
-		p.handleHTTPConnection(tls.Server(conn, be.tlsConfig), serverName)
+		p.handleHTTPConnection(tls.Server(conn, be.tlsConfig))
 		closeConnNeeded = false
 
 	case be.Mode == ModeTCP || be.Mode == ModeTLS:
-		if err := p.checkIP(be, conn, serverName); err != nil {
+		if err := p.checkIP(conn); err != nil {
 			return
 		}
-		p.handleTLSConnection(tls.Server(conn, be.tlsConfig), serverName)
+		p.handleTLSConnection(tls.Server(conn, be.tlsConfig))
 
 	default:
 		log.Printf("ERR [-] %s: unhandled connection %q", conn.RemoteAddr(), be.Mode)
@@ -482,8 +462,10 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 
 // checkIP is just a wrapper around be.checkIP. It must be called before the TLS
 // handshake completes.
-func (p *Proxy) checkIP(be *Backend, conn net.Conn, serverName string) error {
+func (p *Proxy) checkIP(conn *netw.Conn) error {
+	be := connBackend(conn)
 	if err := be.checkIP(conn.RemoteAddr()); err != nil {
+		serverName := connServerName(conn)
 		p.recordEvent(serverName + " CheckIP " + err.Error())
 		log.Printf("BAD [-] %s ➔  %q CheckIP: %v", conn.RemoteAddr(), serverName, err)
 		sendUnrecognizedName(conn)
@@ -492,9 +474,10 @@ func (p *Proxy) checkIP(be *Backend, conn net.Conn, serverName string) error {
 	return nil
 }
 
-func (p *Proxy) handleACMEConnection(conn *tls.Conn, serverName string) {
+func (p *Proxy) handleACMEConnection(conn *tls.Conn) {
 	ctx, cancel := context.WithTimeout(p.ctx, 2*time.Minute)
 	defer cancel()
+	serverName := connServerName(conn)
 	log.Printf("INF ACME %s ➔  %s", conn.RemoteAddr(), serverName)
 	if err := conn.HandshakeContext(ctx); err != nil {
 		p.recordEvent("tls handshake failed")
@@ -502,7 +485,10 @@ func (p *Proxy) handleACMEConnection(conn *tls.Conn, serverName string) {
 	}
 }
 
-func (p *Proxy) authorizeTLSConnection(conn *tls.Conn, serverName string) bool {
+func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
+	serverName := connServerName(conn)
+	be := connBackend(conn)
+
 	ctx, cancel := context.WithTimeout(p.ctx, 2*time.Minute)
 	defer cancel()
 	if err := conn.HandshakeContext(ctx); err != nil {
@@ -517,8 +503,7 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn, serverName string) bool {
 		log.Printf("BAD [-] %s ➔  %q Handshake: %v", conn.RemoteAddr(), serverName, unwrapErr(err))
 		return false
 	}
-	netwConn := conn.NetConn().(*netw.Conn)
-	netwConn.SetAnnotation(handshakeDoneKey, time.Now())
+	netwConn(conn).SetAnnotation(handshakeDoneKey, time.Now())
 	cs := conn.ConnectionState()
 	if (cs.ServerName == "" && serverName != p.defaultServerName()) || (cs.ServerName != "" && cs.ServerName != serverName) {
 		p.recordEvent("mismatched server name")
@@ -530,16 +515,10 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn, serverName string) bool {
 	if len(cs.PeerCertificates) > 0 {
 		subject = cs.PeerCertificates[0].Subject.String()
 	}
-	netwConn.SetAnnotation(protoKey, proto)
-	netwConn.SetAnnotation(subjectKey, subject)
+	netwConn(conn).SetAnnotation(protoKey, proto)
+	netwConn(conn).SetAnnotation(subjectKey, subject)
 
-	// The checks below should already have been done in VerifyConnection.
-	be, err := p.backend(serverName)
-	if err != nil {
-		p.recordEvent(err.Error())
-		log.Printf("BAD [-] %s ➔  %q: %v", conn.RemoteAddr(), serverName, err)
-		return false
-	}
+	// The check below is also done in VerifyConnection.
 	if be.ClientACL != nil {
 		if err := be.authorize(subject); err != nil {
 			p.recordEvent(err.Error())
@@ -550,18 +529,13 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn, serverName string) bool {
 	return true
 }
 
-func (p *Proxy) handleHTTPConnection(conn *tls.Conn, serverName string) {
-	if !p.authorizeTLSConnection(conn, serverName) {
+func (p *Proxy) handleHTTPConnection(conn *tls.Conn) {
+	if !p.authorizeTLSConnection(conn) {
 		conn.Close()
 		return
 	}
-	be, err := p.backend(serverName)
-	if err != nil {
-		p.recordEvent(err.Error())
-		log.Printf("BAD [-] %s ➔  %q: %v", conn.RemoteAddr(), serverName, err)
-		conn.Close()
-		return
-	}
+	serverName := connServerName(conn)
+	be := connBackend(conn)
 	if err := be.limiter.Wait(p.ctx); err != nil {
 		p.recordEvent(err.Error())
 		log.Printf("ERR [-] %s ➔  %q Wait: %v", conn.RemoteAddr(), serverName, err)
@@ -580,30 +554,24 @@ func (p *Proxy) handleHTTPConnection(conn *tls.Conn, serverName string) {
 		conn.Close()
 		return
 	}
-	netwConn := conn.NetConn().(*netw.Conn)
-	netwConn.SetAnnotation(reportEndKey, true)
+	netwConn(conn).SetAnnotation(reportEndKey, true)
 	log.Printf("CON %s", formatConnDesc(conn.NetConn().(*netw.Conn)))
 	be.httpConnChan <- conn
 }
 
-func (p *Proxy) handleTLSConnection(extConn *tls.Conn, serverName string) {
-	if !p.authorizeTLSConnection(extConn, serverName) {
+func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
+	if !p.authorizeTLSConnection(extConn) {
 		return
 	}
-	be, err := p.backend(serverName)
-	if err != nil {
-		p.recordEvent(err.Error())
-		log.Printf("BAD [-] %s ➔  %q: %v", extConn.RemoteAddr(), serverName, err)
-		return
-	}
+	serverName := connServerName(extConn)
+	be := connBackend(extConn)
 	if err := be.limiter.Wait(p.ctx); err != nil {
 		p.recordEvent(err.Error())
 		log.Printf("ERR [-] %s ➔  %q Wait: %v", extConn.RemoteAddr(), serverName, err)
 		return
 	}
 
-	extNetwConn := extConn.NetConn().(*netw.Conn)
-	proto := extNetwConn.Annotation(protoKey, "").(string)
+	proto := connProto(extConn)
 
 	intConn, err := be.dial(proto)
 	if err != nil {
@@ -614,43 +582,36 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn, serverName string) {
 	defer intConn.Close()
 	setKeepAlive(intConn)
 
-	extNetwConn.SetAnnotation(dialDoneKey, time.Now())
-	extNetwConn.SetAnnotation(internalConnKey, intConn)
+	netwConn(extConn).SetAnnotation(dialDoneKey, time.Now())
+	netwConn(extConn).SetAnnotation(internalConnKey, intConn)
 
-	desc := formatConnDesc(extNetwConn)
+	desc := formatConnDesc(netwConn(extConn))
 	log.Printf("CON %s", desc)
 
 	if err := be.bridgeConns(extConn, intConn); err != nil {
 		log.Printf("DBG %s %v", desc, err)
 	}
 
-	startTime := extNetwConn.Annotation(startTimeKey, time.Time{}).(time.Time)
-	hsTime := extNetwConn.Annotation(handshakeDoneKey, time.Time{}).(time.Time)
-	dialTime := extNetwConn.Annotation(dialDoneKey, time.Time{}).(time.Time)
+	startTime := netwConn(extConn).Annotation(startTimeKey, time.Time{}).(time.Time)
+	hsTime := netwConn(extConn).Annotation(handshakeDoneKey, time.Time{}).(time.Time)
+	dialTime := netwConn(extConn).Annotation(dialDoneKey, time.Time{}).(time.Time)
 	totalTime := time.Since(startTime).Truncate(time.Millisecond)
 
 	log.Printf("END %s; HS:%s Dial:%s Dur:%s Recv:%d Sent:%d", desc,
 		hsTime.Sub(startTime).Truncate(time.Millisecond),
 		dialTime.Sub(hsTime).Truncate(time.Millisecond), totalTime,
-		extNetwConn.BytesReceived(), extNetwConn.BytesSent())
+		netwConn(extConn).BytesReceived(), netwConn(extConn).BytesSent())
 }
 
-func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn, serverName string) {
-	be, err := p.backend(serverName)
-	if err != nil {
-		p.recordEvent(err.Error())
-		log.Printf("BAD [-] %s ➔  %q: %v", extConn.RemoteAddr(), serverName, err)
-		sendUnrecognizedName(extConn)
-		return
-	}
+func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
+	serverName := connServerName(extConn)
+	be := connBackend(extConn)
 	if err := be.limiter.Wait(p.ctx); err != nil {
 		p.recordEvent(err.Error())
 		log.Printf("ERR [-] %s ➔  %q Wait: %v", extConn.RemoteAddr(), serverName, err)
 		sendInternalError(extConn)
 		return
 	}
-
-	extNetwConn := extConn.(*netw.Conn)
 
 	intConn, err := be.dial("")
 	if err != nil {
@@ -662,23 +623,23 @@ func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn, serverName stri
 	defer intConn.Close()
 	setKeepAlive(intConn)
 
-	extNetwConn.SetAnnotation(dialDoneKey, time.Now())
-	extNetwConn.SetAnnotation(internalConnKey, intConn)
+	netwConn(extConn).SetAnnotation(dialDoneKey, time.Now())
+	netwConn(extConn).SetAnnotation(internalConnKey, intConn)
 
-	desc := formatConnDesc(extNetwConn)
+	desc := formatConnDesc(netwConn(extConn))
 	log.Printf("CON %s", desc)
 
 	if err := be.bridgeConns(extConn, intConn); err != nil {
 		log.Printf("DBG  %s %v", desc, err)
 	}
 
-	startTime := extNetwConn.Annotation(startTimeKey, time.Time{}).(time.Time)
-	dialTime := extNetwConn.Annotation(dialDoneKey, time.Time{}).(time.Time)
+	startTime := netwConn(extConn).Annotation(startTimeKey, time.Time{}).(time.Time)
+	dialTime := netwConn(extConn).Annotation(dialDoneKey, time.Time{}).(time.Time)
 	totalTime := time.Since(startTime).Truncate(time.Millisecond)
 
 	log.Printf("END %s; Dial:%s Dur:%s Recv:%d Sent:%d", desc,
 		dialTime.Sub(startTime).Truncate(time.Millisecond), totalTime,
-		extNetwConn.BytesReceived(), extNetwConn.BytesSent())
+		netwConn(extConn).BytesReceived(), netwConn(extConn).BytesSent())
 }
 
 func (p *Proxy) defaultServerName() string {
@@ -694,18 +655,20 @@ func (p *Proxy) backend(serverName string) (*Backend, error) {
 	if !ok {
 		return nil, errors.New("unexpected SNI")
 	}
+	be.mu.Lock()
+	defer be.mu.Unlock()
+	if be.shutdown {
+		return nil, errors.New("backend shutdown")
+	}
 	return be, nil
 }
 
 func formatConnDesc(c *netw.Conn) string {
-	serverName := c.Annotation(serverNameKey, "").(string)
-	mode := c.Annotation(modeKey, "").(string)
-	proto := c.Annotation(protoKey, "").(string)
-	subject := c.Annotation(subjectKey, "").(string)
-	var intConn net.Conn
-	if ic, ok := c.Annotation(internalConnKey, intConn).(net.Conn); ok {
-		intConn = ic
-	}
+	serverName := connServerName(c)
+	mode := connMode(c)
+	proto := connProto(c)
+	subject := connSubject(c)
+	intConn := connIntConn(c)
 
 	var buf bytes.Buffer
 	if subject == "" {
