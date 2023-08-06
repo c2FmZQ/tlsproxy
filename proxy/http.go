@@ -41,7 +41,8 @@ var connCtxKey ctxKey = 1
 
 func startInternalHTTPServer(handler http.Handler, conns <-chan net.Conn) *http.Server {
 	l := &proxyListener{
-		ch: conns,
+		ch:       conns,
+		closedCh: make(chan struct{}),
 	}
 	s := &http.Server{
 		Handler:      handler,
@@ -53,7 +54,7 @@ func startInternalHTTPServer(handler http.Handler, conns <-chan net.Conn) *http.
 		},
 	}
 	go func() {
-		if err := s.Serve(l); err != net.ErrClosed {
+		if err := s.Serve(l); err != net.ErrClosed && err != http.ErrServerClosed {
 			log.Printf("ERR internal http server exited: %v", err)
 		}
 	}()
@@ -64,17 +65,22 @@ type proxyListener struct {
 	ch   <-chan net.Conn
 	addr net.Addr
 
-	mu     sync.Mutex
-	closed bool
+	mu       sync.Mutex
+	closed   bool
+	closedCh chan struct{}
 }
 
 func (l *proxyListener) Accept() (net.Conn, error) {
-	c, ok := <-l.ch
-	if !ok {
-		l.Close()
+	select {
+	case <-l.closedCh:
 		return nil, net.ErrClosed
+	case c, ok := <-l.ch:
+		if !ok {
+			l.Close()
+			return nil, net.ErrClosed
+		}
+		return c, nil
 	}
-	return c, nil
 }
 
 func (l *proxyListener) Close() error {
@@ -82,6 +88,7 @@ func (l *proxyListener) Close() error {
 	defer l.mu.Unlock()
 	if !l.closed {
 		l.closed = true
+		close(l.closedCh)
 		go func() {
 			for range l.ch {
 			}

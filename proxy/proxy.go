@@ -237,17 +237,18 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	}
 	if p.cfg != nil {
 		for _, be := range p.cfg.Backends {
-			if be.httpServer != nil {
-				if p.ctx == nil {
-					be.httpServer.Close()
-					close(be.httpConnChan)
-				} else {
-					go func(be *Backend) {
-						be.httpServer.Shutdown(p.ctx)
-						close(be.httpConnChan)
-					}(be)
-				}
+			if be.httpServer == nil {
+				continue
 			}
+			if p.ctx == nil {
+				be.httpServer.Close()
+				close(be.httpConnChan)
+				continue
+			}
+			go func(be *Backend) {
+				be.httpServer.Shutdown(p.ctx)
+				close(be.httpConnChan)
+			}(be)
 		}
 	}
 	p.backends = backends
