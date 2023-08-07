@@ -236,6 +236,13 @@ type Backend struct {
 	shutdown bool
 }
 
+func (cfg *Config) clone() *Config {
+	b, _ := yaml.Marshal(cfg)
+	var out Config
+	yaml.Unmarshal(b, &out)
+	return &out
+}
+
 // Check checks that the Config is valid, sets some default values, and
 // initializes internal data structures.
 func (cfg *Config) Check() error {

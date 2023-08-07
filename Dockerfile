@@ -17,5 +17,6 @@ COPY --from=build /go/bin/tlsproxy /bin/
 EXPOSE 10080 10443
 USER 1000:1000
 VOLUME ["/config", "/.cache"]
+ENV GODEBUG="clobberfree=1"
 
 ENTRYPOINT ["/bin/tlsproxy", "--config=/config/config.yaml", "--stdout"]

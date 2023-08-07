@@ -157,6 +157,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	if bytes.Equal(a, b) {
 		return nil
 	}
+	cfg = cfg.clone()
 	if err := cfg.Check(); err != nil {
 		return err
 	}
@@ -242,7 +243,49 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	}
 	p.backends = backends
 	p.cfg = cfg
+	go p.reAuthorize()
 	return nil
+}
+
+func (p *Proxy) reAuthorize() {
+	p.mu.Lock()
+	conns := make([]*netw.Conn, 0, len(p.connections))
+	for _, c := range p.connections {
+		conns = append(conns, c)
+	}
+	p.mu.Unlock()
+
+	for _, conn := range conns {
+		serverName := connServerName(conn)
+		be, err := p.backend(serverName)
+		if err != nil {
+			p.recordEvent(err.Error())
+			log.Printf("BAD [-] ReAuth %s ➔  %q: %v", conn.RemoteAddr(), serverName, err)
+			conn.Close()
+			continue
+		}
+		if oldBE := connBackend(conn); be.Mode != oldBE.Mode {
+			log.Printf("INF [-] ReAuth %s ➔  %q backend mode changed %s->%s", conn.RemoteAddr(), serverName, oldBE.Mode, be.Mode)
+			conn.Close()
+			continue
+		}
+		if err := be.checkIP(conn.RemoteAddr()); err != nil {
+			p.recordEvent(serverName + " CheckIP " + err.Error())
+			log.Printf("BAD [-] ReAuth %s ➔  %q CheckIP: %v", conn.RemoteAddr(), serverName, err)
+			conn.Close()
+			continue
+		}
+		if !be.ClientAuth {
+			continue
+		}
+		subject := connSubject(conn)
+		if err := be.authorize(subject); err != nil {
+			p.recordEvent(err.Error())
+			log.Printf("BAD [-] ReAuth %s ➔  %q Authorize(%q): %v", conn.RemoteAddr(), serverName, subject, err)
+			conn.Close()
+			continue
+		}
+	}
 }
 
 // Start starts a TLS proxy with the given configuration. The proxy runs
