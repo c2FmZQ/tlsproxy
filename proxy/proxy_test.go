@@ -31,7 +31,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
@@ -366,6 +368,144 @@ func TestAuthnAuthz(t *testing.T) {
 			t.Errorf("%s: Got %q, want %q", tc.desc, got, tc.want)
 		}
 	}
+}
+
+func TestConcurrency(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ca, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	be1 := newHTTPServer(t, ctx, "http-server", nil)
+	be2 := newHTTPServer(t, ctx, "https-server", ca)
+	be3 := newHTTPServer(t, ctx, "tcp-server", nil)
+	be4 := newHTTPServer(t, ctx, "tls-server", ca)
+	be5 := newHTTPServer(t, ctx, "passthru.example.com", ca)
+
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: "localhost:0",
+			TLSAddr:  "localhost:0",
+			CacheDir: t.TempDir(),
+			MaxOpen:  2000,
+			Backends: []*Backend{
+				{
+					ServerNames: []string{
+						"http.example.com",
+					},
+					Mode: "HTTP",
+					Addresses: []string{
+						be1.String(),
+					},
+					ForwardRateLimit: 1000,
+				},
+				{
+					ServerNames: []string{
+						"https.example.com",
+					},
+					Mode: "HTTPS",
+					Addresses: []string{
+						be2.String(),
+					},
+					ForwardRateLimit:  1000,
+					ForwardRootCAs:    ca.RootCAPEM(),
+					ForwardServerName: "https-server",
+				},
+				{
+					ServerNames: []string{
+						"tcp.example.com",
+					},
+					Mode:       "TCP",
+					ALPNProtos: &[]string{},
+					Addresses: []string{
+						be3.String(),
+					},
+					ForwardRateLimit: 1000,
+				},
+				{
+					ServerNames: []string{
+						"tls.example.com",
+					},
+					Mode:       "TLS",
+					ALPNProtos: &[]string{},
+					Addresses: []string{
+						be4.String(),
+					},
+					ForwardRateLimit:  1000,
+					ForwardRootCAs:    ca.RootCAPEM(),
+					ForwardServerName: "tls-server",
+				},
+				{
+					ServerNames: []string{
+						"passthru.example.com",
+					},
+					Mode: "TLSPASSTHROUGH",
+					Addresses: []string{
+						be5.String(),
+					},
+					ForwardRateLimit: 1000,
+				},
+			},
+		},
+		ca,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+
+	hosts := []string{
+		"http.example.com",
+		"https.example.com",
+		"tcp.example.com",
+		"tls.example.com",
+		"passthru.example.com",
+	}
+	client := func(id int, wg *sync.WaitGroup) {
+		defer wg.Done()
+		host := hosts[id%len(hosts)]
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = &tls.Config{
+			RootCAs:    ca.RootCACertPool(),
+			ServerName: host,
+		}
+		client := http.Client{
+			Transport: transport,
+		}
+		for n := 0; n < 100; n++ {
+			req := &http.Request{
+				Method: "GET",
+				URL: &url.URL{
+					Scheme: "https",
+					Host:   proxy.listener.Addr().String(),
+					Path:   "/",
+				},
+				Host: host,
+			}
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Errorf("[%d] get failed: %v", id, err)
+				return
+			}
+			if _, err := io.ReadAll(resp.Body); err != nil {
+				t.Errorf("[%d] body read: %v", id, err)
+			}
+			if err := resp.Body.Close(); err != nil {
+				t.Errorf("[%d] body close: %v", id, err)
+			}
+			if resp.StatusCode != 200 {
+				t.Errorf("[%d] Status: %s", id, resp.Status)
+				return
+			}
+		}
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go client(i, &wg)
+	}
+	wg.Wait()
 }
 
 func TestCheckIP(t *testing.T) {
