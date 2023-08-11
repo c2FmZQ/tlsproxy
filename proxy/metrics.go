@@ -181,6 +181,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	fmt.Fprintln(&buf)
 	fmt.Fprintln(&buf, "Runtime:")
 	fmt.Fprintln(&buf)
+	fmt.Fprintf(&buf, "  Uptime:       %12s\n", time.Since(p.startTime).Truncate(time.Second))
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
 	fmt.Fprintf(&buf, "  NumCPU:       %12d\n", runtime.NumCPU())

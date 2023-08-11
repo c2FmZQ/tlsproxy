@@ -86,8 +86,9 @@ type Proxy struct {
 	backends      map[string]*Backend
 	connections   map[connKey]*netw.Conn
 
-	metrics map[string]*backendMetrics
-	events  map[string]int64
+	metrics   map[string]*backendMetrics
+	events    map[string]int64
+	startTime time.Time
 }
 
 type connKey struct {
@@ -291,6 +292,7 @@ func (p *Proxy) reAuthorize() {
 // Start starts a TLS proxy with the given configuration. The proxy runs
 // in background until the context is canceled.
 func (p *Proxy) Start(ctx context.Context) error {
+	p.startTime = time.Now()
 	p.connClosed = sync.NewCond(&p.mu)
 	var httpServer *http.Server
 	if p.cfg.HTTPAddr != "" {
