@@ -119,8 +119,9 @@ func TestProxyBackends(t *testing.T) {
 				Mode:              "TLS",
 				ForwardRootCAs:    intCA.RootCAPEM(),
 				ForwardServerName: "secure-internal.example.com",
-				ClientAuth:        true,
-				ClientCAs:         intCA.RootCAPEM(),
+				ClientAuth: &ClientAuth{
+					RootCAs: intCA.RootCAPEM(),
+				},
 			},
 			// TLS backend with imap proto.
 			{
@@ -291,29 +292,32 @@ func TestAuthnAuthz(t *testing.T) {
 				ServerNames: []string{
 					"noacl.example.com",
 				},
-				Mode:       "CONSOLE",
-				ClientAuth: true,
-				ClientCAs:  intCA.RootCAPEM(),
+				Mode: "CONSOLE",
+				ClientAuth: &ClientAuth{
+					RootCAs: intCA.RootCAPEM(),
+				},
 			},
 			{
 				ServerNames: []string{
 					"emptyacl.example.com",
 				},
-				Mode:       "CONSOLE",
-				ClientAuth: true,
-				ClientCAs:  intCA.RootCAPEM(),
-				ClientACL:  &[]string{},
+				Mode: "CONSOLE",
+				ClientAuth: &ClientAuth{
+					RootCAs: intCA.RootCAPEM(),
+					ACL:     &[]string{},
+				},
 			},
 			{
 				ServerNames: []string{
 					"acl.example.com",
 				},
-				Mode:       "CONSOLE",
-				ClientAuth: true,
-				ClientCAs:  intCA.RootCAPEM(),
-				ClientACL: &[]string{
-					"CN=client1",
-					"CN=client2",
+				Mode: "CONSOLE",
+				ClientAuth: &ClientAuth{
+					RootCAs: intCA.RootCAPEM(),
+					ACL: &[]string{
+						"CN=client1",
+						"CN=client2",
+					},
 				},
 			},
 		},

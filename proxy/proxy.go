@@ -38,6 +38,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -119,6 +120,9 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 	if err != nil {
 		return nil, fmt.Errorf("masterkey: %w", err)
 	}
+	if !cfg.AcceptTOS {
+		return nil, errors.New("AcceptTOS must be set to true")
+	}
 	p := &Proxy{
 		certManager: &autocert.Manager{
 			Prompt: autocert.AcceptTOS,
@@ -162,6 +166,14 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	if err := cfg.Check(); err != nil {
 		return err
 	}
+	oidcProviders := make(map[string]*oidcProvider)
+	for _, pp := range cfg.OIDCProviders {
+		provider, err := newOIDCProvider(*pp, p.recordEvent)
+		if err != nil {
+			return err
+		}
+		oidcProviders[pp.Name] = provider
+	}
 	if p.cfg != nil {
 		log.Print("INF Configuration changed")
 	}
@@ -169,14 +181,20 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	p.defServerName = cfg.DefaultServerName
 	backends := make(map[string]*Backend, len(cfg.Backends))
 	for _, be := range cfg.Backends {
+		be.localHandlers = make(map[string]localHandler)
 		for _, sn := range be.ServerNames {
 			backends[sn] = be
 		}
+		if be.SSO != nil {
+			if be.SSO.p = oidcProviders[be.SSO.Provider]; be.SSO.p == nil {
+				return fmt.Errorf("unknown identity provider: %q", be.SSO.Provider)
+			}
+		}
 		tc := p.baseTLSConfig()
-		if be.ClientAuth {
+		if be.ClientAuth != nil {
 			tc.ClientAuth = tls.RequireAndVerifyClientCert
-			if be.ClientCAs != "" {
-				c, err := loadCerts(be.ClientCAs)
+			if be.ClientAuth.RootCAs != "" {
+				c, err := loadCerts(be.ClientAuth.RootCAs)
 				if err != nil {
 					return err
 				}
@@ -187,7 +205,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				if err != nil {
 					return err
 				}
-				if !be.ClientAuth {
+				if be.ClientAuth == nil {
 					return nil
 				}
 				if len(cs.PeerCertificates) == 0 {
@@ -217,24 +235,30 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		}
 		switch be.Mode {
 		case ModeConsole:
-			mux := http.NewServeMux()
-			mux.HandleFunc("/", p.metricsHandler)
-			mux.HandleFunc("/favicon.ico", p.faviconHandler)
-			mux.HandleFunc("/config", p.configHandler)
-			addPProfHandlers(mux)
+			be := be
+			be.localHandlers["/"] = localHandler{handler: p.metricsHandler}
+			be.localHandlers["/favicon.ico"] = localHandler{handler: p.faviconHandler}
+			be.localHandlers["/config"] = localHandler{handler: p.configHandler}
+			addPProfHandlers(be.localHandlers)
 
 			be.httpConnChan = make(chan net.Conn)
-			be.httpServer = startInternalHTTPServer(
-				http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-					logRequest(req)
-					mux.ServeHTTP(w, req)
-				}),
-				be.httpConnChan,
-			)
+			be.httpServer = startInternalHTTPServer(be.consoleHandler(), be.httpConnChan)
 
 		case ModeHTTP, ModeHTTPS:
 			be.httpConnChan = make(chan net.Conn)
 			be.httpServer = startInternalHTTPServer(be.reverseProxy(), be.httpConnChan)
+		}
+	}
+	for _, p := range oidcProviders {
+		host, path, err := p.redirectHostAndPath()
+		if err != nil {
+			return err
+		}
+		if be, exists := backends[host]; exists {
+			be.localHandlers[path] = localHandler{
+				handler:   p.handleRedirect,
+				ssoBypass: true,
+			}
 		}
 	}
 	if p.cfg != nil {
@@ -261,7 +285,7 @@ func (p *Proxy) reAuthorize() {
 		be, err := p.backend(serverName)
 		if err != nil {
 			p.recordEvent(err.Error())
-			log.Printf("BAD [-] ReAuth %s ➔  %q: %v", conn.RemoteAddr(), serverName, err)
+			log.Printf("BAD [-] ReAuth %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
 			conn.Close()
 			continue
 		}
@@ -272,17 +296,17 @@ func (p *Proxy) reAuthorize() {
 		}
 		if err := be.checkIP(conn.RemoteAddr()); err != nil {
 			p.recordEvent(serverName + " CheckIP " + err.Error())
-			log.Printf("BAD [-] ReAuth %s ➔  %q CheckIP: %v", conn.RemoteAddr(), serverName, err)
+			log.Printf("BAD [-] ReAuth %s ➔ %q CheckIP: %v", conn.RemoteAddr(), serverName, err)
 			conn.Close()
 			continue
 		}
-		if !be.ClientAuth {
+		if be.ClientAuth == nil {
 			continue
 		}
 		subject := connSubject(conn)
 		if err := be.authorize(subject); err != nil {
 			p.recordEvent(err.Error())
-			log.Printf("BAD [-] ReAuth %s ➔  %q Authorize(%q): %v", conn.RemoteAddr(), serverName, subject, err)
+			log.Printf("BAD [-] ReAuth %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), serverName, subject, err)
 			conn.Close()
 			continue
 		}
@@ -456,7 +480,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	hello, err := peekClientHello(conn)
 	if err != nil {
 		p.recordEvent("invalid ClientHello")
-		log.Printf("BAD [-] %s ➔  %q: invalid ClientHello: %v", conn.RemoteAddr(), hello.ServerName, err)
+		log.Printf("BAD [-] %s ➔ %q: invalid ClientHello: %v", conn.RemoteAddr(), hello.ServerName, err)
 		return
 	}
 	serverName := hello.ServerName
@@ -469,7 +493,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	be, err := p.backend(serverName)
 	if err != nil {
 		p.recordEvent(err.Error())
-		log.Printf("BAD [-] %s ➔  %q: %v", conn.RemoteAddr(), serverName, err)
+		log.Printf("BAD [-] %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
 		sendUnrecognizedName(conn)
 		return
 	}
@@ -512,7 +536,7 @@ func (p *Proxy) checkIP(conn *netw.Conn) error {
 	if err := be.checkIP(conn.RemoteAddr()); err != nil {
 		serverName := connServerName(conn)
 		p.recordEvent(serverName + " CheckIP " + err.Error())
-		log.Printf("BAD [-] %s ➔  %q CheckIP: %v", conn.RemoteAddr(), serverName, err)
+		log.Printf("BAD [-] %s ➔ %q CheckIP: %v", conn.RemoteAddr(), serverName, err)
 		sendUnrecognizedName(conn)
 		return err
 	}
@@ -526,7 +550,7 @@ func (p *Proxy) handleACMEConnection(conn *tls.Conn) {
 	log.Printf("INF ACME %s ➔  %s", conn.RemoteAddr(), serverName)
 	if err := conn.HandshakeContext(ctx); err != nil {
 		p.recordEvent("tls handshake failed")
-		log.Printf("BAD [-] %s ➔  %q Handshake: %v", conn.RemoteAddr(), serverName, unwrapErr(err))
+		log.Printf("BAD [-] %s ➔ %q Handshake: %v", conn.RemoteAddr(), serverName, unwrapErr(err))
 	}
 }
 
@@ -545,14 +569,14 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 		default:
 			p.recordEvent("tls handshake failed")
 		}
-		log.Printf("BAD [-] %s ➔  %q Handshake: %v", conn.RemoteAddr(), serverName, unwrapErr(err))
+		log.Printf("BAD [-] %s ➔ %q Handshake: %v", conn.RemoteAddr(), serverName, unwrapErr(err))
 		return false
 	}
 	netwConn(conn).SetAnnotation(handshakeDoneKey, time.Now())
 	cs := conn.ConnectionState()
 	if (cs.ServerName == "" && serverName != p.defaultServerName()) || (cs.ServerName != "" && cs.ServerName != serverName) {
 		p.recordEvent("mismatched server name")
-		log.Printf("BAD [-] %s ➔  %q Mismatched server name", conn.RemoteAddr(), serverName)
+		log.Printf("BAD [-] %s ➔ %q Mismatched server name", conn.RemoteAddr(), serverName)
 		return false
 	}
 	proto := cs.NegotiatedProtocol
@@ -564,10 +588,10 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 	netwConn(conn).SetAnnotation(subjectKey, subject)
 
 	// The check below is also done in VerifyConnection.
-	if be.ClientACL != nil {
+	if be.ClientAuth != nil && be.ClientAuth.ACL != nil {
 		if err := be.authorize(subject); err != nil {
 			p.recordEvent(err.Error())
-			log.Printf("BAD [-] %s ➔  %q Authorize(%q): %v", conn.RemoteAddr(), serverName, subject, err)
+			log.Printf("BAD [-] %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), serverName, subject, err)
 			return false
 		}
 	}
@@ -708,18 +732,34 @@ func (p *Proxy) backend(serverName string) (*Backend, error) {
 	return be, nil
 }
 
-func formatConnDesc(c *netw.Conn) string {
+func formatReqDesc(req *http.Request) string {
+	userID := req.Header.Get(xTLSProxyUserIDHeader)
+	var ids []string
+	if userID != "" {
+		ids = append(ids, userID)
+	}
+	tlsConn := req.Context().Value(connCtxKey).(*tls.Conn)
+	return formatConnDesc(tlsConn.NetConn().(*netw.Conn), ids...)
+}
+
+func formatConnDesc(c *netw.Conn, ids ...string) string {
 	serverName := connServerName(c)
 	mode := connMode(c)
 	proto := connProto(c)
 	subject := connSubject(c)
 	intConn := connIntConn(c)
 
+	var identities []string
+	if subject != "" {
+		identities = append(identities, subject)
+	}
+	identities = append(identities, ids...)
+
 	var buf bytes.Buffer
-	if subject == "" {
+	if len(identities) == 0 {
 		buf.WriteString("[-] ")
 	} else {
-		buf.WriteString("[" + subject + "] ")
+		buf.WriteString("[" + strings.Join(identities, "|") + "] ")
 	}
 	buf.WriteString(c.RemoteAddr().String())
 	if serverName != "" {

@@ -16,6 +16,7 @@ Overview of features:
 * [x] Terminate _TCP_ connections, and forward the TLS connection to any TLS server (passthrough). The proxy doesn't see the plaintext.
 * [x] Terminate HTTPS connections, and forward the requests to HTTP or HTTPS servers (http/1 only, not recommended with c2fmzq-server).
 * [x] TLS client authentication & authorization (when the proxy terminates the TLS connections).
+* [x] User authentication with OpenID Connect (for HTTP and HTTPS connections).
 * [x] Access control by IP address.
 * [x] Routing based on Server Name Indication (SNI), with optional default route when SNI isn't used.
 * [x] Simple round-robin load balancing between servers.
@@ -25,6 +26,9 @@ Overview of features:
 ## Example config:
 
 ```yaml
+# Indicate acceptance of the Let's Encrypt Terms of Service.
+acceptTOS: true
+
 # The HTTP address must be reachable from the internet via port 80 for the
 # letsencrypt ACME http-01 challenge to work. If the httpAddr is empty, the
 # proxy will only use tls-alpn-01 and tlsAddr must be reachable on port 443.
@@ -83,17 +87,17 @@ backends:
   forwardServerName: secure-internal.example.com
 
 # In all modes (except tlspassthrough), the client identity can be verified by
-# setting clientAuth to true, and optionally setting clientCAs and clientACL.
+# setting clientAuth, and optionally setting rootCAs and acl.
 - serverNames:
   - restricted.example.com
   mode: https
-  clientAuth: true
-  clientCAs: |
-    -----BEGIN CERTIFICATE-----
-    .....
-    -----END CERTIFICATE-----
-  clientACL:
-  - CN=admin-user
+  clientAuth:
+    rootCAs: |
+      -----BEGIN CERTIFICATE-----
+      .....
+      -----END CERTIFICATE-----
+    acl:
+    - CN=admin-user
   addresses:
   - 192.168.4.100:443
   forwardServerName: restricted-internal.example.com

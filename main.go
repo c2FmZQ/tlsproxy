@@ -76,6 +76,9 @@ func main() {
 		if *passphraseFlag == "" {
 			log.Fatal("--passphrase or $TLSPROXY_PASSPHRASE must be set")
 		}
+		if !cfg.AcceptTOS {
+			log.Fatal("acceptTOS must be set to true in the config file")
+		}
 		p, err = proxy.New(cfg, []byte(*passphraseFlag))
 	}
 	if err != nil {

@@ -47,10 +47,11 @@ const (
 	hstsHeader = "Strict-Transport-Security"
 	hstsValue  = "max-age=2592000" // 30 days
 
-	viaHeader           = "Via"
-	hostHeader          = "Host"
-	xForwardedForHeader = "X-Forwarded-For"
-	clientCertHeader    = "Client-Cert"
+	viaHeader             = "Via"
+	hostHeader            = "Host"
+	xForwardedForHeader   = "X-Forwarded-For"
+	clientCertHeader      = "Client-Cert"
+	xTLSProxyUserIDHeader = "X-tlsproxy-user-id"
 )
 
 var (
@@ -61,7 +62,7 @@ func (be *Backend) incInFlight(delta int) int {
 	be.mu.Lock()
 	defer be.mu.Unlock()
 	be.inFlight += delta
-	if be.inFlight == 0 && be.shutdown {
+	if be.inFlight == 0 && be.shutdown && be.httpServer != nil {
 		close(be.httpConnChan)
 		be.httpServer = nil
 	}
@@ -139,10 +140,10 @@ func (be *Backend) dial(proto string) (net.Conn, error) {
 }
 
 func (be *Backend) authorize(subject string) error {
-	if be.ClientACL == nil {
+	if be.ClientAuth == nil || be.ClientAuth.ACL == nil {
 		return nil
 	}
-	if subject == "" || !slices.Contains(*be.ClientACL, subject) {
+	if subject == "" || !slices.Contains(*be.ClientAuth.ACL, subject) {
 		return errAccessDenied
 	}
 	return nil
@@ -201,21 +202,119 @@ func (be *Backend) bridgeConns(client, server net.Conn) error {
 	return retErr
 }
 
-func (be *Backend) reverseProxy() *httputil.ReverseProxy {
-	return &httputil.ReverseProxy{
-		Director: be.reverseProxyDirector,
-		Transport: &cleanRoundTripper{
-			serverNames: be.ServerNames,
-			RoundTripper: &http.Transport{
-				DialContext:           be.reverseProxyDial,
-				DialTLSContext:        be.reverseProxyDial,
-				MaxIdleConns:          100,
-				IdleConnTimeout:       30 * time.Second,
-				ExpectContinueTimeout: 1 * time.Second,
-			},
-		},
-		ModifyResponse: be.reverseProxyModifyResponse,
+func (be *Backend) checkAuthCookie(req *http.Request) {
+	req.Header.Del(xTLSProxyUserIDHeader)
+	if be.SSO != nil {
+		if cookie, err := req.Cookie(tlsProxyAuthCookie); err == nil {
+			if id, err := be.SSO.p.validateToken(cookie.Value); err == nil {
+				req.Header.Set(xTLSProxyUserIDHeader, id)
+			}
+		}
 	}
+	// Remove the cookie.
+	cookies := req.Cookies()
+	req.Header.Del("Cookie")
+	for _, c := range cookies {
+		if c.Name != tlsProxyAuthCookie {
+			req.AddCookie(c)
+		}
+	}
+}
+
+func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bool {
+	if be.SSO == nil {
+		return true
+	}
+	userID := req.Header.Get(xTLSProxyUserIDHeader)
+	if userID == "" {
+		u := req.URL
+		u.Scheme = "https"
+		u.Host = req.Host
+		log.Printf("REQ %s ➔ %s %s ➔ status:%d (SSO)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusFound)
+		be.SSO.p.requestLogin(w, req, u.String())
+		return false
+	}
+	host := req.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	_, userDomain, _ := strings.Cut(userID, "@")
+	if be.SSO.ACL != nil && !slices.Contains(*be.SSO.ACL, userID) && !slices.Contains(*be.SSO.ACL, "@"+userDomain) {
+		be.SSO.p.recordEvent(fmt.Sprintf("deny %s to %s", userID, host))
+		log.Printf("REQ %s ➔ %s %s ➔ status:%d (SSO)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden)
+		cookie := &http.Cookie{
+			Name:     tlsProxyAuthCookie,
+			Value:    "",
+			Domain:   be.SSO.p.cfg.Domain,
+			MaxAge:   -1,
+			Secure:   true,
+			HttpOnly: true,
+		}
+		http.SetCookie(w, cookie)
+		http.Error(w, "Forbidden: "+userID, http.StatusForbidden)
+		return false
+	}
+	be.SSO.p.recordEvent(fmt.Sprintf("allow %s to %s", userID, host))
+	return true
+}
+
+func (be *Backend) runLocalHandler(w http.ResponseWriter, req *http.Request) bool {
+	h, exists := be.localHandlers[req.URL.Path]
+	if exists && h.ssoBypass {
+		h.handler(w, req)
+		return false
+	}
+	if !be.enforceSSOPolicy(w, req) {
+		return false
+	}
+	if exists && !h.ssoBypass {
+		h.handler(w, req)
+		return false
+	}
+	return true
+}
+
+func (be *Backend) consoleHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		be.checkAuthCookie(req)
+		logRequest(req)
+		if !be.runLocalHandler(w, req) {
+			return
+		}
+		http.NotFound(w, req)
+	})
+}
+
+func (be *Backend) reverseProxy() http.Handler {
+	var rp http.Handler
+	if len(be.Addresses) == 0 {
+		rp = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			log.Printf("PRX %s ➔ %s %s ➔ status:%d", formatReqDesc(req), req.Method, req.URL, http.StatusNotFound)
+			http.NotFound(w, req)
+		})
+	} else {
+		rp = &httputil.ReverseProxy{
+			Director: be.reverseProxyDirector,
+			Transport: &cleanRoundTripper{
+				serverNames: be.ServerNames,
+				RoundTripper: &http.Transport{
+					DialContext:           be.reverseProxyDial,
+					DialTLSContext:        be.reverseProxyDial,
+					MaxIdleConns:          100,
+					IdleConnTimeout:       30 * time.Second,
+					ExpectContinueTimeout: 1 * time.Second,
+				},
+			},
+			ModifyResponse: be.reverseProxyModifyResponse,
+		}
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		be.checkAuthCookie(req)
+		if !be.runLocalHandler(w, req) {
+			return
+		}
+		rp.ServeHTTP(w, req)
+	})
 }
 
 func (be *Backend) reverseProxyDial(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -251,13 +350,11 @@ func (be *Backend) reverseProxyDirector(req *http.Request) {
 
 func (be *Backend) reverseProxyModifyResponse(resp *http.Response) error {
 	req := resp.Request
-	tlsConn := req.Context().Value(connCtxKey).(*tls.Conn)
-	desc := formatConnDesc(tlsConn.NetConn().(*netw.Conn))
 	var cl string
 	if resp.ContentLength != -1 {
 		cl = fmt.Sprintf(" content-length:%d", resp.ContentLength)
 	}
-	log.Printf("PRX %s ➔ %s %s ➔ status:%d%s", desc, req.Method, req.URL, resp.StatusCode, cl)
+	log.Printf("PRX %s ➔ %s %s ➔ status:%d%s", formatReqDesc(req), req.Method, req.URL, resp.StatusCode, cl)
 
 	if resp.StatusCode != http.StatusMisdirectedRequest && resp.Header.Get(hstsHeader) == "" {
 		resp.Header.Set(hstsHeader, hstsValue)
@@ -285,19 +382,7 @@ func (rt *cleanRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 		if req.Body != nil {
 			req.Body.Close()
 		}
-		msg := req.Header.Get(viaHeader)
-		hdr := http.Header{}
-		hdr.Set("content-type", "text/plain")
-		hdr.Set("content-length", fmt.Sprintf("%d", len(msg)))
-		return &http.Response{
-			StatusCode:    http.StatusLoopDetected,
-			ProtoMajor:    1,
-			ProtoMinor:    1,
-			Header:        hdr,
-			Body:          io.NopCloser(strings.NewReader(msg)),
-			ContentLength: int64(len(msg)),
-			Request:       req,
-		}, nil
+		return makeResponse(req, http.StatusLoopDetected, nil, req.Header.Get(viaHeader)), nil
 	}
 
 	host := req.Host
@@ -308,21 +393,26 @@ func (rt *cleanRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 		if req.Body != nil {
 			req.Body.Close()
 		}
-		msg := ""
-		hdr := http.Header{}
-		hdr.Set("content-type", "text/html")
-		hdr.Set("content-length", fmt.Sprintf("%d", len(msg)))
-		return &http.Response{
-			StatusCode:    http.StatusMisdirectedRequest,
-			ProtoMajor:    1,
-			ProtoMinor:    1,
-			Header:        hdr,
-			Body:          io.NopCloser(strings.NewReader(msg)),
-			ContentLength: int64(len(msg)),
-			Request:       req,
-		}, nil
+		return makeResponse(req, http.StatusMisdirectedRequest, nil, ""), nil
 	}
 	return rt.RoundTripper.RoundTrip(req)
+}
+
+func makeResponse(req *http.Request, statusCode int, header http.Header, body string) *http.Response {
+	if header == nil {
+		header = http.Header{}
+	}
+	header.Set("content-type", "text/plain")
+	header.Set("content-length", fmt.Sprintf("%d", len(body)))
+	return &http.Response{
+		StatusCode:    statusCode,
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Header:        header,
+		Body:          io.NopCloser(strings.NewReader(body)),
+		ContentLength: int64(len(body)),
+		Request:       req,
+	}
 }
 
 func forward(out net.Conn, in net.Conn, closeWhenDone bool, halfClosedTimeout time.Duration) error {
