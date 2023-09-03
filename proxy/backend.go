@@ -221,8 +221,20 @@ func (be *Backend) checkAuthCookie(req *http.Request) {
 	}
 }
 
+func pathMatches(prefixes []string, path string) bool {
+	if len(prefixes) == 0 {
+		return true
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(path, p) {
+			return true
+		}
+	}
+	return false
+}
+
 func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bool {
-	if be.SSO == nil {
+	if be.SSO == nil || !pathMatches(be.SSO.Paths, req.URL.Path) {
 		return true
 	}
 	userID := req.Header.Get(xTLSProxyUserIDHeader)
@@ -240,12 +252,12 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 	}
 	_, userDomain, _ := strings.Cut(userID, "@")
 	if be.SSO.ACL != nil && !slices.Contains(*be.SSO.ACL, userID) && !slices.Contains(*be.SSO.ACL, "@"+userDomain) {
-		be.SSO.p.recordEvent(fmt.Sprintf("deny %s to %s", userID, host))
+		be.recordEvent(fmt.Sprintf("deny %s to %s", userID, host))
 		log.Printf("REQ %s ➔ %s %s ➔ status:%d (SSO)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden)
 		cookie := &http.Cookie{
 			Name:     tlsProxyAuthCookie,
 			Value:    "",
-			Domain:   be.SSO.p.cfg.Domain,
+			Domain:   be.SSO.p.domain(),
 			MaxAge:   -1,
 			Secure:   true,
 			HttpOnly: true,
@@ -254,7 +266,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 		http.Error(w, "Forbidden: "+userID, http.StatusForbidden)
 		return false
 	}
-	be.SSO.p.recordEvent(fmt.Sprintf("allow %s to %s", userID, host))
+	be.recordEvent(fmt.Sprintf("allow %s to %s", userID, host))
 	return true
 }
 

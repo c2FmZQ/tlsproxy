@@ -87,6 +87,8 @@ type Config struct {
 	Backends []*Backend `yaml:"backends"`
 	// OIDCProviders is the list of OIDC providers.
 	OIDCProviders []*ConfigOIDC `yaml:"oidc,omitempty"`
+	// SAMLProviders is the list of SAML providers.
+	SAMLProviders []*ConfigSAML `yaml:"saml,omitempty"`
 	// Email is optionally included in the requests to letsencrypt.
 	Email string `yaml:"email,omitempty"`
 	// MaxOpen is the maximum number of open incoming connections.
@@ -121,6 +123,10 @@ type Backend struct {
 	// specifies which identity provider to use and who's allowed to
 	// connect.
 	SSO *BackendSSO `yaml:"sso,omitempty"`
+	// ExportJWKS is the path where to export the proxy's JSON Web Key Set.
+	// This should only be set when SSO is enabled and JSON Web Tokens are
+	// generated for the users to authenticate with the backends.
+	ExportJWKS string `yaml:"exportJwks,omitempty"`
 	// ALPNProtos specifies the list of ALPN procotols supported by this
 	// backend. The ACME acme-tls/1 protocol doesn't need to be specified.
 	// The default values are: h2, http/1.1
@@ -220,6 +226,8 @@ type Backend struct {
 	// open when one stream is closed. The default value is 1 minute.
 	HalfCloseTimeout *time.Duration `yaml:"halfCloseTimeout,omitempty"`
 
+	recordEvent func(string)
+
 	tlsConfig      *tls.Config
 	forwardRootCAs *x509.CertPool
 	limiter        *rate.Limiter
@@ -280,6 +288,18 @@ type ConfigOIDC struct {
 	Domain string `yaml:"domain,omitempty"`
 }
 
+// ConfigSAML contains the parameters of a SAML identity provider.
+type ConfigSAML struct {
+	Name     string `yaml:"name"`
+	SSOURL   string `yaml:"ssoUrl"`
+	EntityID string `yaml:"entityId"`
+	Certs    string `yaml:"certs"`
+	ACSURL   string `yaml:"acsUrl"`
+	// Domain, if set, determine the domain where the user identities will
+	// be valid.
+	Domain string `yaml:"domain,omitempty"`
+}
+
 // BackendSSO specifies the identity parameters to use for a backend.
 type BackendSSO struct {
 	// Provider is the the name of an identity provider defined in
@@ -291,8 +311,11 @@ type BackendSSO struct {
 	// If ACL is nil, all identities are allowed. If ACL is an empty list,
 	// nobody is allowed.
 	ACL *[]string `yaml:"acl,omitempty"`
+	// Paths lists the path prefixes for which this policy will be enforced.
+	// If Paths is empty, the policy applies to all paths.
+	Paths []string `yaml:"paths,omitempty"`
 
-	p *oidcProvider
+	p identityProvider
 }
 
 func (cfg *Config) clone() *Config {
@@ -324,12 +347,12 @@ func (cfg *Config) Check() error {
 		cfg.MaxOpen = n/2 - 100
 	}
 
-	oidcProviders := make(map[string]bool)
+	identityProviders := make(map[string]bool)
 	for i, oi := range cfg.OIDCProviders {
-		if oidcProviders[oi.Name] {
+		if identityProviders[oi.Name] {
 			return fmt.Errorf("oidc[%d].Name: duplicate provider name %q", i, oi.Name)
 		}
-		oidcProviders[oi.Name] = true
+		identityProviders[oi.Name] = true
 
 		if (oi.AuthEndpoint == "" || oi.TokenEndpoint == "") && oi.DiscoveryURL == "" {
 			return fmt.Errorf("oidc[%d] AuthEndpoint and TokenEndpoint must be set unless DiscoveryURL is set", i)
@@ -369,6 +392,34 @@ func (cfg *Config) Check() error {
 			}
 			if !strings.HasSuffix(host, oi.Domain) {
 				return fmt.Errorf("oidc[%d].Domain %q must be part of RedirectURL", i, oi.Domain)
+			}
+		}
+	}
+	for i, s := range cfg.SAMLProviders {
+		if identityProviders[s.Name] {
+			return fmt.Errorf("saml[%d].Name: duplicate provider name %q", i, s.Name)
+		}
+		identityProviders[s.Name] = true
+		if s.SSOURL == "" {
+			return fmt.Errorf("saml[%d].SSOURL must be set", i)
+		}
+		if s.EntityID == "" {
+			return fmt.Errorf("saml[%d].EntityID must be set", i)
+		}
+		if s.Certs == "" {
+			return fmt.Errorf("saml[%d].Certs must be set", i)
+		}
+		if s.ACSURL == "" {
+			return fmt.Errorf("saml[%d].ACSURL must be set", i)
+		}
+		if s.Domain != "" {
+			u, _ := url.Parse(s.ACSURL)
+			host := u.Host
+			if h, _, err := net.SplitHostPort(host); err == nil {
+				host = h
+			}
+			if !strings.HasSuffix(host, s.Domain) {
+				return fmt.Errorf("saml[%d].Domain %q must be part of ACSURL", i, s.Domain)
 			}
 		}
 	}
@@ -412,7 +463,7 @@ func (cfg *Config) Check() error {
 			}
 		}
 		if be.SSO != nil {
-			if !oidcProviders[be.SSO.Provider] {
+			if !identityProviders[be.SSO.Provider] {
 				return fmt.Errorf("backend[%d].SSO.Provider: unknown provider %q", i, be.SSO.Provider)
 			}
 		}

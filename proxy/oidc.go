@@ -24,8 +24,6 @@
 package proxy
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
@@ -47,10 +45,6 @@ import (
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
 
-const (
-	tlsProxyAuthCookie = "TLSPROXYAUTH"
-)
-
 // oidcProvider handles the OIDC manual flow based on information from
 // https://developers.google.com/identity/openid-connect/openid-connect and
 // https://developers.facebook.com/docs/facebook-login/guides/advanced/oidc-token/
@@ -58,8 +52,10 @@ type oidcProvider struct {
 	AuthEndpoint  string `json:"authorization_endpoint"`
 	TokenEndpoint string `json:"token_endpoint"`
 
-	cfg         ConfigOIDC
-	recordEvent func(string)
+	cfg          ConfigOIDC
+	recordEvent  func(string)
+	tokenManager *tokenManager
+	self         string
 
 	mu     sync.Mutex
 	states map[string]*oauthState
@@ -72,7 +68,7 @@ type oauthState struct {
 	Seen         bool
 }
 
-func newOIDCProvider(cfg ConfigOIDC, recordEvent func(string)) (*oidcProvider, error) {
+func newOIDCProvider(cfg ConfigOIDC, recordEvent func(string), tm *tokenManager) (*oidcProvider, error) {
 	var p oidcProvider
 	if cfg.DiscoveryURL != "" {
 		resp, err := http.Get(cfg.DiscoveryURL)
@@ -96,13 +92,23 @@ func newOIDCProvider(cfg ConfigOIDC, recordEvent func(string)) (*oidcProvider, e
 	if _, err := url.Parse(p.TokenEndpoint); err != nil {
 		return nil, fmt.Errorf("TokenEndpoint: %v", err)
 	}
+	if u, err := url.Parse(cfg.RedirectURL); err != nil {
+		return nil, fmt.Errorf("RedirectURL: %v", err)
+	} else {
+		p.self = "https://" + u.Host + "/"
+	}
 	p.cfg = cfg
 	p.recordEvent = recordEvent
+	p.tokenManager = tm
 	p.states = make(map[string]*oauthState)
 	return &p, nil
 }
 
-func (p *oidcProvider) redirectHostAndPath() (string, string, error) {
+func (p *oidcProvider) domain() string {
+	return p.cfg.Domain
+}
+
+func (p *oidcProvider) callbackHostAndPath() (string, string, error) {
 	url, err := url.Parse(p.cfg.RedirectURL)
 	if err != nil {
 		return "", "", err
@@ -148,8 +154,8 @@ func (p *oidcProvider) requestLogin(w http.ResponseWriter, req *http.Request, or
 	p.recordEvent("oidc auth request")
 }
 
-func (p *oidcProvider) handleRedirect(w http.ResponseWriter, req *http.Request) {
-	p.recordEvent("oidc auth redirect")
+func (p *oidcProvider) handleCallback(w http.ResponseWriter, req *http.Request) {
+	p.recordEvent("oidc auth callback")
 	tlsConn := req.Context().Value(connCtxKey).(*tls.Conn)
 	desc := formatConnDesc(tlsConn.NetConn().(*netw.Conn))
 	log.Printf("REQ %s ➔ %s %s?...", desc, req.Method, req.URL.Path)
@@ -227,7 +233,7 @@ func (p *oidcProvider) handleRedirect(w http.ResponseWriter, req *http.Request) 
 	p.mu.Unlock()
 	if !ok {
 		p.recordEvent("invalid nonce")
-		http.Error(w, "invalid nonce", http.StatusBadRequest)
+		http.Error(w, "timeout", http.StatusForbidden)
 		return
 	}
 	if claims.EmailVerified != nil && !*claims.EmailVerified {
@@ -235,7 +241,15 @@ func (p *oidcProvider) handleRedirect(w http.ResponseWriter, req *http.Request) 
 		http.Error(w, "email not verified", http.StatusForbidden)
 		return
 	}
-	token, err := p.makeToken(claims.Email)
+	now := time.Now().UTC()
+	token, err := p.tokenManager.createToken(jwt.MapClaims{
+		"iat":   now.Unix(),
+		"exp":   now.Add(20 * time.Hour).Unix(),
+		"iss":   p.self,
+		"aud":   p.self,
+		"sub":   claims.Email,
+		"scope": "proxy",
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -244,6 +258,9 @@ func (p *oidcProvider) handleRedirect(w http.ResponseWriter, req *http.Request) 
 		Name:     tlsProxyAuthCookie,
 		Value:    token,
 		Domain:   p.cfg.Domain,
+		Path:     "/",
+		Expires:  now.Add(24 * time.Hour),
+		SameSite: http.SameSiteLaxMode,
 		Secure:   true,
 		HttpOnly: true,
 	}
@@ -251,75 +268,17 @@ func (p *oidcProvider) handleRedirect(w http.ResponseWriter, req *http.Request) 
 	http.Redirect(w, req, state.OriginalURL, http.StatusFound)
 }
 
-type tokenData struct {
-	Exp      time.Time `json:"exp"`
-	Email    string    `json:"email"`
-	Provider string    `json:"provider"`
-}
-
-func (p *oidcProvider) tokenKey() []byte {
-	buf := make([]byte, len(p.cfg.ClientSecret)+len(p.cfg.ClientID))
-	copy(buf, []byte(p.cfg.ClientSecret))
-	copy(buf[len(p.cfg.ClientSecret):], []byte(p.cfg.ClientID))
-	key := sha256.Sum256(buf)
-	return key[:]
-}
-
-func (p *oidcProvider) makeToken(email string) (string, error) {
-	payload, err := json.Marshal(tokenData{
-		Exp:      time.Now().UTC().Add(12 * time.Hour),
-		Email:    email,
-		Provider: p.cfg.Name,
-	})
-	if err != nil {
-		return "", err
-	}
-	block, err := aes.NewCipher(p.tokenKey())
-	if err != nil {
-		return "", err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", err
-	}
-	out := gcm.Seal(nonce, nonce, payload, nil)
-	return base64.RawURLEncoding.EncodeToString(out), nil
-}
-
 func (p *oidcProvider) validateToken(token string) (string, error) {
-	enc, err := base64.RawURLEncoding.DecodeString(token)
+	tok, err := p.tokenManager.validateToken(token, jwt.WithIssuer(p.self), jwt.WithAudience(p.self))
 	if err != nil {
 		return "", err
 	}
-	block, err := aes.NewCipher(p.tokenKey())
+	if c, ok := tok.Claims.(jwt.MapClaims); !ok || c["scope"] != "proxy" {
+		return "", errors.New("wrong scope")
+	}
+	sub, err := tok.Claims.GetSubject()
 	if err != nil {
 		return "", err
 	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-	if len(enc) < gcm.NonceSize() {
-		return "", fmt.Errorf("invalid token len=%d", len(enc))
-	}
-	nonce, enc := enc[:gcm.NonceSize()], enc[gcm.NonceSize():]
-	b, err := gcm.Open(nil, nonce, enc, nil)
-	if err != nil {
-		return "", err
-	}
-	var tok tokenData
-	if err := json.Unmarshal(b, &tok); err != nil {
-		return "", err
-	}
-	if tok.Provider != p.cfg.Name {
-		return "", errors.New("provider mismatch")
-	}
-	if tok.Exp.Before(time.Now()) {
-		return "", errors.New("token is expired")
-	}
-	return tok.Email, nil
+	return sub, nil
 }

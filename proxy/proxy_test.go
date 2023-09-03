@@ -32,10 +32,13 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/c2FmZQ/storage"
+	"github.com/c2FmZQ/storage/crypto"
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
@@ -604,9 +607,20 @@ func TestCheckIP(t *testing.T) {
 }
 
 func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
+	mk, err := crypto.CreateAESMasterKeyForTest()
+	if err != nil {
+		panic(err)
+	}
+	store := storage.New(filepath.Join(cfg.CacheDir, "test"), mk)
+	tm, err := newTokenManager(store)
+	if err != nil {
+		panic(err)
+	}
 	p := &Proxy{
-		certManager: cm,
-		connections: make(map[connKey]*netw.Conn),
+		certManager:  cm,
+		connections:  make(map[connKey]*netw.Conn),
+		store:        store,
+		tokenManager: tm,
 	}
 	p.Reconfigure(cfg)
 	return p

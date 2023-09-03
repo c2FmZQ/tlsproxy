@@ -76,10 +76,12 @@ type Proxy struct {
 		HTTPHandler(fallback http.Handler) http.Handler
 		TLSConfig() *tls.Config
 	}
-	cfg      *Config
-	ctx      context.Context
-	cancel   func()
-	listener net.Listener
+	cfg          *Config
+	ctx          context.Context
+	cancel       func()
+	listener     net.Listener
+	store        *storage.Storage
+	tokenManager *tokenManager
 
 	mu            sync.Mutex
 	connClosed    *sync.Cond
@@ -88,8 +90,10 @@ type Proxy struct {
 	connections   map[connKey]*netw.Conn
 
 	metrics   map[string]*backendMetrics
-	events    map[string]int64
 	startTime time.Time
+
+	eventsmu sync.Mutex
+	events   map[string]int64
 }
 
 type connKey struct {
@@ -120,16 +124,23 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 	if err != nil {
 		return nil, fmt.Errorf("masterkey: %w", err)
 	}
+	store := storage.New(cfg.CacheDir, mk)
 	if !cfg.AcceptTOS {
 		return nil, errors.New("AcceptTOS must be set to true")
+	}
+	tm, err := newTokenManager(store)
+	if err != nil {
+		return nil, err
 	}
 	p := &Proxy{
 		certManager: &autocert.Manager{
 			Prompt: autocert.AcceptTOS,
-			Cache:  autocertcache.New("autocert", storage.New(cfg.CacheDir, mk)),
+			Cache:  autocertcache.New("autocert", store),
 			Email:  cfg.Email,
 		},
-		connections: make(map[connKey]*netw.Conn),
+		store:        store,
+		tokenManager: tm,
+		connections:  make(map[connKey]*netw.Conn),
 	}
 	p.Reconfigure(cfg)
 	return p, nil
@@ -144,9 +155,32 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 	if err != nil {
 		return nil, err
 	}
+	passphrase := []byte("test")
+	opts := []crypto.Option{
+		crypto.WithAlgo(crypto.PickFastest),
+		crypto.WithLogger(logger{}),
+	}
+	mkFile := filepath.Join(cfg.CacheDir, "test", "masterkey")
+	mk, err := crypto.ReadMasterKey(passphrase, mkFile, opts...)
+	if errors.Is(err, os.ErrNotExist) {
+		if mk, err = crypto.CreateMasterKey(opts...); err != nil {
+			return nil, errors.New("failed to create master key")
+		}
+		err = mk.Save(passphrase, mkFile)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("masterkey: %w", err)
+	}
+	store := storage.New(filepath.Join(cfg.CacheDir, "test"), mk)
+	tm, err := newTokenManager(store)
+	if err != nil {
+		return nil, err
+	}
 	p := &Proxy{
-		certManager: cm,
-		connections: make(map[connKey]*netw.Conn),
+		certManager:  cm,
+		connections:  make(map[connKey]*netw.Conn),
+		store:        store,
+		tokenManager: tm,
 	}
 	p.Reconfigure(cfg)
 	return p, nil
@@ -166,27 +200,37 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	if err := cfg.Check(); err != nil {
 		return err
 	}
-	oidcProviders := make(map[string]*oidcProvider)
+	if p.cfg != nil {
+		log.Print("INF Configuration changed")
+		p.recordEvent("config change")
+	}
+
+	identityProviders := make(map[string]identityProvider)
 	for _, pp := range cfg.OIDCProviders {
-		provider, err := newOIDCProvider(*pp, p.recordEvent)
+		provider, err := newOIDCProvider(*pp, p.recordEvent, p.tokenManager)
 		if err != nil {
 			return err
 		}
-		oidcProviders[pp.Name] = provider
+		identityProviders[pp.Name] = provider
 	}
-	if p.cfg != nil {
-		log.Print("INF Configuration changed")
+	for _, pp := range cfg.SAMLProviders {
+		provider, err := newSAMLProvider(*pp, p.recordEvent, p.tokenManager)
+		if err != nil {
+			return err
+		}
+		identityProviders[pp.Name] = provider
 	}
 
-	p.defServerName = cfg.DefaultServerName
 	backends := make(map[string]*Backend, len(cfg.Backends))
 	for _, be := range cfg.Backends {
 		be.localHandlers = make(map[string]localHandler)
+		be.recordEvent = p.recordEvent
+
 		for _, sn := range be.ServerNames {
 			backends[sn] = be
 		}
 		if be.SSO != nil {
-			if be.SSO.p = oidcProviders[be.SSO.Provider]; be.SSO.p == nil {
+			if be.SSO.p = identityProviders[be.SSO.Provider]; be.SSO.p == nil {
 				return fmt.Errorf("unknown identity provider: %q", be.SSO.Provider)
 			}
 		}
@@ -233,6 +277,12 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			}
 			be.forwardRootCAs = c
 		}
+		if be.ExportJWKS != "" {
+			be.localHandlers[be.ExportJWKS] = localHandler{
+				handler:   p.tokenManager.serveJWKS,
+				ssoBypass: true,
+			}
+		}
 		switch be.Mode {
 		case ModeConsole:
 			be := be
@@ -249,14 +299,14 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			be.httpServer = startInternalHTTPServer(be.reverseProxy(), be.httpConnChan)
 		}
 	}
-	for _, p := range oidcProviders {
-		host, path, err := p.redirectHostAndPath()
+	for _, p := range identityProviders {
+		host, path, err := p.callbackHostAndPath()
 		if err != nil {
 			return err
 		}
 		if be, exists := backends[host]; exists {
 			be.localHandlers[path] = localHandler{
-				handler:   p.handleRedirect,
+				handler:   p.handleCallback,
 				ssoBypass: true,
 			}
 		}
@@ -266,6 +316,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			be.close(p.ctx)
 		}
 	}
+	p.defServerName = cfg.DefaultServerName
 	p.backends = backends
 	p.cfg = cfg
 	go p.reAuthorize()
@@ -339,6 +390,7 @@ func (p *Proxy) Start(ctx context.Context) error {
 	p.ctx, p.cancel = context.WithCancel(ctx)
 
 	go p.ctxWait(httpServer)
+	go p.tokenManager.refreshLoop(p.ctx)
 	go p.acceptLoop()
 	return nil
 }
