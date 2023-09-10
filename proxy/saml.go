@@ -49,16 +49,17 @@ import (
 	dsig "github.com/russellhaering/goxmldsig"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
 // http://docs.oasis-open.org/security/saml/v2.0/saml-core-2.0-os.pdf
 
 type samlProvider struct {
-	cfg          ConfigSAML
-	recordEvent  func(string)
-	tokenManager *tokenManager
-	self         string
-	dsigCtx      *dsig.ValidationContext
+	cfg         ConfigSAML
+	recordEvent func(string)
+	tm          *tokenmanager.TokenManager
+	self        string
+	dsigCtx     *dsig.ValidationContext
 
 	mu     sync.Mutex
 	states map[string]*samlState
@@ -69,7 +70,7 @@ type samlState struct {
 	OriginalURL string
 }
 
-func newSAMLProvider(cfg ConfigSAML, recordEvent func(string), tm *tokenManager) (*samlProvider, error) {
+func newSAMLProvider(cfg ConfigSAML, recordEvent func(string), tm *tokenmanager.TokenManager) (*samlProvider, error) {
 	certs, err := readCerts(cfg.Certs)
 	if err != nil {
 		return nil, err
@@ -78,11 +79,11 @@ func newSAMLProvider(cfg ConfigSAML, recordEvent func(string), tm *tokenManager)
 		Roots: certs,
 	})
 	p := &samlProvider{
-		cfg:          cfg,
-		recordEvent:  recordEvent,
-		tokenManager: tm,
-		dsigCtx:      dsigCtx,
-		states:       make(map[string]*samlState),
+		cfg:         cfg,
+		recordEvent: recordEvent,
+		tm:          tm,
+		dsigCtx:     dsigCtx,
+		states:      make(map[string]*samlState),
 	}
 	if _, err := url.Parse(cfg.SSOURL); err != nil {
 		return nil, fmt.Errorf("SSOURL: %v", err)
@@ -109,6 +110,10 @@ func (p *samlProvider) callbackHostAndPath() (string, string, error) {
 		host = h
 	}
 	return host, url.Path, nil
+}
+
+func (p *samlProvider) tokenManager() *tokenmanager.TokenManager {
+	return p.tm
 }
 
 func (p *samlProvider) requestLogin(w http.ResponseWriter, req *http.Request, origURL string) {
@@ -235,13 +240,14 @@ func (p *samlProvider) handleCallback(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	token, err := p.tokenManager.createToken(jwt.MapClaims{
+	token, err := p.tm.CreateToken(jwt.MapClaims{
 		"iat":   now.Unix(),
 		"exp":   now.Add(20 * time.Hour).Unix(),
 		"iss":   p.self,
 		"aud":   p.self,
 		"sub":   sub,
 		"scope": "proxy",
+		"sid":   id,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -261,19 +267,15 @@ func (p *samlProvider) handleCallback(w http.ResponseWriter, req *http.Request) 
 	http.Redirect(w, req, state.OriginalURL, http.StatusFound)
 }
 
-func (p *samlProvider) validateToken(token string) (string, error) {
-	tok, err := p.tokenManager.validateToken(token, jwt.WithIssuer(p.self), jwt.WithAudience(p.self))
+func (p *samlProvider) validateToken(token string) (*jwt.Token, error) {
+	tok, err := p.tm.ValidateToken(token, jwt.WithIssuer(p.self), jwt.WithAudience(p.self))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if c, ok := tok.Claims.(jwt.MapClaims); !ok || c["scope"] != "proxy" {
-		return "", errors.New("wrong scope")
+		return nil, errors.New("wrong scope")
 	}
-	sub, err := tok.Claims.GetSubject()
-	if err != nil {
-		return "", err
-	}
-	return sub, nil
+	return tok, nil
 }
 
 func readCerts(s string) ([]*x509.Certificate, error) {

@@ -32,66 +32,10 @@ import (
 	"net/url"
 	"sync"
 	"testing"
-	"time"
 
-	"github.com/c2FmZQ/storage"
-	"github.com/c2FmZQ/storage/crypto"
 	jwt "github.com/golang-jwt/jwt/v5"
 	jwttest "github.com/golang-jwt/jwt/v5/test"
 )
-
-func TestTokenManager(t *testing.T) {
-	dir := t.TempDir()
-	mk, err := crypto.CreateAESMasterKeyForTest()
-	if err != nil {
-		t.Fatalf("crypto.CreateMasterKey: %v", err)
-	}
-	store := storage.New(dir, mk)
-	tm1, err := newTokenManager(store)
-	if err != nil {
-		t.Fatalf("newTokenManager: %v", err)
-	}
-	tok, err := tm1.createToken(jwt.MapClaims{
-		"iat": time.Now().Unix(),
-		"exp": time.Now().Add(5 * time.Minute).Unix(),
-		"sub": "test@example.com",
-		"iss": "https://login.example.com",
-		"aud": "https://login.example.com",
-	})
-	if err != nil {
-		t.Fatalf("tm.createToken: %v", err)
-	}
-	t.Logf("TOKEN: %s", tok)
-
-	tm2, err := newTokenManager(store)
-	if err != nil {
-		t.Fatalf("newTokenManager: %v", err)
-	}
-	for _, tm := range []*tokenManager{tm1, tm2} {
-		if _, err := tm.validateToken(tok,
-			jwt.WithAudience("https://login.example.com"),
-			jwt.WithIssuer("https://login.example.com"),
-			jwt.WithSubject("test@example.com"),
-		); err != nil {
-			t.Fatalf("tm.validateToken: %v", err)
-		}
-	}
-
-	tok2, err := tm1.createToken(jwt.MapClaims{
-		"iat": time.Now().Add(-10 * time.Minute).Unix(),
-		"exp": time.Now().Add(-5 * time.Minute).Unix(),
-		"sub": "test@example.com",
-		"iss": "https://login.example.com",
-		"aud": "https://login.example.com",
-	})
-	if err != nil {
-		t.Fatalf("tm.createToken: %v", err)
-	}
-	t.Logf("TOKEN2: %s", tok2)
-	if _, err := tm1.validateToken(tok2); err == nil {
-		t.Fatal("tm.validateToken should fail")
-	}
-}
 
 type eventRecorder struct {
 	events []string

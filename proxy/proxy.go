@@ -51,6 +51,7 @@ import (
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
 const (
@@ -81,7 +82,7 @@ type Proxy struct {
 	cancel       func()
 	listener     net.Listener
 	store        *storage.Storage
-	tokenManager *tokenManager
+	tokenManager *tokenmanager.TokenManager
 
 	mu            sync.Mutex
 	connClosed    *sync.Cond
@@ -128,7 +129,7 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 	if !cfg.AcceptTOS {
 		return nil, errors.New("AcceptTOS must be set to true")
 	}
-	tm, err := newTokenManager(store)
+	tm, err := tokenmanager.New(store)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +173,7 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 		return nil, fmt.Errorf("masterkey: %w", err)
 	}
 	store := storage.New(filepath.Join(cfg.CacheDir, "test"), mk)
-	tm, err := newTokenManager(store)
+	tm, err := tokenmanager.New(store)
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +280,10 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		}
 		if be.ExportJWKS != "" {
 			be.localHandlers[be.ExportJWKS] = localHandler{
-				handler:   p.tokenManager.serveJWKS,
+				handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					logRequest(req)
+					p.tokenManager.ServeJWKS(w, req)
+				}),
 				ssoBypass: true,
 			}
 		}
@@ -390,7 +394,7 @@ func (p *Proxy) Start(ctx context.Context) error {
 	p.ctx, p.cancel = context.WithCancel(ctx)
 
 	go p.ctxWait(httpServer)
-	go p.tokenManager.refreshLoop(p.ctx)
+	go p.tokenManager.KeyRotationLoop(p.ctx)
 	go p.acceptLoop()
 	return nil
 }

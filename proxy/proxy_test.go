@@ -41,6 +41,7 @@ import (
 	"github.com/c2FmZQ/storage/crypto"
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
 func TestProxyBackends(t *testing.T) {
@@ -612,7 +613,7 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 		panic(err)
 	}
 	store := storage.New(filepath.Join(cfg.CacheDir, "test"), mk)
-	tm, err := newTokenManager(store)
+	tm, err := tokenmanager.New(store)
 	if err != nil {
 		panic(err)
 	}

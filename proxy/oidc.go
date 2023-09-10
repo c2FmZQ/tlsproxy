@@ -43,6 +43,7 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
 // oidcProvider handles the OIDC manual flow based on information from
@@ -52,10 +53,10 @@ type oidcProvider struct {
 	AuthEndpoint  string `json:"authorization_endpoint"`
 	TokenEndpoint string `json:"token_endpoint"`
 
-	cfg          ConfigOIDC
-	recordEvent  func(string)
-	tokenManager *tokenManager
-	self         string
+	cfg         ConfigOIDC
+	recordEvent func(string)
+	tm          *tokenmanager.TokenManager
+	self        string
 
 	mu     sync.Mutex
 	states map[string]*oauthState
@@ -68,7 +69,7 @@ type oauthState struct {
 	Seen         bool
 }
 
-func newOIDCProvider(cfg ConfigOIDC, recordEvent func(string), tm *tokenManager) (*oidcProvider, error) {
+func newOIDCProvider(cfg ConfigOIDC, recordEvent func(string), tm *tokenmanager.TokenManager) (*oidcProvider, error) {
 	var p oidcProvider
 	if cfg.DiscoveryURL != "" {
 		resp, err := http.Get(cfg.DiscoveryURL)
@@ -99,7 +100,7 @@ func newOIDCProvider(cfg ConfigOIDC, recordEvent func(string), tm *tokenManager)
 	}
 	p.cfg = cfg
 	p.recordEvent = recordEvent
-	p.tokenManager = tm
+	p.tm = tm
 	p.states = make(map[string]*oauthState)
 	return &p, nil
 }
@@ -118,6 +119,10 @@ func (p *oidcProvider) callbackHostAndPath() (string, string, error) {
 		host = h
 	}
 	return host, url.Path, nil
+}
+
+func (p *oidcProvider) tokenManager() *tokenmanager.TokenManager {
+	return p.tm
 }
 
 func (p *oidcProvider) requestLogin(w http.ResponseWriter, req *http.Request, origURL string) {
@@ -242,13 +247,14 @@ func (p *oidcProvider) handleCallback(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 	now := time.Now().UTC()
-	token, err := p.tokenManager.createToken(jwt.MapClaims{
+	token, err := p.tm.CreateToken(jwt.MapClaims{
 		"iat":   now.Unix(),
 		"exp":   now.Add(20 * time.Hour).Unix(),
 		"iss":   p.self,
 		"aud":   p.self,
 		"sub":   claims.Email,
 		"scope": "proxy",
+		"sid":   claims.Nonce,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -268,17 +274,13 @@ func (p *oidcProvider) handleCallback(w http.ResponseWriter, req *http.Request) 
 	http.Redirect(w, req, state.OriginalURL, http.StatusFound)
 }
 
-func (p *oidcProvider) validateToken(token string) (string, error) {
-	tok, err := p.tokenManager.validateToken(token, jwt.WithIssuer(p.self), jwt.WithAudience(p.self))
+func (p *oidcProvider) validateToken(token string) (*jwt.Token, error) {
+	tok, err := p.tm.ValidateToken(token, jwt.WithIssuer(p.self), jwt.WithAudience(p.self))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if c, ok := tok.Claims.(jwt.MapClaims); !ok || c["scope"] != "proxy" {
-		return "", errors.New("wrong scope")
+		return nil, errors.New("wrong scope")
 	}
-	sub, err := tok.Claims.GetSubject()
-	if err != nil {
-		return "", err
-	}
-	return sub, nil
+	return tok, nil
 }

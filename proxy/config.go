@@ -33,11 +33,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
 )
@@ -314,6 +314,9 @@ type BackendSSO struct {
 	// Paths lists the path prefixes for which this policy will be enforced.
 	// If Paths is empty, the policy applies to all paths.
 	Paths []string `yaml:"paths,omitempty"`
+	// GenerateIDTokens indicates that the proxy should generate ID tokens
+	// for authenticated users.
+	GenerateIDTokens bool `yaml:"generateIdTokens,omitempty"`
 
 	p identityProvider
 }

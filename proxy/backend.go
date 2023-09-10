@@ -35,10 +35,9 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
@@ -47,11 +46,10 @@ const (
 	hstsHeader = "Strict-Transport-Security"
 	hstsValue  = "max-age=2592000" // 30 days
 
-	viaHeader             = "Via"
-	hostHeader            = "Host"
-	xForwardedForHeader   = "X-Forwarded-For"
-	clientCertHeader      = "Client-Cert"
-	xTLSProxyUserIDHeader = "X-tlsproxy-user-id"
+	viaHeader           = "Via"
+	hostHeader          = "Host"
+	xForwardedForHeader = "X-Forwarded-For"
+	clientCertHeader    = "Client-Cert"
 )
 
 var (
@@ -202,74 +200,6 @@ func (be *Backend) bridgeConns(client, server net.Conn) error {
 	return retErr
 }
 
-func (be *Backend) checkAuthCookie(req *http.Request) {
-	req.Header.Del(xTLSProxyUserIDHeader)
-	if be.SSO != nil {
-		if cookie, err := req.Cookie(tlsProxyAuthCookie); err == nil {
-			if id, err := be.SSO.p.validateToken(cookie.Value); err == nil {
-				req.Header.Set(xTLSProxyUserIDHeader, id)
-			}
-		}
-	}
-	// Remove the cookie.
-	cookies := req.Cookies()
-	req.Header.Del("Cookie")
-	for _, c := range cookies {
-		if c.Name != tlsProxyAuthCookie {
-			req.AddCookie(c)
-		}
-	}
-}
-
-func pathMatches(prefixes []string, path string) bool {
-	if len(prefixes) == 0 {
-		return true
-	}
-	for _, p := range prefixes {
-		if strings.HasPrefix(path, p) {
-			return true
-		}
-	}
-	return false
-}
-
-func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bool {
-	if be.SSO == nil || !pathMatches(be.SSO.Paths, req.URL.Path) {
-		return true
-	}
-	userID := req.Header.Get(xTLSProxyUserIDHeader)
-	if userID == "" {
-		u := req.URL
-		u.Scheme = "https"
-		u.Host = req.Host
-		log.Printf("REQ %s ➔ %s %s ➔ status:%d (SSO)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusFound)
-		be.SSO.p.requestLogin(w, req, u.String())
-		return false
-	}
-	host := req.Host
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	_, userDomain, _ := strings.Cut(userID, "@")
-	if be.SSO.ACL != nil && !slices.Contains(*be.SSO.ACL, userID) && !slices.Contains(*be.SSO.ACL, "@"+userDomain) {
-		be.recordEvent(fmt.Sprintf("deny %s to %s", userID, host))
-		log.Printf("REQ %s ➔ %s %s ➔ status:%d (SSO)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden)
-		cookie := &http.Cookie{
-			Name:     tlsProxyAuthCookie,
-			Value:    "",
-			Domain:   be.SSO.p.domain(),
-			MaxAge:   -1,
-			Secure:   true,
-			HttpOnly: true,
-		}
-		http.SetCookie(w, cookie)
-		http.Error(w, "Forbidden: "+userID, http.StatusForbidden)
-		return false
-	}
-	be.recordEvent(fmt.Sprintf("allow %s to %s", userID, host))
-	return true
-}
-
 func (be *Backend) runLocalHandler(w http.ResponseWriter, req *http.Request) bool {
 	h, exists := be.localHandlers[req.URL.Path]
 	if exists && h.ssoBypass {
@@ -288,7 +218,9 @@ func (be *Backend) runLocalHandler(w http.ResponseWriter, req *http.Request) boo
 
 func (be *Backend) consoleHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		be.checkAuthCookie(req)
+		if !be.checkUserAuthentication(w, req) {
+			return
+		}
 		logRequest(req)
 		if !be.runLocalHandler(w, req) {
 			return
@@ -321,7 +253,9 @@ func (be *Backend) reverseProxy() http.Handler {
 		}
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		be.checkAuthCookie(req)
+		if !be.checkUserAuthentication(w, req) {
+			return
+		}
 		if !be.runLocalHandler(w, req) {
 			return
 		}
