@@ -32,12 +32,16 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/c2FmZQ/storage"
+	"github.com/c2FmZQ/storage/crypto"
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
 func TestProxyBackends(t *testing.T) {
@@ -119,8 +123,9 @@ func TestProxyBackends(t *testing.T) {
 				Mode:              "TLS",
 				ForwardRootCAs:    intCA.RootCAPEM(),
 				ForwardServerName: "secure-internal.example.com",
-				ClientAuth:        true,
-				ClientCAs:         intCA.RootCAPEM(),
+				ClientAuth: &ClientAuth{
+					RootCAs: intCA.RootCAPEM(),
+				},
 			},
 			// TLS backend with imap proto.
 			{
@@ -291,29 +296,32 @@ func TestAuthnAuthz(t *testing.T) {
 				ServerNames: []string{
 					"noacl.example.com",
 				},
-				Mode:       "CONSOLE",
-				ClientAuth: true,
-				ClientCAs:  intCA.RootCAPEM(),
+				Mode: "CONSOLE",
+				ClientAuth: &ClientAuth{
+					RootCAs: intCA.RootCAPEM(),
+				},
 			},
 			{
 				ServerNames: []string{
 					"emptyacl.example.com",
 				},
-				Mode:       "CONSOLE",
-				ClientAuth: true,
-				ClientCAs:  intCA.RootCAPEM(),
-				ClientACL:  &[]string{},
+				Mode: "CONSOLE",
+				ClientAuth: &ClientAuth{
+					RootCAs: intCA.RootCAPEM(),
+					ACL:     &[]string{},
+				},
 			},
 			{
 				ServerNames: []string{
 					"acl.example.com",
 				},
-				Mode:       "CONSOLE",
-				ClientAuth: true,
-				ClientCAs:  intCA.RootCAPEM(),
-				ClientACL: &[]string{
-					"CN=client1",
-					"CN=client2",
+				Mode: "CONSOLE",
+				ClientAuth: &ClientAuth{
+					RootCAs: intCA.RootCAPEM(),
+					ACL: &[]string{
+						"CN=client1",
+						"CN=client2",
+					},
 				},
 			},
 		},
@@ -600,9 +608,20 @@ func TestCheckIP(t *testing.T) {
 }
 
 func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
+	mk, err := crypto.CreateAESMasterKeyForTest()
+	if err != nil {
+		panic(err)
+	}
+	store := storage.New(filepath.Join(cfg.CacheDir, "test"), mk)
+	tm, err := tokenmanager.New(store)
+	if err != nil {
+		panic(err)
+	}
 	p := &Proxy{
-		certManager: cm,
-		connections: make(map[connKey]*netw.Conn),
+		certManager:  cm,
+		connections:  make(map[connKey]*netw.Conn),
+		store:        store,
+		tokenManager: tm,
 	}
 	p.Reconfigure(cfg)
 	return p

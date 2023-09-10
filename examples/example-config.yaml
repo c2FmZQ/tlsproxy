@@ -49,8 +49,8 @@ backends:
 
 - serverNames:
   - secure.example.com
-  clientAuth: true
-  clientCAs: *myCA
+  clientAuth:
+    rootCAs: *myCA
   mode: tls
   addresses:
   - 192.168.2.200:443
@@ -59,8 +59,8 @@ backends:
 
 - serverNames:
   - ssh.example.com
-  clientAuth: true
-  clientCAs: *myCA
+  clientAuth:
+    rootCAs: *myCA
   addresses:
   - 192.168.8.20:22
 

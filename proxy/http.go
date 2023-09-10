@@ -25,14 +25,11 @@ package proxy
 
 import (
 	"context"
-	"crypto/tls"
 	"log"
 	"net"
 	"net/http"
 	"sync"
 	"time"
-
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
 
 type ctxKey int
@@ -104,7 +101,6 @@ func (l *proxyListener) Addr() net.Addr {
 }
 
 func logRequest(req *http.Request) {
-	tlsConn := req.Context().Value(connCtxKey).(*tls.Conn)
-	desc := formatConnDesc(tlsConn.NetConn().(*netw.Conn))
+	desc := formatReqDesc(req)
 	log.Printf("REQ %s ➔ %s %s", desc, req.Method, req.URL)
 }

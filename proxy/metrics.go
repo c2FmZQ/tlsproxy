@@ -42,8 +42,8 @@ import (
 var iconBytes []byte
 
 func (p *Proxy) recordEvent(msg string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.eventsmu.Lock()
+	defer p.eventsmu.Unlock()
 	if p.events == nil {
 		p.events = make(map[string]int64)
 	}
@@ -137,6 +137,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	fmt.Fprintln(&buf)
 	fmt.Fprintln(&buf, "Event counts:")
 	fmt.Fprintln(&buf)
+	p.eventsmu.Lock()
 	events := make([]string, 0, len(p.events))
 	max := 0
 	for k := range p.events {
@@ -149,6 +150,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	for _, e := range events {
 		fmt.Fprintf(&buf, "  %*s %6d\n", -(max + 1), e+":", p.events[e])
 	}
+	p.eventsmu.Unlock()
 
 	fmt.Fprintln(&buf)
 	fmt.Fprintln(&buf, "Current connections:")
@@ -259,11 +261,15 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 
 func (p *Proxy) configHandler(w http.ResponseWriter, req *http.Request) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	cfg := p.cfg.clone()
+	p.mu.Unlock()
+	for _, p := range cfg.OIDCProviders {
+		p.ClientSecret = "**REDACTED**"
+	}
 	w.Header().Set("content-type", "text/plain; charset=utf-8")
 	enc := yaml.NewEncoder(w)
 	enc.SetIndent(2)
-	enc.Encode(p.cfg)
+	enc.Encode(cfg)
 	enc.Close()
 }
 

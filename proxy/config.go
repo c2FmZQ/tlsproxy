@@ -30,15 +30,18 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
+
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 )
 
 const (
@@ -84,10 +87,16 @@ type Config struct {
 	DefaultServerName string `yaml:"defaultServerName,omitempty"`
 	// Backends is the list of service backends.
 	Backends []*Backend `yaml:"backends"`
+	// OIDCProviders is the list of OIDC providers.
+	OIDCProviders []*ConfigOIDC `yaml:"oidc,omitempty"`
+	// SAMLProviders is the list of SAML providers.
+	SAMLProviders []*ConfigSAML `yaml:"saml,omitempty"`
 	// Email is optionally included in the requests to letsencrypt.
 	Email string `yaml:"email,omitempty"`
 	// MaxOpen is the maximum number of open incoming connections.
 	MaxOpen int `yaml:"maxOpen,omitempty"`
+	// AcceptTOS indicates acceptance of the Let's Encrypt Terms of Service.
+	AcceptTOS bool `yaml:"acceptTOS"`
 }
 
 // Backend encapsulates the data of one backend.
@@ -95,17 +104,8 @@ type Backend struct {
 	// ServerNames is the list of all the server names for this service,
 	// e.g. example.com, www.example.com.
 	ServerNames []string `yaml:"serverNames"`
-	// ClientAuth indicates whether TLS client authentication is required
-	// for this service.
-	ClientAuth bool `yaml:"clientAuth,omitempty"`
-	// ClientACL optionally specifies which client identities are allowed
-	// to use this service. A nil value disabled the authorization check and
-	// allows any valid client certificate. Otherwise, the value is a slice
-	// of Subject strings from the client X509 certificate.
-	ClientACL *[]string `yaml:"clientACL,omitempty"`
-	// ClientCAs is either a file name or a set of PEM-encoded CA
-	// certificates that are used to authenticate clients.
-	ClientCAs string `yaml:"clientCAs,omitempty"`
+	// ClientAuth specifies that the TLS client's identity must be verified.
+	ClientAuth *ClientAuth `yaml:"clientAuth,omitempty"`
 	// AllowIPs specifies a list of IP network addresses to allow, in CIDR
 	// format, e.g. 192.168.0.0/24.
 	//
@@ -121,6 +121,14 @@ type Backend struct {
 	// DenyIPs specifies a list of IP network addresses to deny, in CIDR
 	// format, e.g. 192.168.0.0/24. See AllowIPs.
 	DenyIPs *[]string `yaml:"denyIPs,omitempty"`
+	// SSO indicates that the backend requires user authentication, and
+	// specifies which identity provider to use and who's allowed to
+	// connect.
+	SSO *BackendSSO `yaml:"sso,omitempty"`
+	// ExportJWKS is the path where to export the proxy's JSON Web Key Set.
+	// This should only be set when SSO is enabled and JSON Web Tokens are
+	// generated for the users to authenticate with the backends.
+	ExportJWKS string `yaml:"exportJwks,omitempty"`
 	// ALPNProtos specifies the list of ALPN procotols supported by this
 	// backend. The ACME acme-tls/1 protocol doesn't need to be specified.
 	// The default values are: h2, http/1.1
@@ -153,9 +161,9 @@ type Backend struct {
 	//        CLIENT --HTTPS--> PROXY --HTTPS--> BACKEND SERVER
 	// - CONSOLE: Indicates that this backend is handled by the proxy itself
 	//     to report its status and metrics. It is strongly recommended
-	//     to use it with ClientAuth and ClientACL. Otherwise, information
-	//     from the proxy's configuration can be leaked to anyone who knows
-	//     the backend's server name.
+	//     to use it with ClientAuth and ACL. Otherwise, information from
+	//     the proxy's configuration can be leaked to anyone who knows the
+	//     backend's server name.
 	//        CLIENT --TLS--> PROXY CONSOLE
 	Mode string `yaml:"mode"`
 	// AddClientCertHeader indicates that the HTTP Client-Cert header should
@@ -220,6 +228,8 @@ type Backend struct {
 	// open when one stream is closed. The default value is 1 minute.
 	HalfCloseTimeout *time.Duration `yaml:"halfCloseTimeout,omitempty"`
 
+	recordEvent func(string)
+
 	tlsConfig      *tls.Config
 	forwardRootCAs *x509.CertPool
 	limiter        *rate.Limiter
@@ -227,13 +237,92 @@ type Backend struct {
 	allowIPs *[]*net.IPNet
 	denyIPs  *[]*net.IPNet
 
-	httpServer   *http.Server
-	httpConnChan chan net.Conn
+	httpServer    *http.Server
+	httpConnChan  chan net.Conn
+	localHandlers map[string]localHandler
 
 	mu       sync.Mutex
 	next     int
 	inFlight int
 	shutdown bool
+}
+
+type localHandler struct {
+	handler   http.HandlerFunc
+	ssoBypass bool
+}
+
+// ClientAuth specifies how to authenticate and authorize the TLS client's
+// identity.
+type ClientAuth struct {
+	// ACL optionally specifies which client identities are allowed to use
+	// this service. A nil value disabled the authorization check and allows
+	// any valid client certificate. Otherwise, the value is a slice of
+	// Subject strings from the client X509 certificate.
+	ACL *[]string `yaml:"acl,omitempty"`
+	// RootCAs is either a file name or a set of PEM-encoded CA
+	// certificates that are used to authenticate clients.
+	RootCAs string `yaml:"rootCAs,omitempty"`
+}
+
+// ConfigOIDC contains the parameters of an OIDC provider.
+type ConfigOIDC struct {
+	// Name is the name of the provider. It is used internally only.
+	Name string `yaml:"name"`
+	// DiscoveryURL is the discovery URL of the OIDC provider. If set, it
+	// is used to discover the values of AuthEndpoint and TokenEndpoint.
+	DiscoveryURL string `yaml:"discoveryUrl,omitempty"`
+	// AuthEndpoint is the authorization endpoint. It must be set only if
+	// DiscoveryURL is not set.
+	AuthEndpoint string `yaml:"authorizationEndpoint,omitempty"`
+	// TokenEndpoint is the token endpoint. It must be set only if
+	// DiscoveryURL is not set.
+	TokenEndpoint string `yaml:"tokenEndpoint,omitempty"`
+	// RedirectURL is the OAUTH2 redirect URL. It must be managed by the
+	// proxy.
+	RedirectURL string `yaml:"redirectUrl"`
+	// ClientID is the Client ID.
+	ClientID string `yaml:"clientId"`
+	// ClientSecret is the Client Secret.
+	ClientSecret string `yaml:"clientSecret"`
+	// Domain, if set, determine the domain where the user identities will
+	// be valid.
+	Domain string `yaml:"domain,omitempty"`
+}
+
+// ConfigSAML contains the parameters of a SAML identity provider.
+type ConfigSAML struct {
+	Name     string `yaml:"name"`
+	SSOURL   string `yaml:"ssoUrl"`
+	EntityID string `yaml:"entityId"`
+	Certs    string `yaml:"certs"`
+	ACSURL   string `yaml:"acsUrl"`
+	// Domain, if set, determine the domain where the user identities will
+	// be valid.
+	Domain string `yaml:"domain,omitempty"`
+}
+
+// BackendSSO specifies the identity parameters to use for a backend.
+type BackendSSO struct {
+	// Provider is the the name of an identity provider defined in
+	// Config.OIDCProviders.
+	Provider string `yaml:"provider"`
+	// ACL restricts which user identity can access this backend. It is a
+	// list of email addresses and/or domains, e.g. "bob@example.com", or
+	// "@example.com"
+	// If ACL is nil, all identities are allowed. If ACL is an empty list,
+	// nobody is allowed.
+	ACL *[]string `yaml:"acl,omitempty"`
+	// Paths lists the path prefixes for which this policy will be enforced.
+	// If Paths is empty, the policy applies to all paths.
+	Paths []string `yaml:"paths,omitempty"`
+	// GenerateIDTokens indicates that the proxy should generate ID tokens
+	// for authenticated users.
+	GenerateIDTokens bool `yaml:"generateIdTokens,omitempty"`
+
+	p      identityProvider
+	cm     *cookiemanager.CookieManager
+	domain string
 }
 
 func (cfg *Config) clone() *Config {
@@ -265,6 +354,83 @@ func (cfg *Config) Check() error {
 		cfg.MaxOpen = n/2 - 100
 	}
 
+	identityProviders := make(map[string]bool)
+	for i, oi := range cfg.OIDCProviders {
+		if identityProviders[oi.Name] {
+			return fmt.Errorf("oidc[%d].Name: duplicate provider name %q", i, oi.Name)
+		}
+		identityProviders[oi.Name] = true
+
+		if (oi.AuthEndpoint == "" || oi.TokenEndpoint == "") && oi.DiscoveryURL == "" {
+			return fmt.Errorf("oidc[%d] AuthEndpoint and TokenEndpoint must be set unless DiscoveryURL is set", i)
+		}
+		if oi.DiscoveryURL != "" {
+			if _, err := url.Parse(oi.DiscoveryURL); err != nil {
+				return fmt.Errorf("oidc[%d].DiscoveryURL: %v", i, err)
+			}
+		}
+		if oi.AuthEndpoint != "" {
+			if _, err := url.Parse(oi.AuthEndpoint); err != nil {
+				return fmt.Errorf("oidc[%d].AuthEndpoint: %v", i, err)
+			}
+		}
+		if oi.TokenEndpoint != "" {
+			if _, err := url.Parse(oi.TokenEndpoint); err != nil {
+				return fmt.Errorf("oidc[%d].TokenEndpoint: %v", i, err)
+			}
+		}
+		if oi.RedirectURL == "" {
+			return fmt.Errorf("oidc[%d].RedirectURL must be set", i)
+		}
+		if _, err := url.Parse(oi.RedirectURL); err != nil {
+			return fmt.Errorf("oidc[%d].RedirectURL: %v", i, err)
+		}
+		if oi.ClientID == "" {
+			return fmt.Errorf("oidc[%d].ClientID must be set", i)
+		}
+		if oi.ClientSecret == "" {
+			return fmt.Errorf("oidc[%d].ClientSecret must be set", i)
+		}
+		if oi.Domain != "" {
+			u, _ := url.Parse(oi.RedirectURL)
+			host := u.Host
+			if h, _, err := net.SplitHostPort(host); err == nil {
+				host = h
+			}
+			if !strings.HasSuffix(host, oi.Domain) {
+				return fmt.Errorf("oidc[%d].Domain %q must be part of RedirectURL", i, oi.Domain)
+			}
+		}
+	}
+	for i, s := range cfg.SAMLProviders {
+		if identityProviders[s.Name] {
+			return fmt.Errorf("saml[%d].Name: duplicate provider name %q", i, s.Name)
+		}
+		identityProviders[s.Name] = true
+		if s.SSOURL == "" {
+			return fmt.Errorf("saml[%d].SSOURL must be set", i)
+		}
+		if s.EntityID == "" {
+			return fmt.Errorf("saml[%d].EntityID must be set", i)
+		}
+		if s.Certs == "" {
+			return fmt.Errorf("saml[%d].Certs must be set", i)
+		}
+		if s.ACSURL == "" {
+			return fmt.Errorf("saml[%d].ACSURL must be set", i)
+		}
+		if s.Domain != "" {
+			u, _ := url.Parse(s.ACSURL)
+			host := u.Host
+			if h, _, err := net.SplitHostPort(host); err == nil {
+				host = h
+			}
+			if !strings.HasSuffix(host, s.Domain) {
+				return fmt.Errorf("saml[%d].Domain %q must be part of ACSURL", i, s.Domain)
+			}
+		}
+	}
+
 	serverNames := make(map[string]bool)
 	for i, be := range cfg.Backends {
 		be.Mode = strings.ToUpper(be.Mode)
@@ -274,7 +440,7 @@ func (cfg *Config) Check() error {
 		if !slices.Contains(validModes, be.Mode) {
 			return fmt.Errorf("backend[%d].Mode: value %q must be one of %v", i, be.Mode, validModes)
 		}
-		if be.Mode == ModeTLSPassthrough && be.ClientAuth {
+		if be.Mode == ModeTLSPassthrough && be.ClientAuth != nil {
 			return fmt.Errorf("backend[%d].ClientAuth: client auth is not compatible with TLS Passthrough", i)
 		}
 		if be.Mode == ModeHTTP || be.Mode == ModeHTTPS {
@@ -283,7 +449,7 @@ func (cfg *Config) Check() error {
 		if len(be.ServerNames) == 0 {
 			return fmt.Errorf("backend[%d].ServerNames: backend must have at least one server name", i)
 		}
-		if len(be.Addresses) == 0 && be.Mode != ModeConsole {
+		if len(be.Addresses) == 0 && be.Mode != ModeConsole && be.Mode != ModeHTTP && be.Mode != ModeHTTPS {
 			return fmt.Errorf("backend[%d].Addresses: backend must have at least one address", i)
 		}
 		if len(be.Addresses) > 0 && be.Mode == ModeConsole {
@@ -297,10 +463,15 @@ func (cfg *Config) Check() error {
 			}
 			serverNames[sn] = true
 		}
-		if be.ClientAuth && be.ClientCAs != "" {
-			_, err := loadCerts(be.ClientCAs)
+		if be.ClientAuth != nil && be.ClientAuth.RootCAs != "" {
+			_, err := loadCerts(be.ClientAuth.RootCAs)
 			if err != nil {
 				return fmt.Errorf("backend[%d].ClientCAs: %w", i, err)
+			}
+		}
+		if be.SSO != nil {
+			if !identityProviders[be.SSO.Provider] {
+				return fmt.Errorf("backend[%d].SSO.Provider: unknown provider %q", i, be.SSO.Provider)
 			}
 		}
 		if be.ForwardRootCAs != "" {

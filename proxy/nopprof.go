@@ -25,7 +25,5 @@
 
 package proxy
 
-import "net/http"
-
-func addPProfHandlers(mux *http.ServeMux) {
+func addPProfHandlers(map[string]localHandler) {
 }

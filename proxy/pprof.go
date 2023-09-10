@@ -26,14 +26,19 @@
 package proxy
 
 import (
-	"net/http"
 	"net/http/pprof"
 )
 
-func addPProfHandlers(mux *http.ServeMux) {
-	mux.HandleFunc("/debug/pprof/", pprof.Index)
-	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+func addPProfHandlers(h map[string]localHandler) {
+	h["/debug/pprof/"] = localHandler{handler: pprof.Index}
+	h["/debug/pprof/allocs"] = localHandler{handler: pprof.Index}
+	h["/debug/pprof/block"] = localHandler{handler: pprof.Index}
+	h["/debug/pprof/goroutine"] = localHandler{handler: pprof.Index}
+	h["/debug/pprof/heap"] = localHandler{handler: pprof.Index}
+	h["/debug/pprof/mutex"] = localHandler{handler: pprof.Index}
+	h["/debug/pprof/threadcreate"] = localHandler{handler: pprof.Index}
+	h["/debug/pprof/cmdline"] = localHandler{handler: pprof.Cmdline}
+	h["/debug/pprof/profile"] = localHandler{handler: pprof.Profile}
+	h["/debug/pprof/symbol"] = localHandler{handler: pprof.Symbol}
+	h["/debug/pprof/trace"] = localHandler{handler: pprof.Trace}
 }

@@ -36,8 +36,10 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -49,7 +51,11 @@ import (
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/oidc"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/saml"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
 const (
@@ -75,10 +81,12 @@ type Proxy struct {
 		HTTPHandler(fallback http.Handler) http.Handler
 		TLSConfig() *tls.Config
 	}
-	cfg      *Config
-	ctx      context.Context
-	cancel   func()
-	listener net.Listener
+	cfg          *Config
+	ctx          context.Context
+	cancel       func()
+	listener     net.Listener
+	store        *storage.Storage
+	tokenManager *tokenmanager.TokenManager
 
 	mu            sync.Mutex
 	connClosed    *sync.Cond
@@ -87,8 +95,10 @@ type Proxy struct {
 	connections   map[connKey]*netw.Conn
 
 	metrics   map[string]*backendMetrics
-	events    map[string]int64
 	startTime time.Time
+
+	eventsmu sync.Mutex
+	events   map[string]int64
 }
 
 type connKey struct {
@@ -100,6 +110,19 @@ type backendMetrics struct {
 	numConnections   int64
 	numBytesSent     int64
 	numBytesReceived int64
+}
+
+type eventRecorder struct {
+	record func(string)
+}
+
+func (er eventRecorder) Record(s string) {
+	er.record(s)
+}
+
+type identityProvider interface {
+	RequestLogin(w http.ResponseWriter, req *http.Request, origURL string)
+	HandleCallback(w http.ResponseWriter, req *http.Request)
 }
 
 // New returns a new initialized Proxy.
@@ -119,13 +142,23 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 	if err != nil {
 		return nil, fmt.Errorf("masterkey: %w", err)
 	}
+	store := storage.New(cfg.CacheDir, mk)
+	if !cfg.AcceptTOS {
+		return nil, errors.New("AcceptTOS must be set to true")
+	}
+	tm, err := tokenmanager.New(store)
+	if err != nil {
+		return nil, err
+	}
 	p := &Proxy{
 		certManager: &autocert.Manager{
 			Prompt: autocert.AcceptTOS,
-			Cache:  autocertcache.New("autocert", storage.New(cfg.CacheDir, mk)),
+			Cache:  autocertcache.New("autocert", store),
 			Email:  cfg.Email,
 		},
-		connections: make(map[connKey]*netw.Conn),
+		store:        store,
+		tokenManager: tm,
+		connections:  make(map[connKey]*netw.Conn),
 	}
 	p.Reconfigure(cfg)
 	return p, nil
@@ -140,9 +173,32 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 	if err != nil {
 		return nil, err
 	}
+	passphrase := []byte("test")
+	opts := []crypto.Option{
+		crypto.WithAlgo(crypto.PickFastest),
+		crypto.WithLogger(logger{}),
+	}
+	mkFile := filepath.Join(cfg.CacheDir, "test", "masterkey")
+	mk, err := crypto.ReadMasterKey(passphrase, mkFile, opts...)
+	if errors.Is(err, os.ErrNotExist) {
+		if mk, err = crypto.CreateMasterKey(opts...); err != nil {
+			return nil, errors.New("failed to create master key")
+		}
+		err = mk.Save(passphrase, mkFile)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("masterkey: %w", err)
+	}
+	store := storage.New(filepath.Join(cfg.CacheDir, "test"), mk)
+	tm, err := tokenmanager.New(store)
+	if err != nil {
+		return nil, err
+	}
 	p := &Proxy{
-		certManager: cm,
-		connections: make(map[connKey]*netw.Conn),
+		certManager:  cm,
+		connections:  make(map[connKey]*netw.Conn),
+		store:        store,
+		tokenManager: tm,
 	}
 	p.Reconfigure(cfg)
 	return p, nil
@@ -164,19 +220,93 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	}
 	if p.cfg != nil {
 		log.Print("INF Configuration changed")
+		p.recordEvent("config change")
 	}
 
-	p.defServerName = cfg.DefaultServerName
+	type idp struct {
+		identityProvider identityProvider
+		callbackHost     string
+		callbackPath     string
+		domain           string
+		cm               *cookiemanager.CookieManager
+	}
+	er := eventRecorder{record: p.recordEvent}
+	identityProviders := make(map[string]idp)
+	for _, pp := range cfg.OIDCProviders {
+		host, path, err := hostAndPath(pp.RedirectURL)
+		if err != nil {
+			return err
+		}
+		issuer := "https://" + host + "/"
+		cm := cookiemanager.New(p.tokenManager, pp.Domain, issuer)
+		oidcCfg := oidc.Config{
+			DiscoveryURL:  pp.DiscoveryURL,
+			AuthEndpoint:  pp.AuthEndpoint,
+			TokenEndpoint: pp.TokenEndpoint,
+			RedirectURL:   pp.RedirectURL,
+			ClientID:      pp.ClientID,
+			ClientSecret:  pp.ClientSecret,
+		}
+		provider, err := oidc.New(oidcCfg, er, cm)
+		if err != nil {
+			return err
+		}
+		identityProviders[pp.Name] = idp{
+			identityProvider: provider,
+			callbackHost:     host,
+			callbackPath:     path,
+			domain:           pp.Domain,
+			cm:               cm,
+		}
+	}
+	for _, pp := range cfg.SAMLProviders {
+		host, path, err := hostAndPath(pp.ACSURL)
+		if err != nil {
+			return err
+		}
+		issuer := "https://" + host + "/"
+		cm := cookiemanager.New(p.tokenManager, pp.Domain, issuer)
+		samlCfg := saml.Config{
+			SSOURL:   pp.SSOURL,
+			EntityID: pp.EntityID,
+			Certs:    pp.Certs,
+			ACSURL:   pp.ACSURL,
+		}
+		provider, err := saml.New(samlCfg, er, cm)
+		if err != nil {
+			return err
+		}
+		identityProviders[pp.Name] = idp{
+			identityProvider: provider,
+			callbackHost:     host,
+			callbackPath:     path,
+			domain:           pp.Domain,
+			cm:               cm,
+		}
+	}
+
 	backends := make(map[string]*Backend, len(cfg.Backends))
 	for _, be := range cfg.Backends {
+		be.localHandlers = make(map[string]localHandler)
+		be.recordEvent = p.recordEvent
+
 		for _, sn := range be.ServerNames {
 			backends[sn] = be
 		}
+		if be.SSO != nil {
+			p, ok := identityProviders[be.SSO.Provider]
+			if !ok {
+				return fmt.Errorf("unknown identity provider: %q", be.SSO.Provider)
+			}
+			be.SSO.p = p.identityProvider
+			be.SSO.domain = p.domain
+			be.SSO.cm = p.cm
+		}
 		tc := p.baseTLSConfig()
-		if be.ClientAuth {
+		if be.ClientAuth != nil {
 			tc.ClientAuth = tls.RequireAndVerifyClientCert
-			if be.ClientCAs != "" {
-				c, err := loadCerts(be.ClientCAs)
+			if be.ClientAuth.RootCAs != "" {
+				c, err := loadCerts(be.ClientAuth.RootCAs)
 				if err != nil {
 					return err
 				}
@@ -187,7 +317,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				if err != nil {
 					return err
 				}
-				if !be.ClientAuth {
+				if be.ClientAuth == nil {
 					return nil
 				}
 				if len(cs.PeerCertificates) == 0 {
@@ -215,26 +345,41 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			}
 			be.forwardRootCAs = c
 		}
+		if be.ExportJWKS != "" {
+			be.localHandlers[be.ExportJWKS] = localHandler{
+				handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					logRequest(req)
+					p.tokenManager.ServeJWKS(w, req)
+				}),
+				ssoBypass: true,
+			}
+		}
 		switch be.Mode {
 		case ModeConsole:
-			mux := http.NewServeMux()
-			mux.HandleFunc("/", p.metricsHandler)
-			mux.HandleFunc("/favicon.ico", p.faviconHandler)
-			mux.HandleFunc("/config", p.configHandler)
-			addPProfHandlers(mux)
+			be := be
+			be.localHandlers["/"] = localHandler{handler: p.metricsHandler}
+			be.localHandlers["/favicon.ico"] = localHandler{handler: p.faviconHandler}
+			be.localHandlers["/config"] = localHandler{handler: p.configHandler}
+			addPProfHandlers(be.localHandlers)
 
 			be.httpConnChan = make(chan net.Conn)
-			be.httpServer = startInternalHTTPServer(
-				http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-					logRequest(req)
-					mux.ServeHTTP(w, req)
-				}),
-				be.httpConnChan,
-			)
+			be.httpServer = startInternalHTTPServer(be.consoleHandler(), be.httpConnChan)
 
 		case ModeHTTP, ModeHTTPS:
 			be.httpConnChan = make(chan net.Conn)
 			be.httpServer = startInternalHTTPServer(be.reverseProxy(), be.httpConnChan)
+		}
+	}
+	for _, p := range identityProviders {
+		if be, exists := backends[p.callbackHost]; exists {
+			p := p
+			be.localHandlers[p.callbackPath] = localHandler{
+				handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					log.Printf("REQ %s ➔ %s %s (SSO callback)", formatReqDesc(req), req.Method, req.URL.Path)
+					p.identityProvider.HandleCallback(w, req)
+				}),
+				ssoBypass: true,
+			}
 		}
 	}
 	if p.cfg != nil {
@@ -242,6 +387,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			be.close(p.ctx)
 		}
 	}
+	p.defServerName = cfg.DefaultServerName
 	p.backends = backends
 	p.cfg = cfg
 	go p.reAuthorize()
@@ -261,7 +407,7 @@ func (p *Proxy) reAuthorize() {
 		be, err := p.backend(serverName)
 		if err != nil {
 			p.recordEvent(err.Error())
-			log.Printf("BAD [-] ReAuth %s ➔  %q: %v", conn.RemoteAddr(), serverName, err)
+			log.Printf("BAD [-] ReAuth %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
 			conn.Close()
 			continue
 		}
@@ -272,17 +418,17 @@ func (p *Proxy) reAuthorize() {
 		}
 		if err := be.checkIP(conn.RemoteAddr()); err != nil {
 			p.recordEvent(serverName + " CheckIP " + err.Error())
-			log.Printf("BAD [-] ReAuth %s ➔  %q CheckIP: %v", conn.RemoteAddr(), serverName, err)
+			log.Printf("BAD [-] ReAuth %s ➔ %q CheckIP: %v", conn.RemoteAddr(), serverName, err)
 			conn.Close()
 			continue
 		}
-		if !be.ClientAuth {
+		if be.ClientAuth == nil {
 			continue
 		}
 		subject := connSubject(conn)
 		if err := be.authorize(subject); err != nil {
 			p.recordEvent(err.Error())
-			log.Printf("BAD [-] ReAuth %s ➔  %q Authorize(%q): %v", conn.RemoteAddr(), serverName, subject, err)
+			log.Printf("BAD [-] ReAuth %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), serverName, subject, err)
 			conn.Close()
 			continue
 		}
@@ -315,6 +461,7 @@ func (p *Proxy) Start(ctx context.Context) error {
 	p.ctx, p.cancel = context.WithCancel(ctx)
 
 	go p.ctxWait(httpServer)
+	go p.tokenManager.KeyRotationLoop(p.ctx)
 	go p.acceptLoop()
 	return nil
 }
@@ -456,7 +603,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	hello, err := peekClientHello(conn)
 	if err != nil {
 		p.recordEvent("invalid ClientHello")
-		log.Printf("BAD [-] %s ➔  %q: invalid ClientHello: %v", conn.RemoteAddr(), hello.ServerName, err)
+		log.Printf("BAD [-] %s ➔ %q: invalid ClientHello: %v", conn.RemoteAddr(), hello.ServerName, err)
 		return
 	}
 	serverName := hello.ServerName
@@ -469,7 +616,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	be, err := p.backend(serverName)
 	if err != nil {
 		p.recordEvent(err.Error())
-		log.Printf("BAD [-] %s ➔  %q: %v", conn.RemoteAddr(), serverName, err)
+		log.Printf("BAD [-] %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
 		sendUnrecognizedName(conn)
 		return
 	}
@@ -512,7 +659,7 @@ func (p *Proxy) checkIP(conn *netw.Conn) error {
 	if err := be.checkIP(conn.RemoteAddr()); err != nil {
 		serverName := connServerName(conn)
 		p.recordEvent(serverName + " CheckIP " + err.Error())
-		log.Printf("BAD [-] %s ➔  %q CheckIP: %v", conn.RemoteAddr(), serverName, err)
+		log.Printf("BAD [-] %s ➔ %q CheckIP: %v", conn.RemoteAddr(), serverName, err)
 		sendUnrecognizedName(conn)
 		return err
 	}
@@ -526,7 +673,7 @@ func (p *Proxy) handleACMEConnection(conn *tls.Conn) {
 	log.Printf("INF ACME %s ➔  %s", conn.RemoteAddr(), serverName)
 	if err := conn.HandshakeContext(ctx); err != nil {
 		p.recordEvent("tls handshake failed")
-		log.Printf("BAD [-] %s ➔  %q Handshake: %v", conn.RemoteAddr(), serverName, unwrapErr(err))
+		log.Printf("BAD [-] %s ➔ %q Handshake: %v", conn.RemoteAddr(), serverName, unwrapErr(err))
 	}
 }
 
@@ -545,14 +692,14 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 		default:
 			p.recordEvent("tls handshake failed")
 		}
-		log.Printf("BAD [-] %s ➔  %q Handshake: %v", conn.RemoteAddr(), serverName, unwrapErr(err))
+		log.Printf("BAD [-] %s ➔ %q Handshake: %v", conn.RemoteAddr(), serverName, unwrapErr(err))
 		return false
 	}
 	netwConn(conn).SetAnnotation(handshakeDoneKey, time.Now())
 	cs := conn.ConnectionState()
 	if (cs.ServerName == "" && serverName != p.defaultServerName()) || (cs.ServerName != "" && cs.ServerName != serverName) {
 		p.recordEvent("mismatched server name")
-		log.Printf("BAD [-] %s ➔  %q Mismatched server name", conn.RemoteAddr(), serverName)
+		log.Printf("BAD [-] %s ➔ %q Mismatched server name", conn.RemoteAddr(), serverName)
 		return false
 	}
 	proto := cs.NegotiatedProtocol
@@ -564,10 +711,10 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 	netwConn(conn).SetAnnotation(subjectKey, subject)
 
 	// The check below is also done in VerifyConnection.
-	if be.ClientACL != nil {
+	if be.ClientAuth != nil && be.ClientAuth.ACL != nil {
 		if err := be.authorize(subject); err != nil {
 			p.recordEvent(err.Error())
-			log.Printf("BAD [-] %s ➔  %q Authorize(%q): %v", conn.RemoteAddr(), serverName, subject, err)
+			log.Printf("BAD [-] %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), serverName, subject, err)
 			return false
 		}
 	}
@@ -708,18 +855,34 @@ func (p *Proxy) backend(serverName string) (*Backend, error) {
 	return be, nil
 }
 
-func formatConnDesc(c *netw.Conn) string {
+func formatReqDesc(req *http.Request) string {
+	userID := req.Header.Get(xTLSProxyUserIDHeader)
+	var ids []string
+	if userID != "" {
+		ids = append(ids, userID)
+	}
+	tlsConn := req.Context().Value(connCtxKey).(*tls.Conn)
+	return formatConnDesc(tlsConn.NetConn().(*netw.Conn), ids...)
+}
+
+func formatConnDesc(c *netw.Conn, ids ...string) string {
 	serverName := connServerName(c)
 	mode := connMode(c)
 	proto := connProto(c)
 	subject := connSubject(c)
 	intConn := connIntConn(c)
 
+	var identities []string
+	if subject != "" {
+		identities = append(identities, subject)
+	}
+	identities = append(identities, ids...)
+
 	var buf bytes.Buffer
-	if subject == "" {
+	if len(identities) == 0 {
 		buf.WriteString("[-] ")
 	} else {
-		buf.WriteString("[" + subject + "] ")
+		buf.WriteString("[" + strings.Join(identities, "|") + "] ")
 	}
 	buf.WriteString(c.RemoteAddr().String())
 	if serverName != "" {
@@ -767,6 +930,18 @@ func loadCerts(s string) (*x509.CertPool, error) {
 		return nil, errors.New("invalid certs")
 	}
 	return pool, nil
+}
+
+func hostAndPath(urlString string) (string, string, error) {
+	url, err := url.Parse(urlString)
+	if err != nil {
+		return "", "", err
+	}
+	host := url.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return host, url.Path, nil
 }
 
 func unwrapErr(err error) error {
