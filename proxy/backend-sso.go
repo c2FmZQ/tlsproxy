@@ -106,7 +106,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 		be.recordEvent(fmt.Sprintf("deny %s to %s", userID, host))
 		log.Printf("REQ %s ➔ %s %s ➔ status:%d (SSO)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden)
 		be.SSO.cm.ClearCookies(w)
-		http.Error(w, "Forbidden: "+userID, http.StatusForbidden)
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return false
 	}
 	be.recordEvent(fmt.Sprintf("allow %s to %s", userID, host))
