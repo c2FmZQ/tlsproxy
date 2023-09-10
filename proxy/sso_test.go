@@ -26,41 +26,24 @@ package proxy
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
+
+	jwt "github.com/golang-jwt/jwt/v5"
+	jwttest "github.com/golang-jwt/jwt/v5/test"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 )
-
-func TestRedirectHostAndPort(t *testing.T) {
-	er := &eventRecorder{}
-	cfg := ConfigOIDC{
-		AuthEndpoint:  "https://idp.example.com/auth",
-		TokenEndpoint: "https://idp.example.com/token",
-		RedirectURL:   "https://oauth2.example.org/redirect",
-	}
-	p, err := newOIDCProvider(cfg, er.record, nil)
-	if err != nil {
-		t.Fatalf("newOIDCProvider: %v", err)
-	}
-
-	host, path, err := p.callbackHostAndPath()
-	if err != nil {
-		t.Fatalf("callbackHostAndPath: %v", err)
-	}
-	if got, want := host, "oauth2.example.org"; got != want {
-		t.Errorf("Host = %q, want %q", got, want)
-	}
-	if got, want := path, "/redirect"; got != want {
-		t.Errorf("Host = %q, want %q", got, want)
-	}
-}
 
 func TestSSOEnforce(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -105,7 +88,8 @@ func TestSSOEnforce(t *testing.T) {
 					ForwardRateLimit:  1000,
 					ForwardRootCAs:    ca.RootCAPEM(),
 					SSO: &BackendSSO{
-						Provider: "test-idp",
+						Provider:         "test-idp",
+						GenerateIDTokens: true,
 					},
 				},
 				{
@@ -126,7 +110,7 @@ func TestSSOEnforce(t *testing.T) {
 		t.Fatalf("proxy.Start: %v", err)
 	}
 
-	get := func(urlToGet string) (int, string, bool) {
+	get := func(urlToGet string) (int, string, map[string]string) {
 		u, err := url.Parse(urlToGet)
 		if err != nil {
 			t.Fatalf("%q: %v", urlToGet, err)
@@ -166,25 +150,102 @@ func TestSSOEnforce(t *testing.T) {
 		if err := resp.Body.Close(); err != nil {
 			t.Fatalf("%s: body close: %v", urlToGet, err)
 		}
-		var hasCookie bool
+		cookies := make(map[string]string)
 		log.Printf("COOKIES:")
 		for _, c := range jar.Cookies(u) {
-			if c.Name == "TLSPROXYAUTH" {
-				hasCookie = true
+			if c.Name == "TLSPROXYAUTH" || c.Name == "TLSPROXYIDTOKEN" {
+				cookies[c.Name] = c.Value
 			}
 			log.Printf("  %s: %s\n", c.Name, c.Value)
 		}
-		return resp.StatusCode, string(body), hasCookie
+		return resp.StatusCode, string(body), cookies
 	}
 
-	code, body, hasCookie := get("https://https.example.com/blah")
+	code, body, cookies := get("https://https.example.com/blah")
 	if got, want := code, 200; got != want {
 		t.Errorf("Code = %v, want %v", got, want)
 	}
 	if got, want := body, "[https-server] /blah\n"; got != want {
 		t.Errorf("Body = %v, want %v", got, want)
 	}
-	if got, want := hasCookie, true; got != want {
-		t.Errorf("HasCookie = %v, want %v", got, want)
+	if got, want := len(cookies), 2; got != want {
+		t.Errorf("len(cookies) = %v, want %v", got, want)
+	}
+}
+
+type testEventRecorder struct {
+	events []string
+}
+
+func (er *testEventRecorder) record(e string) {
+	er.events = append(er.events, e)
+}
+
+type idpServer struct {
+	*httptest.Server
+	t *testing.T
+
+	mu    sync.Mutex
+	codes map[string]string
+}
+
+func newIDPServer(t *testing.T) *idpServer {
+	idp := &idpServer{
+		t:     t,
+		codes: make(map[string]string),
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/auth", idp.auth)
+	mux.HandleFunc("/token", idp.token)
+	idp.Server = httptest.NewServer(mux)
+	return idp
+}
+
+func (idp *idpServer) auth(w http.ResponseWriter, req *http.Request) {
+	log.Printf("IDP %s %s", req.Method, req.RequestURI)
+	idp.mu.Lock()
+	defer idp.mu.Unlock()
+	req.ParseForm()
+	for _, v := range []string{"response_type", "client_id", "scope", "redirect_uri", "state", "nonce"} {
+		log.Printf("IDP [/auth] %s: %s", v, req.Form.Get(v))
+	}
+	code := fmt.Sprintf("CODE-%d", len(idp.codes))
+	idp.codes[code] = req.Form.Get("nonce")
+
+	url := req.Form.Get("redirect_uri") + "?" +
+		"code=" + url.QueryEscape(code) +
+		"&state=" + url.QueryEscape(req.Form.Get("state"))
+	log.Printf("IDP [/auth] redirect to %s", url)
+	http.Redirect(w, req, url, http.StatusFound)
+}
+
+func (idp *idpServer) token(w http.ResponseWriter, req *http.Request) {
+	log.Printf("IDP %s %s", req.Method, req.RequestURI)
+	idp.mu.Lock()
+	defer idp.mu.Unlock()
+	req.ParseForm()
+	for _, v := range []string{"code", "client_id", "client_secret", "redirect_uri", "grant_type"} {
+		log.Printf("IDP [/token] %s: %s", v, req.PostForm.Get(v))
+	}
+	nonce := idp.codes[req.Form.Get("code")]
+
+	var data struct {
+		IDToken string `json:"id_token"`
+	}
+	token := jwttest.MakeSampleToken(
+		jwt.MapClaims{
+			"email":          "john@example.net",
+			"email_verified": true,
+			"nonce":          nonce,
+		},
+		jwt.SigningMethodHS256,
+		[]byte("key"),
+	)
+	data.IDToken = token
+	log.Printf("IDP [/token] Return %+v", data)
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(data); err != nil {
+		idp.t.Errorf("token encode: %v", err)
 	}
 }

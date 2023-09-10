@@ -36,6 +36,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,7 +51,10 @@ import (
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/oidc"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/saml"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
@@ -106,6 +110,19 @@ type backendMetrics struct {
 	numConnections   int64
 	numBytesSent     int64
 	numBytesReceived int64
+}
+
+type eventRecorder struct {
+	record func(string)
+}
+
+func (er eventRecorder) Record(s string) {
+	er.record(s)
+}
+
+type identityProvider interface {
+	RequestLogin(w http.ResponseWriter, req *http.Request, origURL string)
+	HandleCallback(w http.ResponseWriter, req *http.Request)
 }
 
 // New returns a new initialized Proxy.
@@ -206,20 +223,66 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		p.recordEvent("config change")
 	}
 
-	identityProviders := make(map[string]identityProvider)
+	type idp struct {
+		identityProvider identityProvider
+		callbackHost     string
+		callbackPath     string
+		domain           string
+		cm               *cookiemanager.CookieManager
+	}
+	er := eventRecorder{record: p.recordEvent}
+	identityProviders := make(map[string]idp)
 	for _, pp := range cfg.OIDCProviders {
-		provider, err := newOIDCProvider(*pp, p.recordEvent, p.tokenManager)
+		host, path, err := hostAndPath(pp.RedirectURL)
 		if err != nil {
 			return err
 		}
-		identityProviders[pp.Name] = provider
+		issuer := "https://" + host + "/"
+		cm := cookiemanager.New(p.tokenManager, pp.Domain, issuer)
+		oidcCfg := oidc.Config{
+			DiscoveryURL:  pp.DiscoveryURL,
+			AuthEndpoint:  pp.AuthEndpoint,
+			TokenEndpoint: pp.TokenEndpoint,
+			RedirectURL:   pp.RedirectURL,
+			ClientID:      pp.ClientID,
+			ClientSecret:  pp.ClientSecret,
+		}
+		provider, err := oidc.New(oidcCfg, er, cm)
+		if err != nil {
+			return err
+		}
+		identityProviders[pp.Name] = idp{
+			identityProvider: provider,
+			callbackHost:     host,
+			callbackPath:     path,
+			domain:           pp.Domain,
+			cm:               cm,
+		}
 	}
 	for _, pp := range cfg.SAMLProviders {
-		provider, err := newSAMLProvider(*pp, p.recordEvent, p.tokenManager)
+		host, path, err := hostAndPath(pp.ACSURL)
 		if err != nil {
 			return err
 		}
-		identityProviders[pp.Name] = provider
+		issuer := "https://" + host + "/"
+		cm := cookiemanager.New(p.tokenManager, pp.Domain, issuer)
+		samlCfg := saml.Config{
+			SSOURL:   pp.SSOURL,
+			EntityID: pp.EntityID,
+			Certs:    pp.Certs,
+			ACSURL:   pp.ACSURL,
+		}
+		provider, err := saml.New(samlCfg, er, cm)
+		if err != nil {
+			return err
+		}
+		identityProviders[pp.Name] = idp{
+			identityProvider: provider,
+			callbackHost:     host,
+			callbackPath:     path,
+			domain:           pp.Domain,
+			cm:               cm,
+		}
 	}
 
 	backends := make(map[string]*Backend, len(cfg.Backends))
@@ -231,9 +294,13 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			backends[sn] = be
 		}
 		if be.SSO != nil {
-			if be.SSO.p = identityProviders[be.SSO.Provider]; be.SSO.p == nil {
+			p, ok := identityProviders[be.SSO.Provider]
+			if !ok {
 				return fmt.Errorf("unknown identity provider: %q", be.SSO.Provider)
 			}
+			be.SSO.p = p.identityProvider
+			be.SSO.domain = p.domain
+			be.SSO.cm = p.cm
 		}
 		tc := p.baseTLSConfig()
 		if be.ClientAuth != nil {
@@ -304,13 +371,13 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		}
 	}
 	for _, p := range identityProviders {
-		host, path, err := p.callbackHostAndPath()
-		if err != nil {
-			return err
-		}
-		if be, exists := backends[host]; exists {
-			be.localHandlers[path] = localHandler{
-				handler:   p.handleCallback,
+		if be, exists := backends[p.callbackHost]; exists {
+			p := p
+			be.localHandlers[p.callbackPath] = localHandler{
+				handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					log.Printf("REQ %s ➔ %s %s (SSO callback)", formatReqDesc(req), req.Method, req.URL.Path)
+					p.identityProvider.HandleCallback(w, req)
+				}),
 				ssoBypass: true,
 			}
 		}
@@ -863,6 +930,18 @@ func loadCerts(s string) (*x509.CertPool, error) {
 		return nil, errors.New("invalid certs")
 	}
 	return pool, nil
+}
+
+func hostAndPath(urlString string) (string, string, error) {
+	url, err := url.Parse(urlString)
+	if err != nil {
+		return "", "", err
+	}
+	host := url.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return host, url.Path, nil
 }
 
 func unwrapErr(err error) error {

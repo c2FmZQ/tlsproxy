@@ -21,22 +21,19 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package proxy
+package saml
 
 import (
 	"bytes"
 	"compress/flate"
 	"crypto/rand"
-	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
 	"encoding/xml"
-	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -45,21 +42,32 @@ import (
 	"time"
 
 	"github.com/beevik/etree"
-	jwt "github.com/golang-jwt/jwt/v5"
 	dsig "github.com/russellhaering/goxmldsig"
-
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
 // http://docs.oasis-open.org/security/saml/v2.0/saml-core-2.0-os.pdf
 
-type samlProvider struct {
-	cfg         ConfigSAML
-	recordEvent func(string)
-	tm          *tokenmanager.TokenManager
-	self        string
-	dsigCtx     *dsig.ValidationContext
+type CookieManager interface {
+	SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID string) error
+	ClearCookies(w http.ResponseWriter) error
+}
+
+type EventRecorder interface {
+	Record(string)
+}
+
+type Config struct {
+	SSOURL   string
+	EntityID string
+	Certs    string
+	ACSURL   string
+}
+
+type Provider struct {
+	cfg     Config
+	er      EventRecorder
+	cm      CookieManager
+	dsigCtx *dsig.ValidationContext
 
 	mu     sync.Mutex
 	states map[string]*samlState
@@ -70,7 +78,7 @@ type samlState struct {
 	OriginalURL string
 }
 
-func newSAMLProvider(cfg ConfigSAML, recordEvent func(string), tm *tokenmanager.TokenManager) (*samlProvider, error) {
+func New(cfg Config, er EventRecorder, cm CookieManager) (*Provider, error) {
 	certs, err := readCerts(cfg.Certs)
 	if err != nil {
 		return nil, err
@@ -78,45 +86,23 @@ func newSAMLProvider(cfg ConfigSAML, recordEvent func(string), tm *tokenmanager.
 	dsigCtx := dsig.NewDefaultValidationContext(&dsig.MemoryX509CertificateStore{
 		Roots: certs,
 	})
-	p := &samlProvider{
-		cfg:         cfg,
-		recordEvent: recordEvent,
-		tm:          tm,
-		dsigCtx:     dsigCtx,
-		states:      make(map[string]*samlState),
+	p := &Provider{
+		cfg:     cfg,
+		er:      er,
+		cm:      cm,
+		dsigCtx: dsigCtx,
+		states:  make(map[string]*samlState),
 	}
 	if _, err := url.Parse(cfg.SSOURL); err != nil {
 		return nil, fmt.Errorf("SSOURL: %v", err)
 	}
-	if u, err := url.Parse(cfg.ACSURL); err != nil {
+	if _, err := url.Parse(cfg.ACSURL); err != nil {
 		return nil, fmt.Errorf("ACSURL: %v", err)
-	} else {
-		p.self = "https://" + u.Host + "/"
 	}
 	return p, nil
 }
 
-func (p *samlProvider) domain() string {
-	return p.cfg.Domain
-}
-
-func (p *samlProvider) callbackHostAndPath() (string, string, error) {
-	url, err := url.Parse(p.cfg.ACSURL)
-	if err != nil {
-		return "", "", err
-	}
-	host := url.Host
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	return host, url.Path, nil
-}
-
-func (p *samlProvider) tokenManager() *tokenmanager.TokenManager {
-	return p.tm
-}
-
-func (p *samlProvider) requestLogin(w http.ResponseWriter, req *http.Request, origURL string) {
+func (p *Provider) RequestLogin(w http.ResponseWriter, req *http.Request, origURL string) {
 	var id [12]byte
 	if _, err := io.ReadFull(rand.Reader, id[:]); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -150,15 +136,17 @@ func (p *samlProvider) requestLogin(w http.ResponseWriter, req *http.Request, or
 		return
 	}
 	http.Redirect(w, req, url, http.StatusFound)
-	p.recordEvent("saml auth request")
+	p.er.Record("saml auth request")
 }
 
-func (p *samlProvider) handleCallback(w http.ResponseWriter, req *http.Request) {
-	p.recordEvent("saml auth callback")
-	tlsConn := req.Context().Value(connCtxKey).(*tls.Conn)
-	desc := formatConnDesc(tlsConn.NetConn().(*netw.Conn))
-	log.Printf("REQ %s ➔ %s %s", desc, req.Method, req.URL.Path)
+func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
+	p.er.Record("saml auth callback")
 	req.ParseForm()
+	if req.Form.Get("logout") != "" {
+		p.cm.ClearCookies(w)
+		w.Write([]byte("logout successful"))
+		return
+	}
 
 	if req.Method != http.MethodPost {
 		http.Error(w, "invalid method", http.StatusForbidden)
@@ -208,20 +196,26 @@ func (p *samlProvider) handleCallback(w http.ResponseWriter, req *http.Request) 
 	p.mu.Unlock()
 
 	if !ok {
-		p.recordEvent("invalid state")
+		p.er.Record("invalid state")
 		http.Error(w, "timeout", http.StatusForbidden)
 		return
 	}
 
-	//if iss := findElementText(v, "./Issuer"); iss != p.cfg.SSOURL {
-	//	http.Error(w, "invalid saml response", http.StatusForbidden)
-	//	return
-	//}
 	if r := findElementAttr(v, "./Subject/SubjectConfirmation/SubjectConfirmationData", "Recipient"); r != p.cfg.ACSURL {
 		http.Error(w, "invalid saml response", http.StatusForbidden)
 		return
 	}
-	if aud := findElementText(v, "./Conditions/AudienceRestriction/Audience"); aud != p.self {
+	u, err := url.Parse(p.cfg.ACSURL)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	host := u.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	self := "https://" + host + "/"
+	if aud := findElementText(v, "./Conditions/AudienceRestriction/Audience"); aud != self {
 		http.Error(w, "invalid saml response", http.StatusForbidden)
 		return
 	}
@@ -240,42 +234,11 @@ func (p *samlProvider) handleCallback(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	token, err := p.tm.CreateToken(jwt.MapClaims{
-		"iat":   now.Unix(),
-		"exp":   now.Add(20 * time.Hour).Unix(),
-		"iss":   p.self,
-		"aud":   p.self,
-		"sub":   sub,
-		"scope": "proxy",
-		"sid":   id,
-	})
-	if err != nil {
+	if err := p.cm.SetAuthTokenCookie(w, sub, id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	cookie := &http.Cookie{
-		Name:     tlsProxyAuthCookie,
-		Value:    token,
-		Domain:   p.cfg.Domain,
-		Path:     "/",
-		Expires:  now.Add(24 * time.Hour),
-		SameSite: http.SameSiteLaxMode,
-		Secure:   true,
-		HttpOnly: true,
-	}
-	http.SetCookie(w, cookie)
 	http.Redirect(w, req, state.OriginalURL, http.StatusFound)
-}
-
-func (p *samlProvider) validateToken(token string) (*jwt.Token, error) {
-	tok, err := p.tm.ValidateToken(token, jwt.WithIssuer(p.self), jwt.WithAudience(p.self))
-	if err != nil {
-		return nil, err
-	}
-	if c, ok := tok.Claims.(jwt.MapClaims); !ok || c["scope"] != "proxy" {
-		return nil, errors.New("wrong scope")
-	}
-	return tok, nil
 }
 
 func readCerts(s string) ([]*x509.Certificate, error) {

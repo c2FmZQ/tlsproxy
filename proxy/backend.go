@@ -200,7 +200,7 @@ func (be *Backend) bridgeConns(client, server net.Conn) error {
 	return retErr
 }
 
-func (be *Backend) runLocalHandler(w http.ResponseWriter, req *http.Request) bool {
+func (be *Backend) runLocalHandlersAndAuthz(w http.ResponseWriter, req *http.Request) bool {
 	h, exists := be.localHandlers[req.URL.Path]
 	if exists && h.ssoBypass {
 		h.handler(w, req)
@@ -218,11 +218,11 @@ func (be *Backend) runLocalHandler(w http.ResponseWriter, req *http.Request) boo
 
 func (be *Backend) consoleHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if !be.checkUserAuthentication(w, req) {
+		if !be.getUserAuthentication(w, req) {
 			return
 		}
 		logRequest(req)
-		if !be.runLocalHandler(w, req) {
+		if !be.runLocalHandlersAndAuthz(w, req) {
 			return
 		}
 		http.NotFound(w, req)
@@ -253,10 +253,10 @@ func (be *Backend) reverseProxy() http.Handler {
 		}
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if !be.checkUserAuthentication(w, req) {
+		if !be.getUserAuthentication(w, req) {
 			return
 		}
-		if !be.runLocalHandler(w, req) {
+		if !be.runLocalHandlersAndAuthz(w, req) {
 			return
 		}
 		rp.ServeHTTP(w, req)

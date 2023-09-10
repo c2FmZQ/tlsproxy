@@ -40,6 +40,8 @@ import (
 
 	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
+
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 )
 
 const (
@@ -318,7 +320,9 @@ type BackendSSO struct {
 	// for authenticated users.
 	GenerateIDTokens bool `yaml:"generateIdTokens,omitempty"`
 
-	p identityProvider
+	p      identityProvider
+	cm     *cookiemanager.CookieManager
+	domain string
 }
 
 func (cfg *Config) clone() *Config {

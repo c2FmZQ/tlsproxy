@@ -21,42 +21,60 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package proxy
+package oidc
 
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"log"
-	"net"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
-
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
-// oidcProvider handles the OIDC manual flow based on information from
+// Config contains the parameters of an OIDC provider.
+type Config struct {
+	// DiscoveryURL is the discovery URL of the OIDC provider. If set, it
+	// is used to discover the values of AuthEndpoint and TokenEndpoint.
+	DiscoveryURL string
+	// AuthEndpoint is the authorization endpoint. It must be set only if
+	// DiscoveryURL is not set.
+	AuthEndpoint string
+	// TokenEndpoint is the token endpoint. It must be set only if
+	// DiscoveryURL is not set.
+	TokenEndpoint string
+	// RedirectURL is the OAUTH2 redirect URL. It must be managed by the
+	// proxy.
+	RedirectURL string
+	// ClientID is the Client ID.
+	ClientID string
+	// ClientSecret is the Client Secret.
+	ClientSecret string
+}
+
+type CookieManager interface {
+	SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID string) error
+	ClearCookies(w http.ResponseWriter) error
+}
+
+type EventRecorder interface {
+	Record(string)
+}
+
+// Provider handles the OIDC manual flow based on information from
 // https://developers.google.com/identity/openid-connect/openid-connect and
 // https://developers.facebook.com/docs/facebook-login/guides/advanced/oidc-token/
-type oidcProvider struct {
-	AuthEndpoint  string `json:"authorization_endpoint"`
-	TokenEndpoint string `json:"token_endpoint"`
-
-	cfg         ConfigOIDC
-	recordEvent func(string)
-	tm          *tokenmanager.TokenManager
-	self        string
+type Provider struct {
+	cfg Config
+	cm  CookieManager
+	er  EventRecorder
 
 	mu     sync.Mutex
 	states map[string]*oauthState
@@ -69,10 +87,15 @@ type oauthState struct {
 	Seen         bool
 }
 
-func newOIDCProvider(cfg ConfigOIDC, recordEvent func(string), tm *tokenmanager.TokenManager) (*oidcProvider, error) {
-	var p oidcProvider
-	if cfg.DiscoveryURL != "" {
-		resp, err := http.Get(cfg.DiscoveryURL)
+func New(cfg Config, er EventRecorder, cm CookieManager) (*Provider, error) {
+	p := &Provider{
+		cfg:    cfg,
+		cm:     cm,
+		er:     er,
+		states: make(map[string]*oauthState),
+	}
+	if p.cfg.DiscoveryURL != "" {
+		resp, err := http.Get(p.cfg.DiscoveryURL)
 		if err != nil {
 			return nil, err
 		}
@@ -80,52 +103,29 @@ func newOIDCProvider(cfg ConfigOIDC, recordEvent func(string), tm *tokenmanager.
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("http get(%s): %s", cfg.DiscoveryURL, resp.Status)
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&p); err != nil {
+		var disc struct {
+			AuthEndpoint  string `json:"authorization_endpoint"`
+			TokenEndpoint string `json:"token_endpoint"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&disc); err != nil {
 			return nil, fmt.Errorf("discovery document: %v", err)
 		}
-	} else {
-		p.AuthEndpoint = cfg.AuthEndpoint
-		p.TokenEndpoint = cfg.TokenEndpoint
+		p.cfg.AuthEndpoint = disc.AuthEndpoint
+		p.cfg.TokenEndpoint = disc.TokenEndpoint
 	}
-	if _, err := url.Parse(p.AuthEndpoint); err != nil {
+	if _, err := url.Parse(p.cfg.AuthEndpoint); err != nil {
 		return nil, fmt.Errorf("AuthEndpoint: %v", err)
 	}
-	if _, err := url.Parse(p.TokenEndpoint); err != nil {
+	if _, err := url.Parse(p.cfg.TokenEndpoint); err != nil {
 		return nil, fmt.Errorf("TokenEndpoint: %v", err)
 	}
-	if u, err := url.Parse(cfg.RedirectURL); err != nil {
+	if _, err := url.Parse(p.cfg.RedirectURL); err != nil {
 		return nil, fmt.Errorf("RedirectURL: %v", err)
-	} else {
-		p.self = "https://" + u.Host + "/"
 	}
-	p.cfg = cfg
-	p.recordEvent = recordEvent
-	p.tm = tm
-	p.states = make(map[string]*oauthState)
-	return &p, nil
+	return p, nil
 }
 
-func (p *oidcProvider) domain() string {
-	return p.cfg.Domain
-}
-
-func (p *oidcProvider) callbackHostAndPath() (string, string, error) {
-	url, err := url.Parse(p.cfg.RedirectURL)
-	if err != nil {
-		return "", "", err
-	}
-	host := url.Host
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	return host, url.Path, nil
-}
-
-func (p *oidcProvider) tokenManager() *tokenmanager.TokenManager {
-	return p.tm
-}
-
-func (p *oidcProvider) requestLogin(w http.ResponseWriter, req *http.Request, origURL string) {
+func (p *Provider) RequestLogin(w http.ResponseWriter, req *http.Request, originalURL string) {
 	var nonce [12]byte
 	if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -142,11 +142,11 @@ func (p *oidcProvider) requestLogin(w http.ResponseWriter, req *http.Request, or
 	p.mu.Lock()
 	p.states[nonceStr] = &oauthState{
 		Created:      time.Now(),
-		OriginalURL:  origURL,
+		OriginalURL:  originalURL,
 		CodeVerifier: codeVerifierStr,
 	}
 	p.mu.Unlock()
-	url := p.AuthEndpoint + "?" +
+	url := p.cfg.AuthEndpoint + "?" +
 		"response_type=code" +
 		"&client_id=" + url.QueryEscape(p.cfg.ClientID) +
 		"&scope=" + url.QueryEscape("openid email") +
@@ -156,25 +156,14 @@ func (p *oidcProvider) requestLogin(w http.ResponseWriter, req *http.Request, or
 		"&code_challenge=" + base64.RawURLEncoding.EncodeToString(cvh[:]) +
 		"&code_challenge_method=S256"
 	http.Redirect(w, req, url, http.StatusFound)
-	p.recordEvent("oidc auth request")
+	p.er.Record("oidc auth request")
 }
 
-func (p *oidcProvider) handleCallback(w http.ResponseWriter, req *http.Request) {
-	p.recordEvent("oidc auth callback")
-	tlsConn := req.Context().Value(connCtxKey).(*tls.Conn)
-	desc := formatConnDesc(tlsConn.NetConn().(*netw.Conn))
-	log.Printf("REQ %s ➔ %s %s?...", desc, req.Method, req.URL.Path)
+func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
+	p.er.Record("oidc auth callback")
 	req.ParseForm()
 	if req.Form.Get("logout") != "" {
-		cookie := &http.Cookie{
-			Name:     tlsProxyAuthCookie,
-			Value:    "",
-			Domain:   p.cfg.Domain,
-			MaxAge:   -1,
-			Secure:   true,
-			HttpOnly: true,
-		}
-		http.SetCookie(w, cookie)
+		p.cm.ClearCookies(w)
 		w.Write([]byte("logout successful"))
 		return
 	}
@@ -193,7 +182,7 @@ func (p *oidcProvider) handleCallback(w http.ResponseWriter, req *http.Request) 
 	p.mu.Unlock()
 
 	if invalid {
-		p.recordEvent("invalid state")
+		p.er.Record("invalid state")
 		http.Error(w, "invalid state", http.StatusBadRequest)
 		return
 	}
@@ -207,7 +196,7 @@ func (p *oidcProvider) handleCallback(w http.ResponseWriter, req *http.Request) 
 	form.Add("grant_type", "authorization_code")
 	form.Add("code_verifier", state.CodeVerifier)
 
-	resp, err := http.PostForm(p.TokenEndpoint, form)
+	resp, err := http.PostForm(p.cfg.TokenEndpoint, form)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -237,50 +226,18 @@ func (p *oidcProvider) handleCallback(w http.ResponseWriter, req *http.Request) 
 	delete(p.states, claims.Nonce)
 	p.mu.Unlock()
 	if !ok {
-		p.recordEvent("invalid nonce")
+		p.er.Record("invalid nonce")
 		http.Error(w, "timeout", http.StatusForbidden)
 		return
 	}
 	if claims.EmailVerified != nil && !*claims.EmailVerified {
-		p.recordEvent("email not verified")
+		p.er.Record("email not verified")
 		http.Error(w, "email not verified", http.StatusForbidden)
 		return
 	}
-	now := time.Now().UTC()
-	token, err := p.tm.CreateToken(jwt.MapClaims{
-		"iat":   now.Unix(),
-		"exp":   now.Add(20 * time.Hour).Unix(),
-		"iss":   p.self,
-		"aud":   p.self,
-		"sub":   claims.Email,
-		"scope": "proxy",
-		"sid":   claims.Nonce,
-	})
-	if err != nil {
+	if err := p.cm.SetAuthTokenCookie(w, claims.Email, claims.Nonce); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	cookie := &http.Cookie{
-		Name:     tlsProxyAuthCookie,
-		Value:    token,
-		Domain:   p.cfg.Domain,
-		Path:     "/",
-		Expires:  now.Add(24 * time.Hour),
-		SameSite: http.SameSiteLaxMode,
-		Secure:   true,
-		HttpOnly: true,
-	}
-	http.SetCookie(w, cookie)
 	http.Redirect(w, req, state.OriginalURL, http.StatusFound)
-}
-
-func (p *oidcProvider) validateToken(token string) (*jwt.Token, error) {
-	tok, err := p.tm.ValidateToken(token, jwt.WithIssuer(p.self), jwt.WithAudience(p.self))
-	if err != nil {
-		return nil, err
-	}
-	if c, ok := tok.Claims.(jwt.MapClaims); !ok || c["scope"] != "proxy" {
-		return nil, errors.New("wrong scope")
-	}
-	return tok, nil
 }
