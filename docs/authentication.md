@@ -2,6 +2,8 @@
 
 Simplified sequence diagrams representing the OIDC and SAML authentication flows.
 
+Refer to the [SSO example](https://github.com/c2FmZQ/tlsproxy/blob/main/examples/sso/README.md) and the [Config godoc](https://pkg.go.dev/github.com/c2FmZQ/tlsproxy/proxy#Config).
+
 ## OIDC Flow
 
 ```mermaid
