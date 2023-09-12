@@ -66,3 +66,11 @@ sequenceDiagram
   BE->>PRX: Response
   PRX->>A: Response
 ```
+
+## Cookies
+
+The values of the `TLSPROXYAUTH` and `TLSPROXYIDTOKEN` cookies are JSON Web Tokens (JWT) signed by tlsproxy itself.
+
+`TLSPROXYAUTH` is used to authenticate with tlsproxy. It is not forwarded to the backend services.
+
+`TLSPROXYIDTOKEN` is used to authenticate with the backend services. It is set and validated by tlsproxy. The backend services can also validate it using the JSON Web Key Set (JWKS) exported by tlsproxy.
