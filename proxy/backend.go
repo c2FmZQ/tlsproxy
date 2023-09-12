@@ -26,7 +26,6 @@ package proxy
 import (
 	"context"
 	"crypto/tls"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -49,7 +48,6 @@ const (
 	viaHeader           = "Via"
 	hostHeader          = "Host"
 	xForwardedForHeader = "X-Forwarded-For"
-	clientCertHeader    = "Client-Cert"
 )
 
 var (
@@ -280,7 +278,7 @@ func (be *Backend) reverseProxyDirector(req *http.Request) {
 	req.Host = host
 	req.Header.Set(hostHeader, host)
 	req.Header.Del(xForwardedForHeader)
-	req.Header.Del(clientCertHeader)
+	req.Header.Del(xFCCHeader)
 
 	var via []string
 	if v := req.Header.Get(viaHeader); v != "" {
@@ -289,8 +287,8 @@ func (be *Backend) reverseProxyDirector(req *http.Request) {
 	via = append(via, req.Proto+" "+req.Context().Value(connCtxKey).(*tls.Conn).LocalAddr().String())
 	req.Header.Set(viaHeader, strings.Join(via, ", "))
 
-	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 && be.AddClientCertHeader {
-		req.Header.Set(clientCertHeader, base64.StdEncoding.EncodeToString(req.TLS.PeerCertificates[0].Raw))
+	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 && len(be.AddClientCertHeader) > 0 {
+		addXFCCHeader(req, be.AddClientCertHeader)
 	}
 }
 
