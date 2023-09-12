@@ -25,20 +25,18 @@ Overview of features:
 
 ```mermaid
 flowchart LR
-  subgraph public network
+  subgraph Incoming TLS Connections
     h1(www.example.com)
     h2(foo.example.com)
-    h3(www.example.net)
+    h3(bar.example.com)
     h4(...)
   end
-  subgraph xxx.xxx.xxx.xxx:443
-    prx((TLSPROXY))
-  end
-  subgraph private network
-    be1(backend service)
-    be2(backend service)
-    be3(backend service)
-    be4(...)
+  prx(((TLSPROXY)))
+  subgraph Backend Services
+    be1(HTTP Server)
+    be2(HTTPS Server)
+    be3(IMAP, SMTP, SSH)
+    be4(Any TCP or TLS Server)
   end
   h1-->prx
   h2-->prx
