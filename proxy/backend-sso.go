@@ -50,6 +50,15 @@ func (be *Backend) getUserAuthentication(w http.ResponseWriter, req *http.Reques
 }
 
 func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) bool {
+	// If a valid ID Token is in the authorization header, use it and
+	// ignore the cookies.
+	if tok, err := be.SSO.cm.ValidateAuthorizationHeader(req); err == nil {
+		if sub, err := tok.Claims.GetSubject(); err == nil && sub != "" {
+			req.Header.Set(xTLSProxyUserIDHeader, sub)
+			return true
+		}
+	}
+
 	authToken, err := be.SSO.cm.ValidateAuthTokenCookie(req)
 	if err != nil {
 		return true

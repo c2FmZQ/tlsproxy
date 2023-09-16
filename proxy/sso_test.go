@@ -110,7 +110,7 @@ func TestSSOEnforce(t *testing.T) {
 		t.Fatalf("proxy.Start: %v", err)
 	}
 
-	get := func(urlToGet string) (int, string, map[string]string) {
+	get := func(urlToGet string, hdr http.Header) (int, string, map[string]string) {
 		u, err := url.Parse(urlToGet)
 		if err != nil {
 			t.Fatalf("%q: %v", urlToGet, err)
@@ -139,6 +139,9 @@ func TestSSOEnforce(t *testing.T) {
 			URL:    u,
 			Host:   u.Host,
 		}
+		if hdr != nil {
+			req.Header = hdr
+		}
 		resp, err := client.Do(req)
 		if err != nil {
 			t.Fatalf("%s: get failed: %v", urlToGet, err)
@@ -161,7 +164,7 @@ func TestSSOEnforce(t *testing.T) {
 		return resp.StatusCode, string(body), cookies
 	}
 
-	code, body, cookies := get("https://https.example.com/blah")
+	code, body, cookies := get("https://https.example.com/blah", nil)
 	if got, want := code, 200; got != want {
 		t.Errorf("Code = %v, want %v", got, want)
 	}
@@ -169,6 +172,19 @@ func TestSSOEnforce(t *testing.T) {
 		t.Errorf("Body = %v, want %v", got, want)
 	}
 	if got, want := len(cookies), 2; got != want {
+		t.Errorf("len(cookies) = %v, want %v", got, want)
+	}
+
+	hdr := http.Header{}
+	hdr.Set("Authorization", "Bearer "+cookies["TLSPROXYIDTOKEN"])
+	code, body, cookies = get("https://https.example.com/blah", hdr)
+	if got, want := code, 200; got != want {
+		t.Errorf("Code = %v, want %v", got, want)
+	}
+	if got, want := body, "[https-server] /blah\n"; got != want {
+		t.Errorf("Body = %v, want %v", got, want)
+	}
+	if got, want := len(cookies), 0; got != want {
 		t.Errorf("len(cookies) = %v, want %v", got, want)
 	}
 }
