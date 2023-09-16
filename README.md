@@ -23,6 +23,31 @@ Overview of features:
 * [x] Support any ALPN protocol in TLS, TLSPASSTHROUGH, or TCP mode.
 * [x] Use the same TCP address (IPAddr:port) for any number of server names, e.g. foo.example.com and bar.example.com on the same xxx.xxx.xxx.xxx:443.
 
+```mermaid
+flowchart LR
+  subgraph Incoming TLS Connections
+    h1(www.example.com)
+    h2(foo.example.com)
+    h3(bar.example.com)
+    h4(...)
+  end
+  prx(((TLSPROXY)))
+  subgraph Backend Services
+    be1(HTTP Server)
+    be2(HTTPS Server)
+    be3(IMAP, SMTP, SSH)
+    be4(Any TCP or TLS Server)
+  end
+  h1-->prx
+  h2-->prx
+  h3-->prx
+  h4-->prx
+  prx-->be1
+  prx-->be2
+  prx-->be3
+  prx-->be4
+```
+
 ## Example config:
 
 ```yaml
