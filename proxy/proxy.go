@@ -242,6 +242,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		oidcCfg := oidc.Config{
 			DiscoveryURL:  pp.DiscoveryURL,
 			AuthEndpoint:  pp.AuthEndpoint,
+			Scopes:        pp.Scopes,
 			TokenEndpoint: pp.TokenEndpoint,
 			RedirectURL:   pp.RedirectURL,
 			ClientID:      pp.ClientID,

@@ -33,6 +33,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,6 +48,9 @@ type Config struct {
 	// AuthEndpoint is the authorization endpoint. It must be set only if
 	// DiscoveryURL is not set.
 	AuthEndpoint string
+	// Scopes is the list of scopes to request. The default list is:
+	// openid, email.
+	Scopes []string
 	// TokenEndpoint is the token endpoint. It must be set only if
 	// DiscoveryURL is not set.
 	TokenEndpoint string
@@ -60,7 +64,7 @@ type Config struct {
 }
 
 type CookieManager interface {
-	SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID string) error
+	SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID string, extraClaims map[string]string) error
 	ClearCookies(w http.ResponseWriter) error
 }
 
@@ -146,10 +150,14 @@ func (p *Provider) RequestLogin(w http.ResponseWriter, req *http.Request, origin
 		CodeVerifier: codeVerifierStr,
 	}
 	p.mu.Unlock()
+	scopes := p.cfg.Scopes
+	if len(scopes) == 0 {
+		scopes = []string{"openid", "email"}
+	}
 	url := p.cfg.AuthEndpoint + "?" +
 		"response_type=code" +
 		"&client_id=" + url.QueryEscape(p.cfg.ClientID) +
-		"&scope=" + url.QueryEscape("openid email") +
+		"&scope=" + url.QueryEscape(strings.Join(scopes, " ")) +
 		"&redirect_uri=" + url.QueryEscape(p.cfg.RedirectURL) +
 		"&state=" + nonceStr +
 		"&nonce=" + nonceStr +
@@ -213,6 +221,10 @@ func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		Email         string `json:"email"`
 		EmailVerified *bool  `json:"email_verified"`
 		Nonce         string `json:"nonce"`
+		Name          string `json:"name"`
+		FirstName     string `json:"given_name"`
+		LastName      string `json:"family_name"`
+		Picture       string `json:"picture"`
 		jwt.RegisteredClaims
 	}
 	// We received the JWT directly from the identity provider. So, we
@@ -235,7 +247,20 @@ func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "email not verified", http.StatusForbidden)
 		return
 	}
-	if err := p.cm.SetAuthTokenCookie(w, claims.Email, claims.Nonce); err != nil {
+	extraClaims := make(map[string]string)
+	if claims.Name != "" {
+		extraClaims["name"] = claims.Name
+	}
+	if claims.FirstName != "" {
+		extraClaims["firstname"] = claims.FirstName
+	}
+	if claims.LastName != "" {
+		extraClaims["lastname"] = claims.LastName
+	}
+	if claims.Picture != "" {
+		extraClaims["picture"] = claims.Picture
+	}
+	if err := p.cm.SetAuthTokenCookie(w, claims.Email, claims.Nonce, extraClaims); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

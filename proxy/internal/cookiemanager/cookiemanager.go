@@ -54,9 +54,9 @@ func New(tm *tokenmanager.TokenManager, domain, issuer string) *CookieManager {
 	}
 }
 
-func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID string) error {
+func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID string, extraClaims map[string]string) error {
 	now := time.Now().UTC()
-	token, err := cm.tm.CreateToken(jwt.MapClaims{
+	claims := jwt.MapClaims{
 		"iat":   now.Unix(),
 		"nbf":   now.Unix(),
 		"exp":   now.Add(20 * time.Hour).Unix(),
@@ -65,7 +65,16 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, sessi
 		"sub":   userID,
 		"scope": "proxyauth",
 		"sid":   sessionID,
-	})
+	}
+	if extraClaims != nil {
+		for k, v := range extraClaims {
+			if _, exists := claims[k]; exists {
+				continue
+			}
+			claims[k] = v
+		}
+	}
+	token, err := cm.tm.CreateToken(claims)
 	if err != nil {
 		return err
 	}
@@ -91,15 +100,16 @@ func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Reque
 		return errors.New("internal error")
 	}
 	now := time.Now().UTC()
-	token, err := cm.tm.CreateToken(jwt.MapClaims{
-		"iat": now.Unix(),
-		"nbf": now.Unix(),
-		"exp": c["exp"],
-		"iss": c["iss"],
-		"aud": audience,
-		"sub": c["sub"],
-		"sid": c["sid"],
-	})
+	claims := jwt.MapClaims{}
+	for k, v := range c {
+		if k == "scope" {
+			continue
+		}
+		claims[k] = v
+	}
+	claims["iat"] = now.Unix()
+	claims["aud"] = audience
+	token, err := cm.tm.CreateToken(claims)
 	if err != nil {
 		return err
 	}
