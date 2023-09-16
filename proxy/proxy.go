@@ -68,6 +68,7 @@ const (
 	internalConnKey  = "ic"
 	reportEndKey     = "re"
 	backendKey       = "be"
+	serverIDKey      = "si"
 )
 
 var (
@@ -554,7 +555,23 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 		if hello.ServerName == "" {
 			hello.ServerName = p.defaultServerName()
 		}
-		return getCert(hello)
+		cert, err := getCert(hello)
+		if err != nil {
+			return nil, err
+		}
+		if cert.Leaf != nil {
+			switch {
+			case len(cert.Leaf.URIs) > 0:
+				uris := make([]string, 0, len(cert.Leaf.URIs))
+				for _, u := range cert.Leaf.URIs {
+					uris = append(uris, u.String())
+				}
+				netwConn(hello.Conn).SetAnnotation(serverIDKey, uris)
+			case len(cert.Leaf.DNSNames) > 0:
+				netwConn(hello.Conn).SetAnnotation(serverIDKey, cert.Leaf.DNSNames)
+			}
+		}
+		return cert, nil
 	}
 	// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
 	tc.NextProtos = []string{

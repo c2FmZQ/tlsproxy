@@ -184,6 +184,10 @@ func TestProxyBackends(t *testing.T) {
 				Mode:              "HTTPS",
 				ForwardRootCAs:    intCA.RootCAPEM(),
 				ForwardServerName: "https-internal.example.com",
+				ClientAuth: &ClientAuth{
+					RootCAs: intCA.RootCAPEM(),
+				},
+				AddClientCertHeader: []string{"cert", "dns", "subject", "hash"},
 			},
 			// HTTPS loop
 			{
@@ -251,7 +255,7 @@ func TestProxyBackends(t *testing.T) {
 		{desc: "Unknown server name", host: "foo.example.com", expError: true},
 		{desc: "Hit backend7", host: "passthrough.example.com", want: "Hello from backend7\n"},
 		{desc: "Hit backend8", host: "http.example.com", want: "[backend8] /", http: true},
-		{desc: "Hit backend9", host: "https.example.com", want: "[backend9] /", http: true},
+		{desc: "Hit backend9", host: "https.example.com", want: "[backend9] /", http: true, certName: "client.example.com"},
 		{desc: "Hit loop", host: "loop.example.com", want: "508 Loop Detected", http: true},
 		{desc: "Hit default backend with IP address as host", host: "", want: "421 Misdirected Request", http: true},
 	} {
@@ -670,6 +674,9 @@ func newHTTPServer(t *testing.T, ctx context.Context, name string, ca *certmanag
 	}
 	s := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if v := r.Header.Get(xFCCHeader); v != "" {
+				t.Logf("[%s] %s: %s", name, xFCCHeader, v)
+			}
 			fmt.Fprintf(w, "[%s] %s\n", name, r.RequestURI)
 		}),
 	}

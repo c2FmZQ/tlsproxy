@@ -63,6 +63,14 @@ var (
 		ModeHTTPS,
 		ModeConsole,
 	}
+	validXFCCFields = []string{
+		"cert",
+		"chain",
+		"hash",
+		"subject",
+		"uri",
+		"dns",
+	}
 )
 
 // Config is the TLS proxy configuration.
@@ -166,9 +174,10 @@ type Backend struct {
 	//     backend's server name.
 	//        CLIENT --TLS--> PROXY CONSOLE
 	Mode string `yaml:"mode"`
-	// AddClientCertHeader indicates that the HTTP Client-Cert header should
-	// be added to the request when Mode is HTTP or HTTPS.
-	AddClientCertHeader bool `yaml:"addClientCertHeader,omitempty"`
+	// AddClientCertHeader indicates which fields of the HTTP
+	// X-Forwarded-Client-Cert header should be added to the request when
+	// Mode is HTTP or HTTPS.
+	AddClientCertHeader []string `yaml:"addClientCertHeader,omitempty"`
 	// Addresses is a list of server addresses where requests are forwarded.
 	// When more than one address are specified, requests are distributed
 	// using a simple round robin.
@@ -474,6 +483,11 @@ func (cfg *Config) Check() error {
 			_, err := loadCerts(be.ClientAuth.RootCAs)
 			if err != nil {
 				return fmt.Errorf("backend[%d].ClientCAs: %w", i, err)
+			}
+		}
+		for _, f := range be.AddClientCertHeader {
+			if !slices.Contains(validXFCCFields, strings.ToLower(f)) {
+				return fmt.Errorf("backend[%d].AddClientCertHeader: invalid field %q, valid values are %v", i, f, validXFCCFields)
 			}
 		}
 		if be.SSO != nil {
