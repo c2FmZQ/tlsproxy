@@ -11,9 +11,6 @@ for arch in amd64 arm arm64; do
   # tlsclient, linux
   GOARCH="${arch}" go build -trimpath "${flag}" -o "bin/tlsclient-linux-${arch}" ./tlsclient
   sha256sum "bin/tlsclient-linux-${arch}" | cut -d " " -f1 > "bin/tlsclient-linux-${arch}.sha256"
-  # tlsclient, android
-  GOOS=android GOARCH="${arch}" go build -trimpath "${flag}" -o "bin/tlsclient-android-${arch}" ./tlsclient
-  sha256sum "bin/tlsclient-android-${arch}" | cut -d " " -f1 > "bin/tlsclient-android-${arch}.sha256"
 done
 
 ls -l bin/
