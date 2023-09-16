@@ -27,6 +27,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
@@ -57,6 +58,7 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, sessi
 	now := time.Now().UTC()
 	token, err := cm.tm.CreateToken(jwt.MapClaims{
 		"iat":   now.Unix(),
+		"nbf":   now.Unix(),
 		"exp":   now.Add(20 * time.Hour).Unix(),
 		"iss":   cm.issuer,
 		"aud":   cm.issuer,
@@ -91,6 +93,7 @@ func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Reque
 	now := time.Now().UTC()
 	token, err := cm.tm.CreateToken(jwt.MapClaims{
 		"iat": now.Unix(),
+		"nbf": now.Unix(),
 		"exp": c["exp"],
 		"iss": c["iss"],
 		"aud": audience,
@@ -167,6 +170,21 @@ func (cm *CookieManager) ValidateIDTokenCookie(req *http.Request, authToken *jwt
 	}
 	// Token is already set, and is valid.
 	return nil
+}
+
+func (cm *CookieManager) ValidateAuthorizationHeader(req *http.Request) (*jwt.Token, error) {
+	h := req.Header.Get("Authorization")
+	if len(h) < 7 || strings.ToUpper(h[:7]) != "BEARER " {
+		return nil, errors.New("invalid authorization header")
+	}
+	tok, err := cm.tm.ValidateToken(h[7:], jwt.WithIssuer(cm.issuer), jwt.WithAudience(audienceFromReq(req)))
+	if err != nil {
+		return nil, err
+	}
+	if c, ok := tok.Claims.(jwt.MapClaims); !ok || c["scope"] != nil {
+		return nil, errors.New("wrong scope")
+	}
+	return tok, nil
 }
 
 func FilterOutAuthTokenCookie(req *http.Request) {
