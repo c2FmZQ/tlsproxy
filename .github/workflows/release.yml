@@ -41,13 +41,7 @@ jobs:
       with:
         go-version: '>=1.21.1'
     - name: Build release binaries
-      run: |
-        export CGO_ENABLED=0
-        flag="-ldflags=-s -w -X main.Version=${GITHUB_REF_NAME}"
-        for arch in amd64 arm arm64; do 
-          GOARCH="${arch}" go build -trimpath "${flag}" -o "tlsproxy-linux-${arch}" .
-          sha256sum "tlsproxy-linux-${arch}" | cut -d " " -f1 > "tlsproxy-linux-${arch}.sha256"
-        done
+      run: ./build.sh
     - name: Create release
       # https://github.com/softprops/action-gh-release/tree/v0.1.15
       uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844
@@ -55,8 +49,7 @@ jobs:
         draft: false
         generate_release_notes: true
         fail_on_unmatched_files: true
-        files: |
-          tlsproxy-linux-*
+        files: bin/*
 
   push-to-registry:
     name: Push image to docker hub
