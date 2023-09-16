@@ -76,3 +76,10 @@ The values of the `TLSPROXYAUTH` and `TLSPROXYIDTOKEN` cookies are JSON Web Toke
 `TLSPROXYIDTOKEN` is used to authenticate with the backend services. It is set and validated by tlsproxy. The backend services can also validate it using the JSON Web Key Set (JWKS) exported by tlsproxy.
 
 The ID Token can also be passed in the `Authorization` http header as a bearer token.
+
+## Secrecy
+
+The tokens stored in the `TLSPROXYAUTH` and `TLSPROXYIDTOKEN` cookies are sensitive **secrets** that must not be shared beyond their intended recipients.
+The AUTH token is only shared with tlsproxy. Each ID token is only shared with tlsproxy and _one_ backend service.
+
+Oversharing or leaking the tokens can lead to unauthorized access to resources on tlsproxy and the backend services.
