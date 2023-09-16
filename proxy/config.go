@@ -275,6 +275,13 @@ type ConfigOIDC struct {
 	// AuthEndpoint is the authorization endpoint. It must be set only if
 	// DiscoveryURL is not set.
 	AuthEndpoint string `yaml:"authorizationEndpoint,omitempty"`
+	// Scopes is the list of scopes to request. The default list ("openid",
+	// "email") returns only the user's email address.
+	// To get the user's name and picture, add the "profile" scope with
+	// google, or the "public_profile" scope with facebook, i.e.
+	// {"openid", "email", "profile"} or {"openid", "email",
+	// "public_profile"}.
+	Scopes []string `yaml:"scopes,omitempty"`
 	// TokenEndpoint is the token endpoint. It must be set only if
 	// DiscoveryURL is not set.
 	TokenEndpoint string `yaml:"tokenEndpoint,omitempty"`
