@@ -36,3 +36,5 @@ Then run the example backend.
 cd examples/backend
 go run . -addr :9443 --jwks-url https://login.EXAMPLE.COM/keys
 ```
+
+And point your favorite browser at https://test.EXAMPLE.COM/
