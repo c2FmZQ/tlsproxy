@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"html"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -132,7 +133,7 @@ func (s *service) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		Picture   string `json:"picture"`
 		jwt.RegisteredClaims
 	}
-	if _, err := jwt.ParseWithClaims(cookie.Value, &claims, s.getKey); err != nil {
+	if _, err := jwt.ParseWithClaims(cookie.Value, &claims, s.getKey, jwt.WithAudience(audienceFromReq(req))); err != nil {
 		log.Printf("INF jwt.Parse: %v", err)
 		http.Error(w, "invalid token", http.StatusForbidden)
 		return
@@ -166,4 +167,12 @@ func (s *service) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		fmt.Fprintf(w, "  IssuedAt: %s\n", html.EscapeString(claims.IssuedAt.String()))
 	}
 	fmt.Fprintln(w, "</pre>")
+}
+
+func audienceFromReq(req *http.Request) string {
+	host := req.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return "https://" + host + "/"
 }
