@@ -26,6 +26,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"flag"
@@ -69,10 +70,21 @@ func main() {
 	if *alpn != "" {
 		protos = append(protos, *alpn)
 	}
-	conn, err := tls.Dial("tcp", addr, &tls.Config{
+	tc := &tls.Config{
 		Certificates: certs,
 		NextProtos:   protos,
-	})
+	}
+	conn, err := tls.Dial("tcp", addr, tc)
+	if err != nil {
+		dialer := &net.Dialer{
+			Resolver: &net.Resolver{
+				Dial: func(_ context.Context, _, _ string) (net.Conn, error) {
+					return net.Dial("udp", "8.8.8.8:53")
+				},
+			},
+		}
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, tc)
+	}
 	if err != nil {
 		log.Fatalf("ERR: %v", err)
 	}
