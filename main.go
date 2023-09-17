@@ -63,7 +63,7 @@ func main() {
 	if *configFile == "" {
 		log.Fatal("--config must be set")
 	}
-	log.Printf("INF tlsproxy %s %s", Version, runtime.Version())
+	log.Printf("INF tlsproxy %s %s %s/%s", Version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	cfg, err := proxy.ReadConfig(*configFile)
 	if err != nil {
 		log.Fatalf("ERR %v", err)
