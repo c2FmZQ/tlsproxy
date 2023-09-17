@@ -47,7 +47,7 @@ func main() {
 	flag.Parse()
 
 	if *versionFlag {
-		os.Stdout.WriteString(Version + " " + runtime.Version() + "\n")
+		os.Stdout.WriteString(Version + " " + runtime.Version() + " " + runtime.GOOS + "/" + runtime.GOARCH + "\n")
 		return
 	}
 	if flag.NArg() != 1 || (*key == "") != (*cert == "") {
