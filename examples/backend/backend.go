@@ -33,16 +33,26 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/blend/go-sdk/envoyutil"
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/lestrrat-go/jwx/jwk"
 )
+
+type userIdentity struct {
+	Name      string `json:"name"`
+	FirstName string `json:"firstname"`
+	LastName  string `json:"lastname"`
+	Picture   string `json:"picture"`
+	jwt.RegisteredClaims
+}
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -119,41 +129,48 @@ func (s *service) getKey(token *jwt.Token) (interface{}, error) {
 
 func (s *service) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	log.Printf("INF %s %s", req.Method, req.RequestURI)
+
+	var xfcc envoyutil.XFCC
+	var claims userIdentity
+
+	if h := req.Header.Get("x-forwarded-client-cert"); h != "" {
+		var err error
+		if xfcc, err = envoyutil.ParseXFCC(h); err != nil {
+			http.Error(w, "invalid x-forwarded-client-cert header", http.StatusForbidden)
+			return
+		}
+	}
 	cookie, err := req.Cookie("TLSPROXYIDTOKEN")
 	if err != nil {
 		log.Printf("INF TLSPROXYIDTOKEN: %v", err)
 		http.Error(w, "TLSPROXYIDTOKEN cookie is not set", http.StatusForbidden)
 		return
 	}
-
-	var claims struct {
-		Name      string `json:"name"`
-		FirstName string `json:"firstname"`
-		LastName  string `json:"lastname"`
-		Picture   string `json:"picture"`
-		jwt.RegisteredClaims
-	}
 	if _, err := jwt.ParseWithClaims(cookie.Value, &claims, s.getKey, jwt.WithAudience(audienceFromReq(req))); err != nil {
 		log.Printf("INF jwt.Parse: %v", err)
 		http.Error(w, "invalid token", http.StatusForbidden)
 		return
 	}
+
 	w.Header().Set("content-type", "text/html")
+
 	fmt.Fprintln(w, "token is valid<br>")
 
+	if pic := claims.Picture; pic != "" {
+		fmt.Fprintf(w, "<img src=\"%s\"><br>\n", html.EscapeString(pic))
+	}
 	if fn := claims.FirstName; fn != "" {
 		fmt.Fprintf(w, "<h1>Hello, %s</h1>\n", html.EscapeString(fn))
+	} else {
+		fmt.Fprintf(w, "<h1>Hello, %s</h1>\n", html.EscapeString(claims.Subject))
 	}
 
 	fmt.Fprintf(w, "EMAIL: %s<br>\n", html.EscapeString(claims.Subject))
 	if name := claims.Name; name != "" {
 		fmt.Fprintf(w, "NAME: %s<br>\n", html.EscapeString(name))
 	}
-	if pic := claims.Picture; pic != "" {
-		fmt.Fprintf(w, "<img src=\"%s\"><br>\n", html.EscapeString(pic))
-	}
 
-	fmt.Fprintln(w, "<pre>TOKEN CLAIMS:")
+	fmt.Fprintln(w, "CLAIMS:<pre>")
 	fmt.Fprintf(w, "  Issuer: %s\n", html.EscapeString(claims.Issuer))
 	fmt.Fprintf(w, "  Subject: %s\n", html.EscapeString(claims.Subject))
 	fmt.Fprintf(w, "  Audience: %s\n", html.EscapeString(strings.Join(claims.Audience, ",")))
@@ -167,6 +184,35 @@ func (s *service) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		fmt.Fprintf(w, "  IssuedAt: %s\n", html.EscapeString(claims.IssuedAt.String()))
 	}
 	fmt.Fprintln(w, "</pre>")
+
+	for _, xe := range xfcc {
+		fmt.Fprintln(w, "XFCC:<pre>")
+		if xe.By != "" {
+			fmt.Fprintf(w, "By: %s\n", html.EscapeString(xe.By))
+		}
+		if xe.Hash != "" {
+			fmt.Fprintf(w, "Hash: %s\n", html.EscapeString(xe.Hash))
+		}
+		if xe.Cert != "" {
+			cert, _ := url.QueryUnescape(xe.Cert)
+			fmt.Fprintf(w, "Cert: %s\n", html.EscapeString(cert))
+		}
+		if xe.Chain != "" {
+			chain, _ := url.QueryUnescape(xe.Chain)
+			fmt.Fprintf(w, "Chain: %s\n", html.EscapeString(chain))
+		}
+		if xe.Subject != "" {
+			fmt.Fprintf(w, "Subject: %s\n", html.EscapeString(xe.Subject))
+		}
+		if xe.URI != "" {
+			fmt.Fprintf(w, "URI: %s\n", html.EscapeString(xe.URI))
+		}
+		if len(xe.DNS) > 0 {
+			fmt.Fprintf(w, "DNS: %s\n", html.EscapeString(strings.Join(xe.DNS, ",")))
+		}
+		fmt.Fprintln(w, "</pre>")
+	}
+
 }
 
 func audienceFromReq(req *http.Request) string {
