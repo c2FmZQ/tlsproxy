@@ -16,6 +16,7 @@ require (
 
 require (
 	github.com/jonboulle/clockwork v0.4.0 // indirect
+	github.com/stretchr/testify v1.8.4 // indirect
 	golang.org/x/net v0.15.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
 )
