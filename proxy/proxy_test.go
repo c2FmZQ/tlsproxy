@@ -185,9 +185,9 @@ func TestProxyBackends(t *testing.T) {
 				ForwardRootCAs:    intCA.RootCAPEM(),
 				ForwardServerName: "https-internal.example.com",
 				ClientAuth: &ClientAuth{
-					RootCAs: intCA.RootCAPEM(),
+					RootCAs:             intCA.RootCAPEM(),
+					AddClientCertHeader: []string{"cert", "dns", "subject", "hash"},
 				},
-				AddClientCertHeader: []string{"cert", "dns", "subject", "hash"},
 			},
 			// HTTPS loop
 			{

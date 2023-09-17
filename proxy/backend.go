@@ -287,8 +287,8 @@ func (be *Backend) reverseProxyDirector(req *http.Request) {
 	via = append(via, req.Proto+" "+req.Context().Value(connCtxKey).(*tls.Conn).LocalAddr().String())
 	req.Header.Set(viaHeader, strings.Join(via, ", "))
 
-	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 && len(be.AddClientCertHeader) > 0 {
-		addXFCCHeader(req, be.AddClientCertHeader)
+	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 && be.ClientAuth != nil && len(be.ClientAuth.AddClientCertHeader) > 0 {
+		addXFCCHeader(req, be.ClientAuth.AddClientCertHeader)
 	}
 }
 

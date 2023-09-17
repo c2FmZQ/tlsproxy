@@ -174,10 +174,6 @@ type Backend struct {
 	//     backend's server name.
 	//        CLIENT --TLS--> PROXY CONSOLE
 	Mode string `yaml:"mode"`
-	// AddClientCertHeader indicates which fields of the HTTP
-	// X-Forwarded-Client-Cert header should be added to the request when
-	// Mode is HTTP or HTTPS.
-	AddClientCertHeader []string `yaml:"addClientCertHeader,omitempty"`
 	// Addresses is a list of server addresses where requests are forwarded.
 	// When more than one address are specified, requests are distributed
 	// using a simple round robin.
@@ -272,6 +268,10 @@ type ClientAuth struct {
 	// RootCAs is either a file name or a set of PEM-encoded CA
 	// certificates that are used to authenticate clients.
 	RootCAs string `yaml:"rootCAs,omitempty"`
+	// AddClientCertHeader indicates which fields of the HTTP
+	// X-Forwarded-Client-Cert header should be added to the request when
+	// Mode is HTTP or HTTPS.
+	AddClientCertHeader []string `yaml:"addClientCertHeader,omitempty"`
 }
 
 // ConfigOIDC contains the parameters of an OIDC provider.
@@ -479,17 +479,20 @@ func (cfg *Config) Check() error {
 			}
 			serverNames[sn] = true
 		}
-		if be.ClientAuth != nil && be.ClientAuth.RootCAs != "" {
-			_, err := loadCerts(be.ClientAuth.RootCAs)
-			if err != nil {
-				return fmt.Errorf("backend[%d].ClientCAs: %w", i, err)
+		if be.ClientAuth != nil {
+			if be.ClientAuth.RootCAs != "" {
+				_, err := loadCerts(be.ClientAuth.RootCAs)
+				if err != nil {
+					return fmt.Errorf("backend[%d].ClientCAs: %w", i, err)
+				}
+			}
+			for _, f := range be.ClientAuth.AddClientCertHeader {
+				if !slices.Contains(validXFCCFields, strings.ToLower(f)) {
+					return fmt.Errorf("backend[%d].ClientAuth.AddClientCertHeader: invalid field %q, valid values are %v", i, f, validXFCCFields)
+				}
 			}
 		}
-		for _, f := range be.AddClientCertHeader {
-			if !slices.Contains(validXFCCFields, strings.ToLower(f)) {
-				return fmt.Errorf("backend[%d].AddClientCertHeader: invalid field %q, valid values are %v", i, f, validXFCCFields)
-			}
-		}
+
 		if be.SSO != nil {
 			if !identityProviders[be.SSO.Provider] {
 				return fmt.Errorf("backend[%d].SSO.Provider: unknown provider %q", i, be.SSO.Provider)

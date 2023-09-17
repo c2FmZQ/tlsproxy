@@ -26,7 +26,6 @@ package proxy
 import (
 	"bytes"
 	"crypto/sha256"
-	"crypto/tls"
 	"encoding/hex"
 	"encoding/pem"
 	"net/http"
@@ -41,12 +40,6 @@ func addXFCCHeader(req *http.Request, which []string) {
 		return
 	}
 	var fields []string
-	conn := netwConn(req.Context().Value(connCtxKey).(*tls.Conn))
-	if serverIDs, ok := conn.Annotation(serverIDKey, nil).([]string); ok {
-		for _, id := range serverIDs {
-			fields = append(fields, "By="+encodeXFCC(id))
-		}
-	}
 	for _, f := range which {
 		switch strings.ToLower(f) {
 		case "cert":
@@ -57,11 +50,13 @@ func addXFCCHeader(req *http.Request, which []string) {
 				})),
 			)))
 		case "chain":
-			var buf bytes.Buffer
-			for _, cert := range req.TLS.PeerCertificates {
-				pem.Encode(&buf, &pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
+			for _, chain := range req.TLS.VerifiedChains {
+				var buf bytes.Buffer
+				for _, cert := range chain {
+					pem.Encode(&buf, &pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
+				}
+				fields = append(fields, "Chain="+encodeXFCC(url.QueryEscape(buf.String())))
 			}
-			fields = append(fields, "Chain="+encodeXFCC(url.QueryEscape(buf.String())))
 		case "hash":
 			h := sha256.Sum256(req.TLS.PeerCertificates[0].Raw)
 			fields = append(fields, "Hash="+encodeXFCC(hex.EncodeToString(h[:])))
