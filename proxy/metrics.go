@@ -266,6 +266,14 @@ func (p *Proxy) configHandler(w http.ResponseWriter, req *http.Request) {
 	for _, p := range cfg.OIDCProviders {
 		p.ClientSecret = "**REDACTED**"
 	}
+	for _, be := range cfg.Backends {
+		if be.SSO == nil || be.SSO.LocalOIDCServer == nil {
+			continue
+		}
+		for _, client := range be.SSO.LocalOIDCServer.Clients {
+			client.Secret = "**REDACTED**"
+		}
+	}
 	w.Header().Set("content-type", "text/plain; charset=utf-8")
 	enc := yaml.NewEncoder(w)
 	enc.SetIndent(2)

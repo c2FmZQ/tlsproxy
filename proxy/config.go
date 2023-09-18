@@ -33,6 +33,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -42,6 +43,7 @@ import (
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
 const (
@@ -234,6 +236,7 @@ type Backend struct {
 	HalfCloseTimeout *time.Duration `yaml:"halfCloseTimeout,omitempty"`
 
 	recordEvent func(string)
+	tm          *tokenmanager.TokenManager
 
 	tlsConfig      *tls.Config
 	forwardRootCAs *x509.CertPool
@@ -253,7 +256,7 @@ type Backend struct {
 }
 
 type localHandler struct {
-	handler   http.HandlerFunc
+	handler   http.Handler
 	ssoBypass bool
 }
 
@@ -335,10 +338,54 @@ type BackendSSO struct {
 	// GenerateIDTokens indicates that the proxy should generate ID tokens
 	// for authenticated users.
 	GenerateIDTokens bool `yaml:"generateIdTokens,omitempty"`
+	// LocalOIDCServer is used to configure a local OpenID Provider to
+	// authenticate users with backend services that support OpenID Connect.
+	LocalOIDCServer *LocalOIDCServer `yaml:"localOIDCServer,omitempty"`
 
 	p      identityProvider
 	cm     *cookiemanager.CookieManager
 	domain string
+}
+
+// LocalOIDCServer is used to configure a local OpenID Provider to
+// authenticate users with backend services that support OpenID Connect.
+// When this is enabled, tlsproxy will add a few endpoints to this
+// backend:
+// - <PathPrefix>/.well-known/openid-configuration
+// - <PathPrefix>/authorization
+// - <PathPrefix>/token
+// - <PathPrefix>/jwks
+type LocalOIDCServer struct {
+	// PathPrefix specifies how the endpoint paths are constructed. It is
+	// generally fine to leave it empty.
+	PathPrefix string `yaml:"pathPrefix,omitempty"`
+	// Clients is the list of all authorized clients and their
+	// configurations.
+	Clients      []*LocalOIDCClient      `yaml:"clients,omitempty"`
+	RewriteRules []*LocalOIDCRewriteRule `yaml:"rewriteRules,omitempty"`
+}
+
+// LocalOIDCClient contains the parameters of one OIDC client that is allowed
+// to connect to the local OIDC server. All the fields must be shared with the
+// client application.
+type LocalOIDCClient struct {
+	// ID is the OAUTH2 client ID. It should a unique string that's hard to
+	// guess. See https://www.oauth.com/oauth2-servers/client-registration/client-id-secret/
+	ID string `yaml:"id"`
+	// Secret is the OAUTH2 secret for the client. It should be a random
+	// string generated with something like:
+	//  dd if=/dev/random bs=32 count=1 | base64
+	Secret string `yaml:"secret"`
+	// RedirectURI is where the authorization endpoint will redirect the
+	// user once the authorization code has been granted.
+	RedirectURI []string `yaml:"redirectUri"`
+}
+
+type LocalOIDCRewriteRule struct {
+	InputClaim  string `yaml:"inputClaim"`
+	OutputClaim string `yaml:"outputClaim"`
+	Regex       string `yaml:"regex"`
+	Value       string `yaml:"value"`
 }
 
 func (cfg *Config) clone() *Config {
@@ -496,6 +543,33 @@ func (cfg *Config) Check() error {
 		if be.SSO != nil {
 			if !identityProviders[be.SSO.Provider] {
 				return fmt.Errorf("backend[%d].SSO.Provider: unknown provider %q", i, be.SSO.Provider)
+			}
+			if be.SSO.LocalOIDCServer != nil {
+				for j, client := range be.SSO.LocalOIDCServer.Clients {
+					if client.ID == "" {
+						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.Clients[%d].ID must be set", i, j)
+					}
+					if client.Secret == "" {
+						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.Clients[%d].Secret must be set", i, j)
+					}
+					if len(client.RedirectURI) == 0 {
+						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.Clients[%d].RedirectURI must be set", i, j)
+					}
+				}
+				for j, rr := range be.SSO.LocalOIDCServer.RewriteRules {
+					if rr.InputClaim == "" {
+						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.RewriteRules[%d].InputClaim must be set", i, j)
+					}
+					if rr.OutputClaim == "" {
+						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.RewriteRules[%d].OutputClaim must be set", i, j)
+					}
+					if rr.Regex == "" {
+						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.RewriteRules[%d].Regex must be set", i, j)
+					}
+					if _, err := regexp.Compile(rr.Regex); err != nil {
+						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.RewriteRules[%d].Regex: %v", i, j, err)
+					}
+				}
 			}
 		}
 		if be.ForwardRootCAs != "" {

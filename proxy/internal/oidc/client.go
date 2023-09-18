@@ -63,19 +63,21 @@ type Config struct {
 	ClientSecret string
 }
 
+// CookieManager is the interface to set and clear the auth token.
 type CookieManager interface {
 	SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID string, extraClaims map[string]string) error
 	ClearCookies(w http.ResponseWriter) error
 }
 
+// EventRecorder is used to record events.
 type EventRecorder interface {
 	Record(string)
 }
 
-// Provider handles the OIDC manual flow based on information from
-// https://developers.google.com/identity/openid-connect/openid-connect and
+// ProviderClient handles the OIDC authentication code flow based on information
+// from https://developers.google.com/identity/openid-connect/openid-connect and
 // https://developers.facebook.com/docs/facebook-login/guides/advanced/oidc-token/
-type Provider struct {
+type ProviderClient struct {
 	cfg Config
 	cm  CookieManager
 	er  EventRecorder
@@ -91,8 +93,9 @@ type oauthState struct {
 	Seen         bool
 }
 
-func New(cfg Config, er EventRecorder, cm CookieManager) (*Provider, error) {
-	p := &Provider{
+// New returns a new ProviderClient.
+func New(cfg Config, er EventRecorder, cm CookieManager) (*ProviderClient, error) {
+	p := &ProviderClient{
 		cfg:    cfg,
 		cm:     cm,
 		er:     er,
@@ -129,7 +132,7 @@ func New(cfg Config, er EventRecorder, cm CookieManager) (*Provider, error) {
 	return p, nil
 }
 
-func (p *Provider) RequestLogin(w http.ResponseWriter, req *http.Request, originalURL string) {
+func (p *ProviderClient) RequestLogin(w http.ResponseWriter, req *http.Request, originalURL string) {
 	var nonce [12]byte
 	if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -167,14 +170,9 @@ func (p *Provider) RequestLogin(w http.ResponseWriter, req *http.Request, origin
 	p.er.Record("oidc auth request")
 }
 
-func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
+func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	p.er.Record("oidc auth callback")
 	req.ParseForm()
-	if req.Form.Get("logout") != "" {
-		p.cm.ClearCookies(w)
-		w.Write([]byte("logout successful"))
-		return
-	}
 
 	p.mu.Lock()
 	for k, v := range p.states {
@@ -222,8 +220,9 @@ func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		EmailVerified *bool  `json:"email_verified"`
 		Nonce         string `json:"nonce"`
 		Name          string `json:"name"`
-		FirstName     string `json:"given_name"`
-		LastName      string `json:"family_name"`
+		GivenName     string `json:"given_name"`
+		MiddleName    string `json:"middle_name"`
+		FamilyName    string `json:"family_name"`
 		Picture       string `json:"picture"`
 		jwt.RegisteredClaims
 	}
@@ -247,15 +246,20 @@ func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "email not verified", http.StatusForbidden)
 		return
 	}
-	extraClaims := make(map[string]string)
+	extraClaims := map[string]string{
+		"source": claims.Issuer,
+	}
 	if claims.Name != "" {
 		extraClaims["name"] = claims.Name
 	}
-	if claims.FirstName != "" {
-		extraClaims["firstname"] = claims.FirstName
+	if claims.GivenName != "" {
+		extraClaims["given_name"] = claims.GivenName
 	}
-	if claims.LastName != "" {
-		extraClaims["lastname"] = claims.LastName
+	if claims.MiddleName != "" {
+		extraClaims["middle_name"] = claims.MiddleName
+	}
+	if claims.FamilyName != "" {
+		extraClaims["family_name"] = claims.FamilyName
 	}
 	if claims.Picture != "" {
 		extraClaims["picture"] = claims.Picture

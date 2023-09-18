@@ -49,7 +49,7 @@ func TestTokenManager(t *testing.T) {
 		"sub": "test@example.com",
 		"iss": "https://login.example.com",
 		"aud": "https://login.example.com",
-	})
+	}, "ES256")
 	if err != nil {
 		t.Fatalf("tm.CreateToken: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestTokenManager(t *testing.T) {
 		"sub": "test@example.com",
 		"iss": "https://login.example.com",
 		"aud": "https://login.example.com",
-	})
+	}, "RS256")
 	if err != nil {
 		t.Fatalf("tm.CreateToken: %v", err)
 	}

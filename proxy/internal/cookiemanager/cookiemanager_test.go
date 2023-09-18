@@ -46,7 +46,7 @@ func TestCookies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	cm := New(tm, "example.com", "https://idp.example.com")
+	cm := New(tm, "idp", "example.com", "https://idp.example.com")
 
 	recorder := httptest.NewRecorder()
 

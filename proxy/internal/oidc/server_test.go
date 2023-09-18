@@ -21,25 +21,51 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-//go:build pprof
-
-package proxy
+package oidc
 
 import (
-	"net/http"
-	"net/http/pprof"
+	"testing"
+
+	jwt "github.com/golang-jwt/jwt/v5"
 )
 
-func addPProfHandlers(h map[string]localHandler) {
-	h["/debug/pprof/"] = localHandler{handler: http.HandlerFunc(pprof.Index)}
-	h["/debug/pprof/allocs"] = localHandler{handler: http.HandlerFunc(pprof.Index)}
-	h["/debug/pprof/block"] = localHandler{handler: http.HandlerFunc(pprof.Index)}
-	h["/debug/pprof/goroutine"] = localHandler{handler: http.HandlerFunc(pprof.Index)}
-	h["/debug/pprof/heap"] = localHandler{handler: http.HandlerFunc(pprof.Index)}
-	h["/debug/pprof/mutex"] = localHandler{handler: http.HandlerFunc(pprof.Index)}
-	h["/debug/pprof/threadcreate"] = localHandler{handler: http.HandlerFunc(pprof.Index)}
-	h["/debug/pprof/cmdline"] = localHandler{handler: http.HandlerFunc(pprof.Cmdline)}
-	h["/debug/pprof/profile"] = localHandler{handler: http.HandlerFunc(pprof.Profile)}
-	h["/debug/pprof/symbol"] = localHandler{handler: http.HandlerFunc(pprof.Symbol)}
-	h["/debug/pprof/trace"] = localHandler{handler: http.HandlerFunc(pprof.Trace)}
+func TestRewriteRules(t *testing.T) {
+	in := jwt.MapClaims{
+		"email": "alice@EXAMPLE.COM",
+		"name":  "Jane Doe",
+	}
+	out := jwt.MapClaims{}
+
+	rr := []RewriteRule{
+		{
+			InputClaim:  "email",
+			OutputClaim: "preferred_username",
+			Regex:       "^([^@]+)@.*$",
+			Value:       "$1",
+		},
+		{
+			InputClaim:  "name",
+			OutputClaim: "name_nospace",
+			Regex:       " ",
+			Value:       "",
+		},
+		{
+			InputClaim:  "${name} <${email}>",
+			OutputClaim: "name_and_email",
+			Regex:       "^(.*)$",
+			Value:       "$1",
+		},
+	}
+
+	applyRewriteRules(rr, in, out)
+
+	if want, got := "alice", out["preferred_username"]; want != got {
+		t.Errorf("preferred_username = %q, want %q", got, want)
+	}
+	if want, got := "JaneDoe", out["name_nospace"]; want != got {
+		t.Errorf("name_nospace = %q, want %q", got, want)
+	}
+	if want, got := "Jane Doe <alice@EXAMPLE.COM>", out["name_and_email"]; want != got {
+		t.Errorf("name_and_email = %q, want %q", got, want)
+	}
 }
