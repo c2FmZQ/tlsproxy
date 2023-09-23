@@ -183,6 +183,10 @@ func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
 	req.ParseForm()
 	if tokenStr := req.Form.Get("u"); tokenStr != "" {
 		tok, err := be.tm.ValidateToken(tokenStr)
+		if err == jwt.ErrTokenExpired {
+			http.Error(w, "data expired", http.StatusBadRequest)
+			return
+		}
 		if err != nil {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
@@ -253,7 +257,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 	_, userDomain, _ := strings.Cut(userID, "@")
 	if be.SSO.ACL != nil && !slices.Contains(*be.SSO.ACL, userID) && !slices.Contains(*be.SSO.ACL, "@"+userDomain) {
 		be.recordEvent(fmt.Sprintf("deny %s to %s", userID, host))
-		log.Printf("REQ %s ➔ %s %s ➔ status:%d (SSO)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusFound)
+		log.Printf("REQ %s ➔ %s %s ➔ status:%d (SSO)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden)
 		be.servePermissionDenied(w, req)
 		return false
 	}
@@ -279,7 +283,7 @@ func (be *Backend) makeTokenForURL(req *http.Request) (string, string, error) {
 	u.Host = req.Host
 	token, err := be.tm.CreateToken(jwt.MapClaims{
 		"url": u.String(),
-		"exp": time.Now().Add(10 * time.Minute).Unix(),
+		"exp": time.Now().Add(time.Hour).Unix(),
 	}, "ES256")
 	return token, u.String(), err
 }

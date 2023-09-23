@@ -415,7 +415,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		case ModeConsole:
 			be := be
 			be.localHandlers["/"] = localHandler{handler: http.HandlerFunc(p.metricsHandler)}
-			be.localHandlers["/favicon.ico"] = localHandler{handler: http.HandlerFunc(p.faviconHandler), ssoBypass: true}
+			be.localHandlers["/favicon.ico"] = localHandler{handler: http.HandlerFunc(p.faviconHandler)}
 			be.localHandlers["/config"] = localHandler{handler: http.HandlerFunc(p.configHandler)}
 			addPProfHandlers(be.localHandlers)
 
