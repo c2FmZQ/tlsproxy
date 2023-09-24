@@ -85,7 +85,9 @@ func (be *Backend) userAuthentication(next http.Handler) http.Handler {
 			if claims != nil {
 				sub, err := claims.GetSubject()
 				if err == nil && sub != "" {
-					req.Header.Set(xTLSProxyUserIDHeader, sub)
+					if be.SSO.SetUserIDHeader {
+						req.Header.Set(xTLSProxyUserIDHeader, sub)
+					}
 					req = req.WithContext(context.WithValue(req.Context(), authCtxKey, claims))
 				}
 			}

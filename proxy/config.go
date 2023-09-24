@@ -335,6 +335,9 @@ type BackendSSO struct {
 	// Paths lists the path prefixes for which this policy will be enforced.
 	// If Paths is empty, the policy applies to all paths.
 	Paths []string `yaml:"paths,omitempty"`
+	// SetUserIDHeader indicates that the x-tlsproxy-user-id header should
+	// be set with the email address of the user.
+	SetUserIDHeader bool `yaml:"setUserIdHeader"`
 	// GenerateIDTokens indicates that the proxy should generate ID tokens
 	// for authenticated users.
 	GenerateIDTokens bool `yaml:"generateIdTokens,omitempty"`
