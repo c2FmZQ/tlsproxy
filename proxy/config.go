@@ -361,7 +361,9 @@ type LocalOIDCServer struct {
 	PathPrefix string `yaml:"pathPrefix,omitempty"`
 	// Clients is the list of all authorized clients and their
 	// configurations.
-	Clients      []*LocalOIDCClient      `yaml:"clients,omitempty"`
+	Clients []*LocalOIDCClient `yaml:"clients,omitempty"`
+	// RewriteRules are used to rewrite existing claims or create new claims
+	// from existing ones.
 	RewriteRules []*LocalOIDCRewriteRule `yaml:"rewriteRules,omitempty"`
 }
 
@@ -381,6 +383,15 @@ type LocalOIDCClient struct {
 	RedirectURI []string `yaml:"redirectUri"`
 }
 
+// LocalOIDCRewriteRule define how to rewrite existing claims or create new
+// claims from existing ones.
+// The following example uses the "email" claim to create a "preferred_username"
+// claim by removing the domain name.
+//
+//	InputClaim: "email"
+//	OutputClaim: "preferred_username"
+//	Regex: "^([^@]+)@example.com$"
+//	Value: "$1"
 type LocalOIDCRewriteRule struct {
 	InputClaim  string `yaml:"inputClaim"`
 	OutputClaim string `yaml:"outputClaim"`
