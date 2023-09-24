@@ -100,7 +100,9 @@ func (l *proxyListener) Addr() net.Addr {
 	return l.addr
 }
 
-func logRequest(req *http.Request) {
-	desc := formatReqDesc(req)
-	log.Printf("REQ %s ➔ %s %s", desc, req.Method, req.URL)
+func logHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		log.Printf("REQ %s ➔ %s %s", formatReqDesc(req), req.Method, req.URL)
+		next.ServeHTTP(w, req)
+	})
 }

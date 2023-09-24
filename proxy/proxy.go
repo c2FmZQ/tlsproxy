@@ -238,7 +238,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			return err
 		}
 		issuer := "https://" + host + "/"
-		cm := cookiemanager.New(p.tokenManager, pp.Domain, issuer)
+		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer)
 		oidcCfg := oidc.Config{
 			DiscoveryURL:  pp.DiscoveryURL,
 			AuthEndpoint:  pp.AuthEndpoint,
@@ -266,7 +266,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			return err
 		}
 		issuer := "https://" + host + "/"
-		cm := cookiemanager.New(p.tokenManager, pp.Domain, issuer)
+		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer)
 		samlCfg := saml.Config{
 			SSOURL:   pp.SSOURL,
 			EntityID: pp.EntityID,
@@ -290,18 +290,77 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	for _, be := range cfg.Backends {
 		be.localHandlers = make(map[string]localHandler)
 		be.recordEvent = p.recordEvent
+		be.tm = p.tokenManager
 
 		for _, sn := range be.ServerNames {
 			backends[sn] = be
 		}
 		if be.SSO != nil {
-			p, ok := identityProviders[be.SSO.Provider]
+			idp, ok := identityProviders[be.SSO.Provider]
 			if !ok {
 				return fmt.Errorf("unknown identity provider: %q", be.SSO.Provider)
 			}
-			be.SSO.p = p.identityProvider
-			be.SSO.domain = p.domain
-			be.SSO.cm = p.cm
+			be.SSO.p = idp.identityProvider
+			be.SSO.domain = idp.domain
+			be.SSO.cm = idp.cm
+			be.localHandlers["/.sso/"] = localHandler{
+				handler:   logHandler(http.HandlerFunc(be.serveSSOStatus)),
+				ssoBypass: true,
+			}
+			be.localHandlers["/.sso/logout"] = localHandler{
+				handler:   logHandler(http.HandlerFunc(be.serveLogout)),
+				ssoBypass: true,
+			}
+			be.localHandlers["/.sso/favicon.ico"] = localHandler{
+				handler:   http.HandlerFunc(p.faviconHandler),
+				ssoBypass: true,
+			}
+
+			if ls := be.SSO.LocalOIDCServer; ls != nil && len(be.ServerNames) > 0 {
+				opts := oidc.ServerOptions{
+					TokenManager:  p.tokenManager,
+					Issuer:        "https://" + be.ServerNames[0] + ls.PathPrefix,
+					PathPrefix:    ls.PathPrefix,
+					ClaimsFromCtx: claimsFromCtx,
+					Clients:       make([]oidc.Client, 0, len(ls.Clients)),
+					EventRecorder: er,
+				}
+				for _, client := range ls.Clients {
+					opts.Clients = append(opts.Clients, oidc.Client{
+						ID:          client.ID,
+						Secret:      client.Secret,
+						RedirectURI: client.RedirectURI,
+					})
+				}
+				for _, rr := range ls.RewriteRules {
+					opts.RewriteRules = append(opts.RewriteRules, oidc.RewriteRule{
+						InputClaim:  rr.InputClaim,
+						OutputClaim: rr.OutputClaim,
+						Regex:       rr.Regex,
+						Value:       rr.Value,
+					})
+				}
+				oidcServer := oidc.NewServer(opts)
+				be.localHandlers[ls.PathPrefix+"/.well-known/openid-configuration"] = localHandler{
+					handler:   logHandler(http.HandlerFunc(oidcServer.ServeConfig)),
+					ssoBypass: true,
+				}
+				be.localHandlers[ls.PathPrefix+"/authorization"] = localHandler{
+					handler: logHandler(http.HandlerFunc(oidcServer.ServeAuthorization)),
+				}
+				be.localHandlers[ls.PathPrefix+"/token"] = localHandler{
+					handler:   logHandler(http.HandlerFunc(oidcServer.ServeToken)),
+					ssoBypass: true,
+				}
+				be.localHandlers[ls.PathPrefix+"/userinfo"] = localHandler{
+					handler:   logHandler(http.HandlerFunc(oidcServer.ServeUserInfo)),
+					ssoBypass: true,
+				}
+				be.localHandlers[ls.PathPrefix+"/jwks"] = localHandler{
+					handler:   logHandler(http.HandlerFunc(p.tokenManager.ServeJWKS)),
+					ssoBypass: true,
+				}
+			}
 		}
 		tc := p.baseTLSConfig()
 		if be.ClientAuth != nil {
@@ -348,19 +407,16 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		}
 		if be.ExportJWKS != "" {
 			be.localHandlers[be.ExportJWKS] = localHandler{
-				handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-					logRequest(req)
-					p.tokenManager.ServeJWKS(w, req)
-				}),
+				handler:   logHandler(http.HandlerFunc(p.tokenManager.ServeJWKS)),
 				ssoBypass: true,
 			}
 		}
 		switch be.Mode {
 		case ModeConsole:
 			be := be
-			be.localHandlers["/"] = localHandler{handler: p.metricsHandler}
-			be.localHandlers["/favicon.ico"] = localHandler{handler: p.faviconHandler}
-			be.localHandlers["/config"] = localHandler{handler: p.configHandler}
+			be.localHandlers["/"] = localHandler{handler: http.HandlerFunc(p.metricsHandler)}
+			be.localHandlers["/favicon.ico"] = localHandler{handler: http.HandlerFunc(p.faviconHandler)}
+			be.localHandlers["/config"] = localHandler{handler: http.HandlerFunc(p.configHandler)}
 			addPProfHandlers(be.localHandlers)
 
 			be.httpConnChan = make(chan net.Conn)
@@ -857,10 +913,10 @@ func (p *Proxy) backend(serverName string) (*Backend, error) {
 }
 
 func formatReqDesc(req *http.Request) string {
-	userID := req.Header.Get(xTLSProxyUserIDHeader)
 	var ids []string
-	if userID != "" {
-		ids = append(ids, userID)
+	if claims := claimsFromCtx(req.Context()); claims != nil {
+		sub, _ := claims.GetSubject()
+		ids = append(ids, sub)
 	}
 	tlsConn := req.Context().Value(connCtxKey).(*tls.Conn)
 	return formatConnDesc(tlsConn.NetConn().(*netw.Conn), ids...)

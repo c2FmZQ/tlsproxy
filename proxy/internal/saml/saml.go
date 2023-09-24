@@ -142,11 +142,6 @@ func (p *Provider) RequestLogin(w http.ResponseWriter, req *http.Request, origUR
 func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	p.er.Record("saml auth callback")
 	req.ParseForm()
-	if req.Form.Get("logout") != "" {
-		p.cm.ClearCookies(w)
-		w.Write([]byte("logout successful"))
-		return
-	}
 
 	if req.Method != http.MethodPost {
 		http.Error(w, "invalid method", http.StatusForbidden)
@@ -234,7 +229,9 @@ func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	extraClaims := make(map[string]string)
+	extraClaims := map[string]string{
+		"source": findElementText(v, "./Issuer"),
+	}
 	for _, a := range v.FindElements("./AttributeStatement/Attribute") {
 		attr := a.SelectAttr("Name")
 		if attr == nil {

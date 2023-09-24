@@ -41,30 +41,32 @@ const (
 )
 
 type CookieManager struct {
-	tm     *tokenmanager.TokenManager
-	domain string
-	issuer string
+	tm       *tokenmanager.TokenManager
+	provider string
+	domain   string
+	issuer   string
 }
 
-func New(tm *tokenmanager.TokenManager, domain, issuer string) *CookieManager {
+func New(tm *tokenmanager.TokenManager, provider, domain, issuer string) *CookieManager {
 	return &CookieManager{
-		tm:     tm,
-		domain: domain,
-		issuer: issuer,
+		tm:       tm,
+		provider: provider,
+		domain:   domain,
+		issuer:   issuer,
 	}
 }
 
 func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID string, extraClaims map[string]string) error {
 	now := time.Now().UTC()
 	claims := jwt.MapClaims{
-		"iat":   now.Unix(),
-		"nbf":   now.Unix(),
-		"exp":   now.Add(20 * time.Hour).Unix(),
-		"iss":   cm.issuer,
-		"aud":   cm.issuer,
-		"sub":   userID,
-		"scope": "proxyauth",
-		"sid":   sessionID,
+		"iat":       now.Unix(),
+		"exp":       now.Add(20 * time.Hour).Unix(),
+		"iss":       cm.issuer,
+		"aud":       cm.issuer,
+		"sub":       userID,
+		"proxyauth": cm.issuer,
+		"provider":  cm.provider,
+		"sid":       sessionID,
 	}
 	if extraClaims != nil {
 		for k, v := range extraClaims {
@@ -74,7 +76,7 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, sessi
 			claims[k] = v
 		}
 	}
-	token, err := cm.tm.CreateToken(claims)
+	token, err := cm.tm.CreateToken(claims, "ES256")
 	if err != nil {
 		return err
 	}
@@ -102,14 +104,14 @@ func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Reque
 	now := time.Now().UTC()
 	claims := jwt.MapClaims{}
 	for k, v := range c {
-		if k == "scope" {
+		if k == "scope" || k == "proxyauth" || k == "source" {
 			continue
 		}
 		claims[k] = v
 	}
 	claims["iat"] = now.Unix()
 	claims["aud"] = audience
-	token, err := cm.tm.CreateToken(claims)
+	token, err := cm.tm.CreateToken(claims, "ES256")
 	if err != nil {
 		return err
 	}
@@ -130,6 +132,7 @@ func (cm *CookieManager) ClearCookies(w http.ResponseWriter) error {
 	cookie := &http.Cookie{
 		Name:     tlsProxyAuthCookie,
 		Domain:   cm.domain,
+		Path:     "/",
 		MaxAge:   -1,
 		Secure:   true,
 		HttpOnly: true,
@@ -137,6 +140,7 @@ func (cm *CookieManager) ClearCookies(w http.ResponseWriter) error {
 	http.SetCookie(w, cookie)
 	cookie = &http.Cookie{
 		Name:     tlsProxyIDTokenCookie,
+		Path:     "/",
 		MaxAge:   -1,
 		Secure:   true,
 		HttpOnly: true,
@@ -154,8 +158,8 @@ func (cm *CookieManager) ValidateAuthTokenCookie(req *http.Request) (*jwt.Token,
 	if err != nil {
 		return nil, err
 	}
-	if c, ok := tok.Claims.(jwt.MapClaims); !ok || c["scope"] != "proxyauth" {
-		return nil, errors.New("wrong scope")
+	if c, ok := tok.Claims.(jwt.MapClaims); !ok || c["proxyauth"] != cm.issuer || c["provider"] != cm.provider {
+		return nil, errors.New("invalid proxyauth or provider")
 	}
 	return tok, nil
 }
@@ -191,8 +195,8 @@ func (cm *CookieManager) ValidateAuthorizationHeader(req *http.Request) (*jwt.To
 	if err != nil {
 		return nil, err
 	}
-	if c, ok := tok.Claims.(jwt.MapClaims); !ok || c["scope"] != nil {
-		return nil, errors.New("wrong scope")
+	if c, ok := tok.Claims.(jwt.MapClaims); !ok || c["proxyauth"] != nil {
+		return nil, errors.New("invalid proxyauth")
 	}
 	return tok, nil
 }

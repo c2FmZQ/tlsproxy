@@ -26,8 +26,6 @@ package proxy
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -36,13 +34,15 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
-	"sync"
 	"testing"
 
+	"github.com/c2FmZQ/storage"
+	"github.com/c2FmZQ/storage/crypto"
 	jwt "github.com/golang-jwt/jwt/v5"
-	jwttest "github.com/golang-jwt/jwt/v5/test"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/oidc"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
 func TestSSOEnforce(t *testing.T) {
@@ -67,7 +67,7 @@ func TestSSOEnforce(t *testing.T) {
 			OIDCProviders: []*ConfigOIDC{
 				{
 					Name:          "test-idp",
-					AuthEndpoint:  idp.URL + "/auth",
+					AuthEndpoint:  idp.URL + "/authorization",
 					TokenEndpoint: idp.URL + "/token",
 					RedirectURL:   "https://oauth2.example.com/redirect",
 					ClientID:      "CLIENTID",
@@ -199,69 +199,54 @@ func (er *testEventRecorder) record(e string) {
 
 type idpServer struct {
 	*httptest.Server
-	t *testing.T
-
-	mu    sync.Mutex
-	codes map[string]string
+	t          *testing.T
+	oidcServer *oidc.ProviderServer
 }
 
 func newIDPServer(t *testing.T) *idpServer {
+	dir := t.TempDir()
+	mk, err := crypto.CreateAESMasterKeyForTest()
+	if err != nil {
+		t.Fatalf("crypto.CreateMasterKey: %v", err)
+	}
+	store := storage.New(dir, mk)
+	tm, err := tokenmanager.New(store)
+	if err != nil {
+		t.Fatalf("tokenmanager.New: %v", err)
+	}
+	opts := oidc.ServerOptions{
+		TokenManager: tm,
+		Issuer:       "https://idp.example.com",
+		ClaimsFromCtx: func(context.Context) jwt.Claims {
+			return jwt.MapClaims{
+				"sub": "bob@example.com",
+			}
+		},
+		Clients: []oidc.Client{
+			{ID: "CLIENTID", Secret: "CLIENTSECRET", RedirectURI: []string{"https://oauth2.example.com/redirect"}},
+		},
+		EventRecorder: eventRecorder{record: func(string) {}},
+	}
+
 	idp := &idpServer{
-		t:     t,
-		codes: make(map[string]string),
+		t:          t,
+		oidcServer: oidc.NewServer(opts),
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/auth", idp.auth)
-	mux.HandleFunc("/token", idp.token)
+	log := func(next http.HandlerFunc) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			t.Logf("[IDP SERVER] %s %s", req.Method, req.RequestURI)
+			req.ParseForm()
+			for k, v := range req.Form {
+				t.Logf("[IDP SERVER]  %s: %v", k, v)
+			}
+			next.ServeHTTP(w, req)
+		})
+	}
+	mux.Handle("/.well-known/openid-configuration", log(idp.oidcServer.ServeConfig))
+	mux.Handle("/authorization", log(idp.oidcServer.ServeAuthorization))
+	mux.Handle("/token", log(idp.oidcServer.ServeToken))
+	mux.Handle("/jwks", log(tm.ServeJWKS))
 	idp.Server = httptest.NewServer(mux)
 	return idp
-}
-
-func (idp *idpServer) auth(w http.ResponseWriter, req *http.Request) {
-	log.Printf("IDP %s %s", req.Method, req.RequestURI)
-	idp.mu.Lock()
-	defer idp.mu.Unlock()
-	req.ParseForm()
-	for _, v := range []string{"response_type", "client_id", "scope", "redirect_uri", "state", "nonce"} {
-		log.Printf("IDP [/auth] %s: %s", v, req.Form.Get(v))
-	}
-	code := fmt.Sprintf("CODE-%d", len(idp.codes))
-	idp.codes[code] = req.Form.Get("nonce")
-
-	url := req.Form.Get("redirect_uri") + "?" +
-		"code=" + url.QueryEscape(code) +
-		"&state=" + url.QueryEscape(req.Form.Get("state"))
-	log.Printf("IDP [/auth] redirect to %s", url)
-	http.Redirect(w, req, url, http.StatusFound)
-}
-
-func (idp *idpServer) token(w http.ResponseWriter, req *http.Request) {
-	log.Printf("IDP %s %s", req.Method, req.RequestURI)
-	idp.mu.Lock()
-	defer idp.mu.Unlock()
-	req.ParseForm()
-	for _, v := range []string{"code", "client_id", "client_secret", "redirect_uri", "grant_type"} {
-		log.Printf("IDP [/token] %s: %s", v, req.PostForm.Get(v))
-	}
-	nonce := idp.codes[req.Form.Get("code")]
-
-	var data struct {
-		IDToken string `json:"id_token"`
-	}
-	token := jwttest.MakeSampleToken(
-		jwt.MapClaims{
-			"email":          "john@example.net",
-			"email_verified": true,
-			"nonce":          nonce,
-		},
-		jwt.SigningMethodHS256,
-		[]byte("key"),
-	)
-	data.IDToken = token
-	log.Printf("IDP [/token] Return %+v", data)
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(data); err != nil {
-		idp.t.Errorf("token encode: %v", err)
-	}
 }

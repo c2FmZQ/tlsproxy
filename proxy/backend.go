@@ -198,33 +198,30 @@ func (be *Backend) bridgeConns(client, server net.Conn) error {
 	return retErr
 }
 
-func (be *Backend) runLocalHandlersAndAuthz(w http.ResponseWriter, req *http.Request) bool {
-	h, exists := be.localHandlers[req.URL.Path]
-	if exists && h.ssoBypass {
-		h.handler(w, req)
-		return false
-	}
-	if !be.enforceSSOPolicy(w, req) {
-		return false
-	}
-	if exists && !h.ssoBypass {
-		h.handler(w, req)
-		return false
-	}
-	return true
+func (be *Backend) localHandlersAndAuthz(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		h, exists := be.localHandlers[req.URL.Path]
+		if exists && h.ssoBypass {
+			h.handler.ServeHTTP(w, req)
+			return
+		}
+		if !be.enforceSSOPolicy(w, req) {
+			return
+		}
+		if exists && !h.ssoBypass {
+			h.handler.ServeHTTP(w, req)
+			return
+		}
+		if next == nil {
+			http.NotFound(w, req)
+			return
+		}
+		next.ServeHTTP(w, req)
+	})
 }
 
 func (be *Backend) consoleHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if !be.getUserAuthentication(w, req) {
-			return
-		}
-		logRequest(req)
-		if !be.runLocalHandlersAndAuthz(w, req) {
-			return
-		}
-		http.NotFound(w, req)
-	})
+	return be.userAuthentication(logHandler(be.localHandlersAndAuthz(nil)))
 }
 
 func (be *Backend) reverseProxy() http.Handler {
@@ -250,15 +247,7 @@ func (be *Backend) reverseProxy() http.Handler {
 			ModifyResponse: be.reverseProxyModifyResponse,
 		}
 	}
-	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if !be.getUserAuthentication(w, req) {
-			return
-		}
-		if !be.runLocalHandlersAndAuthz(w, req) {
-			return
-		}
-		rp.ServeHTTP(w, req)
-	})
+	return be.userAuthentication(be.localHandlersAndAuthz(rp))
 }
 
 func (be *Backend) reverseProxyDial(ctx context.Context, network, addr string) (net.Conn, error) {
