@@ -446,16 +446,16 @@ func (s *ProviderServer) ServeUserInfo(w http.ResponseWriter, req *http.Request)
 func applyRewriteRules(rules []RewriteRule, in, out jwt.MapClaims) {
 	buf := maps.Clone(in)
 	getClaim := func(n string) string {
-		ii, exists := buf[n]
-		if !exists {
-			return ""
+		if v, exists := buf[n]; exists {
+			return fmt.Sprint(v)
 		}
-		switch v := ii.(type) {
-		case string:
-			return v
-		default:
-			return fmt.Sprintf("%v", ii)
+		if v, exists := buf[strings.TrimSuffix(n, ":lower")]; exists {
+			return strings.ToLower(fmt.Sprint(v))
 		}
+		if v, exists := buf[strings.TrimSuffix(n, ":upper")]; exists {
+			return strings.ToUpper(fmt.Sprint(v))
+		}
+		return ""
 	}
 	for _, rr := range rules {
 		var input string

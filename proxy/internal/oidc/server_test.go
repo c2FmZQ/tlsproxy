@@ -31,8 +31,10 @@ import (
 
 func TestRewriteRules(t *testing.T) {
 	in := jwt.MapClaims{
-		"email": "alice@EXAMPLE.COM",
-		"name":  "Jane Doe",
+		"email":       "jane@EXAMPLE.COM",
+		"name":        "Jane Doe",
+		"given_name":  "Jane",
+		"family_name": "Doe",
 	}
 	out := jwt.MapClaims{}
 
@@ -55,17 +57,32 @@ func TestRewriteRules(t *testing.T) {
 			Regex:       "^(.*)$",
 			Value:       "$1",
 		},
+		{
+			InputClaim:  "${given_name:lower}",
+			OutputClaim: "username2",
+			Regex:       "^(.).*$",
+			Value:       "$1",
+		},
+		{
+			InputClaim:  "${username2}${family_name:lower}",
+			OutputClaim: "username2",
+			Regex:       "^(.*)$",
+			Value:       "$1",
+		},
 	}
 
 	applyRewriteRules(rr, in, out)
 
-	if want, got := "alice", out["preferred_username"]; want != got {
+	if want, got := "jane", out["preferred_username"]; want != got {
 		t.Errorf("preferred_username = %q, want %q", got, want)
 	}
 	if want, got := "JaneDoe", out["name_nospace"]; want != got {
 		t.Errorf("name_nospace = %q, want %q", got, want)
 	}
-	if want, got := "Jane Doe <alice@EXAMPLE.COM>", out["name_and_email"]; want != got {
+	if want, got := "Jane Doe <jane@EXAMPLE.COM>", out["name_and_email"]; want != got {
 		t.Errorf("name_and_email = %q, want %q", got, want)
+	}
+	if want, got := "jdoe", out["username2"]; want != got {
+		t.Errorf("username2 = %q, want %q", got, want)
 	}
 }
