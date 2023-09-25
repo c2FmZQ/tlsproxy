@@ -1,0 +1,47 @@
+html {
+  margin: 0;
+  height: 100%;
+  background-color: black;
+  color: white;
+}
+body {
+  margin: 0;
+  height: 100%;
+  font-family: monospace;
+}
+#buttons {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+}
+a {
+  color: white;
+  cursor: pointer;
+}
+a.button {
+  text-decoration: none;
+  border: solid 1px black;
+  border-radius: 1em;
+  background-color: lightgray;
+  color: black;
+  margin: 1em;
+  padding: 0.5em;
+  line-height: 3em;
+  white-space: nowrap;
+}
+a.button:hover {
+  background-color: darkgray;
+}
+#message {
+  color: white;
+  text-align: center;
+  position: fixed;
+  left: 50vw;
+  top: 50vh;
+  transform: translate(-50%, -50%);
+  padding: 1em;
+  background-color: black;
+  width: clamp(20em, 40em, 90vw);
+  max-height: 80vh;
+  overflow: scroll;
+}

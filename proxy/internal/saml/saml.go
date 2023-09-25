@@ -48,7 +48,7 @@ import (
 // http://docs.oasis-open.org/security/saml/v2.0/saml-core-2.0-os.pdf
 
 type CookieManager interface {
-	SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID string, extraClaims map[string]string) error
+	SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID string, extraClaims map[string]any) error
 	ClearCookies(w http.ResponseWriter) error
 }
 
@@ -229,7 +229,7 @@ func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	extraClaims := map[string]string{
+	extraClaims := map[string]any{
 		"source": findElementText(v, "./Issuer"),
 	}
 	for _, a := range v.FindElements("./AttributeStatement/Attribute") {

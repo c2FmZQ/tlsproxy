@@ -23,6 +23,9 @@
 
 // tlsproxy is a simple TLS terminating proxy that uses Let's Encrypt to provide
 // TLS encryption for any TCP and HTTP servers.
+//
+// It can also act as a reverse HTTP proxy with optional user authentication
+// with SAML, OpenID Connect, and/or passkeys.
 package main
 
 import (

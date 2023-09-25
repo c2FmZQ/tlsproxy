@@ -65,7 +65,7 @@ type Config struct {
 
 // CookieManager is the interface to set and clear the auth token.
 type CookieManager interface {
-	SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID string, extraClaims map[string]string) error
+	SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID string, extraClaims map[string]any) error
 	ClearCookies(w http.ResponseWriter) error
 }
 
@@ -246,7 +246,7 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 		http.Error(w, "email not verified", http.StatusForbidden)
 		return
 	}
-	extraClaims := map[string]string{
+	extraClaims := map[string]any{
 		"source": claims.Issuer,
 	}
 	if claims.Name != "" {

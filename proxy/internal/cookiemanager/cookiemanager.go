@@ -56,7 +56,7 @@ func New(tm *tokenmanager.TokenManager, provider, domain, issuer string) *Cookie
 	}
 }
 
-func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID string, extraClaims map[string]string) error {
+func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID string, extraClaims map[string]any) error {
 	now := time.Now().UTC()
 	claims := jwt.MapClaims{
 		"iat":       now.Unix(),
