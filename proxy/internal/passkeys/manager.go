@@ -688,6 +688,8 @@ func (m *Manager) assertionOptions() (*AssertionOptions, error) {
 	if err != nil {
 		return nil, err
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.challenges[base64.RawURLEncoding.EncodeToString(opts.Challenge)] = &challenge{
 		created: time.Now().UTC(),
 	}
