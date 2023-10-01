@@ -2,6 +2,8 @@
 
 mkdir -p bin
 
+go generate ./...
+
 export CGO_ENABLED=0
 export GOARM=7
 flag="-ldflags=-extldflags=-static -s -w -X main.Version=${GITHUB_REF_NAME:-dev}"

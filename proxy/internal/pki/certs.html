@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>PKI</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
+<link rel="stylesheet" type="text/css" href="/.sso/style.css" />
+<link rel="stylesheet" type="text/css" href="?get=static&file=style.css" />
+<script src="?get=static&file=certs.js"></script>
+</head>
+<body>
+<div id="buttons">
+  <a class="button" onclick="showForm();">New Cert</a>
+</div>
+<div id="identity">{{$.Subject}}</div>
+
+<div class="certs">Certificate Authority:
+<div class="onecert">
+<div>Subject:</div><div>{{ .CASubject }}</div>
+<div>Serial Number:</div><div>{{ .CASN }}</div>
+<div>SubjectKeyId:</div><div>{{ .CASubjectKeyId }}</div>
+</div>
+</div>
+
+<form id="filters">
+<b>Filters:</b> <select name="owner" onchange="this.form.submit();">
+<option value="me"{{if eq .Owner "me"}} selected{{end}}>Mine</option>
+<option value="all"{{if eq .Owner "all"}} selected{{end}}>All</option>
+</select>
+<select name="status" onchange="this.form.submit();">
+<option value="valid"{{if eq .Status "valid"}} selected{{end}}>Valid</option>
+<option value="expired"{{if eq .Status "expired"}} selected{{end}}>Expired</option>
+<option value="revoked"{{if eq .Status "revoked"}} selected{{end}}>Revoked</option>
+<option value="all"{{if eq .Status "all"}} selected{{end}}>All</option>
+</select>
+</form>
+
+{{- if len .Certs | ne 0 }}
+<div class="certs">Issued Certificates:
+{{- range .Certs }}
+<div class="onerow{{ if .UsedNow }} usednow{{ end }}">
+<div class="status">{{.Status}}</div>
+<div class="onecert">
+<div>Serial Number:</div><div>{{.SN}}</div>
+{{- if eq .Status "Revoked" }}
+<div>Revocation:</div><div>{{.RevocationTime}}</div>
+{{- end }}
+{{- if ne .Subject "" }}
+<div>Subject:</div><div>{{.Subject}}</div>
+{{- end }}
+{{- range .EmailAddresses }}
+<div>Email:</div><div>{{.}}</div>
+{{- end }}
+{{- range .DNSNames }}
+<div>DNS Name:</div><div>{{.}}</div>
+{{- end }}
+{{- if ne .ExtKeyUsage "" }}
+<div>ExtKeyUsage:</div><div>{{.ExtKeyUsage}}</div>
+{{- end }}
+{{- if .IsCA }}
+<div>IsCA:</div><div>{{.IsCA}}</div>
+{{- end }}
+<div>Not Before:</div><div>{{.NotBefore}}</div>
+<div>Not After:</div><div>{{.NotAfter}}</div>
+</div>
+<div class="certButtons">
+<a class="button" onclick="showView({{.SN}});">View</a>
+<a class="button" onclick="downloadCert({{.SN}});">Download</a>
+{{- if eq .Status "Valid" }}
+{{- if .CanRevoke }}
+<a class="button" onclick="revokeCert({{.SN}});">Revoke</a>
+{{- end }}
+{{- end }}
+</div>
+</div>
+{{- end }}
+</div>
+{{- end }}
+
+<div id="csrform" style="display: none;">
+<h1>New Certificate</h1>
+<h2>Option 1</h2>
+<div>
+Generate a private key in the browser and request a new certificate. The private
+key is never sent to the server.
+</div>
+<form onsubmit="return false;">
+<div class="table2">
+<div><b>Format:</b></div><div><select name="format">
+<option value="gpg">PEM + OpenPGP</option>
+<option value="p12">PKCS#12</option>
+</select></div>
+<div><b>Key Type:</b></div><div><select name="keytype">
+<option value="ecdsa-p224">ECDSA P-224</option>
+<option value="ecdsa-p256" selected>ECDSA P-256</option>
+<option value="ecdsa-p384">ECDSA P-384</option>
+<option value="ecdsa-p521">ECDSA P-521</option>
+<option value="ed25519">Ed25519</option>
+<option value="rsa-2048">RSA 2048</option>
+<option value="rsa-3072">RSA 3072</option>
+<option value="rsa-4096">RSA 4096</option>
+</select></div>
+<div><b>DNS Name:</b></div><div><input type="text" name="dnsname" size="20" placeholder="optional (server certs)" /></div>
+<div><b>Password:</b></div><div><input type="password" name="pw1" size="20" placeholder="required" /></div>
+<div><b>Re-type Password:</b></div><div><input type="password" name="pw2" size="20" placeholder="required" /></div>
+</div>
+<button onclick="generateKeyAndCert(this.form);">Get Key &amp; Cert</button>
+<button onclick="hideForm();">Cancel</button>
+</form>
+<hr />
+<h2>Option 2</h2>
+<div>Use a Certificate Signing Request. One can be created with openssl, e.g.</div>
+<code>openssl req -newkey rsa:2048 -keyout PRIVATEKEY.key -out CSR.pem</code>
+<div>Paste the CSR below, and click Request.</div>
+<form onsubmit="return false;">
+<textarea name="csr" placeholder="-----BEGIN CERTIFICATE REQUEST-----
+...
+-----END CERTIFICATE REQUEST-----">
+</textarea><br />
+<input type="button" value="Request" onclick="requestCert(this.form.csr.value);" />
+<input type="button" value="Cancel" onclick="hideForm();" />
+</form>
+</div>
+
+<div id="viewcert" style="display: none;">
+<pre id="certpem"></pre>
+<button onclick="hideView();">Close</button>
+</div>
+
+</body>
+</html>

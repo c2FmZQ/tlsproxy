@@ -91,7 +91,7 @@ func TestSSOEnforceOIDC(t *testing.T) {
 					},
 					ForwardServerName: "https-server",
 					ForwardRateLimit:  1000,
-					ForwardRootCAs:    ca.RootCAPEM(),
+					ForwardRootCAs:    []string{ca.RootCAPEM()},
 					SSO: &BackendSSO{
 						Provider:         "test-idp",
 						GenerateIDTokens: true,
@@ -243,7 +243,7 @@ func TestSSOEnforcePasskey(t *testing.T) {
 					},
 					ForwardServerName: "https-server",
 					ForwardRateLimit:  1000,
-					ForwardRootCAs:    ca.RootCAPEM(),
+					ForwardRootCAs:    []string{ca.RootCAPEM()},
 					SSO: &BackendSSO{
 						Provider: "test-passkey",
 					},
@@ -305,6 +305,7 @@ func TestSSOEnforcePasskey(t *testing.T) {
 		if hdr == nil {
 			hdr = make(http.Header)
 		}
+		hdr.Set("x-csrf-check", "1")
 		req.Header = hdr
 		resp, err := client.Do(req)
 		if err != nil {
@@ -335,7 +336,7 @@ func TestSSOEnforcePasskey(t *testing.T) {
 	if got, want := code, 200; got != want {
 		t.Errorf("Code = %v, want %v", got, want)
 	}
-	if haystack, needle := body, "registerPasskey(&#34;https://https.example.com/blah&#34;);"; !strings.Contains(haystack, needle) {
+	if haystack, needle := body, "registerPasskey(&#34;https://https.example.com/blah&#34;"; !strings.Contains(haystack, needle) {
 		t.Errorf("Body = %v, want %v", haystack, needle)
 	}
 
@@ -346,7 +347,7 @@ func TestSSOEnforcePasskey(t *testing.T) {
 	auth.SetOrigin("https://" + host)
 
 	// Get the attestation options.
-	code, body, _ = get("https://"+host+"/passkey?get=AttestationOptions", nil, nil)
+	code, body, _ = get("https://"+host+"/passkey?get=AttestationOptions", nil, []byte{})
 	if got, want := code, 200; got != want {
 		t.Errorf("Code = %v, want %v", got, want)
 	}
@@ -402,12 +403,12 @@ func TestSSOEnforcePasskey(t *testing.T) {
 	if got, want := code, 200; got != want {
 		t.Errorf("Code = %v, want %v", got, want)
 	}
-	if haystack, needle := body, "loginWithPasskey(&#34;https://https.example.com/blah&#34;);"; !strings.Contains(haystack, needle) {
+	if haystack, needle := body, "loginWithPasskey(&#34;https://https.example.com/blah&#34;"; !strings.Contains(haystack, needle) {
 		t.Errorf("Body = %v, want %v", haystack, needle)
 	}
 
 	// Get the assertion options.
-	code, body, _ = get("https://"+host+"/passkey?get=AssertionOptions", nil, nil)
+	code, body, _ = get("https://"+host+"/passkey?get=AssertionOptions", nil, []byte{})
 	if got, want := code, 200; got != want {
 		t.Errorf("Code = %v, want %v", got, want)
 	}

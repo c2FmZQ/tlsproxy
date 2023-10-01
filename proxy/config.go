@@ -43,6 +43,7 @@ import (
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
@@ -53,6 +54,7 @@ const (
 	ModeTLSPassthrough = "TLSPASSTHROUGH"
 	ModeHTTP           = "HTTP"
 	ModeHTTPS          = "HTTPS"
+	ModeLocal          = "LOCAL"
 	ModeConsole        = "CONSOLE"
 )
 
@@ -63,6 +65,7 @@ var (
 		ModeTLSPassthrough,
 		ModeHTTP,
 		ModeHTTPS,
+		ModeLocal,
 		ModeConsole,
 	}
 	validXFCCFields = []string{
@@ -97,6 +100,12 @@ type Config struct {
 	DefaultServerName string `yaml:"defaultServerName,omitempty"`
 	// Backends is the list of service backends.
 	Backends []*Backend `yaml:"backends"`
+	// Email is optionally included in the requests to letsencrypt.
+	Email string `yaml:"email,omitempty"`
+	// MaxOpen is the maximum number of open incoming connections.
+	MaxOpen int `yaml:"maxOpen,omitempty"`
+	// AcceptTOS indicates acceptance of the Let's Encrypt Terms of Service.
+	AcceptTOS bool `yaml:"acceptTOS"`
 	// OIDCProviders is the list of OIDC providers.
 	OIDCProviders []*ConfigOIDC `yaml:"oidc,omitempty"`
 	// SAMLProviders is the list of SAML providers.
@@ -105,12 +114,9 @@ type Config struct {
 	// the first authentication and to configure passkeys, and then rely
 	// exclusively on passkeys.
 	PasskeyProviders []*ConfigPasskey `yaml:"passkey,omitempty"`
-	// Email is optionally included in the requests to letsencrypt.
-	Email string `yaml:"email,omitempty"`
-	// MaxOpen is the maximum number of open incoming connections.
-	MaxOpen int `yaml:"maxOpen,omitempty"`
-	// AcceptTOS indicates acceptance of the Let's Encrypt Terms of Service.
-	AcceptTOS bool `yaml:"acceptTOS"`
+	// PKI is a list of locally hosted and managed Certificate Authorities
+	// that can be used to authenticate TLS clients and backend servers.
+	PKI []*ConfigPKI `yaml:"pki,omitempty"`
 }
 
 // Backend encapsulates the data of one backend.
@@ -195,9 +201,11 @@ type Backend struct {
 	// This is particularly useful when the addresses use IP addresses
 	// instead of hostnames.
 	ForwardServerName string `yaml:"forwardServerName,omitempty"`
-	// ForwardRootCAs is either a file name or a set of PEM-encoded CA
-	// certificates that are used to authenticate backend servers.
-	ForwardRootCAs string `yaml:"forwardRootCAs,omitempty"`
+	// ForwardRootCAs a list of:
+	// - CA names defined in the PKI section,
+	// - File names that contain PEM-encoded certificates, or
+	// - PEM-encoded certificates.
+	ForwardRootCAs []string `yaml:"forwardRootCAs,omitempty"`
 	// ForwardTimeout is the connection timeout to backend servers. If
 	// Addresses contains multiple addresses, this timeout indicates how
 	// long to wait before trying the next address in the list. The default
@@ -244,6 +252,7 @@ type Backend struct {
 
 	tlsConfig      *tls.Config
 	forwardRootCAs *x509.CertPool
+	pkiMap         map[string]*pki.PKIManager
 	limiter        *rate.Limiter
 
 	allowIPs *[]*net.IPNet
@@ -251,7 +260,7 @@ type Backend struct {
 
 	httpServer    *http.Server
 	httpConnChan  chan net.Conn
-	localHandlers map[string]localHandler
+	localHandlers []localHandler
 
 	mu       sync.Mutex
 	next     int
@@ -260,8 +269,10 @@ type Backend struct {
 }
 
 type localHandler struct {
-	handler   http.Handler
-	ssoBypass bool
+	path        string
+	handler     http.Handler
+	ssoBypass   bool
+	matchPrefix bool
 }
 
 // ClientAuth specifies how to authenticate and authorize the TLS client's
@@ -270,11 +281,14 @@ type ClientAuth struct {
 	// ACL optionally specifies which client identities are allowed to use
 	// this service. A nil value disabled the authorization check and allows
 	// any valid client certificate. Otherwise, the value is a slice of
-	// Subject strings from the client X509 certificate.
+	// Subject or Subject Alternate Name strings from the client X509
+	// certificate, e.g. CN=Bob or EMAIL:bob@example.com
 	ACL *[]string `yaml:"acl,omitempty"`
-	// RootCAs is either a file name or a set of PEM-encoded CA
-	// certificates that are used to authenticate clients.
-	RootCAs string `yaml:"rootCAs,omitempty"`
+	// RootCAs a list of:
+	// - CA names defined in the PKI section,
+	// - File names that contain PEM-encoded certificates, or
+	// - PEM-encoded certificates.
+	RootCAs []string `yaml:"rootCAs,omitempty"`
 	// AddClientCertHeader indicates which fields of the HTTP
 	// X-Forwarded-Client-Cert header should be added to the request when
 	// Mode is HTTP or HTTPS.
@@ -309,7 +323,8 @@ type ConfigOIDC struct {
 	// ClientSecret is the Client Secret.
 	ClientSecret string `yaml:"clientSecret"`
 	// Domain, if set, determine the domain where the user identities will
-	// be valid.
+	// be valid. Only set this if all host names in the domain are served
+	// by this proxy.
 	Domain string `yaml:"domain,omitempty"`
 }
 
@@ -322,7 +337,8 @@ type ConfigSAML struct {
 	Certs    string `yaml:"certs"`
 	ACSURL   string `yaml:"acsUrl"`
 	// Domain, if set, determine the domain where the user identities will
-	// be valid.
+	// be valid. Only set this if all host names in the domain are served
+	// by this proxy.
 	Domain string `yaml:"domain,omitempty"`
 }
 
@@ -338,8 +354,36 @@ type ConfigPasskey struct {
 	// authentication.
 	Endpoint string `yaml:"endpoint"`
 	// Domain, if set, determine the domain where the user identities will
-	// be valid.
+	// be valid. Only set this if all host names in the domain are served
+	// by this proxy.
 	Domain string `yaml:"domain,omitempty"`
+}
+
+// ConfigPKI defines the parameters of a local Certificate Authority.
+type ConfigPKI struct {
+	// Name is the name of the CA.
+	Name string `yaml:"name"`
+	// KeyType is type of cryptographic key to use with this CA. Valid
+	// values are: ecdsa-p224, ecdsa-p256, ecdsa-p394, ecdsa-p521, ed25519,
+	// rsa-2048, rsa-3072, and rsa-4096.
+	KeyType string `yaml:"keyType,omitempty"`
+	// IssuingCertificateURLs is a list of URLs that return the X509
+	// certificate of the CA.
+	IssuingCertificateURLs []string `yaml:"issuingCertificateUrls,omitempty"`
+	// CRLDistributionPoints is a list of URLs that return the Certificate
+	// Revocation List for this CA.
+	CRLDistributionPoints []string `yaml:"crlDistributionPoints,omitempty"`
+	// OCSPServer is a list of URLs that serve the Online Certificate Status
+	// Protocol (OCSP) for this CA.
+	// https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol
+	OCSPServer []string `yaml:"ocspServers,omitempty"`
+	// Endpoint is the URL where users can manage their certificates. It
+	// should be on a backend with restricted access and/or forceReAuth
+	// enabled.
+	Endpoint string `yaml:"endpoint"`
+	// Admins is a list of users who are allowed to perform administrative
+	// tasks on the CA, e.g. revoke any certificate.
+	Admins []string `yaml:"admins"`
 }
 
 // BackendSSO specifies the identity parameters to use for a backend.
@@ -347,6 +391,10 @@ type BackendSSO struct {
 	// Provider is the the name of an identity provider defined in
 	// Config.OIDCProviders.
 	Provider string `yaml:"provider"`
+	// ForceReAuth is the time duration after which the user has to
+	// authenticate again. By default, users don't have to authenticate
+	// again until their token expires.
+	ForceReAuth time.Duration `yaml:"forceReAuth,omitempty"`
 	// ACL restricts which user identity can access this backend. It is a
 	// list of email addresses and/or domains, e.g. "bob@example.com", or
 	// "@example.com"
@@ -366,9 +414,8 @@ type BackendSSO struct {
 	// authenticate users with backend services that support OpenID Connect.
 	LocalOIDCServer *LocalOIDCServer `yaml:"localOIDCServer,omitempty"`
 
-	p      identityProvider
-	cm     *cookiemanager.CookieManager
-	domain string
+	p  identityProvider
+	cm *cookiemanager.CookieManager
 }
 
 // LocalOIDCServer is used to configure a local OpenID Provider to
@@ -553,6 +600,10 @@ func (cfg *Config) Check() error {
 			}
 		}
 	}
+	pkis := make(map[string]bool)
+	for _, i := range cfg.PKI {
+		pkis[i.Name] = true
+	}
 
 	serverNames := make(map[string]bool)
 	for i, be := range cfg.Backends {
@@ -572,11 +623,11 @@ func (cfg *Config) Check() error {
 		if len(be.ServerNames) == 0 {
 			return fmt.Errorf("backend[%d].ServerNames: backend must have at least one server name", i)
 		}
-		if len(be.Addresses) == 0 && be.Mode != ModeConsole && be.Mode != ModeHTTP && be.Mode != ModeHTTPS {
+		if len(be.Addresses) == 0 && be.Mode != ModeConsole && be.Mode != ModeHTTP && be.Mode != ModeHTTPS && be.Mode != ModeLocal {
 			return fmt.Errorf("backend[%d].Addresses: backend must have at least one address", i)
 		}
-		if len(be.Addresses) > 0 && be.Mode == ModeConsole {
-			return fmt.Errorf("backend[%d].Addresses: Addresses should be empty when Mode is CONSOLE", i)
+		if len(be.Addresses) > 0 && (be.Mode == ModeConsole || be.Mode == ModeLocal) {
+			return fmt.Errorf("backend[%d].Addresses: Addresses should be empty when Mode is CONSOLE or LOCAL", i)
 		}
 		for j, sn := range be.ServerNames {
 			sn = strings.ToLower(sn)
@@ -587,10 +638,13 @@ func (cfg *Config) Check() error {
 			serverNames[sn] = true
 		}
 		if be.ClientAuth != nil {
-			if be.ClientAuth.RootCAs != "" {
-				_, err := loadCerts(be.ClientAuth.RootCAs)
-				if err != nil {
-					return fmt.Errorf("backend[%d].ClientCAs: %w", i, err)
+			pool := x509.NewCertPool()
+			for j, n := range be.ClientAuth.RootCAs {
+				if pkis[n] {
+					continue
+				}
+				if err := loadCerts(pool, n); err != nil {
+					return fmt.Errorf("backend[%d].ClientAuth.RootCAs[%d]: %w", i, j, err)
 				}
 			}
 			for _, f := range be.ClientAuth.AddClientCertHeader {
@@ -632,10 +686,13 @@ func (cfg *Config) Check() error {
 				}
 			}
 		}
-		if be.ForwardRootCAs != "" {
-			_, err := loadCerts(be.ForwardRootCAs)
-			if err != nil {
-				return fmt.Errorf("backend[%d].ForwardRootCAs: %w", i, err)
+		pool := x509.NewCertPool()
+		for j, n := range be.ForwardRootCAs {
+			if pkis[n] {
+				continue
+			}
+			if err := loadCerts(pool, n); err != nil {
+				return fmt.Errorf("backend[%d].ForwardRootCAs[%d]: %w", i, j, err)
 			}
 		}
 		if be.ForwardTimeout == 0 {

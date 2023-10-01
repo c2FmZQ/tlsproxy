@@ -25,5 +25,5 @@
 
 package proxy
 
-func addPProfHandlers(map[string]localHandler) {
+func addPProfHandlers(*[]localHandler) {
 }

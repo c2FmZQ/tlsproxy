@@ -144,6 +144,7 @@ type challenge struct {
 type passkeyData struct {
 	created time.Time
 	origURL string
+	host    string
 }
 
 func (m *Manager) SetACL(acl *[]string) {
@@ -161,6 +162,35 @@ func (m *Manager) vacuum() {
 	}
 }
 
+// ServeWellKnown serves a list of passkey endpoints.
+// https://github.com/ms-id-standards/MSIdentityStandardsExplainers/blob/main/PasskeyEndpointsWellKnownUrl/explainer.md#proposed-solution
+func (m *Manager) ServeWellKnown(w http.ResponseWriter, req *http.Request) {
+	cfg := struct {
+		Enroll string `json:"enroll,omitempty"`
+		Manage string `json:"manage,omitempty"`
+	}{
+		Manage: fmt.Sprintf("https://%s/.sso/passkeys", req.Host),
+	}
+	content, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	sum := sha256.Sum256(content)
+	etag := `"` + hex.EncodeToString(sum[:]) + `"`
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("Etag", etag)
+
+	if e := req.Header.Get("If-None-Match"); e == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write(content)
+}
+
 func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL string) {
 	m.cfg.EventRecorder.Record("passkey auth request")
 	m.noncesMu.Lock()
@@ -171,10 +201,17 @@ func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	ou, err := url.Parse(origURL)
+	if err != nil {
+		log.Printf("ERR %q: %v", origURL, err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	nonce := hex.EncodeToString(n)
 	m.nonces[nonce] = &passkeyData{
 		created: time.Now().UTC(),
 		origURL: origURL,
+		host:    ou.Host,
 	}
 
 	u, err := url.Parse(m.cfg.Endpoint)
@@ -256,9 +293,19 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			data.IsAllowed = m.subjectIsAllowed(data.Subject)
 			data.IsRegistered = m.subjectIsRegistered(data.Subject)
 		}
+		w.Header().Set("X-Frame-Options", "DENY")
 		authTemplate.Execute(w, data)
 
 	case "AssertionOptions":
+		if req.Method != "POST" {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		if v := req.Header.Get("x-csrf-check"); v != "1" {
+			log.Printf("ERR x-csrf-check: %v", v)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
 		opts, err := m.assertionOptions()
 		if err != nil {
 			log.Printf("ERR assertionOptions: %v", err)
@@ -269,6 +316,15 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		json.NewEncoder(w).Encode(opts)
 
 	case "AttestationOptions":
+		if req.Method != "POST" {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		if v := req.Header.Get("x-csrf-check"); v != "1" {
+			log.Printf("ERR x-csrf-check: %v", v)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -288,6 +344,11 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
+		if v := req.Header.Get("x-csrf-check"); v != "1" {
+			log.Printf("ERR x-csrf-check: %v", v)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
 		claims, err := m.processAssertion(req.Form.Get("args"))
 		if err != nil {
 			log.Printf("ERR processAssertion: %v", err)
@@ -295,10 +356,19 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		m.cfg.EventRecorder.Record("passkey check request")
-		m.setAuthToken(w, claims)
+		var host string
+		if d, ok := m.nonces[req.Form.Get("nonce")]; ok {
+			host = d.host
+		}
+		m.setAuthToken(w, host, claims)
 
 	case "AddKey":
 		if req.Method != "POST" {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		if v := req.Header.Get("x-csrf-check"); v != "1" {
+			log.Printf("ERR x-csrf-check: %v", v)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -318,10 +388,19 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		m.cfg.EventRecorder.Record("passkey addkey request")
-		m.setAuthToken(w, claims)
+		var host string
+		if d, ok := m.nonces[req.Form.Get("nonce")]; ok {
+			host = d.host
+		}
+		m.setAuthToken(w, host, claims)
 
 	case "Switch":
 		if req.Method != "POST" {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		if v := req.Header.Get("x-csrf-check"); v != "1" {
+			log.Printf("ERR x-csrf-check: %v", v)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -385,7 +464,14 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 	here := req.URL.String()
 
 	claims := m.cfg.ClaimsFromCtx(req.Context())
-	if claims == nil {
+	var iat time.Time
+	if claims != nil {
+		if p, _ := claims.GetIssuedAt(); p != nil {
+			iat = p.Time
+		}
+	}
+	hh := sha256.Sum256([]byte(req.Host))
+	if claims == nil || claims["hhash"] != hex.EncodeToString(hh[:]) || time.Since(iat) > 10*time.Minute {
 		m.RequestLogin(w, req, here)
 		return
 	}
@@ -399,6 +485,15 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 
 	switch mode {
 	case "AttestationOptions":
+		if req.Method != "POST" {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		if v := req.Header.Get("x-csrf-check"); v != "1" {
+			log.Printf("ERR x-csrf-check: %v", v)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
 		opts, err := m.attestationOptions(claims)
 		if err != nil {
 			log.Printf("ERR attestationOptions: %v", err)
@@ -410,6 +505,11 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 
 	case "AddKey":
 		if req.Method != "POST" {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		if v := req.Header.Get("x-csrf-check"); v != "1" {
+			log.Printf("ERR x-csrf-check: %v", v)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -426,6 +526,11 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 
 	case "DeleteKey":
 		if req.Method != "POST" {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		if v := req.Header.Get("x-csrf-check"); v != "1" {
+			log.Printf("ERR x-csrf-check: %v", v)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -465,6 +570,7 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 			Keys:       m.keys(subject),
 			CurrentKey: passkeyHash,
 		}
+		w.Header().Set("X-Frame-Options", "DENY")
 		manageTemplate.Execute(w, data)
 
 	default:
@@ -556,7 +662,7 @@ func (m *Manager) deleteKey(subject string, id Bytes) (retErr error) {
 	return commit(true, nil)
 }
 
-func (m *Manager) setAuthToken(w http.ResponseWriter, claims map[string]any) {
+func (m *Manager) setAuthToken(w http.ResponseWriter, host string, claims map[string]any) {
 	subject, ok := claims["sub"].(string)
 	if !ok {
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -567,7 +673,7 @@ func (m *Manager) setAuthToken(w http.ResponseWriter, claims map[string]any) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	if err := m.cfg.CookieManager.SetAuthTokenCookie(w, subject, sid, claims); err != nil {
+	if err := m.cfg.CookieManager.SetAuthTokenCookie(w, subject, sid, host, claims); err != nil {
 		log.Printf("ERR SetAuthTokenCookie: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

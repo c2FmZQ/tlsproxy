@@ -100,9 +100,17 @@ func (l *proxyListener) Addr() net.Addr {
 	return l.addr
 }
 
+func userAgent(req *http.Request) string {
+	ua := req.Header.Get("user-agent")
+	if len(ua) > 200 {
+		ua = ua[:197] + "..."
+	}
+	return ua
+}
+
 func logHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		log.Printf("REQ %s ➔ %s %s", formatReqDesc(req), req.Method, req.URL)
+		log.Printf("REQ %s ➔ %s %s (%q)", formatReqDesc(req), req.Method, req.URL, userAgent(req))
 		next.ServeHTTP(w, req)
 	})
 }

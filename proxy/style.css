@@ -12,7 +12,7 @@ body {
 #buttons {
   position: fixed;
   top: 10px;
-  right: 10px;
+  right: 2rem;
 }
 a {
   color: white;
@@ -21,12 +21,12 @@ a {
 a.button {
   text-decoration: none;
   border: solid 1px black;
-  border-radius: 1em;
+  border-radius: 1rem;
   background-color: lightgray;
   color: black;
-  margin: 1em;
-  padding: 0.5em;
-  line-height: 3em;
+  margin: 0;
+  padding: 0.25rem;
+  line-height: 1.5rem;
   white-space: nowrap;
 }
 a.button:hover {
@@ -39,9 +39,9 @@ a.button:hover {
   left: 50vw;
   top: 50vh;
   transform: translate(-50%, -50%);
-  padding: 1em;
+  padding: 1rem;
   background-color: black;
-  width: clamp(20em, 40em, 90vw);
+  width: clamp(20rem, 40rem, 90vw);
   max-height: 80vh;
   overflow: scroll;
 }

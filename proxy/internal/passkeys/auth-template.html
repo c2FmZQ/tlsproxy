@@ -13,6 +13,9 @@
   width: 100vw;
   text-align: center;
 }
+.big {
+  font-size: 300%;
+}
 </style>
 </head>
 <body>
@@ -27,16 +30,16 @@
   </div>
   <div id="message">
 {{- if eq .Mode "Login" }}
-    <div><a class="button" onclick="loginWithPasskey({{.RedirectURL}});">Login</a></div>
+    <div><a class="button big" onclick="loginWithPasskey({{.RedirectURL}},{{.Nonce}});">Login</a></div>
 {{- end }}
 {{- if eq .Mode "RegisterNewID" }}
     <div>{{.Subject}}</div>
   {{- if .IsAllowed }}
     {{- if .IsRegistered }}
     <div>Already Registered</div>
-    <div><a class="button" onclick="loginWithPasskey({{.RedirectURL}});">Login</a></div>
+    <div><a class="button" onclick="loginWithPasskey({{.RedirectURL}},{{.Nonce}});">Login</a></div>
     {{- else }}
-    <div><a class="button" onclick="registerPasskey({{.RedirectURL}});">Register This Identity</a></div>
+    <div><a class="button" onclick="registerPasskey({{.RedirectURL}},{{.Nonce}});">Register This Identity</a></div>
     {{- end }}
   {{- else }}
     <div>Is Not Allowed</div>

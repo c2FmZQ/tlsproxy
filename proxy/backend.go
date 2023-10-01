@@ -26,6 +26,8 @@ package proxy
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -115,9 +117,17 @@ func (be *Backend) dial(proto string) (net.Conn, error) {
 				InsecureSkipVerify: be.InsecureSkipVerify,
 				ServerName:         be.ForwardServerName,
 				NextProtos:         protos,
-			}
-			if be.forwardRootCAs != nil {
-				tc.RootCAs = be.forwardRootCAs
+				RootCAs:            be.forwardRootCAs,
+				VerifyConnection: func(cs tls.ConnectionState) error {
+					if len(cs.PeerCertificates) == 0 {
+						return errors.New("no certificate")
+					}
+					cert := cs.PeerCertificates[0]
+					if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok && m.IsRevoked(cert.SerialNumber) {
+						return errRevoked
+					}
+					return nil
+				},
 			}
 			c, err = tls.DialWithDialer(dialer, "tcp", addr, tc)
 		} else {
@@ -135,14 +145,29 @@ func (be *Backend) dial(proto string) (net.Conn, error) {
 	}
 }
 
-func (be *Backend) authorize(subject string) error {
+func (be *Backend) authorize(cert *x509.Certificate) error {
 	if be.ClientAuth == nil || be.ClientAuth.ACL == nil {
 		return nil
 	}
-	if subject == "" || !slices.Contains(*be.ClientAuth.ACL, subject) {
-		return errAccessDenied
+	if subject := cert.Subject.String(); subject != "" && slices.Contains(*be.ClientAuth.ACL, subject) {
+		return nil
 	}
-	return nil
+	for _, v := range cert.DNSNames {
+		if slices.Contains(*be.ClientAuth.ACL, "DNS:"+v) {
+			return nil
+		}
+	}
+	for _, v := range cert.EmailAddresses {
+		if slices.Contains(*be.ClientAuth.ACL, "EMAIL:"+v) {
+			return nil
+		}
+	}
+	for _, v := range cert.URIs {
+		if slices.Contains(*be.ClientAuth.ACL, "URI:"+v.String()) {
+			return nil
+		}
+	}
+	return errAccessDenied
 }
 
 func (be *Backend) checkIP(addr net.Addr) error {
@@ -200,21 +225,26 @@ func (be *Backend) bridgeConns(client, server net.Conn) error {
 
 func (be *Backend) localHandlersAndAuthz(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		h, exists := be.localHandlers[req.URL.Path]
-		if exists && h.ssoBypass {
-			h.handler.ServeHTTP(w, req)
+		hi := slices.IndexFunc(be.localHandlers, func(h localHandler) bool {
+			return req.URL.Path == h.path || (h.matchPrefix && strings.HasPrefix(req.URL.Path, h.path+"/"))
+		})
+		if hi >= 0 && be.localHandlers[hi].ssoBypass {
+			be.localHandlers[hi].handler.ServeHTTP(w, req)
 			return
 		}
 		if !be.enforceSSOPolicy(w, req) {
 			return
 		}
-		if exists && !h.ssoBypass {
-			h.handler.ServeHTTP(w, req)
+		if hi >= 0 && !be.localHandlers[hi].ssoBypass {
+			be.localHandlers[hi].handler.ServeHTTP(w, req)
 			return
 		}
-		if !exists {
-			if _, ok := be.localHandlers[req.URL.Path+"/"]; ok {
-				http.Redirect(w, req, req.URL.Path+"/", http.StatusMovedPermanently)
+		if hi < 0 {
+			pathSlash := req.URL.Path + "/"
+			if hi := slices.IndexFunc(be.localHandlers, func(h localHandler) bool {
+				return pathSlash == h.path
+			}); hi >= 0 {
+				http.Redirect(w, req, pathSlash, http.StatusMovedPermanently)
 				return
 			}
 		}
@@ -226,15 +256,15 @@ func (be *Backend) localHandlersAndAuthz(next http.Handler) http.Handler {
 	})
 }
 
-func (be *Backend) consoleHandler() http.Handler {
-	return be.userAuthentication(logHandler(be.localHandlersAndAuthz(nil)))
+func (be *Backend) localHandler() http.Handler {
+	return be.userAuthentication(be.localHandlersAndAuthz(nil))
 }
 
 func (be *Backend) reverseProxy() http.Handler {
 	var rp http.Handler
 	if len(be.Addresses) == 0 {
 		rp = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			log.Printf("PRX %s ➔ %s %s ➔ status:%d", formatReqDesc(req), req.Method, req.URL, http.StatusNotFound)
+			log.Printf("PRX %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL, http.StatusNotFound, userAgent(req))
 			http.NotFound(w, req)
 		})
 	} else {
@@ -293,7 +323,7 @@ func (be *Backend) reverseProxyModifyResponse(resp *http.Response) error {
 	if resp.ContentLength != -1 {
 		cl = fmt.Sprintf(" content-length:%d", resp.ContentLength)
 	}
-	log.Printf("PRX %s ➔ %s %s ➔ status:%d%s", formatReqDesc(req), req.Method, req.URL, resp.StatusCode, cl)
+	log.Printf("PRX %s ➔ %s %s ➔ status:%d%s (%q)", formatReqDesc(req), req.Method, req.URL, resp.StatusCode, cl, userAgent(req))
 
 	if resp.StatusCode != http.StatusMisdirectedRequest && resp.Header.Get(hstsHeader) == "" {
 		resp.Header.Set(hstsHeader, hstsValue)

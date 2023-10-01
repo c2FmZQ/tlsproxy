@@ -21,54 +21,55 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package proxy
+package keys
 
 import (
-	"crypto/tls"
-	"crypto/x509"
-	"net"
-
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
+	"fmt"
+	"strings"
 )
 
-func netwConn(c net.Conn) *netw.Conn {
-	switch c := c.(type) {
-	case *tls.Conn:
-		return netwConn(c.NetConn())
-	case *netw.Conn:
-		return c
+// GenerateKey generates a cryptographic key of the given type.
+func GenerateKey(keyType string) (crypto.PrivateKey, error) {
+	switch kt := strings.ToLower(keyType); kt {
+	case "ed25519":
+		_, privKey, err := ed25519.GenerateKey(rand.Reader)
+		return privKey, err
+
+	case "ecdsa-p224", "ecdsa-p256", "ecdsa-p384", "ecdsa-p521":
+		var crv elliptic.Curve
+		switch kt {
+		case "ecdsa-p224":
+			crv = elliptic.P224()
+		case "ecdsa-p256":
+			crv = elliptic.P256()
+		case "ecdsa-p384":
+			crv = elliptic.P384()
+		case "ecdsa-p521":
+			crv = elliptic.P521()
+		}
+		return ecdsa.GenerateKey(crv, rand.Reader)
+
+	case "rsa-2048", "rsa-3072", "rsa-4096", "rsa-8192":
+		var bits int
+		switch kt {
+		case "rsa-2048":
+			bits = 2048
+		case "rsa-3072":
+			bits = 3072
+		case "rsa-4096":
+			bits = 4096
+		case "rsa-8192":
+			bits = 8192
+		}
+		return rsa.GenerateKey(rand.Reader, bits)
+
 	default:
-		panic(c)
+		return nil, fmt.Errorf("unexpected key type: %q", keyType)
 	}
-}
-
-func connServerName(c net.Conn) string {
-	return netwConn(c).Annotation(serverNameKey, "").(string)
-}
-
-func connProto(c net.Conn) string {
-	return netwConn(c).Annotation(protoKey, "").(string)
-}
-
-func connClientCert(c net.Conn) *x509.Certificate {
-	return netwConn(c).Annotation(clientCertKey, (*x509.Certificate)(nil)).(*x509.Certificate)
-}
-
-func connBackend(c net.Conn) *Backend {
-	return netwConn(c).Annotation(backendKey, (*Backend)(nil)).(*Backend)
-}
-
-func connMode(c net.Conn) string {
-	if be := connBackend(c); be != nil {
-		return be.Mode
-	}
-	return ""
-}
-
-func connIntConn(c net.Conn) net.Conn {
-	if v, ok := netwConn(c).Annotation(internalConnKey, nil).(net.Conn); ok {
-		return v
-	}
-	return nil
-
 }

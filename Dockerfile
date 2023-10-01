@@ -6,6 +6,7 @@ RUN apk add ca-certificates
 ADD . /app/go/src/tlsproxy
 WORKDIR /app/go/src/tlsproxy
 RUN go mod download
+RUN go generate ./...
 RUN source version.sh && go install -ldflags="-s -w -X main.Version=${VERSION:-dev}" .
 
 FROM scratch

@@ -65,7 +65,7 @@ type Config struct {
 
 // CookieManager is the interface to set and clear the auth token.
 type CookieManager interface {
-	SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID string, extraClaims map[string]any) error
+	SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID, host string, extraClaims map[string]any) error
 	ClearCookies(w http.ResponseWriter) error
 }
 
@@ -89,6 +89,7 @@ type ProviderClient struct {
 type oauthState struct {
 	Created      time.Time
 	OriginalURL  string
+	Host         string
 	CodeVerifier string
 	Seen         bool
 }
@@ -133,6 +134,11 @@ func New(cfg Config, er EventRecorder, cm CookieManager) (*ProviderClient, error
 }
 
 func (p *ProviderClient) RequestLogin(w http.ResponseWriter, req *http.Request, originalURL string) {
+	ou, err := url.Parse(originalURL)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	var nonce [12]byte
 	if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -150,6 +156,7 @@ func (p *ProviderClient) RequestLogin(w http.ResponseWriter, req *http.Request, 
 	p.states[nonceStr] = &oauthState{
 		Created:      time.Now(),
 		OriginalURL:  originalURL,
+		Host:         ou.Host,
 		CodeVerifier: codeVerifierStr,
 	}
 	p.mu.Unlock()
@@ -264,7 +271,7 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 	if claims.Picture != "" {
 		extraClaims["picture"] = claims.Picture
 	}
-	if err := p.cm.SetAuthTokenCookie(w, claims.Email, claims.Nonce, extraClaims); err != nil {
+	if err := p.cm.SetAuthTokenCookie(w, claims.Email, claims.Nonce, state.Host, extraClaims); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

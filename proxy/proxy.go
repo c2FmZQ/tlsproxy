@@ -34,6 +34,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -42,6 +43,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -58,6 +60,7 @@ import (
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/oidc"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/passkeys"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/saml"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
@@ -68,7 +71,7 @@ const (
 	dialDoneKey      = "d"
 	serverNameKey    = "sn"
 	protoKey         = "p"
-	subjectKey       = "sub"
+	clientCertKey    = "c"
 	internalConnKey  = "ic"
 	reportEndKey     = "re"
 	backendKey       = "be"
@@ -76,6 +79,7 @@ const (
 
 var (
 	errAccessDenied = errors.New("access denied")
+	errRevoked      = errors.New("revoked")
 )
 
 // Proxy receives TLS connections and forwards them to the configured
@@ -97,6 +101,7 @@ type Proxy struct {
 	defServerName string
 	backends      map[string]*Backend
 	connections   map[connKey]*netw.Conn
+	pkis          map[string]*pki.PKIManager
 
 	metrics   map[string]*backendMetrics
 	startTime time.Time
@@ -163,8 +168,11 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 		store:        store,
 		tokenManager: tm,
 		connections:  make(map[connKey]*netw.Conn),
+		pkis:         make(map[string]*pki.PKIManager),
 	}
-	p.Reconfigure(cfg)
+	if err := p.Reconfigure(cfg); err != nil {
+		return nil, err
+	}
 	return p, nil
 }
 
@@ -203,8 +211,11 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 		connections:  make(map[connKey]*netw.Conn),
 		store:        store,
 		tokenManager: tm,
+		pkis:         make(map[string]*pki.PKIManager),
 	}
-	p.Reconfigure(cfg)
+	if err := p.Reconfigure(cfg); err != nil {
+		return nil, err
+	}
 	return p, nil
 }
 
@@ -229,18 +240,14 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 
 	type idp struct {
 		identityProvider identityProvider
-		callbackHost     string
-		callbackPath     string
+		callback         string
 		domain           string
 		cm               *cookiemanager.CookieManager
 	}
 	er := eventRecorder{record: p.recordEvent}
 	identityProviders := make(map[string]idp)
 	for _, pp := range cfg.OIDCProviders {
-		host, path, err := hostAndPath(pp.RedirectURL)
-		if err != nil {
-			return err
-		}
+		host, _, _ := hostAndPath(pp.RedirectURL)
 		issuer := "https://" + host + "/"
 		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer)
 		oidcCfg := oidc.Config{
@@ -258,17 +265,13 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		}
 		identityProviders[pp.Name] = idp{
 			identityProvider: provider,
-			callbackHost:     host,
-			callbackPath:     path,
+			callback:         pp.RedirectURL,
 			domain:           pp.Domain,
 			cm:               cm,
 		}
 	}
 	for _, pp := range cfg.SAMLProviders {
-		host, path, err := hostAndPath(pp.ACSURL)
-		if err != nil {
-			return err
-		}
+		host, _, _ := hostAndPath(pp.ACSURL)
 		issuer := "https://" + host + "/"
 		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer)
 		samlCfg := saml.Config{
@@ -283,21 +286,17 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		}
 		identityProviders[pp.Name] = idp{
 			identityProvider: provider,
-			callbackHost:     host,
-			callbackPath:     path,
+			callback:         pp.ACSURL,
 			domain:           pp.Domain,
 			cm:               cm,
 		}
 	}
 	for _, pp := range cfg.PasskeyProviders {
-		host, path, err := hostAndPath(pp.Endpoint)
-		if err != nil {
-			return err
-		}
 		other, ok := identityProviders[pp.IdentityProvider]
 		if !ok {
 			return fmt.Errorf("invalid identityProvider %q", pp.IdentityProvider)
 		}
+		host, _, _ := hostAndPath(pp.Endpoint)
 		issuer := "https://" + host + "/"
 		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer)
 		cfg := passkeys.Config{
@@ -315,16 +314,35 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		}
 		identityProviders[pp.Name] = idp{
 			identityProvider: provider,
-			callbackHost:     host,
-			callbackPath:     path,
+			callback:         pp.Endpoint,
 			domain:           pp.Domain,
 			cm:               cm,
 		}
 	}
 
+	pkis := make(map[string]*pki.PKIManager)
+	for _, pp := range cfg.PKI {
+		opts := pki.Options{
+			Name:                  pp.Name,
+			KeyType:               pp.KeyType,
+			Endpoint:              pp.Endpoint,
+			IssuingCertificateURL: pp.IssuingCertificateURLs,
+			CRLDistributionPoints: pp.CRLDistributionPoints,
+			OCSPServer:            pp.OCSPServer,
+			Admins:                pp.Admins,
+			Store:                 p.store,
+			EventRecorder:         er,
+			ClaimsFromCtx:         claimsFromCtx,
+		}
+		m, err := pki.New(opts)
+		if err != nil {
+			return err
+		}
+		pkis[pp.Name] = m
+	}
+
 	backends := make(map[string]*Backend, len(cfg.Backends))
 	for _, be := range cfg.Backends {
-		be.localHandlers = make(map[string]localHandler)
 		be.recordEvent = p.recordEvent
 		be.tm = p.tokenManager
 
@@ -337,28 +355,40 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				return fmt.Errorf("unknown identity provider: %q", be.SSO.Provider)
 			}
 			be.SSO.p = idp.identityProvider
-			be.SSO.domain = idp.domain
 			be.SSO.cm = idp.cm
-			be.localHandlers["/.sso/"] = localHandler{
-				handler:   logHandler(http.HandlerFunc(be.serveSSOStatus)),
-				ssoBypass: true,
-			}
-			be.localHandlers["/.sso/style.css"] = localHandler{
-				handler:   logHandler(http.HandlerFunc(be.serveSSOStyle)),
-				ssoBypass: true,
-			}
-			be.localHandlers["/.sso/logout"] = localHandler{
-				handler:   logHandler(http.HandlerFunc(be.serveLogout)),
-				ssoBypass: true,
-			}
-			be.localHandlers["/.sso/favicon.ico"] = localHandler{
-				handler:   http.HandlerFunc(p.faviconHandler),
-				ssoBypass: true,
-			}
+			be.localHandlers = append(be.localHandlers,
+				localHandler{
+					path:      "/.sso/",
+					handler:   logHandler(http.HandlerFunc(be.serveSSOStatus)),
+					ssoBypass: true,
+				},
+				localHandler{
+					path:      "/.sso/style.css",
+					handler:   logHandler(http.HandlerFunc(be.serveSSOStyle)),
+					ssoBypass: true,
+				},
+				localHandler{
+					path:      "/.sso/logout",
+					handler:   logHandler(http.HandlerFunc(be.serveLogout)),
+					ssoBypass: true,
+				},
+				localHandler{
+					path:      "/.sso/favicon.ico",
+					handler:   logHandler(http.HandlerFunc(p.faviconHandler)),
+					ssoBypass: true,
+				})
 			if m, ok := be.SSO.p.(*passkeys.Manager); ok {
-				be.localHandlers["/.sso/passkeys"] = localHandler{
-					handler: http.HandlerFunc(m.ManageKeys),
-				}
+				be.localHandlers = append(be.localHandlers,
+					localHandler{
+						path:    "/.sso/passkeys",
+						handler: logHandler(http.HandlerFunc(m.ManageKeys)),
+					},
+					localHandler{
+						path:      "/.well-known/passkey-endpoints",
+						handler:   logHandler(http.HandlerFunc(m.ServeWellKnown)),
+						ssoBypass: true,
+					},
+				)
 			}
 
 			if ls := be.SSO.LocalOIDCServer; ls != nil && len(be.ServerNames) > 0 {
@@ -386,36 +416,53 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 					})
 				}
 				oidcServer := oidc.NewServer(opts)
-				be.localHandlers[ls.PathPrefix+"/.well-known/openid-configuration"] = localHandler{
+				be.localHandlers = append(be.localHandlers, localHandler{
+					path:      ls.PathPrefix + "/.well-known/openid-configuration",
 					handler:   logHandler(http.HandlerFunc(oidcServer.ServeConfig)),
 					ssoBypass: true,
-				}
-				be.localHandlers[ls.PathPrefix+"/authorization"] = localHandler{
-					handler: logHandler(http.HandlerFunc(oidcServer.ServeAuthorization)),
-				}
-				be.localHandlers[ls.PathPrefix+"/token"] = localHandler{
-					handler:   logHandler(http.HandlerFunc(oidcServer.ServeToken)),
-					ssoBypass: true,
-				}
-				be.localHandlers[ls.PathPrefix+"/userinfo"] = localHandler{
-					handler:   logHandler(http.HandlerFunc(oidcServer.ServeUserInfo)),
-					ssoBypass: true,
-				}
-				be.localHandlers[ls.PathPrefix+"/jwks"] = localHandler{
-					handler:   logHandler(http.HandlerFunc(p.tokenManager.ServeJWKS)),
-					ssoBypass: true,
-				}
+				},
+					localHandler{
+						path:    ls.PathPrefix + "/authorization",
+						handler: logHandler(http.HandlerFunc(oidcServer.ServeAuthorization)),
+					},
+					localHandler{
+						path:      ls.PathPrefix + "/token",
+						handler:   logHandler(http.HandlerFunc(oidcServer.ServeToken)),
+						ssoBypass: true,
+					},
+					localHandler{
+						path:      ls.PathPrefix + "/userinfo",
+						handler:   logHandler(http.HandlerFunc(oidcServer.ServeUserInfo)),
+						ssoBypass: true,
+					},
+					localHandler{
+						path:      ls.PathPrefix + "/jwks",
+						handler:   logHandler(http.HandlerFunc(p.tokenManager.ServeJWKS)),
+						ssoBypass: true,
+					},
+				)
 			}
 		}
+		be.pkiMap = make(map[string]*pki.PKIManager)
 		tc := p.baseTLSConfig()
 		if be.ClientAuth != nil {
 			tc.ClientAuth = tls.RequireAndVerifyClientCert
-			if be.ClientAuth.RootCAs != "" {
-				c, err := loadCerts(be.ClientAuth.RootCAs)
-				if err != nil {
+			for _, n := range be.ClientAuth.RootCAs {
+				if tc.ClientCAs == nil {
+					tc.ClientCAs = x509.NewCertPool()
+				}
+				if m, ok := pkis[n]; ok {
+					ca, err := m.CACert()
+					if err != nil {
+						return err
+					}
+					be.pkiMap[hex.EncodeToString(ca.SubjectKeyId)] = m
+					tc.ClientCAs.AddCert(ca)
+					continue
+				}
+				if err := loadCerts(tc.ClientCAs, n); err != nil {
 					return err
 				}
-				tc.ClientCAs = c
 			}
 			tc.VerifyConnection = func(cs tls.ConnectionState) error {
 				be, err := p.backend(cs.ServerName)
@@ -428,13 +475,18 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				if len(cs.PeerCertificates) == 0 {
 					return errors.New("no certificate")
 				}
-				subject := cs.PeerCertificates[0].Subject.String()
-				if err := be.authorize(subject); err != nil {
-					p.recordEvent(fmt.Sprintf("deny [%s] to %s", subject, cs.ServerName))
-					return fmt.Errorf("%w [%s]", err, subject)
+				cert := cs.PeerCertificates[0]
+				sum := certSummary(cert)
+				if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok && m.IsRevoked(cert.SerialNumber) {
+					p.recordEvent(fmt.Sprintf("deny [%s] to %s (revoked)", sum, cs.ServerName))
+					return fmt.Errorf("%w [%s]", errRevoked, sum)
 				}
-				if subject != "" {
-					p.recordEvent(fmt.Sprintf("allow [%s] to %s", subject, cs.ServerName))
+				if err := be.authorize(cert); err != nil {
+					p.recordEvent(fmt.Sprintf("deny [%s] to %s", sum, cs.ServerName))
+					return fmt.Errorf("%w [%s]", err, sum)
+				}
+				if sum != "" {
+					p.recordEvent(fmt.Sprintf("allow [%s] to %s", sum, cs.ServerName))
 				}
 				return nil
 			}
@@ -443,49 +495,110 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			tc.NextProtos = *be.ALPNProtos
 		}
 		be.tlsConfig = tc
-		if be.ForwardRootCAs != "" {
-			c, err := loadCerts(be.ForwardRootCAs)
-			if err != nil {
+		for _, n := range be.ForwardRootCAs {
+			if be.forwardRootCAs == nil {
+				be.forwardRootCAs = x509.NewCertPool()
+			}
+			if m, ok := pkis[n]; ok {
+				ca, err := m.CACert()
+				if err != nil {
+					return err
+				}
+				be.pkiMap[hex.EncodeToString(ca.SubjectKeyId)] = m
+				be.forwardRootCAs.AddCert(ca)
+				continue
+			}
+			if err := loadCerts(be.forwardRootCAs, n); err != nil {
 				return err
 			}
-			be.forwardRootCAs = c
 		}
 		if be.ExportJWKS != "" {
-			be.localHandlers[be.ExportJWKS] = localHandler{
+			be.localHandlers = append(be.localHandlers, localHandler{
+				path:      be.ExportJWKS,
 				handler:   logHandler(http.HandlerFunc(p.tokenManager.ServeJWKS)),
 				ssoBypass: true,
-			}
+			})
 		}
 		switch be.Mode {
 		case ModeConsole:
 			be := be
-			be.localHandlers["/"] = localHandler{handler: http.HandlerFunc(p.metricsHandler)}
-			be.localHandlers["/favicon.ico"] = localHandler{handler: http.HandlerFunc(p.faviconHandler)}
-			be.localHandlers["/config"] = localHandler{handler: http.HandlerFunc(p.configHandler)}
-			addPProfHandlers(be.localHandlers)
+			be.localHandlers = append(be.localHandlers,
+				localHandler{path: "/", handler: logHandler(http.HandlerFunc(p.metricsHandler))},
+				localHandler{path: "/favicon.ico", handler: logHandler(http.HandlerFunc(p.faviconHandler))},
+				localHandler{path: "/config", handler: logHandler(http.HandlerFunc(p.configHandler))},
+			)
+			addPProfHandlers(&be.localHandlers)
 
 			be.httpConnChan = make(chan net.Conn)
-			be.httpServer = startInternalHTTPServer(be.consoleHandler(), be.httpConnChan)
+			be.httpServer = startInternalHTTPServer(be.localHandler(), be.httpConnChan)
+
+		case ModeLocal:
+			be.httpConnChan = make(chan net.Conn)
+			be.httpServer = startInternalHTTPServer(be.localHandler(), be.httpConnChan)
 
 		case ModeHTTP, ModeHTTPS:
 			be.httpConnChan = make(chan net.Conn)
 			be.httpServer = startInternalHTTPServer(be.reverseProxy(), be.httpConnChan)
 		}
 	}
-	for _, p := range identityProviders {
-		if be, exists := backends[p.callbackHost]; exists {
-			p := p
-			be.localHandlers[p.callbackPath] = localHandler{
-				handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-					log.Printf("REQ %s ➔ %s %s (SSO callback)", formatReqDesc(req), req.Method, req.URL.Path)
-					p.identityProvider.HandleCallback(w, req)
-				}),
-				ssoBypass: true,
+
+	addLocalHandler := func(h localHandler, urls ...string) {
+		for _, v := range urls {
+			host, path, err := hostAndPath(v)
+			if err != nil {
+				log.Printf("ERR %s: %v", v, err)
+				continue
 			}
-			if m, ok := be.SSO.p.(*passkeys.Manager); ok {
-				m.SetACL(be.SSO.ACL)
+			be, exists := backends[host]
+			if !exists {
+				continue
 			}
+			h.path = path
+			be.localHandlers = append(be.localHandlers, h)
 		}
+	}
+	for _, p := range identityProviders {
+		p := p
+		addLocalHandler(localHandler{
+			handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				log.Printf("REQ %s ➔ %s %s (SSO callback) (%q)", formatReqDesc(req), req.Method, req.URL.Path, userAgent(req))
+				p.identityProvider.HandleCallback(w, req)
+			}),
+			ssoBypass: true,
+		}, p.callback)
+	}
+	for _, be := range backends {
+		if be.SSO == nil {
+			continue
+		}
+		if m, ok := be.SSO.p.(*passkeys.Manager); ok {
+			m.SetACL(be.SSO.ACL)
+		}
+	}
+	for _, pp := range cfg.PKI {
+		addLocalHandler(localHandler{
+			handler:   logHandler(http.HandlerFunc(pkis[pp.Name].ServeCACert)),
+			ssoBypass: true,
+		}, pp.IssuingCertificateURLs...)
+		addLocalHandler(localHandler{
+			handler:   logHandler(http.HandlerFunc(pkis[pp.Name].ServeCRL)),
+			ssoBypass: true,
+		}, pp.CRLDistributionPoints...)
+		addLocalHandler(localHandler{
+			handler:     logHandler(http.HandlerFunc(pkis[pp.Name].ServeOCSP)),
+			ssoBypass:   true,
+			matchPrefix: true,
+		}, pp.OCSPServer...)
+		if pp.Endpoint != "" {
+			addLocalHandler(localHandler{
+				handler: logHandler(http.HandlerFunc(pkis[pp.Name].ServeCertificateManagement)),
+			}, pp.Endpoint)
+		}
+	}
+	for _, be := range backends {
+		sort.Slice(be.localHandlers, func(i, j int) bool {
+			return len(be.localHandlers[i].path) > len(be.localHandlers[j].path)
+		})
 	}
 	if p.cfg != nil {
 		for _, be := range p.cfg.Backends {
@@ -494,6 +607,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	}
 	p.defServerName = cfg.DefaultServerName
 	p.backends = backends
+	p.pkis = pkis
 	p.cfg = cfg
 	go p.reAuthorize()
 	return nil
@@ -530,10 +644,10 @@ func (p *Proxy) reAuthorize() {
 		if be.ClientAuth == nil {
 			continue
 		}
-		subject := connSubject(conn)
-		if err := be.authorize(subject); err != nil {
+		clientCert := connClientCert(conn)
+		if err := be.authorize(clientCert); err != nil {
 			p.recordEvent(err.Error())
-			log.Printf("BAD [-] ReAuth %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), serverName, subject, err)
+			log.Printf("BAD [-] ReAuth %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), serverName, certSummary(clientCert), err)
 			conn.Close()
 			continue
 		}
@@ -672,7 +786,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	defer func() {
 		if r := recover(); r != nil {
 			p.recordEvent("panic")
-			log.Printf("ERR [%s] %s: PANIC: %v", connSubject(conn), conn.RemoteAddr(), r)
+			log.Printf("ERR [%s] %s: PANIC: %v", certSummary(connClientCert(conn)), conn.RemoteAddr(), r)
 			conn.Close()
 		}
 	}()
@@ -739,7 +853,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		tc.NextProtos = []string{acme.ALPNProto}
 		p.handleACMEConnection(tls.Server(conn, tc))
 
-	case be.Mode == ModeConsole || be.Mode == ModeHTTP || be.Mode == ModeHTTPS:
+	case be.Mode == ModeConsole || be.Mode == ModeLocal || be.Mode == ModeHTTP || be.Mode == ModeHTTPS:
 		if err := p.checkIP(conn); err != nil {
 			return
 		}
@@ -794,6 +908,8 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 			p.recordEvent(fmt.Sprintf("deny no cert to %s", serverName))
 		case errors.Is(err, errAccessDenied):
 			p.recordEvent("access denied")
+		case errors.Is(err, errRevoked):
+			p.recordEvent("cert is revoked")
 		default:
 			p.recordEvent("tls handshake failed")
 		}
@@ -808,18 +924,18 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 		return false
 	}
 	proto := cs.NegotiatedProtocol
-	var subject string
+	var clientCert *x509.Certificate
 	if len(cs.PeerCertificates) > 0 {
-		subject = cs.PeerCertificates[0].Subject.String()
+		clientCert = cs.PeerCertificates[0]
 	}
 	netwConn(conn).SetAnnotation(protoKey, proto)
-	netwConn(conn).SetAnnotation(subjectKey, subject)
+	netwConn(conn).SetAnnotation(clientCertKey, clientCert)
 
 	// The check below is also done in VerifyConnection.
 	if be.ClientAuth != nil && be.ClientAuth.ACL != nil {
-		if err := be.authorize(subject); err != nil {
+		if err := be.authorize(clientCert); err != nil {
 			p.recordEvent(err.Error())
-			log.Printf("BAD [-] %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), serverName, subject, err)
+			log.Printf("BAD [-] %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), serverName, certSummary(clientCert), err)
 			return false
 		}
 	}
@@ -839,9 +955,9 @@ func (p *Proxy) handleHTTPConnection(conn *tls.Conn) {
 		conn.Close()
 		return
 	}
-	if be.Mode != ModeConsole && be.Mode != ModeHTTP && be.Mode != ModeHTTPS {
+	if be.Mode != ModeConsole && be.Mode != ModeLocal && be.Mode != ModeHTTP && be.Mode != ModeHTTPS {
 		p.recordEvent("wrong mode")
-		log.Printf("ERR [-] %s ➔  %q Mode is not [CONSOLE, HTTP, HTTPS]", conn.RemoteAddr(), serverName)
+		log.Printf("ERR [-] %s ➔  %q Mode is not [CONSOLE, LOCAL, HTTP, HTTPS]", conn.RemoteAddr(), serverName)
 		conn.Close()
 		return
 	}
@@ -974,12 +1090,12 @@ func formatConnDesc(c *netw.Conn, ids ...string) string {
 	serverName := connServerName(c)
 	mode := connMode(c)
 	proto := connProto(c)
-	subject := connSubject(c)
+	clientCert := connClientCert(c)
 	intConn := connIntConn(c)
 
 	var identities []string
-	if subject != "" {
-		identities = append(identities, subject)
+	if sum := certSummary(clientCert); sum != "" {
+		identities = append(identities, sum)
 	}
 	identities = append(identities, ids...)
 
@@ -1020,21 +1136,20 @@ func setKeepAlive(conn net.Conn) {
 	}
 }
 
-func loadCerts(s string) (*x509.CertPool, error) {
+func loadCerts(p *x509.CertPool, s string) error {
 	var b []byte
 	if len(s) > 0 && s[0] == '/' {
 		var err error
 		if b, err = os.ReadFile(s); err != nil {
-			return nil, err
+			return err
 		}
 	} else {
 		b = []byte(s)
 	}
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(b) {
-		return nil, errors.New("invalid certs")
+	if !p.AppendCertsFromPEM(b) {
+		return errors.New("invalid certs")
 	}
-	return pool, nil
+	return nil
 }
 
 func hostAndPath(urlString string) (string, string, error) {
@@ -1047,6 +1162,26 @@ func hostAndPath(urlString string) (string, string, error) {
 		host = h
 	}
 	return host, url.Path, nil
+}
+
+func certSummary(c *x509.Certificate) string {
+	if c == nil {
+		return ""
+	}
+	var parts []string
+	if sub := c.Subject.String(); sub != "" {
+		parts = append(parts, sub)
+	}
+	for _, v := range c.DNSNames {
+		parts = append(parts, "DNS:"+v)
+	}
+	for _, v := range c.EmailAddresses {
+		parts = append(parts, "EMAIL:"+v)
+	}
+	for _, v := range c.URIs {
+		parts = append(parts, "URI:"+v.String())
+	}
+	return strings.Join(parts, ";")
 }
 
 func unwrapErr(err error) error {

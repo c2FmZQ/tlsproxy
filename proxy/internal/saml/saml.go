@@ -48,7 +48,7 @@ import (
 // http://docs.oasis-open.org/security/saml/v2.0/saml-core-2.0-os.pdf
 
 type CookieManager interface {
-	SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID string, extraClaims map[string]any) error
+	SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID, host string, extraClaims map[string]any) error
 	ClearCookies(w http.ResponseWriter) error
 }
 
@@ -76,6 +76,7 @@ type Provider struct {
 type samlState struct {
 	Created     time.Time
 	OriginalURL string
+	Host        string
 }
 
 func New(cfg Config, er EventRecorder, cm CookieManager) (*Provider, error) {
@@ -103,6 +104,11 @@ func New(cfg Config, er EventRecorder, cm CookieManager) (*Provider, error) {
 }
 
 func (p *Provider) RequestLogin(w http.ResponseWriter, req *http.Request, origURL string) {
+	ou, err := url.Parse(origURL)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	var id [12]byte
 	if _, err := io.ReadFull(rand.Reader, id[:]); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -113,6 +119,7 @@ func (p *Provider) RequestLogin(w http.ResponseWriter, req *http.Request, origUR
 	p.states[idStr] = &samlState{
 		Created:     time.Now(),
 		OriginalURL: origURL,
+		Host:        ou.Host,
 	}
 	p.mu.Unlock()
 
@@ -244,8 +251,7 @@ func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		// Value: Bob
 		extraClaims[key] = value
 	}
-
-	if err := p.cm.SetAuthTokenCookie(w, sub, id, extraClaims); err != nil {
+	if err := p.cm.SetAuthTokenCookie(w, sub, id, state.Host, extraClaims); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

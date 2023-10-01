@@ -24,6 +24,8 @@
 package cookiemanager
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net"
 	"net/http"
@@ -56,10 +58,11 @@ func New(tm *tokenmanager.TokenManager, provider, domain, issuer string) *Cookie
 	}
 }
 
-func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID string, extraClaims map[string]any) error {
+func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID, host string, extraClaims map[string]any) error {
 	if userID == "" {
 		return errors.New("userID cannot be empty")
 	}
+	hh := sha256.Sum256([]byte(host))
 	now := time.Now().UTC()
 	claims := jwt.MapClaims{
 		"iat":       now.Unix(),
@@ -69,6 +72,7 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, sessi
 		"sub":       userID,
 		"proxyauth": cm.issuer,
 		"provider":  cm.provider,
+		"hhash":     hex.EncodeToString(hh[:]),
 		"sid":       sessionID,
 	}
 	if extraClaims != nil {
@@ -79,7 +83,7 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, sessi
 			claims[k] = v
 		}
 	}
-	token, err := cm.tm.CreateToken(claims, "ES256")
+	token, err := cm.tm.CreateToken(claims, "EdDSA")
 	if err != nil {
 		return err
 	}
@@ -107,7 +111,7 @@ func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Reque
 	now := time.Now().UTC()
 	claims := jwt.MapClaims{}
 	for k, v := range c {
-		if k == "scope" || k == "proxyauth" || k == "source" {
+		if k == "scope" || k == "proxyauth" || k == "source" || k == "hhash" {
 			continue
 		}
 		claims[k] = v

@@ -261,11 +261,22 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 		return true
 	}
 	claims := claimsFromCtx(req.Context())
-	if claims == nil {
+	var iat time.Time
+	if claims != nil {
+		if p, _ := claims.GetIssuedAt(); p != nil {
+			iat = p.Time
+		}
+	}
+	hh := sha256.Sum256([]byte(req.Host))
+	// Request authentication when:
+	// * the user isn't logged in, or
+	// * the backend has ForceReAuth set, and the last authentication
+	//   either on a different host, or too long ago.
+	if claims == nil || (be.SSO.ForceReAuth != 0 && (claims["hhash"] != hex.EncodeToString(hh[:]) || time.Since(iat) > be.SSO.ForceReAuth)) {
 		u := req.URL
 		u.Scheme = "https"
 		u.Host = req.Host
-		log.Printf("REQ %s ➔ %s %s ➔ status:%d (SSO)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusFound)
+		log.Printf("REQ %s ➔ %s %s ➔ status:%d (SSO) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusFound, userAgent(req))
 		be.SSO.p.RequestLogin(w, req, u.String())
 		return false
 	}
@@ -277,7 +288,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 	_, userDomain, _ := strings.Cut(userID, "@")
 	if be.SSO.ACL != nil && !slices.Contains(*be.SSO.ACL, userID) && !slices.Contains(*be.SSO.ACL, "@"+userDomain) {
 		be.recordEvent(fmt.Sprintf("deny %s to %s", userID, host))
-		log.Printf("REQ %s ➔ %s %s ➔ status:%d (SSO)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden)
+		log.Printf("REQ %s ➔ %s %s ➔ status:%d (SSO) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden, userAgent(req))
 		be.servePermissionDenied(w, req)
 		return false
 	}
@@ -304,6 +315,6 @@ func (be *Backend) makeTokenForURL(req *http.Request) (string, string, error) {
 	token, err := be.tm.CreateToken(jwt.MapClaims{
 		"url": u.String(),
 		"exp": time.Now().Add(time.Hour).Unix(),
-	}, "ES256")
+	}, "EdDSA")
 	return token, u.String(), err
 }

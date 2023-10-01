@@ -1,0 +1,99 @@
+body {
+  margin: 2rem;
+}
+h1 {
+  font-size: 150%;
+}
+h2 {
+  font-size: 125%;
+}
+#csrform {
+  border: 2px solid black;
+  background-color: slategray;
+  box-shadow: 2px 2px 5px black;
+  color: white;
+  text-align: left;
+  position: fixed;
+  left: 50vw;
+  top: 50vh;
+  transform: translate(-50%, -50%);
+  padding: 1rem;
+  width: clamp(20em, 40em, 90vw);
+  max-height: 80vh;
+  overflow: scroll;
+}
+#viewcert {
+  border: 2px solid black;
+  background-color: slategray;
+  box-shadow: 2px 2px 5px black;
+  color: white;
+  text-align: left;
+  position: fixed;
+  left: 50vw;
+  top: 50vh;
+  transform: translate(-50%, -50%);
+  padding: 1rem;
+  width: clamp(20em, 40em, 90vw);
+  max-height: 80vh;
+  overflow: scroll;
+}
+pre {
+  user-select: all;
+}
+textarea {
+  width: 100%;
+  height: 6rem;
+}
+#filters {
+  margin-top: 3rem;
+}
+.certs {
+  margin-top: 3rem;
+}
+.certs>div {
+  padding: 0.25rem;
+}
+.certs>div:nth-child(odd) {
+  background-color: #444;
+}
+.certs>div:nth-child(even) {
+  background-color: #555;
+}
+.onerow {
+  display: grid;
+  grid-template-columns: 1fr 5fr 1fr;
+  gap: 0;
+}
+.usednow {
+  border: solid 1px yellow;
+}
+.status {
+  justify-self: center;
+  align-self: center;
+}
+.onecert {
+  display: grid;
+  grid-template-columns: 1fr 5fr;
+  gap: 0;
+  line-height: 75%;
+  font-size: 80%;
+}
+.onecert>div {
+  white-space: nowrap;
+  padding: 0.25rem;
+}
+.onecert>div:nth-child(even) {
+  overflow-x: scroll;
+  user-select: all;
+}
+.certButtons {
+  font-size: 80%;
+}
+.table2 {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
+}
+.table2>div {
+  padding: 0.25rem;
+}
