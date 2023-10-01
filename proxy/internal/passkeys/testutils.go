@@ -43,6 +43,7 @@ import (
 type FakeAuthenticator struct {
 	keys     map[string]fakeAuthKey
 	rpIDHash []byte
+	origin   string
 }
 
 type fakeAuthKey struct {
@@ -56,8 +57,13 @@ type fakeAuthKey struct {
 // NewFakeAuthenticator returns a new FakeAuthenticator for testing.
 func NewFakeAuthenticator() (*FakeAuthenticator, error) {
 	return &FakeAuthenticator{
-		keys: make(map[string]fakeAuthKey),
+		keys:   make(map[string]fakeAuthKey),
+		origin: "https://example.com/",
 	}, nil
+}
+
+func (a *FakeAuthenticator) SetOrigin(orig string) {
+	a.origin = orig
 }
 
 // Create mimics the behavior of the WebAuthn create call.
@@ -89,7 +95,7 @@ func (a *FakeAuthenticator) Create(options *AttestationOptions) (clientDataJSON,
 	cd := clientData{
 		Type:      "webauthn.create",
 		Challenge: base64.RawURLEncoding.EncodeToString(options.Challenge),
-		Origin:    "https://example.com/",
+		Origin:    a.origin,
 	}
 	if clientDataJSON, err = json.Marshal(cd); err != nil {
 		return nil, nil, err
