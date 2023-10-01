@@ -155,6 +155,7 @@ func (m *Manager) vacuum() {
 }
 
 func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL string) {
+	m.cfg.EventRecorder.Record("passkey auth request")
 	m.noncesMu.Lock()
 	defer m.noncesMu.Unlock()
 
@@ -284,6 +285,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
+		m.cfg.EventRecorder.Record("passkey check request")
 		m.setAuthToken(w, claims)
 
 	case "AddKey":
@@ -301,6 +303,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
+		m.cfg.EventRecorder.Record("passkey addkey request")
 		m.setAuthToken(w, claims)
 
 	case "JS":
@@ -390,6 +393,7 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{
 			"result": "ok",
 		})
+		m.cfg.EventRecorder.Record("passkey addkey request")
 
 	case "DeleteKey":
 		if req.Method != "POST" {
@@ -413,6 +417,7 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{
 			"result": "ok",
 		})
+		m.cfg.EventRecorder.Record("passkey deletekey request")
 
 	case "JS":
 		serveWebauthnJS(w, req)
