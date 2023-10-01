@@ -1,6 +1,6 @@
-# User authentication with OpenID Connect and SAML
+# User authentication with OpenID Connect, SAML and/or Passkeys
 
-TLSPROXY can be configured to authenticate users with OpenID Connect and SAML identity providers.
+TLSPROXY can be configured to authenticate users with OpenID Connect and SAML identity providers. Another option is to use Passkeys for password-less user authentication. To configure Passkeys, users still need to authenticate once with OpenID Connect or SAML, but then authentication is done exclusively with Passkeys.
 
 OpenID Connect has been tested with Google and Facebook as identity providers.
 SAML has been tested with Google Workspace.
@@ -102,3 +102,40 @@ backends:
       - bob@EXAMPLE.COM
       - "@EXAMPLE.COM"   <--- allows anyone from EXAMPLE.COM
 ```
+
+## Passkeys with initial authentication with Google OpenID Connect
+
+```yaml
+oidc:
+- name: google
+  authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth"
+  tokenEndpoint: "https://oauth2.googleapis.com/token"
+  redirectUrl: "https://login.EXAMPLE.COM/oidc/google"
+  clientId: "<YOUR CLIENT ID>"
+  clientSecret: "<YOUR CLIENT SECRET>"
+  domain: "EXAMPLE.COM"
+
+passkey:
+- name: "passkey"
+  identityProvider: "google"
+  endpoint: "https://login.EXAMPLE.COM/passkey"
+  domain: "EXAMPLE.COM"
+
+backends:
+- serverNames:
+  - login.EXAMPLE.COM
+  mode: https
+
+- serverNames:
+  - www.EXAMPLE.COM
+  mode: http
+  addresses:
+  - 192.168.1.1:80
+  sso:
+    provider: passkey
+    acl:
+      - alice@EXAMPLE.COM
+      - bob@EXAMPLE.COM
+      - "@EXAMPLE.COM"   <--- allows anyone from EXAMPLE.COM
+```
+
