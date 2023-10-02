@@ -43,6 +43,8 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -124,6 +126,7 @@ type Manager struct {
 		Handles  map[string]*user
 		Subjects map[string]string
 	}
+	acl *[]string
 
 	mu         sync.Mutex
 	challenges map[string]*challenge
@@ -141,6 +144,10 @@ type challenge struct {
 type passkeyData struct {
 	created time.Time
 	origURL string
+}
+
+func (m *Manager) SetACL(acl *[]string) {
+	m.acl = acl
 }
 
 func (m *Manager) vacuum() {
@@ -220,6 +227,10 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
+	if mode == "Login" {
+		token = nil
+		m.cfg.OtherCookieManager.ClearCookies(w)
+	}
 
 	switch mode {
 	case "Login", "RegisterNewID":
@@ -236,6 +247,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			Mode         string
 			Nonce        string
 			Subject      string
+			IsAllowed    bool
 			IsRegistered bool
 		}{
 			Self:        req.URL.Path,
@@ -245,6 +257,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		}
 		if token != nil {
 			data.Subject, _ = token.Claims.GetSubject()
+			data.IsAllowed = m.subjectIsAllowed(data.Subject)
 			data.IsRegistered = m.subjectIsRegistered(data.Subject)
 		}
 		authTemplate.Execute(w, data)
@@ -291,6 +304,11 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	case "AddKey":
 		if req.Method != "POST" {
 			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		subject, _ := token.Claims.GetSubject()
+		if !m.subjectIsAllowed(subject) {
+			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		claims, ok := token.Claims.(jwt.MapClaims)
@@ -478,6 +496,14 @@ func (m *Manager) keys(subject string) []keyItem {
 		keys[i] = ki
 	}
 	return keys
+}
+
+func (m *Manager) subjectIsAllowed(subject string) bool {
+	if m.acl == nil {
+		return true
+	}
+	_, subDomain, _ := strings.Cut(subject, "@")
+	return slices.Contains(*m.acl, subject) || slices.Contains(*m.acl, "@"+subDomain)
 }
 
 func (m *Manager) subjectIsRegistered(subject string) bool {

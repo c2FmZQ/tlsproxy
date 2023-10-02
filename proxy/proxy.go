@@ -482,6 +482,9 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				}),
 				ssoBypass: true,
 			}
+			if m, ok := be.SSO.p.(*passkeys.Manager); ok {
+				m.SetACL(be.SSO.ACL)
+			}
 		}
 	}
 	if p.cfg != nil {

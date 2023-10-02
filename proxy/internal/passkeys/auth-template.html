@@ -31,11 +31,15 @@
 {{- end }}
 {{- if eq .Mode "RegisterNewID" }}
     <div>{{.Subject}}</div>
-{{- if .IsRegistered }}
+  {{- if .IsAllowed }}
+    {{- if .IsRegistered }}
     <div>Already Registered</div>
-{{- else }}
+    {{- else }}
     <div><a class="button" onclick="registerPasskey({{.RedirectURL}});">Register This Identity</a></div>
-{{- end }}
+    {{- end }}
+  {{- else }}
+    <div>Is Not Allowed</div>
+  {{- end }}
 {{- end }}
   </div>
 </body>
