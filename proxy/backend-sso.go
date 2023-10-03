@@ -71,9 +71,9 @@ func init() {
 	ssoStatusTemplate = template.Must(template.New("sso-status").Parse(ssoStatusEmbed))
 }
 
-func claimsFromCtx(ctx context.Context) jwt.Claims {
+func claimsFromCtx(ctx context.Context) jwt.MapClaims {
 	if v := ctx.Value(authCtxKey); v != nil {
-		return v.(jwt.Claims)
+		return v.(jwt.MapClaims)
 	}
 	return nil
 }
@@ -158,10 +158,7 @@ func (be *Backend) serveSSOStyle(w http.ResponseWriter, req *http.Request) {
 }
 
 func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
-	var claims jwt.MapClaims
-	if c := claimsFromCtx(req.Context()); c != nil {
-		claims, _ = c.(jwt.MapClaims)
-	}
+	claims := claimsFromCtx(req.Context())
 	var keys []string
 	for k := range claims {
 		keys = append(keys, k)

@@ -485,7 +485,7 @@ func newIDPServer(t *testing.T) *idpServer {
 	opts := oidc.ServerOptions{
 		TokenManager: tm,
 		Issuer:       "https://idp.example.com",
-		ClaimsFromCtx: func(context.Context) jwt.Claims {
+		ClaimsFromCtx: func(context.Context) jwt.MapClaims {
 			return jwt.MapClaims{
 				"sub": "bob@example.com",
 			}

@@ -102,7 +102,7 @@ type Config struct {
 	EventRecorder      EventRecorder
 	CookieManager      *cookiemanager.CookieManager
 	OtherCookieManager *cookiemanager.CookieManager
-	ClaimsFromCtx      func(context.Context) jwt.Claims
+	ClaimsFromCtx      func(context.Context) jwt.MapClaims
 }
 
 func NewManager(cfg Config) (*Manager, error) {
@@ -384,7 +384,7 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 	}
 	mode := req.Form.Get("get")
 	subject, _ := claims.GetSubject()
-	passkeyHash, ok := claims.(jwt.MapClaims)["passkey_hash"].(string)
+	passkeyHash, ok := claims["passkey_hash"].(string)
 	if !ok {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -392,7 +392,7 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 
 	switch mode {
 	case "AttestationOptions":
-		opts, err := m.attestationOptions(claims.(jwt.MapClaims))
+		opts, err := m.attestationOptions(claims)
 		if err != nil {
 			log.Printf("ERR attestationOptions: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -406,7 +406,7 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		if err := m.processAttestation(claims.(jwt.MapClaims), req.Host, req.Form.Get("args"), true); err != nil {
+		if err := m.processAttestation(claims, req.Host, req.Form.Get("args"), true); err != nil {
 			log.Printf("ERR processAttestation: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
