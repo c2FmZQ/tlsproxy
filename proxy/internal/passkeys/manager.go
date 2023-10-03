@@ -384,7 +384,11 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 	}
 	mode := req.Form.Get("get")
 	subject, _ := claims.GetSubject()
-	passkeyHash := claims.(jwt.MapClaims)["passkey_hash"].(string)
+	passkeyHash, ok := claims.(jwt.MapClaims)["passkey_hash"].(string)
+	if !ok {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 
 	switch mode {
 	case "AttestationOptions":
