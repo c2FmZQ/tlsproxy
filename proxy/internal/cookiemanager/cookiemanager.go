@@ -57,6 +57,9 @@ func New(tm *tokenmanager.TokenManager, provider, domain, issuer string) *Cookie
 }
 
 func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID string, extraClaims map[string]any) error {
+	if userID == "" {
+		return errors.New("userID cannot be empty")
+	}
 	now := time.Now().UTC()
 	claims := jwt.MapClaims{
 		"iat":       now.Unix(),
@@ -160,6 +163,9 @@ func (cm *CookieManager) ValidateAuthTokenCookie(req *http.Request) (*jwt.Token,
 	}
 	if c, ok := tok.Claims.(jwt.MapClaims); !ok || c["proxyauth"] != cm.issuer || c["provider"] != cm.provider {
 		return nil, errors.New("invalid proxyauth or provider")
+	}
+	if sub, err := tok.Claims.GetSubject(); err != nil || sub == "" {
+		return nil, errors.New("invalid subject")
 	}
 	return tok, nil
 }
