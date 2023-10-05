@@ -172,3 +172,26 @@ function deleteKey(id) {
   });
 }
 
+
+function switchAccount() {
+  fetch(self+'?get=Switch', {
+    method: 'POST',
+  })
+  .then(resp => {
+    if (resp.status !== 200) {
+      throw resp.status;
+    }
+    return resp.json();
+  })
+  .then(r => {
+    if (r.result === 'ok') {
+      console.log('Success');
+      window.location.reload();
+    }
+  })
+  .catch(err => {
+    console.log('Failure', err);
+    alert(err);
+  });
+}
+

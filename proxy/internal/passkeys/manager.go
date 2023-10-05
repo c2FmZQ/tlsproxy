@@ -227,10 +227,6 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
-	if mode == "Login" {
-		token = nil
-		m.cfg.OtherCookieManager.ClearCookies(w)
-	}
 
 	switch mode {
 	case "Login", "RegisterNewID":
@@ -255,7 +251,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			Mode:        mode,
 			Nonce:       nonce,
 		}
-		if token != nil {
+		if mode == "RegisterNewID" {
 			data.Subject, _ = token.Claims.GetSubject()
 			data.IsAllowed = m.subjectIsAllowed(data.Subject)
 			data.IsRegistered = m.subjectIsRegistered(data.Subject)
@@ -323,6 +319,17 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		}
 		m.cfg.EventRecorder.Record("passkey addkey request")
 		m.setAuthToken(w, claims)
+
+	case "Switch":
+		if req.Method != "POST" {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		m.cfg.OtherCookieManager.ClearCookies(w)
+		w.Header().Set("content-type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"result": "ok",
+		})
 
 	case "JS":
 		serveWebauthnJS(w, req)

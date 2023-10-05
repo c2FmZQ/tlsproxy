@@ -22,6 +22,7 @@
     <a class="button" href="{{.Self}}?get=RegisterNewID&nonce={{.Nonce}}">Register New Identity</a>
 {{- end }}
 {{- if eq .Mode "RegisterNewID" }}
+    <a class="button" onclick="switchAccount();">Pick A Different Identity</a>
     <a class="button" href="{{.Self}}?get=Login&nonce={{.Nonce}}">Use Existing Passkey</a>
 {{- end }}
   </div>
