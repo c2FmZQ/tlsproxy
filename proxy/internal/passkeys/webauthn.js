@@ -173,7 +173,7 @@ function deleteKey(id) {
 }
 
 
-function switchAccount() {
+function switchAccount(redirectUrl) {
   fetch(self+'?get=Switch', {
     method: 'POST',
   })
@@ -186,7 +186,11 @@ function switchAccount() {
   .then(r => {
     if (r.result === 'ok') {
       console.log('Success');
-      window.location.reload();
+      if (redirectUrl) {
+        window.location = redirectUrl;
+      } else {
+        window.location.reload();
+      }
     }
   })
   .catch(err => {

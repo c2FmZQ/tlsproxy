@@ -206,7 +206,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	defer m.noncesMu.Unlock()
 	now := time.Now().UTC()
 	for k, v := range m.nonces {
-		if v.created.Add(10 * time.Minute).Before(now) {
+		if v.created.Add(time.Hour).Before(now) {
 			delete(m.nonces, k)
 		}
 	}

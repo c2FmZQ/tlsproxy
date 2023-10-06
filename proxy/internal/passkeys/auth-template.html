@@ -22,19 +22,19 @@
     <a class="button" href="{{.Self}}?get=RegisterNewID&nonce={{.Nonce}}">Register New Identity</a>
 {{- end }}
 {{- if eq .Mode "RegisterNewID" }}
-    <a class="button" onclick="switchAccount();">Pick A Different Identity</a>
-    <a class="button" href="{{.Self}}?get=Login&nonce={{.Nonce}}">Use Existing Passkey</a>
+    <a class="button" onclick="switchAccount({{.Self}}+'?get=Login&nonce={{.Nonce}}');">Switch Account</a>
 {{- end }}
   </div>
   <div id="message">
 {{- if eq .Mode "Login" }}
-    <div><a class="button" onclick="loginWithPasskey({{.RedirectURL}});">Login With Passkey</a></div>
+    <div><a class="button" onclick="loginWithPasskey({{.RedirectURL}});">Login</a></div>
 {{- end }}
 {{- if eq .Mode "RegisterNewID" }}
     <div>{{.Subject}}</div>
   {{- if .IsAllowed }}
     {{- if .IsRegistered }}
     <div>Already Registered</div>
+    <div><a class="button" onclick="loginWithPasskey({{.RedirectURL}});">Login</a></div>
     {{- else }}
     <div><a class="button" onclick="registerPasskey({{.RedirectURL}});">Register This Identity</a></div>
     {{- end }}
