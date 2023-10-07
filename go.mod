@@ -5,6 +5,7 @@ go 1.21
 require (
 	github.com/beevik/etree v1.2.0
 	github.com/c2FmZQ/storage v0.1.0
+	github.com/fxamacker/cbor/v2 v2.5.0
 	github.com/go-test/deep v1.1.0
 	github.com/golang-jwt/jwt/v5 v5.0.0
 	github.com/russellhaering/goxmldsig v1.4.0
@@ -17,6 +18,7 @@ require (
 require (
 	github.com/jonboulle/clockwork v0.4.0 // indirect
 	github.com/stretchr/testify v1.8.4 // indirect
+	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/net v0.15.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
 )

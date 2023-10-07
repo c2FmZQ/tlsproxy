@@ -24,6 +24,9 @@
 // Package proxy implements a simple lightweight TLS termination proxy that uses
 // Let's Encrypt to provide TLS encryption for any number of TCP and HTTP
 // servers and server names concurrently on the same port.
+//
+// It can also act as a reverse HTTP proxy with optional user authentication
+// with SAML, OpenID Connect, and/or passkeys.
 package proxy
 
 import (
@@ -54,6 +57,7 @@ import (
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/oidc"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/passkeys"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/saml"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
@@ -285,6 +289,38 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			cm:               cm,
 		}
 	}
+	for _, pp := range cfg.PasskeyProviders {
+		host, path, err := hostAndPath(pp.Endpoint)
+		if err != nil {
+			return err
+		}
+		other, ok := identityProviders[pp.IdentityProvider]
+		if !ok {
+			return fmt.Errorf("invalid identityProvider %q", pp.IdentityProvider)
+		}
+		issuer := "https://" + host + "/"
+		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer)
+		cfg := passkeys.Config{
+			Store:              p.store,
+			Other:              other.identityProvider,
+			Endpoint:           pp.Endpoint,
+			EventRecorder:      er,
+			CookieManager:      cm,
+			OtherCookieManager: other.cm,
+			ClaimsFromCtx:      claimsFromCtx,
+		}
+		provider, err := passkeys.NewManager(cfg)
+		if err != nil {
+			return err
+		}
+		identityProviders[pp.Name] = idp{
+			identityProvider: provider,
+			callbackHost:     host,
+			callbackPath:     path,
+			domain:           pp.Domain,
+			cm:               cm,
+		}
+	}
 
 	backends := make(map[string]*Backend, len(cfg.Backends))
 	for _, be := range cfg.Backends {
@@ -307,6 +343,10 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				handler:   logHandler(http.HandlerFunc(be.serveSSOStatus)),
 				ssoBypass: true,
 			}
+			be.localHandlers["/.sso/style.css"] = localHandler{
+				handler:   logHandler(http.HandlerFunc(be.serveSSOStyle)),
+				ssoBypass: true,
+			}
 			be.localHandlers["/.sso/logout"] = localHandler{
 				handler:   logHandler(http.HandlerFunc(be.serveLogout)),
 				ssoBypass: true,
@@ -314,6 +354,11 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			be.localHandlers["/.sso/favicon.ico"] = localHandler{
 				handler:   http.HandlerFunc(p.faviconHandler),
 				ssoBypass: true,
+			}
+			if m, ok := be.SSO.p.(*passkeys.Manager); ok {
+				be.localHandlers["/.sso/passkeys"] = localHandler{
+					handler: http.HandlerFunc(m.ManageKeys),
+				}
 			}
 
 			if ls := be.SSO.LocalOIDCServer; ls != nil && len(be.ServerNames) > 0 {
@@ -436,6 +481,9 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 					p.identityProvider.HandleCallback(w, req)
 				}),
 				ssoBypass: true,
+			}
+			if m, ok := be.SSO.p.(*passkeys.Manager); ok {
+				m.SetACL(be.SSO.ACL)
 			}
 		}
 	}

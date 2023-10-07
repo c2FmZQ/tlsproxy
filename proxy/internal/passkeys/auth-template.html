@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Passkey</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
+<link rel="stylesheet" type="text/css" href="/.sso/style.css" />
+<script src="?get=JS"></script>
+<style>
+#sum {
+  position: fixed;
+  bottom: 10px;
+  width: 100vw;
+  text-align: center;
+}
+</style>
+</head>
+<body>
+  <div id="sum">Access to this page is controlled using <a href="https://fidoalliance.org/passkeys/">Passkeys</a>.</div>
+  <div id="buttons">
+{{- if eq .Mode "Login" }}
+    <a class="button" href="{{.Self}}?get=RegisterNewID&nonce={{.Nonce}}">Register New Identity</a>
+{{- end }}
+{{- if eq .Mode "RegisterNewID" }}
+    <a class="button" onclick="switchAccount({{.Self}}+'?get=Login&nonce={{.Nonce}}');">Switch Account</a>
+{{- end }}
+  </div>
+  <div id="message">
+{{- if eq .Mode "Login" }}
+    <div><a class="button" onclick="loginWithPasskey({{.RedirectURL}});">Login</a></div>
+{{- end }}
+{{- if eq .Mode "RegisterNewID" }}
+    <div>{{.Subject}}</div>
+  {{- if .IsAllowed }}
+    {{- if .IsRegistered }}
+    <div>Already Registered</div>
+    <div><a class="button" onclick="loginWithPasskey({{.RedirectURL}});">Login</a></div>
+    {{- else }}
+    <div><a class="button" onclick="registerPasskey({{.RedirectURL}});">Register This Identity</a></div>
+    {{- end }}
+  {{- else }}
+    <div>Is Not Allowed</div>
+  {{- end }}
+{{- end }}
+  </div>
+</body>
+</html>

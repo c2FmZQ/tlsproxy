@@ -89,7 +89,7 @@ type ServerOptions struct {
 	TokenManager  *tokenmanager.TokenManager
 	Issuer        string
 	PathPrefix    string
-	ClaimsFromCtx func(context.Context) jwt.Claims
+	ClaimsFromCtx func(context.Context) jwt.MapClaims
 	Clients       []Client
 	RewriteRules  []RewriteRule
 
@@ -280,14 +280,9 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		claims["email_verified"] = true
 		sc += " email"
 	}
-	uc, ok := userClaims.(jwt.MapClaims)
-	if !ok {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
 	if slices.Contains(scopes, "profile") {
 		for _, v := range []string{"name", "family_name", "given_name", "middle_name", "nickname", "preferred_username", "profile", "picture", "website", "gender", "birthdate", "zoneinfo", "locale"} {
-			if vv := uc[v]; vv != nil {
+			if vv := userClaims[v]; vv != nil {
 				claims[v] = vv
 			}
 		}
@@ -295,7 +290,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	}
 	claims["scope"] = sc
 
-	applyRewriteRules(s.opts.RewriteRules, uc, claims)
+	applyRewriteRules(s.opts.RewriteRules, userClaims, claims)
 
 	token, err := s.opts.TokenManager.CreateToken(claims, "RS256")
 	if err != nil {

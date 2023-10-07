@@ -212,6 +212,12 @@ func (be *Backend) localHandlersAndAuthz(next http.Handler) http.Handler {
 			h.handler.ServeHTTP(w, req)
 			return
 		}
+		if !exists {
+			if _, ok := be.localHandlers[req.URL.Path+"/"]; ok {
+				http.Redirect(w, req, req.URL.Path+"/", http.StatusMovedPermanently)
+				return
+			}
+		}
 		if next == nil {
 			http.NotFound(w, req)
 			return

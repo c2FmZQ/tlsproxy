@@ -101,6 +101,10 @@ type Config struct {
 	OIDCProviders []*ConfigOIDC `yaml:"oidc,omitempty"`
 	// SAMLProviders is the list of SAML providers.
 	SAMLProviders []*ConfigSAML `yaml:"saml,omitempty"`
+	// PasskeyProviders are identity providers that use OIDC or SAML for
+	// the first authentication and to configure passkeys, and then rely
+	// exclusively on passkeys.
+	PasskeyProviders []*ConfigPasskey `yaml:"passkey,omitempty"`
 	// Email is optionally included in the requests to letsencrypt.
 	Email string `yaml:"email,omitempty"`
 	// MaxOpen is the maximum number of open incoming connections.
@@ -311,11 +315,28 @@ type ConfigOIDC struct {
 
 // ConfigSAML contains the parameters of a SAML identity provider.
 type ConfigSAML struct {
+	// Name is the name of the provider. It is used internally only.
 	Name     string `yaml:"name"`
 	SSOURL   string `yaml:"ssoUrl"`
 	EntityID string `yaml:"entityId"`
 	Certs    string `yaml:"certs"`
 	ACSURL   string `yaml:"acsUrl"`
+	// Domain, if set, determine the domain where the user identities will
+	// be valid.
+	Domain string `yaml:"domain,omitempty"`
+}
+
+// ConfigPasskey contains the parameters of a Passkey manager.
+type ConfigPasskey struct {
+	// Name is the name of the provider. It is used internally only.
+	Name string `yaml:"name"`
+	// IdentityProvider is the name of another identity provider that will
+	// be used to authenticate the user before registering their first
+	// passkey.
+	IdentityProvider string `yaml:"identityProvider"`
+	// Endpoint is a URL on this proxy that will handle the passkey
+	// authentication.
+	Endpoint string `yaml:"endpoint"`
 	// Domain, if set, determine the domain where the user identities will
 	// be valid.
 	Domain string `yaml:"domain,omitempty"`
@@ -504,6 +525,31 @@ func (cfg *Config) Check() error {
 			}
 			if !strings.HasSuffix(host, s.Domain) {
 				return fmt.Errorf("saml[%d].Domain %q must be part of ACSURL", i, s.Domain)
+			}
+		}
+	}
+	for i, pp := range cfg.PasskeyProviders {
+		if identityProviders[pp.Name] {
+			return fmt.Errorf("passkey[%d].Name: duplicate provider name %q", i, pp.Name)
+		}
+		identityProviders[pp.Name] = true
+		if pp.Endpoint == "" {
+			return fmt.Errorf("passkey[%d].Endpoint must be set", i)
+		}
+		if pp.IdentityProvider == "" {
+			return fmt.Errorf("passkey[%d].IdentityProvider must be set", i)
+		}
+		if _, ok := identityProviders[pp.IdentityProvider]; !ok {
+			return fmt.Errorf("passkey[%d].IdentityProvider has unexpected value %q", i, pp.IdentityProvider)
+		}
+		if pp.Domain != "" {
+			u, _ := url.Parse(pp.Endpoint)
+			host := u.Host
+			if h, _, err := net.SplitHostPort(host); err == nil {
+				host = h
+			}
+			if !strings.HasSuffix(host, pp.Domain) {
+				return fmt.Errorf("passkey[%d].Domain %q must be part of Endpoint", i, pp.Domain)
 			}
 		}
 	}

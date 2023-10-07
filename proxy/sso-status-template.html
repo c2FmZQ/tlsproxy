@@ -5,48 +5,10 @@
 <meta http-equiv="content-type" content="text/html; charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
 <link rel="icon" href="/.sso/favicon.ico" />
+<link rel="stylesheet" type="text/css" href="/.sso/style.css" />
 <style>
-html {
-  margin: 0;
-  height: 100%;
-  background-color: black;
-} 
-body {
-  margin: 0;
-  height: 100%;
-  font-family: monospace;
-}
-#buttons {
-  position: fixed;
-  top: 10px;
-  right: 10px;
-}
-a.button {
-  text-decoration: none;
-  border: solid 1px black;
-  background-color: lightgray;
-  color: black;
-  margin: 1em;
-  padding: 0.5em;
-}
-a.button:hover {
-  background-color: darkgray;
-}
-#message {
-  color: white;
-  text-align: left;
-  position: fixed;
-  left: 50vw;
-  top: 50vh;
-  transform: translate(-50%, -50%);
-  border: solid 1px gray;
-  padding: 1em;
-  width: clamp(20em, 40em, 90vw);
-  max-height: 80vh;
-  overflow: scroll;
-  background-color: black;
-}
 #claims {
+  text-align: left;
   display: grid;
   grid-template-columns: 1fr 2fr;
   gap: 0;
@@ -64,21 +26,24 @@ a.button:hover {
 </head>
 <body>
 <div id="buttons">
+{{ if len .Claims | ne 0 }}
 <a class="button" href="/.sso/logout?u={{.Token}}">Switch Account</a>
 <a class="button" href="/.sso/logout">Logout</a>
+{{ else }}
+<a class="button" href="/.sso/logout?u={{.Token}}">Login</a>
+{{ end }}
 </div>
 <div id="message">
 {{ if len .Claims | ne 0 }}
-User Identity:
+Your Identity
 <div id="claims">
 {{ range .Claims }}
 <div>{{.Key}}</div>
 <div>{{.Value}}{{ if eq .Key "picture" }}<br /><img style="max-width: 40vw; max-height: 40vh;" src="{{.Value}}" />{{ end }}</div>
 {{ end }}
 {{ else }}
-User Is Not Logged In
+Your Are Not Logged In
 {{ end }}
-</div>
 </div>
 </div>
 </body>

@@ -25,7 +25,9 @@ package proxy
 
 import (
 	"context"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"fmt"
 	"html/template"
 	"log"
@@ -59,6 +61,8 @@ var (
 	//go:embed sso-status-template.html
 	ssoStatusEmbed    string
 	ssoStatusTemplate *template.Template
+	//go:embed style.css
+	styleEmbed []byte
 )
 
 func init() {
@@ -67,9 +71,9 @@ func init() {
 	ssoStatusTemplate = template.Must(template.New("sso-status").Parse(ssoStatusEmbed))
 }
 
-func claimsFromCtx(ctx context.Context) jwt.Claims {
+func claimsFromCtx(ctx context.Context) jwt.MapClaims {
 	if v := ctx.Value(authCtxKey); v != nil {
-		return v.(jwt.Claims)
+		return v.(jwt.MapClaims)
 	}
 	return nil
 }
@@ -92,8 +96,6 @@ func (be *Backend) userAuthentication(next http.Handler) http.Handler {
 				}
 			}
 		}
-		// Filter out the tlsproxy auth cookie.
-		cookiemanager.FilterOutAuthTokenCookie(req)
 		next.ServeHTTP(w, req)
 	})
 }
@@ -139,11 +141,24 @@ func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.C
 	return nil, false
 }
 
-func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
-	var claims jwt.MapClaims
-	if c := claimsFromCtx(req.Context()); c != nil {
-		claims, _ = c.(jwt.MapClaims)
+func (be *Backend) serveSSOStyle(w http.ResponseWriter, req *http.Request) {
+	sum := sha256.Sum256(styleEmbed)
+	etag := `"` + hex.EncodeToString(sum[:]) + `"`
+
+	w.Header().Set("Content-Type", "text/css")
+	w.Header().Set("Cache-Control", "public")
+	w.Header().Set("Etag", etag)
+
+	if e := req.Header.Get("If-None-Match"); e == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
 	}
+	w.WriteHeader(http.StatusOK)
+	w.Write(styleEmbed)
+}
+
+func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
+	claims := claimsFromCtx(req.Context())
 	var keys []string
 	for k := range claims {
 		keys = append(keys, k)
@@ -239,6 +254,9 @@ func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Reques
 }
 
 func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bool {
+	// Filter out the tlsproxy auth cookie.
+	cookiemanager.FilterOutAuthTokenCookie(req)
+
 	if be.SSO == nil || !pathMatches(be.SSO.Paths, req.URL.Path) {
 		return true
 	}
