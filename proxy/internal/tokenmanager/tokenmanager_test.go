@@ -71,7 +71,7 @@ func TestTokenManager(t *testing.T) {
 
 	tok2, err := tm1.CreateToken(jwt.MapClaims{
 		"iat": time.Now().Add(-10 * time.Minute).Unix(),
-		"exp": time.Now().Add(-5 * time.Minute).Unix(),
+		"exp": time.Now().Add(5 * time.Minute).Unix(),
 		"sub": "test@example.com",
 		"iss": "https://login.example.com",
 		"aud": "https://login.example.com",
@@ -80,7 +80,22 @@ func TestTokenManager(t *testing.T) {
 		t.Fatalf("tm.CreateToken: %v", err)
 	}
 	t.Logf("TOKEN2: %s", tok2)
-	if _, err := tm1.ValidateToken(tok2); err == nil {
-		t.Fatal("tm.ValidateToken should fail")
+	if _, err := tm1.ValidateToken(tok2); err != nil {
+		t.Fatalf("tm.ValidateToken: %v", err)
+	}
+
+	tok3, err := tm1.CreateToken(jwt.MapClaims{
+		"iat": time.Now().Add(-10 * time.Minute).Unix(),
+		"exp": time.Now().Add(5 * time.Minute).Unix(),
+		"sub": "test@example.com",
+		"iss": "https://login.example.com",
+		"aud": "https://login.example.com",
+	}, "EdDSA")
+	if err != nil {
+		t.Fatalf("tm.CreateToken: %v", err)
+	}
+	t.Logf("TOKEN3: %s", tok3)
+	if _, err := tm1.ValidateToken(tok3); err != nil {
+		t.Fatalf("tm.ValidateToken: %v", err)
 	}
 }
