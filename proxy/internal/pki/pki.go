@@ -497,7 +497,7 @@ func (m *PKIManager) IsRevoked(serialNumber *big.Int) bool {
 // OCSPResponse creates an OCSP Response from the given request.
 func (m *PKIManager) OCSPResponse(req *ocsp.Request) ([]byte, error) {
 	if !req.HashAlgorithm.Available() {
-		return nil, errors.New("invalid hash algorithn")
+		return nil, errors.New("invalid hash algorithm")
 	}
 	if err := m.maybeRotateDelegateCert(); err != nil {
 		return nil, err

@@ -5,13 +5,11 @@ TLSPROXY has built-in support for managing X.509 Certificates.
 ```yaml
 pki:
 - name: "EXAMPLE CA"
-  # Optional: Publish the CA's certificate.
+  # Optional: Publish the CA's certificate(s).
   issuingCertificateUrls:
-  - https://pki.example.com/ca
   - https://pki.example.com/ca.pem
   # Optional: Publish the CA's Revocation List.
   crlDistributionPoints:
-  - https://pki.example.com/crl
   - https://pki.example.com/crl.pem
   # Optional: Enable OCSP (Online Certificate Status Protocol).
   ocspServers:
