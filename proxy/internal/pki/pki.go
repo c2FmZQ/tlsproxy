@@ -39,6 +39,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -52,8 +53,6 @@ import (
 )
 
 const (
-	pkiFile = "pki"
-
 	// https://www.rfc-editor.org/rfc/rfc5280.html#section-5.3.1
 	RevokeReasonUnspecified          = 0
 	RevokeReasonKeyCompromise        = 1
@@ -114,16 +113,14 @@ type Options struct {
 // and certificate are created the first time New is called for a given name.
 func New(opts Options) (*PKIManager, error) {
 	m := &PKIManager{
-		opts: opts,
+		opts:    opts,
+		pkiFile: "pki-" + url.PathEscape(opts.Name),
 	}
 	if m.opts.KeyType == "" {
 		m.opts.KeyType = "ecdsa-p256"
 	}
-	m.opts.Store.CreateEmptyFile(pkiFile, &m.db)
-	if err := m.opts.Store.ReadDataFile(pkiFile, &m.db); err != nil {
-		return nil, err
-	}
-	if err := m.initCA(); err != nil && err != storage.ErrRolledBack {
+	m.opts.Store.CreateEmptyFile(m.pkiFile, &certificateAuthority{})
+	if err := m.initCA(); err != nil {
 		return nil, err
 	}
 	return m, nil
@@ -132,11 +129,10 @@ func New(opts Options) (*PKIManager, error) {
 // PKIManager implements a simple Public Key Infrastructure (PKI) manager that
 // can issue and revoke X.509 certificates.
 type PKIManager struct {
-	opts Options
-	mu   sync.Mutex
-	db   struct {
-		CAs map[string]*certificateAuthority
-	}
+	opts    Options
+	pkiFile string
+	mu      sync.Mutex
+	db      *certificateAuthority
 }
 
 type certificateAuthority struct {
@@ -196,30 +192,41 @@ type revocationList struct {
 	RawCRL  []byte
 }
 
+func (m *PKIManager) open() (func(commit bool, errp *error) error, error) {
+	commit, err := m.opts.Store.OpenForUpdate(m.pkiFile, &m.db)
+	if err != nil {
+		return nil, err
+	}
+	return func(doCommit bool, errp *error) error {
+		err := commit(doCommit, errp)
+		wipe(m.db.PrivateKey)
+		return err
+	}, nil
+}
+
 func (m *PKIManager) initCA() (retErr error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	commit, err := m.opts.Store.OpenForUpdate(pkiFile, &m.db)
+	commit, err := m.open()
 	if err != nil {
 		return err
 	}
-	defer commit(false, &retErr)
+	defer func() {
+		commit(false, &retErr)
+		if retErr == storage.ErrRolledBack {
+			retErr = nil
+		}
+	}()
 	var changed bool
-	if m.db.CAs == nil {
-		m.db.CAs = make(map[string]*certificateAuthority)
-	}
-
-	ca, exists := m.db.CAs[m.opts.Name]
-	if !exists {
-		ca = &certificateAuthority{
+	if m.db == nil {
+		m.db = &certificateAuthority{
 			Name: m.opts.Name,
 		}
-		m.db.CAs[m.opts.Name] = ca
 		changed = true
 	}
 
-	if len(ca.PrivateKey) == 0 {
+	if len(m.db.PrivateKey) == 0 {
 		privKey, err := keys.GenerateKey(m.opts.KeyType)
 		if err != nil {
 			return err
@@ -228,14 +235,14 @@ func (m *PKIManager) initCA() (retErr error) {
 		if err != nil {
 			return fmt.Errorf("x509.MarshalPKCS8PrivateKey: %v", err)
 		}
-		ca.PrivateKey = keyBytes
+		m.db.PrivateKey = keyBytes
 		changed = true
 	}
 
 	type privateKey interface {
 		Public() crypto.PublicKey
 	}
-	pk, err := x509.ParsePKCS8PrivateKey(ca.PrivateKey)
+	pk, err := x509.ParsePKCS8PrivateKey(m.db.PrivateKey)
 	if err != nil {
 		return err
 	}
@@ -246,10 +253,10 @@ func (m *PKIManager) initCA() (retErr error) {
 
 	now := time.Now().UTC()
 	var needCert bool
-	if ca.CACert == nil {
+	if m.db.CACert == nil {
 		needCert = true
 	} else {
-		cert, err := ca.CACert.parse()
+		cert, err := m.db.CACert.parse()
 		if err != nil {
 			return err
 		}
@@ -289,25 +296,24 @@ func (m *PKIManager) initCA() (retErr error) {
 			Raw:          raw,
 		}
 		// Keep most recent first.
-		ca.CACert = c
-		ca.IssuedCerts = append(ca.IssuedCerts, c)
+		m.db.CACert = c
+		m.db.IssuedCerts = append(m.db.IssuedCerts, c)
 		changed = true
 	}
 	return commit(changed, nil)
 }
 
 func (m *PKIManager) maybeRotateDelegateCert() error {
-	ca, exists := m.db.CAs[m.opts.Name]
-	if !exists {
+	if m.db == nil {
 		return errors.New("no ca")
 	}
 	now := time.Now().UTC()
 
 	var needUpdate bool
-	if len(ca.DelegateCerts) == 0 {
+	if len(m.db.DelegateCerts) == 0 {
 		needUpdate = true
 	} else {
-		c, err := ca.DelegateCerts[0].parse()
+		c, err := m.db.DelegateCerts[0].parse()
 		if err != nil || c.NotBefore.Add(c.NotAfter.Sub(c.NotBefore)/2).Before(now) {
 			needUpdate = true
 		}
@@ -316,7 +322,7 @@ func (m *PKIManager) maybeRotateDelegateCert() error {
 		return nil
 	}
 
-	caCert, err := ca.CACert.parse()
+	caCert, err := m.db.CACert.parse()
 	if err != nil {
 		return err
 	}
@@ -354,13 +360,12 @@ func (m *PKIManager) maybeRotateDelegateCert() error {
 		OCSPServer:            m.opts.OCSPServer,
 	}
 	_, err = m.signCertificate(templ, func(c *certificate) error {
-		ca := m.db.CAs[m.opts.Name]
-		ca.DelegateKey = keyBytes
-		old := ca.DelegateCerts
-		ca.DelegateCerts = make([]*certificate, 0, 2)
-		ca.DelegateCerts = append(ca.DelegateCerts, c)
+		m.db.DelegateKey = keyBytes
+		old := m.db.DelegateCerts
+		m.db.DelegateCerts = make([]*certificate, 0, 2)
+		m.db.DelegateCerts = append(m.db.DelegateCerts, c)
 		if len(old) > 0 {
-			ca.DelegateCerts = append(ca.DelegateCerts, old[0])
+			m.db.DelegateCerts = append(m.db.DelegateCerts, old[0])
 		}
 		return nil
 	})
@@ -394,7 +399,7 @@ func (m *PKIManager) RevocationList() (cert, crl []byte, retErr error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	commit, err := m.opts.Store.OpenForUpdate(pkiFile, &m.db)
+	commit, err := m.open()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -405,20 +410,19 @@ func (m *PKIManager) RevocationList() (cert, crl []byte, retErr error) {
 		}
 	}()
 
-	ca, exists := m.db.CAs[m.opts.Name]
-	if !exists {
+	if m.db == nil {
 		return nil, nil, errNotFound
 	}
 	now := time.Now().UTC()
 
-	if len(ca.RevocationLists) > 0 {
+	if len(m.db.RevocationLists) > 0 {
 		var lastRevocation time.Time
-		for _, c := range ca.IssuedCerts {
+		for _, c := range m.db.IssuedCerts {
 			if c.Revocation != nil && c.Revocation.Time.After(lastRevocation) {
 				lastRevocation = c.Revocation.Time
 			}
 		}
-		last := ca.RevocationLists[len(ca.RevocationLists)-1]
+		last := m.db.RevocationLists[len(m.db.RevocationLists)-1]
 		rl, err := x509.ParseRevocationList(last.RawCRL)
 		if err != nil {
 			return nil, nil, err
@@ -428,18 +432,18 @@ func (m *PKIManager) RevocationList() (cert, crl []byte, retErr error) {
 		}
 	}
 
-	signCert, err := ca.DelegateCerts[0].parse()
+	signCert, err := m.db.DelegateCerts[0].parse()
 	if err != nil {
 		return nil, nil, err
 	}
-	ca.CRLNumber++
+	m.db.CRLNumber++
 	rl := &x509.RevocationList{
 		Issuer:     signCert.Subject,
-		Number:     big.NewInt(ca.CRLNumber),
+		Number:     big.NewInt(m.db.CRLNumber),
 		ThisUpdate: now,
 		NextUpdate: now.Add(crlRefreshPeriod),
 	}
-	for _, c := range ca.IssuedCerts {
+	for _, c := range m.db.IssuedCerts {
 		if c.Revocation == nil {
 			continue
 		}
@@ -457,7 +461,7 @@ func (m *PKIManager) RevocationList() (cert, crl []byte, retErr error) {
 		})
 	}
 
-	key, err := x509.ParsePKCS8PrivateKey(ca.DelegateKey)
+	key, err := x509.ParsePKCS8PrivateKey(m.db.DelegateKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -468,12 +472,12 @@ func (m *PKIManager) RevocationList() (cert, crl []byte, retErr error) {
 	if crl, err = x509.CreateRevocationList(rand.Reader, rl, signCert, signer); err != nil {
 		return nil, nil, err
 	}
-	ca.RevocationLists = append(ca.RevocationLists, revocationList{
+	m.db.RevocationLists = append(m.db.RevocationLists, revocationList{
 		RawCert: signCert.Raw,
 		RawCRL:  crl,
 	})
-	if n := len(ca.RevocationLists) - maxNumCRL; n > 0 {
-		ca.RevocationLists = ca.RevocationLists[n:]
+	if n := len(m.db.RevocationLists) - maxNumCRL; n > 0 {
+		m.db.RevocationLists = m.db.RevocationLists[n:]
 	}
 
 	if err := commit(true, nil); err != nil {
@@ -487,11 +491,10 @@ func (m *PKIManager) IsRevoked(serialNumber *big.Int) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	ca, exists := m.db.CAs[m.opts.Name]
-	if !exists {
+	if m.db == nil {
 		return false
 	}
-	return ca.Revoked[bytesToHex(serialNumber.Bytes())]
+	return m.db.Revoked[bytesToHex(serialNumber.Bytes())]
 }
 
 // OCSPResponse creates an OCSP Response from the given request.
@@ -506,15 +509,14 @@ func (m *PKIManager) OCSPResponse(req *ocsp.Request) ([]byte, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	ca, exists := m.db.CAs[m.opts.Name]
-	if !exists {
+	if m.db == nil {
 		return nil, errNotFound
 	}
-	caCert, err := ca.CACert.parse()
+	caCert, err := m.db.CACert.parse()
 	if err != nil {
 		return nil, err
 	}
-	delegateCert, err := ca.DelegateCerts[0].parse()
+	delegateCert, err := m.db.DelegateCerts[0].parse()
 	if err != nil {
 		return nil, err
 	}
@@ -527,7 +529,7 @@ func (m *PKIManager) OCSPResponse(req *ocsp.Request) ([]byte, error) {
 		return nil, err
 	}
 
-	key, err := x509.ParsePKCS8PrivateKey(ca.DelegateKey)
+	key, err := x509.ParsePKCS8PrivateKey(m.db.DelegateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -544,7 +546,7 @@ func (m *PKIManager) OCSPResponse(req *ocsp.Request) ([]byte, error) {
 	subjectHash := h.Sum(nil)
 
 	snh := bytesToHex(req.SerialNumber.Bytes())
-	idx := slices.IndexFunc(ca.IssuedCerts, func(c *certificate) bool {
+	idx := slices.IndexFunc(m.db.IssuedCerts, func(c *certificate) bool {
 		return c.SerialNumber == snh
 	})
 
@@ -572,7 +574,7 @@ func (m *PKIManager) OCSPResponse(req *ocsp.Request) ([]byte, error) {
 			Certificate:      delegateCert,
 		}, signer)
 	}
-	if rev := ca.IssuedCerts[idx].Revocation; rev != nil {
+	if rev := m.db.IssuedCerts[idx].Revocation; rev != nil {
 		return ocsp.CreateResponse(caCert, delegateCert, ocsp.Response{
 			Status:           ocsp.Revoked,
 			SerialNumber:     req.SerialNumber,
@@ -600,7 +602,7 @@ func (m *PKIManager) RevokeCertificate(serialNumber *big.Int, reasonCode int) (r
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	commit, err := m.opts.Store.OpenForUpdate(pkiFile, &m.db)
+	commit, err := m.open()
 	if err != nil {
 		return err
 	}
@@ -611,18 +613,17 @@ func (m *PKIManager) RevokeCertificate(serialNumber *big.Int, reasonCode int) (r
 		}
 	}()
 
-	ca, exists := m.db.CAs[m.opts.Name]
-	if !exists {
+	if m.db == nil {
 		return errNotFound
 	}
 	snh := bytesToHex(serialNumber.Bytes())
-	for _, c := range ca.IssuedCerts {
+	for _, c := range m.db.IssuedCerts {
 		if c.SerialNumber == snh {
 			c.revoke(reasonCode)
-			if ca.Revoked == nil {
-				ca.Revoked = make(map[string]bool)
+			if m.db.Revoked == nil {
+				m.db.Revoked = make(map[string]bool)
 			}
-			ca.Revoked[snh] = true
+			m.db.Revoked[snh] = true
 			return commit(true, nil)
 		}
 	}
@@ -634,11 +635,10 @@ func (m *PKIManager) CACert() (*x509.Certificate, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	ca, exists := m.db.CAs[m.opts.Name]
-	if !exists {
+	if m.db == nil {
 		return nil, errNotFound
 	}
-	return ca.CACert.parse()
+	return m.db.CACert.parse()
 }
 
 // ValidateCertificateRequest parses and validates a certificate signing
@@ -694,7 +694,7 @@ func (m *PKIManager) signCertificate(cert *x509.Certificate, next func(*certific
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	commit, err := m.opts.Store.OpenForUpdate(pkiFile, &m.db)
+	commit, err := m.open()
 	if err != nil {
 		return nil, err
 	}
@@ -705,15 +705,14 @@ func (m *PKIManager) signCertificate(cert *x509.Certificate, next func(*certific
 		}
 	}()
 
-	ca, exists := m.db.CAs[m.opts.Name]
-	if !exists {
+	if m.db == nil {
 		return nil, errNotFound
 	}
-	caCert, err := ca.CACert.parse()
+	caCert, err := m.db.CACert.parse()
 	if err != nil {
 		return nil, err
 	}
-	key, err := x509.ParsePKCS8PrivateKey(ca.PrivateKey)
+	key, err := x509.ParsePKCS8PrivateKey(m.db.PrivateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -728,7 +727,7 @@ func (m *PKIManager) signCertificate(cert *x509.Certificate, next func(*certific
 		SerialNumber: bytesToHex(cert.SerialNumber.Bytes()),
 		Raw:          raw,
 	}
-	ca.IssuedCerts = append(ca.IssuedCerts, c)
+	m.db.IssuedCerts = append(m.db.IssuedCerts, c)
 
 	if next != nil {
 		if err := next(c); err != nil {
@@ -748,4 +747,10 @@ func bytesToHex(b []byte) string {
 		h = append(h, fmt.Sprintf("%02x", v))
 	}
 	return strings.Join(h, ":")
+}
+
+func wipe(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
 }

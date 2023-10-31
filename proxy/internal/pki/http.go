@@ -76,24 +76,23 @@ func init() {
 func (m *PKIManager) ServeCACert(w http.ResponseWriter, req *http.Request) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	ca, exists := m.db.CAs[m.opts.Name]
-	if !exists || ca.CACert == nil {
+	if m.db == nil || m.db.CACert == nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("cache-control", "public, max-age=86400")
 	if strings.HasSuffix(req.URL.Path, ".pem") {
 		w.Header().Set("content-type", "application/x-pem-file")
-		out := ca.CACert.pem()
-		for _, c := range ca.DelegateCerts {
+		out := m.db.CACert.pem()
+		for _, c := range m.db.DelegateCerts {
 			out = append(out, c.pem()...)
 		}
 		etag(w, req, out)
 		return
 	}
 	w.Header().Set("content-type", "application/x-x509-ca-cert")
-	out := ca.CACert.Raw
-	for _, c := range ca.DelegateCerts {
+	out := m.db.CACert.Raw
+	for _, c := range m.db.DelegateCerts {
 		out = append(out, c.Raw...)
 	}
 	etag(w, req, out)
@@ -228,12 +227,11 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 		currentSN = bytesToHex(req.TLS.PeerCertificates[0].SerialNumber.Bytes())
 	}
 
-	ca, exists := m.db.CAs[m.opts.Name]
-	if !exists || ca.CACert == nil {
+	if m.db == nil || m.db.CACert == nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	caCert, err := ca.CACert.parse()
+	caCert, err := m.db.CACert.parse()
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -254,10 +252,10 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 		UsedNow        bool
 		CanRevoke      bool
 	}
-	certs := make([]cert, 0, len(ca.IssuedCerts))
+	certs := make([]cert, 0, len(m.db.IssuedCerts))
 	now := time.Now().UTC()
 
-	for _, ic := range ca.IssuedCerts {
+	for _, ic := range m.db.IssuedCerts {
 		c, err := ic.parse()
 		if err != nil {
 			log.Printf("ERR x509.ParseCertificate: %v", err)
@@ -504,20 +502,19 @@ func (m *PKIManager) handleStaticFile(w http.ResponseWriter, req *http.Request) 
 func (m *PKIManager) findCert(sn string) (*x509.Certificate, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	ca, exists := m.db.CAs[m.opts.Name]
-	if !exists || ca.CACert == nil {
+	if m.db == nil || m.db.CACert == nil {
 		return nil, errNotFound
 	}
-	i := slices.IndexFunc(ca.IssuedCerts, func(c *certificate) bool {
+	i := slices.IndexFunc(m.db.IssuedCerts, func(c *certificate) bool {
 		return c.SerialNumber == sn
 	})
 	if i < 0 {
 		return nil, errNotFound
 	}
-	if ca.IssuedCerts[i].Revocation != nil {
+	if m.db.IssuedCerts[i].Revocation != nil {
 		return nil, errNotFound
 	}
-	return ca.IssuedCerts[i].parse()
+	return m.db.IssuedCerts[i].parse()
 }
 
 func etag(w http.ResponseWriter, req *http.Request, body []byte) {

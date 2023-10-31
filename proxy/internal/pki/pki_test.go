@@ -57,17 +57,16 @@ func newPKI(t *testing.T) *PKIManager {
 
 func TestNewPKIManager(t *testing.T) {
 	m := newPKI(t)
-	ca, exists := m.db.CAs["pki-test"]
-	if !exists {
+	if m.db == nil {
 		t.Fatal("pki.example.com doesn't exist")
 	}
-	if ca.CACert == nil {
+	if m.db.CACert == nil {
 		t.Fatal("ca cert is not set")
 	}
-	if _, err := x509.ParseCertificate(ca.CACert.Raw); err != nil {
+	if _, err := x509.ParseCertificate(m.db.CACert.Raw); err != nil {
 		t.Errorf("x509.ParseCertificate: %v", err)
 	}
-	t.Logf("CERT: %s", ca.CACert.pem())
+	t.Logf("CERT: %s", m.db.CACert.pem())
 }
 
 func TestIssueRevoke(t *testing.T) {
