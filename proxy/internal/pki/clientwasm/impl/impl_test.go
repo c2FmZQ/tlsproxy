@@ -39,6 +39,7 @@ func TestKeyTypeFormat(t *testing.T) {
 	for _, tc := range []struct {
 		keyType     string
 		format      string
+		label          string
 		dnsName     string
 		contentType string
 		ext         string
@@ -50,7 +51,7 @@ func TestKeyTypeFormat(t *testing.T) {
 		{keyType: "ed25519", format: "gpg", dnsName: "example.com", contentType: "application/octet-stream", ext: ".pem.gpg"},
 	} {
 		count++
-		csrPEM, err := MakeCSR(count, tc.keyType, tc.format, tc.dnsName, "foo")
+		csrPEM, err := MakeCSR(count, tc.keyType, tc.format, tc.label, tc.dnsName, "foo")
 		if err != nil {
 			t.Fatalf("MakeCSR: %v", err)
 		}

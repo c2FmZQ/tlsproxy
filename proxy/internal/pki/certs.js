@@ -103,6 +103,7 @@ function generateKeyAndCert(f) {
   const pw = f.pw1.value;
   const fmt = f.format.value;
   const kty = f.keytype.value;
+  const label = f.label.value;
   const dns = f.dnsname.value;
   f.pw1.value = '';
   f.pw2.value = '';
@@ -129,6 +130,11 @@ function generateKeyAndCert(f) {
       p.setAttribute('type', 'hidden');
       p.setAttribute('name', 'keytype');
       p.setAttribute('value', kty);
+      f.appendChild(p);
+      p = document.createElement('input');
+      p.setAttribute('type', 'hidden');
+      p.setAttribute('name', 'label');
+      p.setAttribute('value', label);
       f.appendChild(p);
       p = document.createElement('input');
       p.setAttribute('type', 'hidden');

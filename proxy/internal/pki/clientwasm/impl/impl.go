@@ -28,6 +28,7 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
@@ -50,7 +51,7 @@ type keyData struct {
 	password string
 }
 
-func MakeCSR(id int, keyType, format, dnsname, password string) ([]byte, error) {
+func MakeCSR(id int, keyType, format, label, dnsname, password string) ([]byte, error) {
 	privKey, err := keys.GenerateKey(keyType)
 	if err != nil {
 		return nil, err
@@ -64,7 +65,9 @@ func MakeCSR(id int, keyType, format, dnsname, password string) ([]byte, error) 
 		password: password,
 	}
 
-	templ := &x509.CertificateRequest{}
+	templ := &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: label},
+	}
 	if dnsname != "" {
 		templ.DNSNames = strings.Fields(strings.ReplaceAll(dnsname, ",", " "))
 	}

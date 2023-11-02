@@ -378,13 +378,14 @@ func (m *PKIManager) handleRequestCert(w http.ResponseWriter, req *http.Request)
 	cr := &x509.CertificateRequest{
 		PublicKeyAlgorithm: in.PublicKeyAlgorithm,
 		PublicKey:          in.PublicKey,
+		Subject:            pkix.Name{CommonName: subject},
 		EmailAddresses: []string{
 			subject,
 		},
 		DNSNames: in.DNSNames,
 	}
-	if name, ok := claims["name"].(string); ok {
-		cr.Subject = pkix.Name{CommonName: name}
+	if in.Subject.CommonName != "" {
+		cr.Subject.CommonName += "::" + in.Subject.CommonName
 	}
 	cert, err := m.IssueCertificate(cr)
 	if err != nil {

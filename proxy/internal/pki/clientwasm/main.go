@@ -80,7 +80,7 @@ func makeCSR(this js.Value, args []js.Value) any {
 		fmt.Println("password is missing")
 		return js.Undefined()
 	}
-	resp, err := impl.MakeCSR(args[0].Int(), keyType, format, form.Get("dnsname"), password)
+	resp, err := impl.MakeCSR(args[0].Int(), keyType, format, form.Get("label"), form.Get("dnsname"), password)
 	if err != nil {
 		fmt.Println(err)
 		return js.Undefined()
