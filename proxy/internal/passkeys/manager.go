@@ -422,7 +422,7 @@ func serveWebauthnJS(w http.ResponseWriter, req *http.Request) {
 	sum := sha256.Sum256(webauthnJSEmbed)
 	etag := `"` + hex.EncodeToString(sum[:]) + `"`
 
-	w.Header().Set("Content-Type", "text/css")
+	w.Header().Set("Content-Type", "text/javascript")
 	w.Header().Set("Cache-Control", "public")
 	w.Header().Set("Etag", etag)
 
