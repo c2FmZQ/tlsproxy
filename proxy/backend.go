@@ -149,7 +149,7 @@ func (be *Backend) authorize(cert *x509.Certificate) error {
 	if be.ClientAuth == nil || be.ClientAuth.ACL == nil {
 		return nil
 	}
-	if subject := cert.Subject.String(); subject != "" && slices.Contains(*be.ClientAuth.ACL, subject) {
+	if subject := cert.Subject.String(); subject != "" && (slices.Contains(*be.ClientAuth.ACL, subject) || slices.Contains(*be.ClientAuth.ACL, "SUBJECT:"+subject)) {
 		return nil
 	}
 	for _, v := range cert.DNSNames {

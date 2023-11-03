@@ -521,11 +521,8 @@ func (m *PKIManager) OCSPResponse(req *ocsp.Request) ([]byte, error) {
 		return nil, err
 	}
 
-	var pkInfo struct {
-		Algorithm pkix.AlgorithmIdentifier
-		PublicKey asn1.BitString
-	}
-	if _, err := asn1.Unmarshal(caCert.RawSubjectPublicKeyInfo, &pkInfo); err != nil {
+	pubKeyBytes, err := publicKeyFromCert(caCert)
+	if err != nil {
 		return nil, err
 	}
 
@@ -539,7 +536,7 @@ func (m *PKIManager) OCSPResponse(req *ocsp.Request) ([]byte, error) {
 	}
 
 	h := req.HashAlgorithm.New()
-	h.Write(pkInfo.PublicKey.RightAlign())
+	h.Write(pubKeyBytes)
 	pubKeyHash := h.Sum(nil)
 	h.Reset()
 	h.Write(caCert.RawSubject)
@@ -739,6 +736,17 @@ func (m *PKIManager) signCertificate(cert *x509.Certificate, next func(*certific
 	}
 
 	return raw, nil
+}
+
+func publicKeyFromCert(cert *x509.Certificate) ([]byte, error) {
+	var pkInfo struct {
+		Algorithm pkix.AlgorithmIdentifier
+		PublicKey asn1.BitString
+	}
+	if _, err := asn1.Unmarshal(cert.RawSubjectPublicKeyInfo, &pkInfo); err != nil {
+		return nil, err
+	}
+	return pkInfo.PublicKey.RightAlign(), nil
 }
 
 func bytesToHex(b []byte) string {

@@ -282,7 +282,7 @@ type ClientAuth struct {
 	// this service. A nil value disabled the authorization check and allows
 	// any valid client certificate. Otherwise, the value is a slice of
 	// Subject or Subject Alternate Name strings from the client X509
-	// certificate, e.g. CN=Bob or EMAIL:bob@example.com
+	// certificate, e.g. SUBJECT:CN=Bob or EMAIL:bob@example.com
 	ACL *[]string `yaml:"acl,omitempty"`
 	// RootCAs a list of:
 	// - CA names defined in the PKI section,

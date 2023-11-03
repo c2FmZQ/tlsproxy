@@ -1170,7 +1170,7 @@ func certSummary(c *x509.Certificate) string {
 	}
 	var parts []string
 	if sub := c.Subject.String(); sub != "" {
-		parts = append(parts, sub)
+		parts = append(parts, "SUBJECT:"+sub)
 	}
 	for _, v := range c.DNSNames {
 		parts = append(parts, "DNS:"+v)

@@ -17,7 +17,7 @@
 <div class="certs">Certificate Authority:
 <div class="onecert">
 <div>Subject:</div><div>{{ .CASubject }}</div>
-<div>Serial Number:</div><div>{{ .CASN }}</div>
+<div>SerialNumber:</div><div>{{ .CASN }}</div>
 <div>SubjectKeyId:</div><div>{{ .CASubjectKeyId }}</div>
 </div>
 </div>
@@ -41,7 +41,8 @@
 <div class="onerow{{ if .UsedNow }} usednow{{ end }}">
 <div class="status">{{.Status}}</div>
 <div class="onecert">
-<div>Serial Number:</div><div>{{.SN}}</div>
+<div>SerialNumber:</div><div>{{.SN}}</div>
+<div>PublicKey:</div><div>{{.PublicKey}}</div>
 {{- if eq .Status "Revoked" }}
 <div>Revocation:</div><div>{{.RevocationTime}}</div>
 {{- end }}
@@ -60,8 +61,8 @@
 {{- if .IsCA }}
 <div>IsCA:</div><div>{{.IsCA}}</div>
 {{- end }}
-<div>Not Before:</div><div>{{.NotBefore}}</div>
-<div>Not After:</div><div>{{.NotAfter}}</div>
+<div>NotBefore:</div><div>{{.NotBefore}}</div>
+<div>NotAfter:</div><div>{{.NotAfter}}</div>
 </div>
 <div class="certButtons">
 <a class="button" onclick="showView({{.SN}});">View</a>

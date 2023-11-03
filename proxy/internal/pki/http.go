@@ -239,6 +239,7 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 
 	type cert struct {
 		SN             string
+		PublicKey      string
 		Subject        string
 		EmailAddresses []string
 		DNSNames       []string
@@ -294,8 +295,14 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 				eku = append(eku, "OCSPSigning")
 			}
 		}
+		pubKeyBytes, err := publicKeyFromCert(c)
+		if err != nil {
+			log.Printf("ERR publicKeyFromCert: %v", err)
+			continue
+		}
 		certs = append(certs, cert{
 			SN:             ic.SerialNumber,
+			PublicKey:      c.PublicKeyAlgorithm.String() + " " + bytesToHex(pubKeyBytes),
 			Subject:        c.Subject.String(),
 			EmailAddresses: c.EmailAddresses,
 			DNSNames:       c.DNSNames,

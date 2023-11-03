@@ -124,7 +124,7 @@ backends:
       .....
       -----END CERTIFICATE-----
     acl:
-    - CN=admin-user
+    - SUBJECT:CN=admin-user
   addresses:
   - 192.168.4.100:443
   forwardServerName: restricted-internal.example.com
