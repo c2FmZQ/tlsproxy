@@ -39,7 +39,7 @@ func TestKeyTypeFormat(t *testing.T) {
 	for _, tc := range []struct {
 		keyType     string
 		format      string
-		label          string
+		label       string
 		dnsName     string
 		contentType string
 		ext         string
