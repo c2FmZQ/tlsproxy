@@ -448,11 +448,11 @@ func TestAuthnAuthz(t *testing.T) {
 		{desc: "ACL, client2", host: "acl.example.com", certName: "client2", want: "HTTP/1.0 200 OK"},
 		{desc: "ACL, wrong cert", host: "acl.example.com", certName: "foo", expError: true},
 		{desc: "PKI client", host: "pkitest.example.com", certName: "pki", want: "HTTP/1.0 200 OK"},
-		{desc: "Check console1", host: "acl.example.com", certName: "client1", want: "allow [CN=client1;DNS:client1] to acl.example.com"},
-		{desc: "Check console2", host: "acl.example.com", certName: "client1", want: "allow [CN=client2;DNS:client2] to acl.example.com"},
-		{desc: "Check console3", host: "acl.example.com", certName: "client1", want: "allow [CN=foo;DNS:foo] to noacl.example.com"},
-		{desc: "Check console4", host: "acl.example.com", certName: "client1", want: "deny [CN=foo;DNS:foo] to acl.example.com"},
-		{desc: "Check console5", host: "acl.example.com", certName: "client1", want: "deny [CN=foo;DNS:foo] to emptyacl.example.com"},
+		{desc: "Check console1", host: "acl.example.com", certName: "client1", want: "allow [SUBJECT:CN=client1;DNS:client1] to acl.example.com"},
+		{desc: "Check console2", host: "acl.example.com", certName: "client1", want: "allow [SUBJECT:CN=client2;DNS:client2] to acl.example.com"},
+		{desc: "Check console3", host: "acl.example.com", certName: "client1", want: "allow [SUBJECT:CN=foo;DNS:foo] to noacl.example.com"},
+		{desc: "Check console4", host: "acl.example.com", certName: "client1", want: "deny [SUBJECT:CN=foo;DNS:foo] to acl.example.com"},
+		{desc: "Check console5", host: "acl.example.com", certName: "client1", want: "deny [SUBJECT:CN=foo;DNS:foo] to emptyacl.example.com"},
 		{desc: "Check console6", host: "acl.example.com", certName: "client1", want: "allow [EMAIL:bob@example.com] to pkitest.example.com"},
 	} {
 		got, err := get(tc.host, tc.certName)
