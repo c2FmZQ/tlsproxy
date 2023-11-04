@@ -50,17 +50,20 @@ backends:
 - serverNames:
   - secure.example.com
   clientAuth:
-    rootCAs: *myCA
+    rootCAs:
+    - *myCA
   mode: tls
   addresses:
   - 192.168.2.200:443
   forwardServerName: secure-internal.example.com
-  forwardRootCAs: *myCA
+  forwardRootCAs:
+  - *myCA
 
 - serverNames:
   - ssh.example.com
   clientAuth:
-    rootCAs: *myCA
+    rootCAs:
+    - *myCA
   addresses:
   - 192.168.8.20:22
 

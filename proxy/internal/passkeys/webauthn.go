@@ -256,7 +256,8 @@ func parseAuthenticatorData(raw []byte, ad *authenticatorData) error {
 		raw = raw[int(sz):]
 
 		var coseKey cbor.RawMessage
-		if err := cbor.Unmarshal(raw, &coseKey); err != nil {
+		var err error
+		if raw, err = cbor.UnmarshalFirst(raw, &coseKey); err != nil {
 			return err
 		}
 		ad.AttestedCredentials.COSEKey = Bytes(coseKey)

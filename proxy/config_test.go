@@ -101,10 +101,10 @@ func TestReadConfig(t *testing.T) {
 				ForwardRateLimit: 5,
 				Mode:             "TLS",
 				ClientAuth: &ClientAuth{
-					RootCAs: demoCert,
+					RootCAs: []string{demoCert},
 				},
 				ForwardServerName: "secure-internal.example.com",
-				ForwardRootCAs:    demoCert,
+				ForwardRootCAs:    []string{demoCert},
 				ForwardTimeout:    30 * time.Second,
 			},
 			{
@@ -117,7 +117,7 @@ func TestReadConfig(t *testing.T) {
 				ForwardRateLimit: 5,
 				Mode:             "TCP",
 				ClientAuth: &ClientAuth{
-					RootCAs: demoCert,
+					RootCAs: []string{demoCert},
 				},
 				ForwardTimeout: 30 * time.Second,
 			},

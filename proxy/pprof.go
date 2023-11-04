@@ -30,16 +30,6 @@ import (
 	"net/http/pprof"
 )
 
-func addPProfHandlers(h map[string]localHandler) {
-	h["/debug/pprof/"] = localHandler{handler: http.HandlerFunc(pprof.Index)}
-	h["/debug/pprof/allocs"] = localHandler{handler: http.HandlerFunc(pprof.Index)}
-	h["/debug/pprof/block"] = localHandler{handler: http.HandlerFunc(pprof.Index)}
-	h["/debug/pprof/goroutine"] = localHandler{handler: http.HandlerFunc(pprof.Index)}
-	h["/debug/pprof/heap"] = localHandler{handler: http.HandlerFunc(pprof.Index)}
-	h["/debug/pprof/mutex"] = localHandler{handler: http.HandlerFunc(pprof.Index)}
-	h["/debug/pprof/threadcreate"] = localHandler{handler: http.HandlerFunc(pprof.Index)}
-	h["/debug/pprof/cmdline"] = localHandler{handler: http.HandlerFunc(pprof.Cmdline)}
-	h["/debug/pprof/profile"] = localHandler{handler: http.HandlerFunc(pprof.Profile)}
-	h["/debug/pprof/symbol"] = localHandler{handler: http.HandlerFunc(pprof.Symbol)}
-	h["/debug/pprof/trace"] = localHandler{handler: http.HandlerFunc(pprof.Trace)}
+func addPProfHandlers(h *[]localHandler) {
+	*h = append(*h, localHandler{path: "/debug/pprof/", matchPrefix: true, handler: http.HandlerFunc(pprof.Index)})
 }

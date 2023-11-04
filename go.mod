@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/beevik/etree v1.2.0
-	github.com/c2FmZQ/storage v0.1.0
+	github.com/c2FmZQ/storage v0.1.1
 	github.com/fxamacker/cbor/v2 v2.5.0
 	github.com/go-test/deep v1.1.0
 	github.com/golang-jwt/jwt/v5 v5.0.0
@@ -13,6 +13,7 @@ require (
 	golang.org/x/sys v0.13.0
 	golang.org/x/time v0.3.0
 	gopkg.in/yaml.v3 v3.0.1
+	software.sslmate.com/src/go-pkcs12 v0.3.0
 )
 
 require (

@@ -23,14 +23,17 @@
  * SOFTWARE.
  */
 
-const self = window.location.pathname;
-
-function registerPasskey(redirectUrl) {
+function registerPasskey(redirectUrl, nonce) {
   if (!('PublicKeyCredential' in window)) {
     throw new Error('Browser doesn\'t support WebAuthn');
   }
 
-  fetch(self+'?get=AttestationOptions')
+  fetch('?get=AttestationOptions', {
+    method: 'POST',
+    headers: {
+      'x-csrf-check': 1,
+    },
+  })
   .then(resp => {
     if (resp.status !== 200) {
       throw resp.status;
@@ -56,10 +59,11 @@ function registerPasskey(redirectUrl) {
       attestationObject: Array.from(new Uint8Array(pkc.response.attestationObject)),
       transports: pkc.response.getTransports(),
     });
-    return fetch(self+'?get=AddKey', {
+    return fetch('?get=AddKey'+(nonce?'&nonce='+nonce:''), {
       method: 'POST',
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
+        'x-csrf-check': 1,
       },
       body: 'args=' + encodeURIComponent(v),
     });
@@ -86,11 +90,16 @@ function registerPasskey(redirectUrl) {
   });
 }
 
-function loginWithPasskey(redirectUrl) {
+function loginWithPasskey(redirectUrl, nonce) {
   if (!('PublicKeyCredential' in window)) {
     throw new Error('Browser doesn\'t support WebAuthn');
   }
-  fetch(self+'?get=AssertionOptions')
+  fetch('?get=AssertionOptions', {
+    method: 'POST',
+    headers: {
+      'x-csrf-check': 1,
+    },
+  })
   .then(resp => {
     if (resp.status !== 200) {
       throw resp.status;
@@ -112,10 +121,11 @@ function loginWithPasskey(redirectUrl) {
         signature: Array.from(new Uint8Array(pkc.response.signature)),
         userHandle: Array.from(new Uint8Array(pkc.response.userHandle)),
     });
-    return fetch(self+'?get=Check', {
+    return fetch('?get=Check&nonce='+nonce, {
       method: 'POST',
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
+        'x-csrf-check': 1,
       },
       credentials: 'same-origin',
       body: 'args=' + encodeURIComponent(v),
@@ -147,10 +157,11 @@ function deleteKey(id) {
   if (!window.confirm('Delete key ID ' + id + '?')) {
     return;
   }
-  fetch(self+'?get=DeleteKey', {
+  fetch('?get=DeleteKey', {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
+      'x-csrf-check': 1,
     },
       body: 'id=' + encodeURIComponent(id),
   })
@@ -174,8 +185,11 @@ function deleteKey(id) {
 
 
 function switchAccount(redirectUrl) {
-  fetch(self+'?get=Switch', {
+  fetch('?get=Switch', {
     method: 'POST',
+    headers: {
+      'x-csrf-check': 1,
+    },
   })
   .then(resp => {
     if (resp.status !== 200) {

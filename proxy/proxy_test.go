@@ -25,7 +25,10 @@ package proxy
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -41,6 +44,7 @@ import (
 	"github.com/c2FmZQ/storage/crypto"
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
@@ -63,11 +67,19 @@ func TestProxyBackends(t *testing.T) {
 			TLSAddr:  "localhost:0",
 			CacheDir: t.TempDir(),
 			MaxOpen:  100,
+			PKI: []*ConfigPKI{
+				{Name: "TEST CA"},
+			},
 		},
 		extCA,
 	)
 	if err := proxy.Start(ctx); err != nil {
 		t.Fatalf("proxy.Start: %v", err)
+	}
+
+	pkiCert, err := newPKICert(proxy.pkis["TEST CA"], "tls-pki-internal.example.com")
+	if err != nil {
+		t.Fatalf("newPKICert: %v", err)
 	}
 
 	// Backends without TLS.
@@ -84,9 +96,14 @@ func TestProxyBackends(t *testing.T) {
 	// Backends for HTTP and HTTPS.
 	be8 := newHTTPServer(t, ctx, "backend8", nil)
 	be9 := newHTTPServer(t, ctx, "backend9", intCA)
+	// Backend with PKI cert.
+	be10 := newTCPServer(t, ctx, "backend10", pkiCert)
 
 	cfg := &Config{
-		MaxOpen:           100,
+		MaxOpen: 100,
+		PKI: []*ConfigPKI{
+			{Name: "TEST CA"},
+		},
 		DefaultServerName: "http.example.com",
 		Backends: []*Backend{
 			// Plaintext backends.
@@ -109,7 +126,7 @@ func TestProxyBackends(t *testing.T) {
 					be3.listener.Addr().String(),
 				},
 				Mode:              "TLS",
-				ForwardRootCAs:    intCA.RootCAPEM(),
+				ForwardRootCAs:    []string{intCA.RootCAPEM()},
 				ForwardServerName: "other-internal.example.com",
 			},
 			// TLS backends, require clients to present a certificate.
@@ -121,10 +138,10 @@ func TestProxyBackends(t *testing.T) {
 					be4.listener.Addr().String(),
 				},
 				Mode:              "TLS",
-				ForwardRootCAs:    intCA.RootCAPEM(),
+				ForwardRootCAs:    []string{intCA.RootCAPEM()},
 				ForwardServerName: "secure-internal.example.com",
 				ClientAuth: &ClientAuth{
-					RootCAs: intCA.RootCAPEM(),
+					RootCAs: []string{intCA.RootCAPEM()},
 				},
 			},
 			// TLS backend with imap proto.
@@ -136,7 +153,7 @@ func TestProxyBackends(t *testing.T) {
 					be5.listener.Addr().String(),
 				},
 				Mode:              "TLS",
-				ForwardRootCAs:    intCA.RootCAPEM(),
+				ForwardRootCAs:    []string{intCA.RootCAPEM()},
 				ForwardServerName: "imap-internal.example.com",
 				ALPNProtos:        &[]string{"imap"},
 			},
@@ -149,7 +166,7 @@ func TestProxyBackends(t *testing.T) {
 					be6.listener.Addr().String(),
 				},
 				Mode:              "TLS",
-				ForwardRootCAs:    intCA.RootCAPEM(),
+				ForwardRootCAs:    []string{intCA.RootCAPEM()},
 				ForwardServerName: "noproto-internal.example.com",
 				ALPNProtos:        &[]string{},
 			},
@@ -182,11 +199,26 @@ func TestProxyBackends(t *testing.T) {
 					be9.String(),
 				},
 				Mode:              "HTTPS",
-				ForwardRootCAs:    intCA.RootCAPEM(),
+				ForwardRootCAs:    []string{intCA.RootCAPEM()},
 				ForwardServerName: "https-internal.example.com",
 				ClientAuth: &ClientAuth{
-					RootCAs:             intCA.RootCAPEM(),
+					RootCAs:             []string{intCA.RootCAPEM()},
 					AddClientCertHeader: []string{"cert", "dns", "subject", "hash"},
+				},
+			},
+			// TLS backend w/ PKI
+			{
+				ServerNames: []string{
+					"tls-pki.example.com",
+				},
+				Addresses: []string{
+					be10.listener.Addr().String(),
+				},
+				Mode:              "TLS",
+				ForwardRootCAs:    []string{"TEST CA"},
+				ForwardServerName: "tls-pki-internal.example.com",
+				ClientAuth: &ClientAuth{
+					RootCAs: []string{intCA.RootCAPEM()},
 				},
 			},
 			// HTTPS loop
@@ -198,7 +230,7 @@ func TestProxyBackends(t *testing.T) {
 					proxy.listener.Addr().String(),
 				},
 				Mode:              "HTTPS",
-				ForwardRootCAs:    extCA.RootCAPEM(),
+				ForwardRootCAs:    []string{extCA.RootCAPEM()},
 				ForwardServerName: "loop.example.com",
 			},
 		},
@@ -256,6 +288,7 @@ func TestProxyBackends(t *testing.T) {
 		{desc: "Hit backend7", host: "passthrough.example.com", want: "Hello from backend7\n"},
 		{desc: "Hit backend8", host: "http.example.com", want: "[backend8] /", http: true},
 		{desc: "Hit backend9", host: "https.example.com", want: "[backend9] /", http: true, certName: "client.example.com"},
+		{desc: "Hit backend10", host: "tls-pki.example.com", want: "Hello from backend10\n", certName: "client.example.com"},
 		{desc: "Hit loop", host: "loop.example.com", want: "508 Loop Detected", http: true},
 		{desc: "Hit default backend with IP address as host", host: "", want: "421 Misdirected Request", http: true},
 	} {
@@ -276,6 +309,17 @@ func TestProxyBackends(t *testing.T) {
 			t.Errorf("%s: Got %q, want %q", tc.desc, got, tc.want)
 		}
 	}
+
+	pc, err := x509.ParseCertificate(pkiCert.cert.Certificate[0])
+	if err != nil {
+		t.Fatalf("x509.ParseCertificate: %v", err)
+	}
+	if err := proxy.pkis["TEST CA"].RevokeCertificate(pc.SerialNumber, 0); err != nil {
+		t.Fatalf("RevokeCertificate: %v", err)
+	}
+	if got, err := get("tls-pki.example.com", "client.example.com", nil, false); got != "" {
+		t.Errorf("get with revoked cert should return nothing: %q, %v", got, err)
+	}
 }
 
 func TestAuthnAuthz(t *testing.T) {
@@ -295,6 +339,9 @@ func TestAuthnAuthz(t *testing.T) {
 		TLSAddr:  "localhost:0",
 		CacheDir: t.TempDir(),
 		MaxOpen:  100,
+		PKI: []*ConfigPKI{
+			{Name: "TEST CA"},
+		},
 		Backends: []*Backend{
 			{
 				ServerNames: []string{
@@ -302,7 +349,7 @@ func TestAuthnAuthz(t *testing.T) {
 				},
 				Mode: "CONSOLE",
 				ClientAuth: &ClientAuth{
-					RootCAs: intCA.RootCAPEM(),
+					RootCAs: []string{intCA.RootCAPEM()},
 				},
 			},
 			{
@@ -311,7 +358,7 @@ func TestAuthnAuthz(t *testing.T) {
 				},
 				Mode: "CONSOLE",
 				ClientAuth: &ClientAuth{
-					RootCAs: intCA.RootCAPEM(),
+					RootCAs: []string{intCA.RootCAPEM()},
 					ACL:     &[]string{},
 				},
 			},
@@ -321,10 +368,22 @@ func TestAuthnAuthz(t *testing.T) {
 				},
 				Mode: "CONSOLE",
 				ClientAuth: &ClientAuth{
-					RootCAs: intCA.RootCAPEM(),
+					RootCAs: []string{intCA.RootCAPEM()},
 					ACL: &[]string{
 						"CN=client1",
-						"CN=client2",
+						"DNS:client2",
+					},
+				},
+			},
+			{
+				ServerNames: []string{
+					"pkitest.example.com",
+				},
+				Mode: "CONSOLE",
+				ClientAuth: &ClientAuth{
+					RootCAs: []string{"TEST CA"},
+					ACL: &[]string{
+						"EMAIL:bob@example.com",
 					},
 				},
 			},
@@ -334,9 +393,35 @@ func TestAuthnAuthz(t *testing.T) {
 	if err := proxy.Start(ctx); err != nil {
 		t.Fatalf("proxy.Start: %v", err)
 	}
+	if got, want := len(proxy.pkis), 1; got != want {
+		t.Fatalf("len(pkis) = %d, want %d", got, want)
+	}
+
+	privKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey: %v", err)
+	}
+	rawCert, err := proxy.pkis["TEST CA"].IssueCertificate(&x509.CertificateRequest{
+		PublicKey:      &privKey.PublicKey,
+		EmailAddresses: []string{"bob@example.com"},
+	})
+	if err != nil {
+		t.Fatalf("IssueCertificate: %v", err)
+	}
+	pkiCert, err := x509.ParseCertificate(rawCert)
+	if err != nil {
+		t.Fatalf("x509.ParseCertificate: %v", err)
+	}
+	pkiTLSCert := tls.Certificate{
+		Certificate: [][]byte{rawCert},
+		PrivateKey:  privKey,
+	}
+
 	get := func(host, certName string) (string, error) {
 		var certs []tls.Certificate
-		if certName != "" {
+		if certName == "pki" {
+			certs = append(certs, pkiTLSCert)
+		} else if certName != "" {
 			c, err := intCA.GetCert(certName)
 			if err != nil {
 				t.Fatalf("intCA.GetCert: %v", err)
@@ -362,11 +447,13 @@ func TestAuthnAuthz(t *testing.T) {
 		{desc: "ACL, client1", host: "acl.example.com", certName: "client1", want: "HTTP/1.0 200 OK"},
 		{desc: "ACL, client2", host: "acl.example.com", certName: "client2", want: "HTTP/1.0 200 OK"},
 		{desc: "ACL, wrong cert", host: "acl.example.com", certName: "foo", expError: true},
-		{desc: "Check console1", host: "acl.example.com", certName: "client1", want: "allow [CN=client1] to acl.example.com"},
-		{desc: "Check console2", host: "acl.example.com", certName: "client1", want: "allow [CN=client2] to acl.example.com"},
-		{desc: "Check console3", host: "acl.example.com", certName: "client1", want: "allow [CN=foo] to noacl.example.com"},
-		{desc: "Check console4", host: "acl.example.com", certName: "client1", want: "deny [CN=foo] to acl.example.com"},
-		{desc: "Check console5", host: "acl.example.com", certName: "client1", want: "deny [CN=foo] to emptyacl.example.com"},
+		{desc: "PKI client", host: "pkitest.example.com", certName: "pki", want: "HTTP/1.0 200 OK"},
+		{desc: "Check console1", host: "acl.example.com", certName: "client1", want: "allow [SUBJECT:CN=client1;DNS:client1] to acl.example.com"},
+		{desc: "Check console2", host: "acl.example.com", certName: "client1", want: "allow [SUBJECT:CN=client2;DNS:client2] to acl.example.com"},
+		{desc: "Check console3", host: "acl.example.com", certName: "client1", want: "allow [SUBJECT:CN=foo;DNS:foo] to noacl.example.com"},
+		{desc: "Check console4", host: "acl.example.com", certName: "client1", want: "deny [SUBJECT:CN=foo;DNS:foo] to acl.example.com"},
+		{desc: "Check console5", host: "acl.example.com", certName: "client1", want: "deny [SUBJECT:CN=foo;DNS:foo] to emptyacl.example.com"},
+		{desc: "Check console6", host: "acl.example.com", certName: "client1", want: "allow [EMAIL:bob@example.com] to pkitest.example.com"},
 	} {
 		got, err := get(tc.host, tc.certName)
 		if tc.expError != (err != nil) {
@@ -379,6 +466,13 @@ func TestAuthnAuthz(t *testing.T) {
 		if !strings.Contains(got, tc.want) {
 			t.Errorf("%s: Got %q, want %q", tc.desc, got, tc.want)
 		}
+	}
+
+	if err := proxy.pkis["TEST CA"].RevokeCertificate(pkiCert.SerialNumber, 0); err != nil {
+		t.Fatalf("RevokeCertificate: %v", err)
+	}
+	if _, err := get("pkitest.example.com", "pki"); err == nil {
+		t.Error("get with revoked cert should have failed")
 	}
 }
 
@@ -422,7 +516,7 @@ func TestConcurrency(t *testing.T) {
 						be2.String(),
 					},
 					ForwardRateLimit:  1000,
-					ForwardRootCAs:    ca.RootCAPEM(),
+					ForwardRootCAs:    []string{ca.RootCAPEM()},
 					ForwardServerName: "https-server",
 				},
 				{
@@ -446,7 +540,7 @@ func TestConcurrency(t *testing.T) {
 						be4.String(),
 					},
 					ForwardRateLimit:  1000,
-					ForwardRootCAs:    ca.RootCAPEM(),
+					ForwardRootCAs:    []string{ca.RootCAPEM()},
 					ForwardServerName: "tls-server",
 				},
 				{
@@ -688,7 +782,11 @@ func newHTTPServer(t *testing.T, ctx context.Context, name string, ca *certmanag
 	return l.Addr()
 }
 
-func newTCPServer(t *testing.T, ctx context.Context, name string, ca *certmanager.CertManager) *tcpServer {
+type tcProvider interface {
+	TLSConfig() *tls.Config
+}
+
+func newTCPServer(t *testing.T, ctx context.Context, name string, ca tcProvider) *tcpServer {
 	var l net.Listener
 	var err error
 	if ca == nil {
@@ -729,4 +827,35 @@ func newTCPServer(t *testing.T, ctx context.Context, name string, ca *certmanage
 type tcpServer struct {
 	t        *testing.T
 	listener net.Listener
+}
+
+type pkiCert struct {
+	cert tls.Certificate
+}
+
+func newPKICert(m *pki.PKIManager, name string) (*pkiCert, error) {
+	privKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, err
+	}
+	rawCert, err := m.IssueCertificate(&x509.CertificateRequest{
+		PublicKey: &privKey.PublicKey,
+		DNSNames:  []string{name},
+	})
+	if err != nil {
+		return nil, err
+	}
+	c := &pkiCert{
+		cert: tls.Certificate{
+			Certificate: [][]byte{rawCert},
+			PrivateKey:  privKey,
+		},
+	}
+	return c, nil
+}
+
+func (c *pkiCert) TLSConfig() *tls.Config {
+	return &tls.Config{
+		Certificates: []tls.Certificate{c.cert},
+	}
 }
