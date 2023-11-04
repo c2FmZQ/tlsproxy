@@ -295,7 +295,6 @@ func (m *PKIManager) initCA() (retErr error) {
 			SerialNumber: bytesToHex(sn.Bytes()),
 			Raw:          raw,
 		}
-		// Keep most recent first.
 		m.db.CACert = c
 		m.db.IssuedCerts = append(m.db.IssuedCerts, c)
 		changed = true
