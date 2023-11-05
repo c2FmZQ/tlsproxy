@@ -251,13 +251,14 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		issuer := "https://" + host + "/"
 		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer)
 		oidcCfg := oidc.Config{
-			DiscoveryURL:  pp.DiscoveryURL,
-			AuthEndpoint:  pp.AuthEndpoint,
-			Scopes:        pp.Scopes,
-			TokenEndpoint: pp.TokenEndpoint,
-			RedirectURL:   pp.RedirectURL,
-			ClientID:      pp.ClientID,
-			ClientSecret:  pp.ClientSecret,
+			DiscoveryURL:     pp.DiscoveryURL,
+			AuthEndpoint:     pp.AuthEndpoint,
+			Scopes:           pp.Scopes,
+			TokenEndpoint:    pp.TokenEndpoint,
+			UserinfoEndpoint: pp.UserinfoEndpoint,
+			RedirectURL:      pp.RedirectURL,
+			ClientID:         pp.ClientID,
+			ClientSecret:     pp.ClientSecret,
 		}
 		provider, err := oidc.New(oidcCfg, er, cm)
 		if err != nil {

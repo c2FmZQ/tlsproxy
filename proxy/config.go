@@ -315,6 +315,10 @@ type ConfigOIDC struct {
 	// TokenEndpoint is the token endpoint. It must be set only if
 	// DiscoveryURL is not set.
 	TokenEndpoint string `yaml:"tokenEndpoint,omitempty"`
+	// UserinfoEndpoint is the userinfo endpoint. It must be set only if
+	// DiscoveryURL is not set and the token endpoint doesn't return an
+	// ID token.
+	UserinfoEndpoint string `yaml:"userinfoEndpoint,omitempty"`
 	// RedirectURL is the OAUTH2 redirect URL. It must be managed by the
 	// proxy.
 	RedirectURL string `yaml:"redirectUrl"`
