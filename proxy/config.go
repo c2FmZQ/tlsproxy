@@ -117,6 +117,20 @@ type Config struct {
 	// PKI is a list of locally hosted and managed Certificate Authorities
 	// that can be used to authenticate TLS clients and backend servers.
 	PKI []*ConfigPKI `yaml:"pki,omitempty"`
+	// BWLimits is the list of named bandwidth limit groups.
+	// Each backend can be associated with one group. The group's limits
+	// are shared between all the backends associated with it.
+	BWLimits []*BWLimit `yaml:"bwLimits,omitempty"`
+}
+
+// BWLimit is a named bandwidth limit configuration.
+type BWLimit struct {
+	// Name is the name of the group.
+	Name string `yaml:"name"`
+	// Ingress is the ingress limit, in bytes per second.
+	Ingress float64 `yaml:"ingress"`
+	// Egress is the engress limit, in bytes per second.
+	Egress float64 `yaml:"egress"`
 }
 
 // Backend encapsulates the data of one backend.
@@ -190,6 +204,10 @@ type Backend struct {
 	// When more than one address are specified, requests are distributed
 	// using a simple round robin.
 	Addresses []string `yaml:"addresses,omitempty"`
+	// BWLimit is the name of the bandwidth limit policy to apply to this
+	// backend. All backends using the same policy are subject to common
+	// limits.
+	BWLimit string `yaml:"bwLimit,omitempty"`
 	// InsecureSkipVerify disabled the verification of the backend server's
 	// TLS certificate. See https://pkg.go.dev/crypto/tls#Config
 	InsecureSkipVerify bool `yaml:"insecureSkipVerify,omitempty"`
@@ -253,7 +271,8 @@ type Backend struct {
 	tlsConfig      *tls.Config
 	forwardRootCAs *x509.CertPool
 	pkiMap         map[string]*pki.PKIManager
-	limiter        *rate.Limiter
+	bwLimit        *bwLimit
+	connLimit      *rate.Limiter
 
 	allowIPs *[]*net.IPNet
 	denyIPs  *[]*net.IPNet
@@ -724,7 +743,7 @@ func (cfg *Config) Check() error {
 		if be.ForwardRateLimit == 0 {
 			be.ForwardRateLimit = 5
 		}
-		be.limiter = rate.NewLimiter(rate.Limit(be.ForwardRateLimit), be.ForwardRateLimit)
+		be.connLimit = rate.NewLimiter(rate.Limit(be.ForwardRateLimit), be.ForwardRateLimit)
 	}
 	return os.MkdirAll(cfg.CacheDir, 0o700)
 }

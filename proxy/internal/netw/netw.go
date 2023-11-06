@@ -26,10 +26,13 @@
 package netw
 
 import (
+	"context"
 	"io"
 	"net"
 	"sync"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 // Listen creates a net listener that is instrumented to store per connection
@@ -52,8 +55,11 @@ func (l listener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Conn{
 		Conn:        c,
+		ctx:         ctx,
+		cancel:      cancel,
 		annotations: make(map[string]any),
 	}, nil
 }
@@ -61,6 +67,11 @@ func (l listener) Accept() (net.Conn, error) {
 // Conn is a wrapper around net.Conn that stores annotations and metrics.
 type Conn struct {
 	net.Conn
+
+	ctx            context.Context
+	cancel         func()
+	ingressLimiter *rate.Limiter
+	egressLimiter  *rate.Limiter
 
 	mu            sync.Mutex
 	onClose       func()
@@ -96,6 +107,13 @@ func (c *Conn) Annotation(key string, defaultValue any) any {
 		return v
 	}
 	return defaultValue
+}
+
+// SetLimiter sets the rate limiters for this connection.
+// It must be called before the first Read() or Write(). Peek() is OK.
+func (c *Conn) SetLimiters(ingress, egress *rate.Limiter) {
+	c.ingressLimiter = ingress
+	c.egressLimiter = egress
 }
 
 // BytesSent returns the number of bytes sent on this connection so far.
@@ -141,6 +159,11 @@ func (c *Conn) Peek(b []byte) (int, error) {
 }
 
 func (c *Conn) Read(b []byte) (int, error) {
+	if l := c.ingressLimiter; l != nil {
+		if err := l.WaitN(c.ctx, len(b)); err != nil {
+			return 0, err
+		}
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.peekBuf) > 0 {
@@ -157,6 +180,11 @@ func (c *Conn) Read(b []byte) (int, error) {
 }
 
 func (c *Conn) Write(b []byte) (int, error) {
+	if l := c.egressLimiter; l != nil {
+		if err := l.WaitN(c.ctx, len(b)); err != nil {
+			return 0, err
+		}
+	}
 	n, err := c.Conn.Write(b)
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -169,6 +197,7 @@ func (c *Conn) Close() error {
 	f := c.onClose
 	c.onClose = nil
 	c.mu.Unlock()
+	c.cancel()
 	if f != nil {
 		f()
 	}
