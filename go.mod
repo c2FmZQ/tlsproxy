@@ -10,10 +10,10 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.0.0
 	github.com/russellhaering/goxmldsig v1.4.0
 	golang.org/x/crypto v0.14.0
-	golang.org/x/sys v0.13.0
-	golang.org/x/time v0.3.0
+	golang.org/x/sys v0.14.0
+	golang.org/x/time v0.4.0
 	gopkg.in/yaml.v3 v3.0.1
-	software.sslmate.com/src/go-pkcs12 v0.3.0
+	software.sslmate.com/src/go-pkcs12 v0.4.0
 )
 
 require (
@@ -21,5 +21,5 @@ require (
 	github.com/stretchr/testify v1.8.4 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/net v0.17.0 // indirect
-	golang.org/x/text v0.13.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
 )
