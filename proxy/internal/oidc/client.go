@@ -54,6 +54,10 @@ type Config struct {
 	// TokenEndpoint is the token endpoint. It must be set only if
 	// DiscoveryURL is not set.
 	TokenEndpoint string
+	// UserinfoEndpoint is the userinfo endpoint. It must be set only if
+	// DiscoveryURL is not set and the token endpoint doesn't return an
+	// ID token.
+	UserinfoEndpoint string
 	// RedirectURL is the OAUTH2 redirect URL. It must be managed by the
 	// proxy.
 	RedirectURL string
@@ -112,14 +116,16 @@ func New(cfg Config, er EventRecorder, cm CookieManager) (*ProviderClient, error
 			return nil, fmt.Errorf("http get(%s): %s", cfg.DiscoveryURL, resp.Status)
 		}
 		var disc struct {
-			AuthEndpoint  string `json:"authorization_endpoint"`
-			TokenEndpoint string `json:"token_endpoint"`
+			AuthEndpoint     string `json:"authorization_endpoint"`
+			TokenEndpoint    string `json:"token_endpoint"`
+			UserinfoEndpoint string `json:"userinfo_endpoint"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&disc); err != nil {
 			return nil, fmt.Errorf("discovery document: %v", err)
 		}
 		p.cfg.AuthEndpoint = disc.AuthEndpoint
 		p.cfg.TokenEndpoint = disc.TokenEndpoint
+		p.cfg.UserinfoEndpoint = disc.UserinfoEndpoint
 	}
 	if _, err := url.Parse(p.cfg.AuthEndpoint); err != nil {
 		return nil, fmt.Errorf("AuthEndpoint: %v", err)
@@ -187,7 +193,8 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 			delete(p.states, k)
 		}
 	}
-	state, ok := p.states[req.Form.Get("state")]
+	nonce := req.Form.Get("state")
+	state, ok := p.states[nonce]
 	invalid := !ok || state.Seen
 	if ok {
 		state.Seen = true
@@ -209,14 +216,23 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 	form.Add("grant_type", "authorization_code")
 	form.Add("code_verifier", state.CodeVerifier)
 
-	resp, err := http.PostForm(p.cfg.TokenEndpoint, form)
+	req, err := http.NewRequest(http.MethodPost, p.cfg.TokenEndpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("content-type", "application/x-www-form-urlencoded")
+	req.Header.Set("accept", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
 	var data struct {
-		IDToken string `json:"id_token"`
+		AccessToken string `json:"access_token"`
+		IDToken     string `json:"id_token"`
+		TokenType   string `json:"token_type"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -231,21 +247,55 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 		MiddleName    string `json:"middle_name"`
 		FamilyName    string `json:"family_name"`
 		Picture       string `json:"picture"`
+		AvatarURL     string `json:"avatar_url"` // github
+		Login         string `json:"login"`      // github
 		jwt.RegisteredClaims
 	}
-	// We received the JWT directly from the identity provider. So, we
-	// don't need to validate it.
-	if _, _, err := (&jwt.Parser{}).ParseUnverified(data.IDToken, &claims); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if data.IDToken != "" {
+		// We received the JWT directly from the identity provider. So, we
+		// don't need to validate it.
+		if _, _, err := (&jwt.Parser{}).ParseUnverified(data.IDToken, &claims); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		p.mu.Lock()
+		state, ok = p.states[claims.Nonce]
+		delete(p.states, claims.Nonce)
+		p.mu.Unlock()
+		if !ok {
+			p.er.Record("invalid nonce")
+			http.Error(w, "timeout", http.StatusForbidden)
+			return
+		}
+	} else if p.cfg.UserinfoEndpoint != "" && (data.TokenType == "" || strings.ToLower(data.TokenType) == "bearer") {
+		p.mu.Lock()
+		delete(p.states, nonce)
+		p.mu.Unlock()
+		req, err := http.NewRequest(http.MethodGet, p.cfg.UserinfoEndpoint, nil)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		req.Header.Set("authorization", "Bearer "+data.AccessToken)
+		req.Header.Set("accept", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+		claims.Issuer = p.cfg.UserinfoEndpoint
+		claims.Nonce = nonce
+		if err := json.NewDecoder(resp.Body).Decode(&claims); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	} else {
+		http.Error(w, "no user info", http.StatusInternalServerError)
 		return
 	}
-	p.mu.Lock()
-	state, ok = p.states[claims.Nonce]
-	delete(p.states, claims.Nonce)
-	p.mu.Unlock()
-	if !ok {
-		p.er.Record("invalid nonce")
-		http.Error(w, "timeout", http.StatusForbidden)
+	if claims.Email == "" {
+		http.Error(w, "no email", http.StatusInternalServerError)
 		return
 	}
 	if claims.EmailVerified != nil && !*claims.EmailVerified {
@@ -270,6 +320,8 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 	}
 	if claims.Picture != "" {
 		extraClaims["picture"] = claims.Picture
+	} else if claims.AvatarURL != "" {
+		extraClaims["picture"] = claims.AvatarURL
 	}
 	if err := p.cm.SetAuthTokenCookie(w, claims.Email, claims.Nonce, state.Host, extraClaims); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

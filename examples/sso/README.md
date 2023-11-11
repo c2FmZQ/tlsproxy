@@ -2,7 +2,8 @@
 
 TLSPROXY can be configured to authenticate users with OpenID Connect and SAML identity providers. Another option is to use Passkeys for password-less user authentication. To configure Passkeys, users still need to authenticate once with OpenID Connect or SAML, but then authentication is done exclusively with Passkeys.
 
-OpenID Connect has been tested with Google and Facebook as identity providers.
+OpenID Connect has been tested with Google, Facebook, and GitHub as identity providers.
+
 SAML has been tested with Google Workspace.
 
 ## Google OpenID Connect
@@ -63,6 +64,43 @@ backends:
   - 192.168.1.1:80
   sso:
     provider: facebook
+    acl:
+      - alice@EXAMPLE.COM
+      - bob@EXAMPLE.COM
+      - "@EXAMPLE.COM"   <--- allows anyone from EXAMPLE.COM
+```
+
+## GitHub OAuth2
+
+GitHub doesn't implement OpenID Connect, but their OAuth2 workflow can be used with TLSPROXY to retrieve the user's identity.
+
+https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps
+
+```yaml
+oidc:
+- name: github
+  authorizationEndpoint: "https://github.com/login/oauth/authorize"
+  tokenEndpoint: "https://github.com/login/oauth/access_token"
+  userinfoEndpoint: "https://api.github.com/user"
+  scopes:
+  - "user:email"
+  redirectUrl: "https://login.EXAMPLE.COM/oauth2/github"
+  clientId: "<YOUR CLIENT ID>"
+  clientSecret: "<YOUR CLIENT SECRET>"
+  domain: EXAMPLE.COM
+
+backends:
+- serverNames:
+  - login.EXAMPLE.COM
+  mode: https
+
+- serverNames:
+  - www.EXAMPLE.COM
+  mode: http
+  addresses:
+  - 192.168.1.1:80
+  sso:
+    provider: github
     acl:
       - alice@EXAMPLE.COM
       - bob@EXAMPLE.COM
