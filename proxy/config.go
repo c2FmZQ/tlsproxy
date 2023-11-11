@@ -624,8 +624,19 @@ func (cfg *Config) Check() error {
 		}
 	}
 	pkis := make(map[string]bool)
-	for _, i := range cfg.PKI {
-		pkis[i.Name] = true
+	for i, p := range cfg.PKI {
+		if pkis[p.Name] {
+			return fmt.Errorf("pki[%d].Name: duplicate name %q", i, p.Name)
+		}
+		pkis[p.Name] = true
+	}
+
+	bwLimits := make(map[string]bool)
+	for i, l := range cfg.BWLimits {
+		if bwLimits[l.Name] {
+			return fmt.Errorf("bwLimit[%d].Name: duplicate name %q", i, l.Name)
+		}
+		bwLimits[l.Name] = true
 	}
 
 	serverNames := make(map[string]bool)
@@ -659,6 +670,9 @@ func (cfg *Config) Check() error {
 				return fmt.Errorf("backend[%d].ServerNames: duplicate server name %q", i, sn)
 			}
 			serverNames[sn] = true
+		}
+		if n := be.BWLimit; n != "" && !bwLimits[n] {
+			return fmt.Errorf("backend[%d].BWLimit: undefined name %q", i, n)
 		}
 		if be.ClientAuth != nil {
 			pool := x509.NewCertPool()
