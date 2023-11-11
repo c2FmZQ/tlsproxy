@@ -24,6 +24,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -39,6 +40,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/storage/crypto"
@@ -614,6 +616,110 @@ func TestConcurrency(t *testing.T) {
 	wg.Wait()
 }
 
+func TestBandwidthLimit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ca, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	be := newHTTPServer(t, ctx, "server", nil)
+
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: "localhost:0",
+			TLSAddr:  "localhost:0",
+			CacheDir: t.TempDir(),
+			MaxOpen:  2000,
+			BWLimits: []*BWLimit{
+				{
+					Name:    "slowingress",
+					Ingress: 100000,
+					Egress:  10000000,
+				},
+				{
+					Name:    "slowegress",
+					Ingress: 10000000,
+					Egress:  100000,
+				},
+			},
+			Backends: []*Backend{
+				{
+					ServerNames: []string{
+						"slowingress.example.com",
+					},
+					Mode: "HTTP",
+					Addresses: []string{
+						be.String(),
+					},
+					BWLimit:          "slowingress",
+					ForwardRateLimit: 1000,
+				},
+				{
+					ServerNames: []string{
+						"slowegress.example.com",
+					},
+					Mode: "HTTP",
+					Addresses: []string{
+						be.String(),
+					},
+					BWLimit:          "slowegress",
+					ForwardRateLimit: 1000,
+				},
+			},
+		},
+		ca,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+
+	get := func(host string) time.Duration {
+		start := time.Now()
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = &tls.Config{
+			RootCAs:    ca.RootCACertPool(),
+			ServerName: host,
+		}
+		client := http.Client{
+			Transport: transport,
+		}
+		req := &http.Request{
+			Method: "POST",
+			URL: &url.URL{
+				Scheme: "https",
+				Host:   proxy.listener.Addr().String(),
+				Path:   "/",
+			},
+			Body: io.NopCloser(bytes.NewReader(make([]byte, 300000))),
+			Host: host,
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Errorf("[%s] get failed: %v", host, err)
+			return 0
+		}
+		if _, err := io.ReadAll(resp.Body); err != nil {
+			t.Errorf("[%s] body read: %v", host, err)
+		}
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("[%s] body close: %v", host, err)
+		}
+		if resp.StatusCode != 200 {
+			t.Errorf("[%s] Status: %s", host, resp.Status)
+			return 0
+		}
+		return time.Since(start)
+	}
+	if d := get("slowingress.example.com"); d < time.Second {
+		t.Errorf("[ingress] d = %s < 1s", d)
+	}
+	if d := get("slowegress.example.com"); d > time.Second {
+		t.Errorf("[egress] d = %s > 1s", d)
+	}
+}
+
 func TestCheckIP(t *testing.T) {
 	cfg := &Config{
 		HTTPAddr: "localhost:0",
@@ -720,6 +826,7 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 		connections:  make(map[connKey]*netw.Conn),
 		store:        store,
 		tokenManager: tm,
+		bwLimits:     make(map[string]*bwLimit),
 	}
 	p.Reconfigure(cfg)
 	return p
