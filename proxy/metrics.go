@@ -129,7 +129,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	sort.Strings(serverNames)
 	fmt.Fprintln(&buf, "Backend metrics:")
 	fmt.Fprintln(&buf)
-	fmt.Fprintf(&buf, "  %*s %12s %12s %12s\n", -maxLen, "Server", "Count", "Sent", "Recv")
+	fmt.Fprintf(&buf, "  %*s %12s %12s %12s\n", -maxLen, "Server", "Count", "Egress", "Ingress")
 	for _, s := range serverNames {
 		fmt.Fprintf(&buf, "  %*s %12d %12d %12d\n", -maxLen, s, totals[s].numConnections, totals[s].numBytesSent, totals[s].numBytesReceived)
 	}

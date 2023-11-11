@@ -53,6 +53,7 @@ import (
 	"github.com/c2FmZQ/storage/crypto"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
+	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
@@ -102,6 +103,7 @@ type Proxy struct {
 	backends      map[string]*Backend
 	connections   map[connKey]*netw.Conn
 	pkis          map[string]*pki.PKIManager
+	bwLimits      map[string]*bwLimit
 
 	metrics   map[string]*backendMetrics
 	startTime time.Time
@@ -113,6 +115,11 @@ type Proxy struct {
 type connKey struct {
 	dst net.Addr
 	src net.Addr
+}
+
+type bwLimit struct {
+	ingress *rate.Limiter
+	egress  *rate.Limiter
 }
 
 type backendMetrics struct {
@@ -169,6 +176,7 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 		tokenManager: tm,
 		connections:  make(map[connKey]*netw.Conn),
 		pkis:         make(map[string]*pki.PKIManager),
+		bwLimits:     make(map[string]*bwLimit),
 	}
 	if err := p.Reconfigure(cfg); err != nil {
 		return nil, err
@@ -212,6 +220,7 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 		store:        store,
 		tokenManager: tm,
 		pkis:         make(map[string]*pki.PKIManager),
+		bwLimits:     make(map[string]*bwLimit),
 	}
 	if err := p.Reconfigure(cfg); err != nil {
 		return nil, err
@@ -342,6 +351,22 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		pkis[pp.Name] = m
 	}
 
+	for _, bwl := range cfg.BWLimits {
+		const minBurst = 1 << 17 // 128 KB
+		name := strings.ToLower(bwl.Name)
+		if l, ok := p.bwLimits[name]; ok {
+			l.ingress.SetLimit(rate.Limit(bwl.Ingress))
+			l.ingress.SetBurst(int(max(bwl.Ingress, minBurst)))
+			l.egress.SetLimit(rate.Limit(bwl.Egress))
+			l.egress.SetBurst(int(max(bwl.Egress, minBurst)))
+			continue
+		}
+		p.bwLimits[name] = &bwLimit{
+			ingress: rate.NewLimiter(rate.Limit(bwl.Ingress), int(max(bwl.Ingress, minBurst))),
+			egress:  rate.NewLimiter(rate.Limit(bwl.Egress), int(max(bwl.Egress, minBurst))),
+		}
+	}
+
 	backends := make(map[string]*Backend, len(cfg.Backends))
 	for _, be := range cfg.Backends {
 		be.recordEvent = p.recordEvent
@@ -349,6 +374,9 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 
 		for _, sn := range be.ServerNames {
 			backends[sn] = be
+		}
+		if l, ok := p.bwLimits[be.BWLimit]; ok {
+			be.bwLimit = l
 		}
 		if be.SSO != nil {
 			idp, ok := identityProviders[be.SSO.Provider]
@@ -841,6 +869,9 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		return
 	}
 	conn.SetAnnotation(backendKey, be)
+	if l := be.bwLimit; l != nil {
+		conn.SetLimiters(l.ingress, l.egress)
+	}
 	be.incInFlight(1)
 	switch {
 	case be.Mode == ModeTLSPassthrough:
@@ -950,7 +981,7 @@ func (p *Proxy) handleHTTPConnection(conn *tls.Conn) {
 	}
 	serverName := connServerName(conn)
 	be := connBackend(conn)
-	if err := be.limiter.Wait(p.ctx); err != nil {
+	if err := be.connLimit.Wait(p.ctx); err != nil {
 		p.recordEvent(err.Error())
 		log.Printf("ERR [-] %s ➔  %q Wait: %v", conn.RemoteAddr(), serverName, err)
 		conn.Close()
@@ -979,7 +1010,7 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 	}
 	serverName := connServerName(extConn)
 	be := connBackend(extConn)
-	if err := be.limiter.Wait(p.ctx); err != nil {
+	if err := be.connLimit.Wait(p.ctx); err != nil {
 		p.recordEvent(err.Error())
 		log.Printf("ERR [-] %s ➔  %q Wait: %v", extConn.RemoteAddr(), serverName, err)
 		return
@@ -1020,7 +1051,7 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
 	serverName := connServerName(extConn)
 	be := connBackend(extConn)
-	if err := be.limiter.Wait(p.ctx); err != nil {
+	if err := be.connLimit.Wait(p.ctx); err != nil {
 		p.recordEvent(err.Error())
 		log.Printf("ERR [-] %s ➔  %q Wait: %v", extConn.RemoteAddr(), serverName, err)
 		sendInternalError(extConn)
