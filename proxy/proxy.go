@@ -38,6 +38,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -351,16 +352,18 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	}
 
 	for _, bwl := range cfg.BWLimits {
-		const burst = 1 << 17 // 128 KB
+		const minBurst = 1 << 17 // 128 KB
 		name := strings.ToLower(bwl.Name)
 		if l, ok := p.bwLimits[name]; ok {
 			l.ingress.SetLimit(rate.Limit(bwl.Ingress))
+			l.ingress.SetBurst(int(math.Max(bwl.Ingress, minBurst)))
 			l.egress.SetLimit(rate.Limit(bwl.Egress))
+			l.egress.SetBurst(int(math.Max(bwl.Egress, minBurst)))
 			continue
 		}
 		p.bwLimits[name] = &bwLimit{
-			ingress: rate.NewLimiter(rate.Limit(bwl.Ingress), burst),
-			egress:  rate.NewLimiter(rate.Limit(bwl.Egress), burst),
+			ingress: rate.NewLimiter(rate.Limit(bwl.Ingress), int(math.Max(bwl.Ingress, minBurst))),
+			egress:  rate.NewLimiter(rate.Limit(bwl.Egress), int(math.Max(bwl.Egress, minBurst))),
 		}
 	}
 
