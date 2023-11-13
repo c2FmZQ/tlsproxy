@@ -87,10 +87,9 @@ func (be *Backend) userAuthentication(next http.Handler) http.Handler {
 				return
 			}
 			if claims != nil {
-				sub, err := claims.GetSubject()
-				if err == nil && sub != "" {
+				if email, ok := claims["email"].(string); ok && email != "" {
 					if be.SSO.SetUserIDHeader {
-						req.Header.Set(xTLSProxyUserIDHeader, sub)
+						req.Header.Set(xTLSProxyUserIDHeader, email)
 					}
 					req = req.WithContext(context.WithValue(req.Context(), authCtxKey, claims))
 				}
@@ -100,22 +99,24 @@ func (be *Backend) userAuthentication(next http.Handler) http.Handler {
 	})
 }
 
-func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.Claims, bool) {
+func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.MapClaims, bool) {
 	// If a valid ID Token is in the authorization header, use it and
 	// ignore the cookies.
 	if tok, err := be.SSO.cm.ValidateAuthorizationHeader(req); err == nil {
-		return tok.Claims, true
+		return tok.Claims.(jwt.MapClaims), true
 	}
 
 	authToken, err := be.SSO.cm.ValidateAuthTokenCookie(req)
 	if err != nil {
 		return nil, true
 	}
-	sub, err := authToken.Claims.GetSubject()
-	if err != nil || sub == "" {
+	authClaims, ok := authToken.Claims.(jwt.MapClaims)
+	if !ok {
 		return nil, true
 	}
-	authClaims := authToken.Claims
+	if email, ok := authClaims["email"].(string); !ok || email == "" {
+		return nil, true
+	}
 
 	if !be.SSO.GenerateIDTokens {
 		return authClaims, true
@@ -225,9 +226,9 @@ func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
 }
 
 func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Request) {
-	var subject string
+	var email string
 	if claims := claimsFromCtx(req.Context()); claims != nil {
-		subject, _ = claims.GetSubject()
+		email, _ = claims["email"].(string)
 	}
 	token, url, err := be.makeTokenForURL(req)
 	if err != nil {
@@ -236,12 +237,12 @@ func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Reques
 	}
 
 	data := struct {
-		Subject    string
+		Email      string
 		URL        string
 		DisplayURL string
 		Token      string
 	}{
-		Subject:    subject,
+		Email:      email,
 		URL:        url,
 		DisplayURL: url,
 		Token:      token,
@@ -280,19 +281,19 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 		be.SSO.p.RequestLogin(w, req, u.String())
 		return false
 	}
-	userID, _ := claims.GetSubject()
+	userID, _ := claims["email"].(string)
 	host := req.Host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
 	_, userDomain, _ := strings.Cut(userID, "@")
 	if be.SSO.ACL != nil && !slices.Contains(*be.SSO.ACL, userID) && !slices.Contains(*be.SSO.ACL, "@"+userDomain) {
-		be.recordEvent(fmt.Sprintf("deny %s to %s", userID, host))
+		be.recordEvent(fmt.Sprintf("deny SSO %s to %s", userID, host))
 		log.Printf("REQ %s ➔ %s %s ➔ status:%d (SSO) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden, userAgent(req))
 		be.servePermissionDenied(w, req)
 		return false
 	}
-	be.recordEvent(fmt.Sprintf("allow %s to %s", userID, host))
+	be.recordEvent(fmt.Sprintf("allow SSO %s to %s", userID, host))
 	return true
 }
 

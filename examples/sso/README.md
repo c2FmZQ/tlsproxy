@@ -2,7 +2,7 @@
 
 TLSPROXY can be configured to authenticate users with OpenID Connect and SAML identity providers. Another option is to use Passkeys for password-less user authentication. To configure Passkeys, users still need to authenticate once with OpenID Connect or SAML, but then authentication is done exclusively with Passkeys.
 
-OpenID Connect has been tested with Google, Facebook, and GitHub as identity providers.
+OpenID Connect has been tested with Google, Facebook, SimpleLogin, and GitHub as identity providers.
 
 SAML has been tested with Google Workspace.
 
@@ -64,6 +64,38 @@ backends:
   - 192.168.1.1:80
   sso:
     provider: facebook
+    acl:
+      - alice@EXAMPLE.COM
+      - bob@EXAMPLE.COM
+      - "@EXAMPLE.COM"   <--- allows anyone from EXAMPLE.COM
+```
+
+## SimpleLogin OpenID Connect (SIWSL)
+
+https://simplelogin.io/docs/siwsl/app/
+
+```yaml
+oidc:
+- name: siwsl
+  authorizationEndpoint: "https://app.simplelogin.io/oauth2/authorize"
+  tokenEndpoint: "https://app.simplelogin.io/oauth2/token"
+  redirectUrl: "https://login.EXAMPLE.COM/oidc/siwsl"
+  clientId: "<YOUR APP ID>"
+  clientSecret: "<YOUR APP SECRET>"
+  domain: EXAMPLE.COM
+
+backends:
+- serverNames:
+  - login.EXAMPLE.COM
+  mode: https
+
+- serverNames:
+  - www.EXAMPLE.COM
+  mode: http
+  addresses:
+  - 192.168.1.1:80
+  sso:
+    provider: siwsl
     acl:
       - alice@EXAMPLE.COM
       - bob@EXAMPLE.COM

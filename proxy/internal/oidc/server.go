@@ -276,7 +276,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	sc := "openid"
 	scopes := strings.Split(req.Form.Get("scope"), " ")
 	if slices.Contains(scopes, "email") {
-		claims["email"] = claims["sub"]
+		claims["email"] = userClaims["email"]
 		claims["email_verified"] = true
 		sc += " email"
 	}

@@ -50,7 +50,7 @@ func TestCookies(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 
-	if err := cm.SetAuthTokenCookie(recorder, "test@example.com", "session123", "example.com", nil); err != nil {
+	if err := cm.SetAuthTokenCookie(recorder, "test@example.com", "test@example.com", "session123", "example.com", nil); err != nil {
 		t.Fatalf("SetAuthTokenCookie: %v", err)
 	}
 

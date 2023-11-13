@@ -31,6 +31,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	yaml "gopkg.in/yaml.v3"
@@ -128,7 +129,6 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	}
 	sort.Strings(serverNames)
 	fmt.Fprintln(&buf, "Backend metrics:")
-	fmt.Fprintln(&buf)
 	fmt.Fprintf(&buf, "  %*s %12s %12s %12s\n", -maxLen, "Server", "Count", "Egress", "Ingress")
 	for _, s := range serverNames {
 		fmt.Fprintf(&buf, "  %*s %12d %12d %12d\n", -maxLen, s, totals[s].numConnections, totals[s].numBytesSent, totals[s].numBytesReceived)
@@ -136,25 +136,19 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 
 	fmt.Fprintln(&buf)
 	fmt.Fprintln(&buf, "Event counts:")
-	fmt.Fprintln(&buf)
 	p.eventsmu.Lock()
 	events := make([]string, 0, len(p.events))
-	max := 0
 	for k := range p.events {
-		if len(k) > max {
-			max = len(k)
-		}
 		events = append(events, k)
 	}
+	p.eventsmu.Unlock()
 	sort.Strings(events)
 	for _, e := range events {
-		fmt.Fprintf(&buf, "  %*s %6d\n", -(max + 1), e+":", p.events[e])
+		fmt.Fprintf(&buf, "  %6d x %s\n", p.events[e], e)
 	}
-	p.eventsmu.Unlock()
 
 	fmt.Fprintln(&buf)
 	fmt.Fprintln(&buf, "Current connections:")
-	fmt.Fprintln(&buf)
 	keys := make([]connKey, 0, len(p.connections))
 	for k := range p.connections {
 		keys = append(keys, k)
@@ -171,19 +165,75 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	})
 	for _, k := range keys {
 		c := p.connections[k]
-		desc := formatConnDesc(c)
-
 		startTime := c.Annotation(startTimeKey, time.Time{}).(time.Time)
-		totalTime := time.Since(startTime).Truncate(time.Millisecond)
+		totalTime := time.Since(startTime)
+		remote := c.RemoteAddr().String()
 
-		fmt.Fprintf(&buf, "  %s; Dur:%s Recv:%d Sent:%d\n", desc,
-			totalTime, c.BytesReceived(), c.BytesSent())
+		fmt.Fprintf(&buf, "  %s -> %s %s %s\n", remote, connServerName(c), connMode(c), connProto(c))
+		if intConn := connIntConn(c); intConn != nil {
+			fmt.Fprintf(&buf, "  %*s -> %s -> %s\n", len(remote), "", intConn.LocalAddr().String(), intConn.RemoteAddr().String())
+		}
+		if cert := connClientCert(c); cert != nil {
+			fmt.Fprintf(&buf, "          X509 [%s]\n", certSummary(cert))
+		}
+		fmt.Fprintf(&buf, "          Elapsed:%s Egress:%.1f KB (%.1f KB/s) Ingress:%.1f KB (%.1f KB/s) \n",
+			totalTime.Truncate(100*time.Millisecond),
+			float32(c.BytesSent())/1000, float32(c.BytesSent())/float32(totalTime)*float32(time.Second)/1000,
+			float32(c.BytesReceived())/1000, float32(c.BytesReceived())/float32(totalTime)*float32(time.Second)/1000)
+		fmt.Fprintln(&buf)
 	}
 
-	fmt.Fprintln(&buf)
+	for i, be := range p.cfg.Backends {
+		sso := ""
+		if be.SSO != nil {
+			sso = fmt.Sprintf(" SSO %s %s", be.SSO.Provider, strings.Join(be.SSO.Paths, ","))
+		}
+		clientAuth := ""
+		if be.ClientAuth != nil {
+			clientAuth = " TLS ClientAuth"
+		}
+		fmt.Fprintf(&buf, "Backend[%d] %s%s%s\n", i, be.Mode, clientAuth, sso)
+		for j, sn := range be.ServerNames {
+			fmt.Fprintf(&buf, "  ServerName[%d]: %s\n", j, sn)
+		}
+		for j, a := range be.Addresses {
+			fmt.Fprintf(&buf, "  Address[%d]: %s\n", j, a)
+		}
+		if len(be.localHandlers) > 0 {
+			fmt.Fprintf(&buf, "  Local Handlers:\n")
+			type item struct {
+				bypass   string
+				hostPath string
+				desc     string
+			}
+			items := make([]item, 0, len(be.localHandlers))
+			var sz int
+			for _, h := range be.localHandlers {
+				bypass := " "
+				if h.ssoBypass {
+					bypass = "X"
+				}
+				host := "<any>"
+				if h.host != "" {
+					host = h.host
+				}
+				hostPath := host + h.path
+				items = append(items, item{bypass, hostPath, h.desc})
+				if l := len(hostPath); l > sz {
+					sz = l
+				}
+			}
+			for _, i := range items {
+				fmt.Fprintf(&buf, "    [%s] https://%*s %s\n", i.bypass, -sz, i.hostPath, i.desc)
+			}
+		}
+		fmt.Fprintln(&buf)
+	}
+
 	fmt.Fprintln(&buf, "Runtime:")
-	fmt.Fprintln(&buf)
 	fmt.Fprintf(&buf, "  Uptime:       %12s\n", time.Since(p.startTime).Truncate(time.Second))
+	fmt.Fprintf(&buf, "  GoVersion:    %12s\n", runtime.Version())
+	fmt.Fprintf(&buf, "  OS/Arch:      %12s\n", runtime.GOOS+"/"+runtime.GOARCH)
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
 	fmt.Fprintf(&buf, "  NumCPU:       %12d\n", runtime.NumCPU())
@@ -196,6 +246,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	fmt.Fprintf(&buf, "  NumGC:        %12d\n", memStats.NumGC)
 	fmt.Fprintln(&buf)
 	memProf := make([]runtime.MemProfileRecord, 100)
+	fmt.Fprintln(&buf, "Memory Profile:")
 	if n, ok := runtime.MemProfile(memProf, false); ok {
 		type item struct {
 			b int64
@@ -220,6 +271,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		fmt.Fprintf(&buf, "Too many MemProfile records: %d\n", n)
 	}
 	fmt.Fprintln(&buf)
+	fmt.Fprintln(&buf, "Goroutines:")
 	goProf := make([]runtime.StackRecord, runtime.NumGoroutine()+10)
 	if n, ok := runtime.GoroutineProfile(goProf); ok {
 		count := make(map[string]int)

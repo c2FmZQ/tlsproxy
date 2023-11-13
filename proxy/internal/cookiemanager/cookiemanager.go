@@ -29,6 +29,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -58,9 +59,9 @@ func New(tm *tokenmanager.TokenManager, provider, domain, issuer string) *Cookie
 	}
 }
 
-func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID, host string, extraClaims map[string]any) error {
-	if userID == "" {
-		return errors.New("userID cannot be empty")
+func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, email, sessionID, host string, extraClaims map[string]any) error {
+	if userID == "" || email == "" {
+		return errors.New("userID and email cannot be empty")
 	}
 	hh := sha256.Sum256([]byte(host))
 	now := time.Now().UTC()
@@ -70,6 +71,7 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, sessi
 		"iss":       cm.issuer,
 		"aud":       cm.issuer,
 		"sub":       userID,
+		"email":     email,
 		"proxyauth": cm.issuer,
 		"provider":  cm.provider,
 		"hhash":     hex.EncodeToString(hh[:]),
@@ -111,7 +113,12 @@ func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Reque
 	now := time.Now().UTC()
 	claims := jwt.MapClaims{}
 	for k, v := range c {
-		if k == "scope" || k == "proxyauth" || k == "source" || k == "hhash" {
+		if slices.Contains([]string{
+			"scope",
+			"proxyauth",
+			"source",
+			"hhash",
+		}, k) {
 			continue
 		}
 		claims[k] = v

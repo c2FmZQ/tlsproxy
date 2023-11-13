@@ -288,10 +288,13 @@ type Backend struct {
 }
 
 type localHandler struct {
+	desc        string
+	host        string
 	path        string
 	handler     http.Handler
 	ssoBypass   bool
 	matchPrefix bool
+	isCallback  bool
 }
 
 // ClientAuth specifies how to authenticate and authorize the TLS client's

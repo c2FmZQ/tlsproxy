@@ -192,8 +192,8 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	subject, _ := claims.GetSubject()
-	isAdmin := enableAdmin != "" && slices.Contains(m.opts.Admins, subject)
+	email, _ := claims["email"].(string)
+	isAdmin := enableAdmin != "" && slices.Contains(m.opts.Admins, email)
 
 	mode := req.Form.Get("get")
 	switch mode {
@@ -262,7 +262,7 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 			log.Printf("ERR x509.ParseCertificate: %v", err)
 			continue
 		}
-		if ownerFilter != "all" && !slices.Contains(c.EmailAddresses, subject) {
+		if ownerFilter != "all" && !slices.Contains(c.EmailAddresses, email) {
 			continue
 		}
 		var revTime time.Time
@@ -314,7 +314,7 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 			IsCA:           c.IsCA,
 			Status:         status,
 			UsedNow:        currentSN == ic.SerialNumber,
-			CanRevoke:      !c.IsCA && (isAdmin || slices.Contains(c.EmailAddresses, subject)),
+			CanRevoke:      !c.IsCA && (isAdmin || slices.Contains(c.EmailAddresses, email)),
 		})
 	}
 	slices.Reverse(certs)
@@ -322,7 +322,7 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 	data := struct {
 		Status         string
 		Owner          string
-		Subject        string
+		Email          string
 		CASubject      string
 		CASN           string
 		CASubjectKeyId string
@@ -330,7 +330,7 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 	}{
 		Status:         statusFilter,
 		Owner:          ownerFilter,
-		Subject:        subject,
+		Email:          email,
 		CASubject:      caCert.Subject.String(),
 		CASN:           bytesToHex(caCert.SerialNumber.Bytes()),
 		CASubjectKeyId: bytesToHex(caCert.SubjectKeyId),
@@ -346,7 +346,7 @@ func (m *PKIManager) handleRequestCert(w http.ResponseWriter, req *http.Request)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	subject, _ := claims.GetSubject()
+	email, _ := claims["email"].(string)
 
 	if req.Method != http.MethodPost {
 		log.Printf("ERR method: %v", req.Method)
@@ -385,9 +385,9 @@ func (m *PKIManager) handleRequestCert(w http.ResponseWriter, req *http.Request)
 	cr := &x509.CertificateRequest{
 		PublicKeyAlgorithm: in.PublicKeyAlgorithm,
 		PublicKey:          in.PublicKey,
-		Subject:            pkix.Name{CommonName: subject},
+		Subject:            pkix.Name{CommonName: email},
 		EmailAddresses: []string{
-			subject,
+			email,
 		},
 		DNSNames: in.DNSNames,
 	}
@@ -413,7 +413,7 @@ func (m *PKIManager) handleRevokeCert(w http.ResponseWriter, req *http.Request, 
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	subject, _ := claims.GetSubject()
+	email, _ := claims["email"].(string)
 
 	if req.Method != http.MethodPost {
 		log.Printf("ERR method: %v", req.Method)
@@ -437,7 +437,7 @@ func (m *PKIManager) handleRevokeCert(w http.ResponseWriter, req *http.Request, 
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	if isAdmin || !slices.Contains(c.EmailAddresses, subject) {
+	if isAdmin || !slices.Contains(c.EmailAddresses, email) {
 		w.Header().Set("content-type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"result": "permission denied",

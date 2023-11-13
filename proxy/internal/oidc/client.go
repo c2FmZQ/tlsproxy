@@ -69,7 +69,7 @@ type Config struct {
 
 // CookieManager is the interface to set and clear the auth token.
 type CookieManager interface {
-	SetAuthTokenCookie(w http.ResponseWriter, userID, sessionID, host string, extraClaims map[string]any) error
+	SetAuthTokenCookie(w http.ResponseWriter, userID, email, sessionID, host string, extraClaims map[string]any) error
 	ClearCookies(w http.ResponseWriter) error
 }
 
@@ -258,19 +258,7 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		p.mu.Lock()
-		state, ok = p.states[claims.Nonce]
-		delete(p.states, claims.Nonce)
-		p.mu.Unlock()
-		if !ok {
-			p.er.Record("invalid nonce")
-			http.Error(w, "timeout", http.StatusForbidden)
-			return
-		}
 	} else if p.cfg.UserinfoEndpoint != "" && (data.TokenType == "" || strings.ToLower(data.TokenType) == "bearer") {
-		p.mu.Lock()
-		delete(p.states, nonce)
-		p.mu.Unlock()
 		req, err := http.NewRequest(http.MethodGet, p.cfg.UserinfoEndpoint, nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -285,13 +273,24 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 		}
 		defer resp.Body.Close()
 		claims.Issuer = p.cfg.UserinfoEndpoint
-		claims.Nonce = nonce
 		if err := json.NewDecoder(resp.Body).Decode(&claims); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	} else {
 		http.Error(w, "no user info", http.StatusInternalServerError)
+		return
+	}
+	if claims.Nonce == "" {
+		claims.Nonce = nonce
+	}
+	p.mu.Lock()
+	state, ok = p.states[claims.Nonce]
+	delete(p.states, claims.Nonce)
+	p.mu.Unlock()
+	if !ok {
+		p.er.Record("invalid nonce")
+		http.Error(w, "timeout", http.StatusForbidden)
 		return
 	}
 	if claims.Email == "" {
@@ -323,7 +322,7 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 	} else if claims.AvatarURL != "" {
 		extraClaims["picture"] = claims.AvatarURL
 	}
-	if err := p.cm.SetAuthTokenCookie(w, claims.Email, claims.Nonce, state.Host, extraClaims); err != nil {
+	if err := p.cm.SetAuthTokenCookie(w, claims.Subject, claims.Email, claims.Nonce, state.Host, extraClaims); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
