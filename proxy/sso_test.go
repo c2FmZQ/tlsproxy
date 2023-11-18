@@ -488,7 +488,8 @@ func newIDPServer(t *testing.T) *idpServer {
 		Issuer:       "https://idp.example.com",
 		ClaimsFromCtx: func(context.Context) jwt.MapClaims {
 			return jwt.MapClaims{
-				"sub": "bob@example.com",
+				"email": "bob@example.com",
+				"sub":   "bob.example.com",
 			}
 		},
 		Clients: []oidc.Client{

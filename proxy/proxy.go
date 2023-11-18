@@ -248,6 +248,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	}
 
 	type idp struct {
+		name             string
 		identityProvider identityProvider
 		callback         string
 		domain           string
@@ -274,6 +275,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			return err
 		}
 		identityProviders[pp.Name] = idp{
+			name:             pp.Name,
 			identityProvider: provider,
 			callback:         pp.RedirectURL,
 			domain:           pp.Domain,
@@ -295,6 +297,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			return err
 		}
 		identityProviders[pp.Name] = idp{
+			name:             pp.Name,
 			identityProvider: provider,
 			callback:         pp.ACSURL,
 			domain:           pp.Domain,
@@ -323,6 +326,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			return err
 		}
 		identityProviders[pp.Name] = idp{
+			name:             pp.Name,
 			identityProvider: provider,
 			callback:         pp.Endpoint,
 			domain:           pp.Domain,
@@ -387,21 +391,25 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			be.SSO.cm = idp.cm
 			be.localHandlers = append(be.localHandlers,
 				localHandler{
+					desc:      "SSO identity",
 					path:      "/.sso/",
 					handler:   logHandler(http.HandlerFunc(be.serveSSOStatus)),
 					ssoBypass: true,
 				},
 				localHandler{
+					desc:      "Style Sheet",
 					path:      "/.sso/style.css",
 					handler:   logHandler(http.HandlerFunc(be.serveSSOStyle)),
 					ssoBypass: true,
 				},
 				localHandler{
+					desc:      "SSO Logout",
 					path:      "/.sso/logout",
 					handler:   logHandler(http.HandlerFunc(be.serveLogout)),
 					ssoBypass: true,
 				},
 				localHandler{
+					desc:      "Icon",
 					path:      "/.sso/favicon.ico",
 					handler:   logHandler(http.HandlerFunc(p.faviconHandler)),
 					ssoBypass: true,
@@ -409,10 +417,12 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			if m, ok := be.SSO.p.(*passkeys.Manager); ok {
 				be.localHandlers = append(be.localHandlers,
 					localHandler{
+						desc:    "Manage Passkeys",
 						path:    "/.sso/passkeys",
 						handler: logHandler(http.HandlerFunc(m.ManageKeys)),
 					},
 					localHandler{
+						desc:      "List of Passkey Endpoints",
 						path:      "/.well-known/passkey-endpoints",
 						handler:   logHandler(http.HandlerFunc(m.ServeWellKnown)),
 						ssoBypass: true,
@@ -446,25 +456,30 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				}
 				oidcServer := oidc.NewServer(opts)
 				be.localHandlers = append(be.localHandlers, localHandler{
+					desc:      "OIDC Server Configuration",
 					path:      ls.PathPrefix + "/.well-known/openid-configuration",
 					handler:   logHandler(http.HandlerFunc(oidcServer.ServeConfig)),
 					ssoBypass: true,
 				},
 					localHandler{
+						desc:    "OIDC Server Authorization Endpoint",
 						path:    ls.PathPrefix + "/authorization",
 						handler: logHandler(http.HandlerFunc(oidcServer.ServeAuthorization)),
 					},
 					localHandler{
+						desc:      "OIDC Server Token Endpoint",
 						path:      ls.PathPrefix + "/token",
 						handler:   logHandler(http.HandlerFunc(oidcServer.ServeToken)),
 						ssoBypass: true,
 					},
 					localHandler{
+						desc:      "OIDC Server Userinfo Endpoint",
 						path:      ls.PathPrefix + "/userinfo",
 						handler:   logHandler(http.HandlerFunc(oidcServer.ServeUserInfo)),
 						ssoBypass: true,
 					},
 					localHandler{
+						desc:      "OIDC Server JWKS Endpoint",
 						path:      ls.PathPrefix + "/jwks",
 						handler:   logHandler(http.HandlerFunc(p.tokenManager.ServeJWKS)),
 						ssoBypass: true,
@@ -507,15 +522,15 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				cert := cs.PeerCertificates[0]
 				sum := certSummary(cert)
 				if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok && m.IsRevoked(cert.SerialNumber) {
-					p.recordEvent(fmt.Sprintf("deny [%s] to %s (revoked)", sum, cs.ServerName))
+					p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (revoked)", sum, cs.ServerName))
 					return fmt.Errorf("%w [%s]", errRevoked, sum)
 				}
 				if err := be.authorize(cert); err != nil {
-					p.recordEvent(fmt.Sprintf("deny [%s] to %s", sum, cs.ServerName))
+					p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s", sum, cs.ServerName))
 					return fmt.Errorf("%w [%s]", err, sum)
 				}
 				if sum != "" {
-					p.recordEvent(fmt.Sprintf("allow [%s] to %s", sum, cs.ServerName))
+					p.recordEvent(fmt.Sprintf("allow X509 [%s] to %s", sum, cs.ServerName))
 				}
 				return nil
 			}
@@ -543,6 +558,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		}
 		if be.ExportJWKS != "" {
 			be.localHandlers = append(be.localHandlers, localHandler{
+				desc:      "JWKS Endpoint",
 				path:      be.ExportJWKS,
 				handler:   logHandler(http.HandlerFunc(p.tokenManager.ServeJWKS)),
 				ssoBypass: true,
@@ -552,9 +568,9 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		case ModeConsole:
 			be := be
 			be.localHandlers = append(be.localHandlers,
-				localHandler{path: "/", handler: logHandler(http.HandlerFunc(p.metricsHandler))},
-				localHandler{path: "/favicon.ico", handler: logHandler(http.HandlerFunc(p.faviconHandler))},
-				localHandler{path: "/config", handler: logHandler(http.HandlerFunc(p.configHandler))},
+				localHandler{desc: "Metrics", path: "/", handler: logHandler(http.HandlerFunc(p.metricsHandler))},
+				localHandler{desc: "Icon", path: "/favicon.ico", handler: logHandler(http.HandlerFunc(p.faviconHandler))},
+				localHandler{desc: "Proxy Config", path: "/config", handler: logHandler(http.HandlerFunc(p.configHandler))},
 			)
 			addPProfHandlers(&be.localHandlers)
 
@@ -582,51 +598,66 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			if !exists {
 				continue
 			}
+			h.host = host
 			h.path = path
 			be.localHandlers = append(be.localHandlers, h)
+
+			if h.isCallback && be.SSO != nil {
+				if m, ok := be.SSO.p.(*passkeys.Manager); ok {
+					m.SetACL(be.SSO.ACL)
+				}
+			}
 		}
 	}
 	for _, p := range identityProviders {
 		p := p
 		addLocalHandler(localHandler{
+			desc: fmt.Sprintf("OIDC Client Redirect Endpoint (%s)", p.name),
 			handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				log.Printf("REQ %s ➔ %s %s (SSO callback) (%q)", formatReqDesc(req), req.Method, req.URL.Path, userAgent(req))
 				p.identityProvider.HandleCallback(w, req)
 			}),
-			ssoBypass: true,
+			ssoBypass:  true,
+			isCallback: true,
 		}, p.callback)
-	}
-	for _, be := range backends {
-		if be.SSO == nil {
-			continue
-		}
-		if m, ok := be.SSO.p.(*passkeys.Manager); ok {
-			m.SetACL(be.SSO.ACL)
-		}
 	}
 	for _, pp := range cfg.PKI {
 		addLocalHandler(localHandler{
+			desc:      fmt.Sprintf("PKI CA Cert (%s)", pp.Name),
 			handler:   logHandler(http.HandlerFunc(pkis[pp.Name].ServeCACert)),
 			ssoBypass: true,
 		}, pp.IssuingCertificateURLs...)
 		addLocalHandler(localHandler{
+			desc:      fmt.Sprintf("PKI CRL (%s)", pp.Name),
 			handler:   logHandler(http.HandlerFunc(pkis[pp.Name].ServeCRL)),
 			ssoBypass: true,
 		}, pp.CRLDistributionPoints...)
 		addLocalHandler(localHandler{
+			desc:        fmt.Sprintf("PKI OCSP (%s)", pp.Name),
 			handler:     logHandler(http.HandlerFunc(pkis[pp.Name].ServeOCSP)),
 			ssoBypass:   true,
 			matchPrefix: true,
 		}, pp.OCSPServer...)
 		if pp.Endpoint != "" {
 			addLocalHandler(localHandler{
+				desc:    fmt.Sprintf("PKI Cert Management (%s)", pp.Name),
 				handler: logHandler(http.HandlerFunc(pkis[pp.Name].ServeCertificateManagement)),
 			}, pp.Endpoint)
 		}
 	}
 	for _, be := range backends {
 		sort.Slice(be.localHandlers, func(i, j int) bool {
-			return len(be.localHandlers[i].path) > len(be.localHandlers[j].path)
+			a := be.localHandlers[i].host
+			b := be.localHandlers[j].host
+			if a == b {
+
+				return len(be.localHandlers[i].path) > len(be.localHandlers[j].path)
+			}
+			if la, lb := len(a), len(b); la != lb {
+				return la > lb
+			}
+			return a < b
+
 		})
 	}
 	if p.cfg != nil {
@@ -1111,8 +1142,8 @@ func (p *Proxy) backend(serverName string) (*Backend, error) {
 func formatReqDesc(req *http.Request) string {
 	var ids []string
 	if claims := claimsFromCtx(req.Context()); claims != nil {
-		sub, _ := claims.GetSubject()
-		ids = append(ids, sub)
+		email, _ := claims["email"].(string)
+		ids = append(ids, email)
 	}
 	tlsConn := req.Context().Value(connCtxKey).(*tls.Conn)
 	return formatConnDesc(tlsConn.NetConn().(*netw.Conn), ids...)

@@ -33,7 +33,7 @@
     <div><a class="button big" onclick="loginWithPasskey({{.RedirectURL}},{{.Nonce}});">Login</a></div>
 {{- end }}
 {{- if eq .Mode "RegisterNewID" }}
-    <div>{{.Subject}}</div>
+    <div>{{.Email}}</div>
   {{- if .IsAllowed }}
     {{- if .IsRegistered }}
     <div>Already Registered</div>

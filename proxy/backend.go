@@ -225,8 +225,16 @@ func (be *Backend) bridgeConns(client, server net.Conn) error {
 
 func (be *Backend) localHandlersAndAuthz(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		reqHost := req.Host
+		if h, _, err := net.SplitHostPort(reqHost); err == nil {
+			reqHost = h
+		}
+		reqPath := req.URL.Path
 		hi := slices.IndexFunc(be.localHandlers, func(h localHandler) bool {
-			return req.URL.Path == h.path || (h.matchPrefix && strings.HasPrefix(req.URL.Path, h.path+"/"))
+			if h.host != "" && h.host != reqHost {
+				return false
+			}
+			return h.path == reqPath || (h.matchPrefix && strings.HasPrefix(reqPath, h.path+"/"))
 		})
 		if hi >= 0 && be.localHandlers[hi].ssoBypass {
 			be.localHandlers[hi].handler.ServeHTTP(w, req)
@@ -240,8 +248,11 @@ func (be *Backend) localHandlersAndAuthz(next http.Handler) http.Handler {
 			return
 		}
 		if hi < 0 {
-			pathSlash := req.URL.Path + "/"
+			pathSlash := reqPath + "/"
 			if hi := slices.IndexFunc(be.localHandlers, func(h localHandler) bool {
+				if h.host != "" && h.host != reqHost {
+					return false
+				}
 				return pathSlash == h.path
 			}); hi >= 0 {
 				http.Redirect(w, req, pathSlash, http.StatusMovedPermanently)

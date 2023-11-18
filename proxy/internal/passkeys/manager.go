@@ -279,7 +279,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			RedirectURL  string
 			Mode         string
 			Nonce        string
-			Subject      string
+			Email        string
 			IsAllowed    bool
 			IsRegistered bool
 		}{
@@ -289,9 +289,9 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			Nonce:       nonce,
 		}
 		if mode == "RegisterNewID" {
-			data.Subject, _ = token.Claims.GetSubject()
-			data.IsAllowed = m.subjectIsAllowed(data.Subject)
-			data.IsRegistered = m.subjectIsRegistered(data.Subject)
+			data.Email, _ = token.Claims.(jwt.MapClaims)["email"].(string)
+			data.IsAllowed = m.subjectIsAllowed(data.Email)
+			data.IsRegistered = m.subjectIsRegistered(data.Email)
 		}
 		w.Header().Set("X-Frame-Options", "DENY")
 		authTemplate.Execute(w, data)
@@ -372,8 +372,8 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		subject, _ := token.Claims.GetSubject()
-		if !m.subjectIsAllowed(subject) {
+		email, _ := token.Claims.(jwt.MapClaims)["email"].(string)
+		if !m.subjectIsAllowed(email) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -382,7 +382,8 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		if err := m.processAttestation(claims, req.Host, req.Form.Get("args"), false); err != nil {
+		claims, err = m.processAttestation(claims, req.Host, req.Form.Get("args"), false)
+		if err != nil {
 			log.Printf("ERR processAttestation: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -476,9 +477,10 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	mode := req.Form.Get("get")
-	subject, _ := claims.GetSubject()
+	email, _ := claims["email"].(string)
 	passkeyHash, ok := claims["passkey_hash"].(string)
 	if !ok {
+		log.Print("ERR passkey_hash is missing")
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -513,7 +515,7 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		if err := m.processAttestation(claims, req.Host, req.Form.Get("args"), true); err != nil {
+		if _, err := m.processAttestation(claims, req.Host, req.Form.Get("args"), true); err != nil {
 			log.Printf("ERR processAttestation: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -544,8 +546,8 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		if err := m.deleteKey(subject, id); err != nil {
-			log.Printf("ERR deleteKey(%q, %v): %v", subject, id, err)
+		if err := m.deleteKey(email, id); err != nil {
+			log.Printf("ERR deleteKey(%q, %v): %v", email, id, err)
 		}
 		w.Header().Set("content-type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
@@ -560,14 +562,14 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 		data := struct {
 			Self       string
 			Mode       string
-			Subject    string
+			Email      string
 			Keys       []keyItem
 			CurrentKey string
 		}{
 			Self:       req.URL.Path,
 			Mode:       mode,
-			Subject:    subject,
-			Keys:       m.keys(subject),
+			Email:      email,
+			Keys:       m.keys(email),
 			CurrentKey: passkeyHash,
 		}
 		w.Header().Set("X-Frame-Options", "DENY")
@@ -586,10 +588,10 @@ type keyItem struct {
 	LastSeen string
 }
 
-func (m *Manager) keys(subject string) []keyItem {
+func (m *Manager) keys(email string) []keyItem {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	h, ok := m.db.Subjects[subject]
+	h, ok := m.db.Subjects[email]
 	if !ok {
 		return nil
 	}
@@ -615,18 +617,18 @@ func (m *Manager) keys(subject string) []keyItem {
 	return keys
 }
 
-func (m *Manager) subjectIsAllowed(subject string) bool {
+func (m *Manager) subjectIsAllowed(email string) bool {
 	if m.acl == nil {
 		return true
 	}
-	_, subDomain, _ := strings.Cut(subject, "@")
-	return slices.Contains(*m.acl, subject) || slices.Contains(*m.acl, "@"+subDomain)
+	_, subDomain, _ := strings.Cut(email, "@")
+	return slices.Contains(*m.acl, email) || slices.Contains(*m.acl, "@"+subDomain)
 }
 
-func (m *Manager) subjectIsRegistered(subject string) bool {
+func (m *Manager) subjectIsRegistered(email string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	h, ok := m.db.Subjects[subject]
+	h, ok := m.db.Subjects[email]
 	if !ok {
 		return false
 	}
@@ -634,7 +636,7 @@ func (m *Manager) subjectIsRegistered(subject string) bool {
 	return ok && len(u.Keys) > 0
 }
 
-func (m *Manager) deleteKey(subject string, id Bytes) (retErr error) {
+func (m *Manager) deleteKey(email string, id Bytes) (retErr error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -644,7 +646,7 @@ func (m *Manager) deleteKey(subject string, id Bytes) (retErr error) {
 	}
 	defer commit(false, &retErr)
 
-	h, ok := m.db.Subjects[subject]
+	h, ok := m.db.Subjects[email]
 	if !ok {
 		return errors.New("not found")
 	}
@@ -668,12 +670,17 @@ func (m *Manager) setAuthToken(w http.ResponseWriter, host string, claims map[st
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	email, ok := claims["email"].(string)
+	if !ok {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	sid, ok := claims["sid"].(string)
 	if !ok {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	if err := m.cfg.CookieManager.SetAuthTokenCookie(w, subject, sid, host, claims); err != nil {
+	if err := m.cfg.CookieManager.SetAuthTokenCookie(w, subject, email, sid, host, claims); err != nil {
 		log.Printf("ERR SetAuthTokenCookie: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -690,22 +697,22 @@ func (m *Manager) attestationOptions(claims map[string]any) (*AttestationOptions
 	if err != nil {
 		return nil, err
 	}
-	subject, ok := claims["sub"].(string)
+	email, ok := claims["email"].(string)
 	if !ok {
-		return nil, errors.New("invalid subject")
+		return nil, errors.New("invalid email")
 	}
 	ep, err := url.Parse(m.cfg.Endpoint)
 	if err != nil {
 		return nil, errors.New("internal error")
 	}
-	opts.User.Name = subject
-	opts.User.DisplayName = subject
+	opts.User.Name = email
+	opts.User.DisplayName = email
 	opts.RelyingParty.Name = ep.Host
 	opts.RelyingParty.ID = ep.Host
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if h, ok := m.db.Subjects[subject]; ok {
+	if h, ok := m.db.Subjects[email]; ok {
 		u, ok := m.db.Handles[h]
 		if !ok {
 			return nil, errors.New("internal error")
@@ -734,11 +741,11 @@ func (m *Manager) attestationOptions(claims map[string]any) (*AttestationOptions
 	return opts, nil
 }
 
-func (m *Manager) processAttestation(claims map[string]any, host, jsargs string, allowNewKey bool) (retErr error) {
+func (m *Manager) processAttestation(claims map[string]any, host, jsargs string, allowNewKey bool) (newClaims map[string]any, retErr error) {
 	m.vacuum()
-	subject, ok := claims["sub"].(string)
+	email, ok := claims["email"].(string)
 	if !ok {
-		return errors.New("invalid subject")
+		return nil, errors.New("invalid email")
 	}
 	var args struct {
 		ClientDataJSON    Bytes    `json:"clientDataJSON"`
@@ -746,19 +753,19 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 		Transports        []string `json:"transports"`
 	}
 	if err := json.Unmarshal([]byte(jsargs), &args); err != nil {
-		return err
+		return nil, err
 	}
 	cd, err := parseClientData(args.ClientDataJSON)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if cd.Type != "webauthn.create" {
-		return errors.New("expected clientData.type")
+		return nil, errors.New("expected clientData.type")
 	}
 	origin := "https://" + host
 	if cd.Origin != origin {
 		log.Printf("ERR cd.Origin: %q != %q", cd.Origin, origin)
-		return errors.New("expected clientData.origin")
+		return nil, errors.New("expected clientData.origin")
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -766,39 +773,39 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 	delete(m.challenges, cd.Challenge)
 
 	if !ok || !reflect.DeepEqual(challenge.claims, claims) {
-		return errors.New("invalid challenge")
+		return nil, errors.New("invalid challenge")
 	}
 
 	ao, err := parseAttestationObject(args.AttestationObject)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
 	if hash := sha256.Sum256([]byte(host)); subtle.ConstantTimeCompare(ao.AuthData.RPIDHash, hash[:]) != 1 {
 		log.Printf("ERR rpidHash: %v != %v", ao.AuthData.RPIDHash, hash[:])
-		return errors.New("invalid rpIdHash")
+		return nil, errors.New("invalid rpIdHash")
 	}
 	if !ao.AuthData.UserPresence {
-		return errors.New("user presence is false")
+		return nil, errors.New("user presence is false")
 	}
 	if !ao.AuthData.UserVerification {
-		return errors.New("user verification is false")
+		return nil, errors.New("user verification is false")
 	}
 	creds := ao.AuthData.AttestedCredentials
 	if creds == nil {
-		return errors.New("no attested credentials")
+		return nil, errors.New("no attested credentials")
 	}
 
 	commit, err := m.cfg.Store.OpenForUpdate(passkeyFile, &m.db)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer commit(false, &retErr)
 
 	var u *user
-	if h, ok := m.db.Subjects[subject]; ok {
+	if h, ok := m.db.Subjects[email]; ok {
 		u = m.db.Handles[h]
 	}
 	if u == nil {
@@ -808,10 +815,10 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 		}
 		uids := base64.RawURLEncoding.EncodeToString(challenge.uid)
 		m.db.Handles[uids] = u
-		m.db.Subjects[subject] = uids
+		m.db.Subjects[email] = uids
 	}
 	if !allowNewKey && len(u.Keys) > 0 {
-		return errors.New("subject is already registered")
+		return nil, errors.New("email is already registered")
 	}
 	now := time.Now().UTC()
 	u.Keys = append(u.Keys, &userKey{
@@ -822,7 +829,11 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 		CreatedAt:  now,
 		LastSeen:   now,
 	})
-	return commit(true, nil)
+
+	c := maps.Clone(claims)
+	h := sha256.Sum256(creds.ID)
+	c["passkey_hash"] = hex.EncodeToString(h[:])
+	return c, commit(true, nil)
 }
 
 func (m *Manager) assertionOptions() (*AssertionOptions, error) {
