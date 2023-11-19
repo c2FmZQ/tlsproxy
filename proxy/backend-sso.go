@@ -31,7 +31,6 @@ import (
 	"fmt"
 	"html/template"
 	"log"
-	"net"
 	"net/http"
 	"slices"
 	"sort"
@@ -122,11 +121,7 @@ func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.M
 		return authClaims, true
 	}
 
-	host := req.Host
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	if !slices.Contains(be.ServerNames, host) {
+	if !slices.Contains(be.ServerNames, hostFromReq(req)) {
 		return authClaims, true
 	}
 
@@ -282,10 +277,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 		return false
 	}
 	userID, _ := claims["email"].(string)
-	host := req.Host
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
+	host := hostFromReq(req)
 	_, userDomain, _ := strings.Cut(userID, "@")
 	if be.SSO.ACL != nil && !slices.Contains(*be.SSO.ACL, userID) && !slices.Contains(*be.SSO.ACL, "@"+userDomain) {
 		be.recordEvent(fmt.Sprintf("deny SSO %s to %s", userID, host))

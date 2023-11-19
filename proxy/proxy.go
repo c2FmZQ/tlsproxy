@@ -596,6 +596,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			}
 			be, exists := backends[host]
 			if !exists {
+				log.Printf("ERR Backend for %s not found", v)
 				continue
 			}
 			h.host = host
@@ -1215,6 +1216,14 @@ func loadCerts(p *x509.CertPool, s string) error {
 	return nil
 }
 
+func hostFromReq(req *http.Request) string {
+	host := req.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return strings.ToLower(host)
+}
+
 func hostAndPath(urlString string) (string, string, error) {
 	url, err := url.Parse(urlString)
 	if err != nil {
@@ -1224,7 +1233,7 @@ func hostAndPath(urlString string) (string, string, error) {
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
-	return host, url.Path, nil
+	return strings.ToLower(host), url.Path, nil
 }
 
 func certSummary(c *x509.Certificate) string {

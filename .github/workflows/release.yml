@@ -50,12 +50,19 @@ jobs:
         go-version: '>=1.21.4'
     - name: Build release binaries
       run: ./build-release-binaries.sh
+    - name: Extract release notes
+      run: |
+        ./release-notes.sh "${GITHUB_REF_NAME}" > release-notes.md
+        if [[ $(stat -c %s release-notes.md) == 0 ]]; then
+          echo "No release notes for ${GITHUB_REF_NAME}. Please update CHANGELOG.md"
+          exit 1
+        fi
     - name: Create release
       # https://github.com/softprops/action-gh-release/tree/v0.1.15
       uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844
       with:
         draft: false
-        generate_release_notes: true
+        body_path: release-notes.md
         fail_on_unmatched_files: true
         files: bin/*
 

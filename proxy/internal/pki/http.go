@@ -38,8 +38,10 @@ import (
 	"html/template"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -491,10 +493,8 @@ func (m *PKIManager) handleStaticFile(w http.ResponseWriter, req *http.Request) 
 	if strings.HasSuffix(file, ".bz2") {
 		rr = bzip2.NewReader(r)
 	}
-	if strings.HasSuffix(file, ".css") {
-		w.Header().Set("content-type", "text/css")
-	} else if strings.HasSuffix(file, ".js") {
-		w.Header().Set("content-type", "text/javascript")
+	if t := mime.TypeByExtension(filepath.Ext(file)); t != "" {
+		w.Header().Set("content-type", t)
 	}
 	etag, ok := staticEtags[file]
 	if ok {
