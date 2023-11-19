@@ -225,10 +225,7 @@ func (be *Backend) bridgeConns(client, server net.Conn) error {
 
 func (be *Backend) localHandlersAndAuthz(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		reqHost := req.Host
-		if h, _, err := net.SplitHostPort(reqHost); err == nil {
-			reqHost = h
-		}
+		reqHost := hostFromReq(req)
 		reqPath := req.URL.Path
 		hi := slices.IndexFunc(be.localHandlers, func(h localHandler) bool {
 			if h.host != "" && h.host != reqHost {
@@ -365,11 +362,7 @@ func (rt *cleanRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 		return makeResponse(req, http.StatusLoopDetected, nil, req.Header.Get(viaHeader)), nil
 	}
 
-	host := req.Host
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	if !slices.Contains(rt.serverNames, host) {
+	if !slices.Contains(rt.serverNames, hostFromReq(req)) {
 		if req.Body != nil {
 			req.Body.Close()
 		}

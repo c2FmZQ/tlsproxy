@@ -626,12 +626,36 @@ func (cfg *Config) Check() error {
 			}
 		}
 	}
+
+	serverNames := make(map[string]*Backend)
+	for i, be := range cfg.Backends {
+		for j, sn := range be.ServerNames {
+			sn = strings.ToLower(sn)
+			be.ServerNames[j] = sn
+			if serverNames[sn] != nil {
+				return fmt.Errorf("backend[%d].ServerNames: duplicate server name %q", i, sn)
+			}
+			serverNames[sn] = be
+		}
+	}
+
 	pkis := make(map[string]bool)
 	for i, p := range cfg.PKI {
 		if pkis[p.Name] {
 			return fmt.Errorf("pki[%d].Name: duplicate name %q", i, p.Name)
 		}
 		pkis[p.Name] = true
+		if p.Endpoint != "" {
+			host, _, err := hostAndPath(p.Endpoint)
+			if err != nil {
+				return fmt.Errorf("pki[%d].Endpoint %q: %v", i, p.Endpoint, err)
+			}
+			if be := serverNames[host]; be == nil {
+				return fmt.Errorf("pki[%d].Endpoint %q: backend not found", i, p.Endpoint)
+			} else if mode := strings.ToUpper(be.Mode); mode != ModeLocal && mode != ModeConsole {
+				return fmt.Errorf("pki[%d].Endpoint %q: backend must have mode %s or %s, found %s", i, p.Endpoint, ModeLocal, ModeConsole, mode)
+			}
+		}
 	}
 
 	bwLimits := make(map[string]bool)
@@ -642,7 +666,6 @@ func (cfg *Config) Check() error {
 		bwLimits[l.Name] = true
 	}
 
-	serverNames := make(map[string]bool)
 	for i, be := range cfg.Backends {
 		be.Mode = strings.ToUpper(be.Mode)
 		if be.Mode == "" || be.Mode == ModePlaintext {
@@ -665,14 +688,6 @@ func (cfg *Config) Check() error {
 		}
 		if len(be.Addresses) > 0 && (be.Mode == ModeConsole || be.Mode == ModeLocal) {
 			return fmt.Errorf("backend[%d].Addresses: Addresses should be empty when Mode is CONSOLE or LOCAL", i)
-		}
-		for j, sn := range be.ServerNames {
-			sn = strings.ToLower(sn)
-			be.ServerNames[j] = sn
-			if serverNames[sn] {
-				return fmt.Errorf("backend[%d].ServerNames: duplicate server name %q", i, sn)
-			}
-			serverNames[sn] = true
 		}
 		if n := be.BWLimit; n != "" && !bwLimits[n] {
 			return fmt.Errorf("backend[%d].BWLimit: undefined name %q", i, n)
