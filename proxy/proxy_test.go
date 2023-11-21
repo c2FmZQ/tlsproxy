@@ -149,7 +149,7 @@ func TestProxyBackends(t *testing.T) {
 			// TLS backend with imap proto.
 			{
 				ServerNames: []string{
-					"imap.example.com",
+					"secure.example.com",
 				},
 				Addresses: []string{
 					be5.listener.Addr().String(),
@@ -281,9 +281,8 @@ func TestProxyBackends(t *testing.T) {
 		{desc: "Hit backend4", host: "secure.example.com", want: "Hello from backend4\n", certName: "client.example.com"},
 		{desc: "Hit backend4 no cert", host: "secure.example.com", expError: true},
 		{desc: "Hit backend4 bad proto", host: "secure.example.com", certName: "client.example.com", protos: []string{"ftp"}, expError: true},
-		{desc: "Hit backend5", host: "imap.example.com", want: "Hello from backend5\n"},
-		{desc: "Hit backend5 proto:imap", host: "imap.example.com", want: "Hello from backend5\n", protos: []string{"imap"}},
-		{desc: "Hit backend5 proto:h2", host: "imap.example.com", protos: []string{"h2"}, expError: true},
+		{desc: "Hit backend5 proto:imap", host: "secure.example.com", want: "Hello from backend5\n", protos: []string{"imap"}},
+		{desc: "Hit backend5 proto:h2", host: "secure.example.com", protos: []string{"ftp"}, expError: true},
 		{desc: "Hit backend6", host: "noproto.example.com", want: "Hello from backend6\n"},
 		{desc: "Hit backend6 random proto", host: "noproto.example.com", want: "Hello from backend6\n", protos: []string{"foo", "bar"}},
 		{desc: "Unknown server name", host: "foo.example.com", expError: true},

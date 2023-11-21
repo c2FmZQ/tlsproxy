@@ -1,5 +1,9 @@
 # TLSPROXY Release Notes
 
+## next
+
+* Allow multiple backends with the same server name but different ALPN protos, e.g. one backend could have foo.example.com with the default ALPN protos, and another backend could have foo.example.com with `alpnProtos: [imap]`. If ALPN is not used by the client, the first backend with a matching server name will be used.
+
 ## v0.1.0
 
 Let's call this the first _stable_ development release. We'll try to keep decent release notes going forward.
