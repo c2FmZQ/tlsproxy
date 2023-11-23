@@ -100,6 +100,7 @@ func TestReadConfig(t *testing.T) {
 				},
 				ForwardRateLimit: 5,
 				Mode:             "TLS",
+				ALPNProtos:       &[]string{"h2", "http/1.1"},
 				ClientAuth: &ClientAuth{
 					RootCAs: []string{demoCert},
 				},
@@ -116,6 +117,7 @@ func TestReadConfig(t *testing.T) {
 				},
 				ForwardRateLimit: 5,
 				Mode:             "TCP",
+				ALPNProtos:       &[]string{"h2", "http/1.1"},
 				ClientAuth: &ClientAuth{
 					RootCAs: []string{demoCert},
 				},
@@ -130,6 +132,7 @@ func TestReadConfig(t *testing.T) {
 				},
 				ForwardRateLimit: 5,
 				Mode:             "TLSPASSTHROUGH",
+				ALPNProtos:       &[]string{"h2", "http/1.1"},
 				ForwardTimeout:   30 * time.Second,
 			},
 		},

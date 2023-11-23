@@ -76,6 +76,8 @@ var (
 		"uri",
 		"dns",
 	}
+	// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
+	defaultALPNProtos = &[]string{"h2", "http/1.1"}
 )
 
 // Config is the TLS proxy configuration.
@@ -627,15 +629,43 @@ func (cfg *Config) Check() error {
 		}
 	}
 
+	for i, be := range cfg.Backends {
+		be.Mode = strings.ToUpper(be.Mode)
+		if be.Mode == "" || be.Mode == ModePlaintext {
+			be.Mode = ModeTCP
+		}
+		if !slices.Contains(validModes, be.Mode) {
+			return fmt.Errorf("backend[%d].Mode: value %q must be one of %v", i, be.Mode, validModes)
+		}
+		if be.Mode == ModeTLSPassthrough && be.ClientAuth != nil {
+			return fmt.Errorf("backend[%d].ClientAuth: client auth is not compatible with TLS Passthrough", i)
+		}
+		if be.Mode == ModeHTTP || be.Mode == ModeHTTPS {
+			be.ALPNProtos = &[]string{"http/1.1", "http/1.0"}
+		}
+		if be.ALPNProtos == nil {
+			be.ALPNProtos = defaultALPNProtos
+		}
+	}
+
 	serverNames := make(map[string]*Backend)
+	beKeys := make(map[beKey]bool)
 	for i, be := range cfg.Backends {
 		for j, sn := range be.ServerNames {
 			sn = strings.ToLower(sn)
 			be.ServerNames[j] = sn
-			if serverNames[sn] != nil {
+			if serverNames[sn] == nil {
+				serverNames[sn] = be
+			} else if len(*be.ALPNProtos) == 0 {
 				return fmt.Errorf("backend[%d].ServerNames: duplicate server name %q", i, sn)
 			}
-			serverNames[sn] = be
+			for _, proto := range *be.ALPNProtos {
+				key := beKey{serverName: sn, proto: proto}
+				if beKeys[key] {
+					return fmt.Errorf("backend[%d].ServerNames: duplicate server name %q alpnProto %q combination", i, sn, proto)
+				}
+				beKeys[key] = true
+			}
 		}
 	}
 
@@ -667,19 +697,6 @@ func (cfg *Config) Check() error {
 	}
 
 	for i, be := range cfg.Backends {
-		be.Mode = strings.ToUpper(be.Mode)
-		if be.Mode == "" || be.Mode == ModePlaintext {
-			be.Mode = ModeTCP
-		}
-		if !slices.Contains(validModes, be.Mode) {
-			return fmt.Errorf("backend[%d].Mode: value %q must be one of %v", i, be.Mode, validModes)
-		}
-		if be.Mode == ModeTLSPassthrough && be.ClientAuth != nil {
-			return fmt.Errorf("backend[%d].ClientAuth: client auth is not compatible with TLS Passthrough", i)
-		}
-		if be.Mode == ModeHTTP || be.Mode == ModeHTTPS {
-			be.ALPNProtos = &[]string{"http/1.1", "http/1.0"}
-		}
 		if len(be.ServerNames) == 0 {
 			return fmt.Errorf("backend[%d].ServerNames: backend must have at least one server name", i)
 		}

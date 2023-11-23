@@ -100,7 +100,7 @@ type Proxy struct {
 	mu            sync.Mutex
 	connClosed    *sync.Cond
 	defServerName string
-	backends      map[string]*Backend
+	backends      map[beKey]*Backend
 	connections   map[connKey]*netw.Conn
 	pkis          map[string]*pki.PKIManager
 	bwLimits      map[string]*bwLimit
@@ -110,6 +110,11 @@ type Proxy struct {
 
 	eventsmu sync.Mutex
 	events   map[string]int64
+}
+
+type beKey struct {
+	serverName string
+	proto      string
 }
 
 type connKey struct {
@@ -371,13 +376,22 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		}
 	}
 
-	backends := make(map[string]*Backend, len(cfg.Backends))
+	backends := make(map[beKey]*Backend, len(cfg.Backends))
 	for _, be := range cfg.Backends {
 		be.recordEvent = p.recordEvent
 		be.tm = p.tokenManager
 
 		for _, sn := range be.ServerNames {
-			backends[sn] = be
+			key := beKey{serverName: sn}
+			if backends[key] == nil {
+				backends[key] = be
+			}
+			if be.ALPNProtos == nil {
+				continue
+			}
+			for _, proto := range *be.ALPNProtos {
+				backends[beKey{serverName: sn, proto: proto}] = be
+			}
 		}
 		if l, ok := p.bwLimits[be.BWLimit]; ok {
 			be.bwLimit = l
@@ -509,7 +523,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				}
 			}
 			tc.VerifyConnection = func(cs tls.ConnectionState) error {
-				be, err := p.backend(cs.ServerName)
+				be, err := p.backend(cs.ServerName, cs.NegotiatedProtocol)
 				if err != nil {
 					return err
 				}
@@ -594,7 +608,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				log.Printf("ERR %s: %v", v, err)
 				continue
 			}
-			be, exists := backends[host]
+			be, exists := backends[beKey{serverName: host}]
 			if !exists {
 				log.Printf("ERR Backend for %s not found", v)
 				continue
@@ -684,7 +698,8 @@ func (p *Proxy) reAuthorize() {
 
 	for _, conn := range conns {
 		serverName := connServerName(conn)
-		be, err := p.backend(serverName)
+		proto := connProto(conn)
+		be, err := p.backend(serverName, proto)
 		if err != nil {
 			p.recordEvent(err.Error())
 			log.Printf("BAD [-] ReAuth %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
@@ -835,10 +850,7 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 		}
 		return getCert(hello)
 	}
-	// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-	tc.NextProtos = []string{
-		"h2", "http/1.1",
-	}
+	tc.NextProtos = *defaultALPNProtos
 	tc.MinVersion = tls.VersionTLS12
 	return tc
 }
@@ -893,7 +905,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	}
 	conn.SetAnnotation(serverNameKey, serverName)
 
-	be, err := p.backend(serverName)
+	be, err := p.backend(serverName, hello.ALPNProtos...)
 	if err != nil {
 		p.recordEvent(err.Error())
 		log.Printf("BAD [-] %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
@@ -1125,10 +1137,19 @@ func (p *Proxy) defaultServerName() string {
 	return p.defServerName
 }
 
-func (p *Proxy) backend(serverName string) (*Backend, error) {
+func (p *Proxy) backend(serverName string, protos ...string) (*Backend, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	be, ok := p.backends[serverName]
+	var be *Backend
+	var ok bool
+	for _, proto := range protos {
+		if be, ok = p.backends[beKey{serverName: serverName, proto: proto}]; ok {
+			break
+		}
+	}
+	if !ok {
+		be, ok = p.backends[beKey{serverName: serverName}]
+	}
 	if !ok {
 		return nil, errors.New("unexpected SNI")
 	}

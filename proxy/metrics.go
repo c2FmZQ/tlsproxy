@@ -63,7 +63,7 @@ func (p *Proxy) removeConn(c *netw.Conn) int {
 	defer p.mu.Unlock()
 	delete(p.connections, connKey{c.LocalAddr(), c.RemoteAddr()})
 
-	if sn := c.Annotation(serverNameKey, "").(string); sn != "" && p.backends[sn] != nil {
+	if sn := c.Annotation(serverNameKey, "").(string); sn != "" && p.backends[beKey{serverName: sn}] != nil {
 		if p.metrics == nil {
 			p.metrics = make(map[string]*backendMetrics)
 		}
@@ -106,7 +106,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	}
 	for _, c := range p.connections {
 		sn := c.Annotation(serverNameKey, "").(string)
-		if sn == "" || p.backends[sn] == nil {
+		if sn == "" || connBackend(c) == (*Backend)(nil) {
 			continue
 		}
 		m := totals[sn]
@@ -192,7 +192,11 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		if be.ClientAuth != nil {
 			clientAuth = " TLS ClientAuth"
 		}
-		fmt.Fprintf(&buf, "Backend[%d] %s%s%s\n", i, be.Mode, clientAuth, sso)
+		protos := ""
+		if be.ALPNProtos != nil {
+			protos = " ALPN[" + strings.Join(*be.ALPNProtos, ",") + "]"
+		}
+		fmt.Fprintf(&buf, "Backend[%d] %s%s%s%s\n", i, be.Mode, clientAuth, protos, sso)
 		for j, sn := range be.ServerNames {
 			fmt.Fprintf(&buf, "  ServerName[%d]: %s\n", j, sn)
 		}
