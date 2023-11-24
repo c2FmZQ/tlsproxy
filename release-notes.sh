@@ -5,7 +5,12 @@ cd $(dirname "$0")
 version=$(echo $1 | sed 's/[.]/[.]/g')
 
 awk '
-  /^## / { on=0 }
+/^## / { if (on) exit 0 }
   /^## '"${version}"'$/ { on=1 }
   { if (on) print }
 ' < CHANGELOG.md
+
+prev=$(grep "^## v" CHANGELOG.md | grep -E '^## '"${version}"'$' -A1 | tail -n 1 | cut -c4-)
+if [[ "${prev}" != "$1" ]]; then
+  echo "[Compare with $prev](https://github.com/c2FmZQ/tlsproxy/compare/${prev}...${1})"
+fi
