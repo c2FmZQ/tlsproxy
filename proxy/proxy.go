@@ -1060,9 +1060,12 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 		return
 	}
 
-	proto := connProto(extConn)
+	var protos []string
+	if proto := connProto(extConn); proto != "" {
+		protos = []string{proto}
+	}
 
-	intConn, err := be.dial(proto)
+	intConn, err := be.dial(protos...)
 	if err != nil {
 		p.recordEvent("dial error")
 		log.Printf("ERR [-] %s ➔  %q Dial: %v", extConn.RemoteAddr(), serverName, err)

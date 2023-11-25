@@ -16,7 +16,7 @@ Overview of features:
 * [x] Terminate TLS connections, and forward the data to any TCP server in plaintext.
 * [x] Terminate TLS connections, and forward the data to any TLS server. The data is encrypted in transit, but the proxy sees the plaintext.
 * [x] Terminate _TCP_ connections, and forward the TLS connection to any TLS server (passthrough). The proxy doesn't see the plaintext.
-* [x] Terminate HTTPS connections, and forward the requests to HTTP or HTTPS servers (http/1 only, not recommended with c2fmzq-server).
+* [x] Terminate HTTPS connections, and forward the requests to HTTP or HTTPS servers (not recommended with c2fmzq-server).
 * [x] TLS client authentication & authorization (when the proxy terminates the TLS connections).
 * [x] Built-in Certificate Authority for managing client and backend server TLS certificates.
 * [x] User authentication with OpenID Connect, SAML, and/or passkeys (for HTTP and HTTPS connections). Optionally issue JSON Web Tokens (JWT) to authenticated users to use with the backend services and/or run a local OpenID Connect server for backend services.
