@@ -442,13 +442,13 @@ func TestAuthnAuthz(t *testing.T) {
 		expError         bool
 	}{
 		{desc: "no ACL, no cert", host: "noacl.example.com", expError: true},
-		{desc: "no ACL, with cert", host: "noacl.example.com", certName: "foo", want: "HTTP/1.0 200 OK"},
+		{desc: "no ACL, with cert", host: "noacl.example.com", certName: "foo", want: "HTTP/2.0 200 OK"},
 		{desc: "empty ACL, with cert", host: "emptyacl.example.com", certName: "foo", expError: true},
 		{desc: "ACL, no cert", host: "acl.example.com", expError: true},
-		{desc: "ACL, client1", host: "acl.example.com", certName: "client1", want: "HTTP/1.0 200 OK"},
-		{desc: "ACL, client2", host: "acl.example.com", certName: "client2", want: "HTTP/1.0 200 OK"},
+		{desc: "ACL, client1", host: "acl.example.com", certName: "client1", want: "HTTP/2.0 200 OK"},
+		{desc: "ACL, client2", host: "acl.example.com", certName: "client2", want: "HTTP/2.0 200 OK"},
 		{desc: "ACL, wrong cert", host: "acl.example.com", certName: "foo", expError: true},
-		{desc: "PKI client", host: "pkitest.example.com", certName: "pki", want: "HTTP/1.0 200 OK"},
+		{desc: "PKI client", host: "pkitest.example.com", certName: "pki", want: "HTTP/2.0 200 OK"},
 		{desc: "Check console1", host: "acl.example.com", certName: "client1", want: "allow X509 [SUBJECT:CN=client1;DNS:client1] to acl.example.com"},
 		{desc: "Check console2", host: "acl.example.com", certName: "client1", want: "allow X509 [SUBJECT:CN=client2;DNS:client2] to acl.example.com"},
 		{desc: "Check console3", host: "acl.example.com", certName: "client1", want: "allow X509 [SUBJECT:CN=foo;DNS:foo] to noacl.example.com"},
@@ -459,6 +459,7 @@ func TestAuthnAuthz(t *testing.T) {
 		got, err := get(tc.host, tc.certName)
 		if tc.expError != (err != nil) {
 			t.Errorf("%s: Got error %v, want %v", tc.desc, (err != nil), tc.expError)
+			t.Logf("Body: %q err: %v", got, err)
 			continue
 		}
 		if err != nil {
@@ -854,11 +855,40 @@ func tlsGet(name, addr, msg string, rootCA *certmanager.CertManager, clientCerts
 }
 
 func httpGet(name, addr string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate) (string, error) {
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialTLSContext: func(context.Context, string, string) (net.Conn, error) {
+				return tls.Dial("tcp", addr, &tls.Config{
+					ServerName:         name,
+					InsecureSkipVerify: name == "",
+					RootCAs:            rootCA.RootCACertPool(),
+					Certificates:       clientCerts,
+					NextProtos:         []string{"h2", "http/1.1"},
+				})
+			},
+			ForceAttemptHTTP2: true,
+		},
+		Timeout: 5 * time.Second,
+	}
 	host := name
 	if host == "" {
 		host = addr
 	}
-	return tlsGet(name, addr, "GET / HTTP/1.0\nHost: "+host+"\n\n", rootCA, clientCerts, nil)
+	req, err := http.NewRequest(http.MethodGet, "https://"+host+"/", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Host", host)
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return resp.Proto + " " + resp.Status + "\n" + string(b), nil
 }
 
 func newHTTPServer(t *testing.T, ctx context.Context, name string, ca *certmanager.CertManager) net.Addr {
@@ -867,7 +897,9 @@ func newHTTPServer(t *testing.T, ctx context.Context, name string, ca *certmanag
 	if ca == nil {
 		l, err = net.Listen("tcp", "localhost:0")
 	} else {
-		l, err = tls.Listen("tcp", "localhost:0", ca.TLSConfig())
+		tlsCfg := ca.TLSConfig()
+		tlsCfg.NextProtos = []string{"h2", "http/1.1"}
+		l, err = tls.Listen("tcp", "localhost:0", tlsCfg)
 	}
 	if err != nil {
 		t.Fatalf("[%s] Listen: %v", name, err)

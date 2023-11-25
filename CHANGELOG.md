@@ -2,6 +2,8 @@
 
 ## next
 
+* Add support for the HTTP/2 protocol in reverse proxy mode. This only works when the backend actually supports HTTP/2. So, it is not enabled by default. To enable it, set `alpnProtos: [h2, http/1.1]` on the backend explicitly.
+
 ## v0.1.1
 
 * Allow multiple backends with the same server name but different ALPN protos, e.g. one backend could have foo.example.com with the default ALPN protos, and another backend could have foo.example.com with `alpnProtos: [imap]`. If ALPN is not used by the client, the first backend with a matching server name will be used.

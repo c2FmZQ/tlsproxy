@@ -167,9 +167,17 @@ type Backend struct {
 	ExportJWKS string `yaml:"exportJwks,omitempty"`
 	// ALPNProtos specifies the list of ALPN procotols supported by this
 	// backend. The ACME acme-tls/1 protocol doesn't need to be specified.
-	// The default values are: h2, http/1.1
-	// Set the value to an empty slice to disable ALPN.
+	//
+	// The default values are:
+	//   [http/1.1] for HTTP and HTTPS modes, and
+	//   [h2, http/1.1] for all the other modes.
+	//
+	// To enable HTTP/2 in HTTPS mode, set the value to [h2, http/1.1]
+	// explicitly. Only do this if the backend server supports HTTP/2.
+	//
+	// Set the value to an empty slice [] to disable ALPN.
 	// The negotiated protocol is forwarded to the backends that use TLS.
+	//
 	// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
 	ALPNProtos *[]string `yaml:"alpnProtos,omitempty"`
 	// Mode controls how the proxy communicates with the backend.
@@ -640,11 +648,12 @@ func (cfg *Config) Check() error {
 		if be.Mode == ModeTLSPassthrough && be.ClientAuth != nil {
 			return fmt.Errorf("backend[%d].ClientAuth: client auth is not compatible with TLS Passthrough", i)
 		}
-		if be.Mode == ModeHTTP || be.Mode == ModeHTTPS {
-			be.ALPNProtos = &[]string{"http/1.1", "http/1.0"}
-		}
 		if be.ALPNProtos == nil {
-			be.ALPNProtos = defaultALPNProtos
+			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS {
+				be.ALPNProtos = &[]string{"http/1.1"}
+			} else {
+				be.ALPNProtos = defaultALPNProtos
+			}
 		}
 	}
 

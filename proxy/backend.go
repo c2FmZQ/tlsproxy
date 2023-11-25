@@ -40,6 +40,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/http2"
+
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
 
@@ -87,7 +89,7 @@ func (be *Backend) close(ctx context.Context) {
 	}
 }
 
-func (be *Backend) dial(proto string) (net.Conn, error) {
+func (be *Backend) dial(protos ...string) (net.Conn, error) {
 	if len(be.Addresses) == 0 {
 		return nil, errors.New("no backend addresses")
 	}
@@ -109,10 +111,6 @@ func (be *Backend) dial(proto string) (net.Conn, error) {
 		var c net.Conn
 		var err error
 		if be.Mode == ModeTLS || be.Mode == ModeHTTPS {
-			var protos []string
-			if proto != "" {
-				protos = append(protos, proto)
-			}
 			tc := &tls.Config{
 				InsecureSkipVerify: be.InsecureSkipVerify,
 				ServerName:         be.ForwardServerName,
@@ -276,13 +274,17 @@ func (be *Backend) reverseProxy() http.Handler {
 			http.NotFound(w, req)
 		})
 	} else {
-		rp = &httputil.ReverseProxy{
+		h1 := &httputil.ReverseProxy{
 			Director: be.reverseProxyDirector,
 			Transport: &cleanRoundTripper{
 				serverNames: be.ServerNames,
 				RoundTripper: &http.Transport{
-					DialContext:           be.reverseProxyDial,
-					DialTLSContext:        be.reverseProxyDial,
+					DialContext: func(context.Context, string, string) (net.Conn, error) {
+						return be.dial()
+					},
+					DialTLSContext: func(context.Context, string, string) (net.Conn, error) {
+						return be.dial()
+					},
 					MaxIdleConns:          100,
 					IdleConnTimeout:       30 * time.Second,
 					ExpectContinueTimeout: 1 * time.Second,
@@ -290,12 +292,34 @@ func (be *Backend) reverseProxy() http.Handler {
 			},
 			ModifyResponse: be.reverseProxyModifyResponse,
 		}
+		h2 := &httputil.ReverseProxy{
+			Director: be.reverseProxyDirector,
+			Transport: &cleanRoundTripper{
+				serverNames: be.ServerNames,
+				RoundTripper: &http2.Transport{
+					DialTLSContext: func(context.Context, string, string, *tls.Config) (net.Conn, error) {
+						return be.dial("h2")
+					},
+					DisableCompression: true,
+					AllowHTTP:          true,
+					ReadIdleTimeout:    30 * time.Second,
+					WriteByteTimeout:   30 * time.Second,
+					CountError: func(errType string) {
+						be.recordEvent("http2 client error: " + errType)
+					},
+				},
+			},
+			ModifyResponse: be.reverseProxyModifyResponse,
+		}
+		rp = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.TLS != nil && req.TLS.NegotiatedProtocol == "h2" {
+				h2.ServeHTTP(w, req)
+			} else {
+				h1.ServeHTTP(w, req)
+			}
+		})
 	}
 	return be.userAuthentication(be.localHandlersAndAuthz(rp))
-}
-
-func (be *Backend) reverseProxyDial(ctx context.Context, network, addr string) (net.Conn, error) {
-	return be.dial("")
 }
 
 func (be *Backend) reverseProxyDirector(req *http.Request) {
