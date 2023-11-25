@@ -570,6 +570,25 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				return err
 			}
 		}
+		for _, po := range be.PathOverrides {
+			for _, n := range po.ForwardRootCAs {
+				if po.forwardRootCAs == nil {
+					po.forwardRootCAs = x509.NewCertPool()
+				}
+				if m, ok := pkis[n]; ok {
+					ca, err := m.CACert()
+					if err != nil {
+						return err
+					}
+					be.pkiMap[hex.EncodeToString(ca.SubjectKeyId)] = m
+					po.forwardRootCAs.AddCert(ca)
+					continue
+				}
+				if err := loadCerts(po.forwardRootCAs, n); err != nil {
+					return err
+				}
+			}
+		}
 		if be.ExportJWKS != "" {
 			be.localHandlers = append(be.localHandlers, localHandler{
 				desc:      "JWKS Endpoint",
@@ -1065,7 +1084,7 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 		protos = []string{proto}
 	}
 
-	intConn, err := be.dial(protos...)
+	intConn, err := be.dial(p.ctx, protos...)
 	if err != nil {
 		p.recordEvent("dial error")
 		log.Printf("ERR [-] %s ➔  %q Dial: %v", extConn.RemoteAddr(), serverName, err)
@@ -1105,7 +1124,7 @@ func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
 		return
 	}
 
-	intConn, err := be.dial("")
+	intConn, err := be.dial(p.ctx)
 	if err != nil {
 		p.recordEvent("dial error")
 		log.Printf("ERR [-] %s ➔  %q Dial: %v", extConn.RemoteAddr(), serverName, err)

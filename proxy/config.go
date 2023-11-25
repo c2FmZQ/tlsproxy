@@ -210,14 +210,14 @@ type Backend struct {
 	//     backend's server name.
 	//        CLIENT --TLS--> PROXY CONSOLE
 	Mode string `yaml:"mode"`
-	// Addresses is a list of server addresses where requests are forwarded.
-	// When more than one address are specified, requests are distributed
-	// using a simple round robin.
-	Addresses []string `yaml:"addresses,omitempty"`
 	// BWLimit is the name of the bandwidth limit policy to apply to this
 	// backend. All backends using the same policy are subject to common
 	// limits.
 	BWLimit string `yaml:"bwLimit,omitempty"`
+	// Addresses is a list of server addresses where requests are forwarded.
+	// When more than one address are specified, requests are distributed
+	// using a simple round robin.
+	Addresses []string `yaml:"addresses,omitempty"`
 	// InsecureSkipVerify disabled the verification of the backend server's
 	// TLS certificate. See https://pkg.go.dev/crypto/tls#Config
 	InsecureSkipVerify bool `yaml:"insecureSkipVerify,omitempty"`
@@ -239,6 +239,10 @@ type Backend struct {
 	// long to wait before trying the next address in the list. The default
 	// value is 30 seconds.
 	ForwardTimeout time.Duration `yaml:"forwardTimeout"`
+	// PathOverrides specifies different backend parameters for some path
+	// prefixes.
+	// Paths are matched by prefix in the order that they are listed here.
+	PathOverrides []*PathOverride `yaml:"pathOverrides"`
 
 	// TCP connections consist of two streams of data:
 	//
@@ -452,6 +456,39 @@ type BackendSSO struct {
 
 	p  identityProvider
 	cm *cookiemanager.CookieManager
+}
+
+// PathOverride specifies different backend parameters for some path prefixes.
+type PathOverride struct {
+	// Paths is the list of path prefixes for which these parameters apply.
+	Paths []string `yaml:"paths"`
+	// Addresses is a list of server addresses where requests are forwarded.
+	// When more than one address are specified, requests are distributed
+	// using a simple round robin.
+	Addresses []string `yaml:"addresses,omitempty"`
+	// Mode is either HTTP or HTTPS.
+	Mode string `yaml:"mode"`
+	// InsecureSkipVerify disabled the verification of the backend server's
+	// TLS certificate. See https://pkg.go.dev/crypto/tls#Config
+	InsecureSkipVerify bool `yaml:"insecureSkipVerify,omitempty"`
+	// ForwardServerName is the ServerName to send in the TLS handshake with
+	// the backend server. It is also used to verify the server's identify.
+	// This is particularly useful when the addresses use IP addresses
+	// instead of hostnames.
+	ForwardServerName string `yaml:"forwardServerName,omitempty"`
+	// ForwardRootCAs a list of:
+	// - CA names defined in the PKI section,
+	// - File names that contain PEM-encoded certificates, or
+	// - PEM-encoded certificates.
+	ForwardRootCAs []string `yaml:"forwardRootCAs,omitempty"`
+	// ForwardTimeout is the connection timeout to backend servers. If
+	// Addresses contains multiple addresses, this timeout indicates how
+	// long to wait before trying the next address in the list. The default
+	// value is 30 seconds.
+	ForwardTimeout time.Duration `yaml:"forwardTimeout"`
+
+	forwardRootCAs *x509.CertPool
+	next           int
 }
 
 // LocalOIDCServer is used to configure a local OpenID Provider to
@@ -806,6 +843,39 @@ func (cfg *Config) Check() error {
 			be.ForwardRateLimit = 5
 		}
 		be.connLimit = rate.NewLimiter(rate.Limit(be.ForwardRateLimit), be.ForwardRateLimit)
+
+		if len(be.PathOverrides) > 0 && be.Mode != ModeHTTP && be.Mode != ModeHTTPS {
+			return fmt.Errorf("backend[%d].PathOverrides is only valid in %s or %s mode", i, ModeHTTP, ModeHTTPS)
+		}
+		for j, po := range be.PathOverrides {
+			if len(po.Paths) == 0 {
+				return fmt.Errorf("backend[%d].PathOverrides[%d].Paths: cannot be empty", i, j)
+			}
+			for k, n := range po.Paths {
+				if !strings.HasPrefix(n, "/") {
+					return fmt.Errorf("backend[%d].PathOverrides[%d].Paths[%d]: must start with /", i, j, k)
+				}
+			}
+			if po.Mode == "" {
+				po.Mode = be.Mode
+			}
+			po.Mode = strings.ToUpper(po.Mode)
+			if po.Mode != ModeHTTP && po.Mode != ModeHTTPS {
+				return fmt.Errorf("backend[%d].PathOverrides[%d].Mode: must be either %s or %s", i, j, ModeHTTP, ModeHTTPS)
+			}
+			pool := x509.NewCertPool()
+			for k, n := range po.ForwardRootCAs {
+				if pkis[n] {
+					continue
+				}
+				if err := loadCerts(pool, n); err != nil {
+					return fmt.Errorf("backend[%d].PathOverrides[%d].ForwardRootCAs[%d]: %w", i, j, k, err)
+				}
+			}
+			if po.ForwardTimeout == 0 {
+				po.ForwardTimeout = 30 * time.Second
+			}
+		}
 	}
 	return os.MkdirAll(cfg.CacheDir, 0o700)
 }

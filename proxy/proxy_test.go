@@ -191,6 +191,19 @@ func TestProxyBackends(t *testing.T) {
 					be8.String(),
 				},
 				Mode: "HTTP",
+				PathOverrides: []*PathOverride{
+					{
+						Paths: []string{
+							"/foo",
+						},
+						Addresses: []string{
+							be9.String(),
+						},
+						Mode:              "HTTPS",
+						ForwardRootCAs:    []string{intCA.RootCAPEM()},
+						ForwardServerName: "https-internal.example.com",
+					},
+				},
 			},
 			// HTTPS
 			{
@@ -241,7 +254,7 @@ func TestProxyBackends(t *testing.T) {
 		t.Fatalf("proxy.Reconfigure: %v", err)
 	}
 
-	get := func(host, certName string, protos []string, http bool) (string, error) {
+	get := func(host, certName string, protos []string, httpPath string) (string, error) {
 		var certs []tls.Certificate
 		if certName != "" {
 			c, err := intCA.GetCert(certName)
@@ -252,8 +265,8 @@ func TestProxyBackends(t *testing.T) {
 		}
 		var body string
 		var err error
-		if http {
-			body, err = httpGet(host, proxy.listener.Addr().String(), extCA, certs)
+		if httpPath != "" {
+			body, err = httpGet(host, proxy.listener.Addr().String(), httpPath, extCA, certs)
 		} else {
 			body, err = tlsGet(host, proxy.listener.Addr().String(), "Hello!\n", extCA, certs, protos)
 		}
@@ -267,7 +280,7 @@ func TestProxyBackends(t *testing.T) {
 		desc, host, want string
 		certName         string
 		protos           []string
-		http             bool
+		http             string
 		expError         bool
 	}{
 		{desc: "Hit backend1", host: "example.com", want: "Hello from backend1\n"},
@@ -287,11 +300,12 @@ func TestProxyBackends(t *testing.T) {
 		{desc: "Hit backend6 random proto", host: "noproto.example.com", want: "Hello from backend6\n", protos: []string{"foo", "bar"}},
 		{desc: "Unknown server name", host: "foo.example.com", expError: true},
 		{desc: "Hit backend7", host: "passthrough.example.com", want: "Hello from backend7\n"},
-		{desc: "Hit backend8", host: "http.example.com", want: "[backend8] /", http: true},
-		{desc: "Hit backend9", host: "https.example.com", want: "[backend9] /", http: true, certName: "client.example.com"},
+		{desc: "Hit backend8", host: "http.example.com", want: "[backend8] /", http: "/"},
+		{desc: "Hit backend8 /foo", host: "http.example.com", want: "[backend9] /foo", http: "/foo"},
+		{desc: "Hit backend9", host: "https.example.com", want: "[backend9] /", http: "/", certName: "client.example.com"},
 		{desc: "Hit backend10", host: "tls-pki.example.com", want: "Hello from backend10\n", certName: "client.example.com"},
-		{desc: "Hit loop", host: "loop.example.com", want: "508 Loop Detected", http: true},
-		{desc: "Hit default backend with IP address as host", host: "", want: "421 Misdirected Request", http: true},
+		{desc: "Hit loop", host: "loop.example.com", want: "508 Loop Detected", http: "/"},
+		{desc: "Hit default backend with IP address as host", host: "", want: "421 Misdirected Request", http: "/"},
 	} {
 		got, err := get(tc.host, tc.certName, tc.protos, tc.http)
 		if tc.expError != (err != nil) {
@@ -302,7 +316,7 @@ func TestProxyBackends(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		if tc.http {
+		if tc.http != "" {
 			if !strings.Contains(got, tc.want) {
 				t.Errorf("%s: Got %q, want %q", tc.desc, got, tc.want)
 			}
@@ -318,7 +332,7 @@ func TestProxyBackends(t *testing.T) {
 	if err := proxy.pkis["TEST CA"].RevokeCertificate(pc.SerialNumber, 0); err != nil {
 		t.Fatalf("RevokeCertificate: %v", err)
 	}
-	if got, err := get("tls-pki.example.com", "client.example.com", nil, false); got != "" {
+	if got, err := get("tls-pki.example.com", "client.example.com", nil, ""); got != "" {
 		t.Errorf("get with revoked cert should return nothing: %q, %v", got, err)
 	}
 }
@@ -429,7 +443,7 @@ func TestAuthnAuthz(t *testing.T) {
 			}
 			certs = append(certs, *c)
 		}
-		body, err := httpGet(host, proxy.listener.Addr().String(), extCA, certs)
+		body, err := httpGet(host, proxy.listener.Addr().String(), "/", extCA, certs)
 		if err != nil {
 			return "", err
 		}
@@ -497,7 +511,7 @@ func TestConcurrency(t *testing.T) {
 			HTTPAddr: "localhost:0",
 			TLSAddr:  "localhost:0",
 			CacheDir: t.TempDir(),
-			MaxOpen:  2000,
+			MaxOpen:  5000,
 			Backends: []*Backend{
 				{
 					ServerNames: []string{
@@ -854,7 +868,7 @@ func tlsGet(name, addr, msg string, rootCA *certmanager.CertManager, clientCerts
 	return string(b), nil
 }
 
-func httpGet(name, addr string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate) (string, error) {
+func httpGet(name, addr, path string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate) (string, error) {
 	client := &http.Client{
 		Transport: &http.Transport{
 			DialTLSContext: func(context.Context, string, string) (net.Conn, error) {
@@ -874,7 +888,7 @@ func httpGet(name, addr string, rootCA *certmanager.CertManager, clientCerts []t
 	if host == "" {
 		host = addr
 	}
-	req, err := http.NewRequest(http.MethodGet, "https://"+host+"/", nil)
+	req, err := http.NewRequest(http.MethodGet, "https://"+host+path, nil)
 	if err != nil {
 		return "", err
 	}
