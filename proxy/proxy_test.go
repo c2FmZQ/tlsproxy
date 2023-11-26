@@ -48,6 +48,7 @@ import (
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
+	"github.com/pires/go-proxyproto"
 )
 
 func TestProxyBackends(t *testing.T) {
@@ -100,6 +101,10 @@ func TestProxyBackends(t *testing.T) {
 	be9 := newHTTPServer(t, ctx, "backend9", intCA)
 	// Backend with PKI cert.
 	be10 := newTCPServer(t, ctx, "backend10", pkiCert)
+	// Backend with HTTP and proxy protocol
+	be11 := newHTTPServerProxyProtocol(t, ctx, "backend11", nil)
+	// Backend with TCP and proxy protocol
+	be12 := newProxyProtocolServer(t, ctx, "backend12", nil)
 
 	cfg := &Config{
 		MaxOpen: 100,
@@ -236,6 +241,28 @@ func TestProxyBackends(t *testing.T) {
 					RootCAs: []string{intCA.RootCAPEM()},
 				},
 			},
+			// HTTP + PROXY Protocol
+			{
+				ServerNames: []string{
+					"http-proxy.example.com",
+				},
+				Addresses: []string{
+					be11.String(),
+				},
+				Mode:                 "HTTP",
+				ProxyProtocolVersion: "v1",
+			},
+			// TCP + PROXY Protocol
+			{
+				ServerNames: []string{
+					"tcp-proxy.example.com",
+				},
+				Addresses: []string{
+					be12.listener.Addr().String(),
+				},
+				Mode:                 "TCP",
+				ProxyProtocolVersion: "v2",
+			},
 			// HTTPS loop
 			{
 				ServerNames: []string{
@@ -304,6 +331,8 @@ func TestProxyBackends(t *testing.T) {
 		{desc: "Hit backend8 /foo", host: "http.example.com", want: "[backend9] /foo", http: "/foo"},
 		{desc: "Hit backend9", host: "https.example.com", want: "[backend9] /", http: "/", certName: "client.example.com"},
 		{desc: "Hit backend10", host: "tls-pki.example.com", want: "Hello from backend10\n", certName: "client.example.com"},
+		{desc: "Hit backend11", host: "http-proxy.example.com", want: "[backend11] /", http: "/"},
+		{desc: "Hit backend12", host: "tcp-proxy.example.com", want: "Hello from backend12\n"},
 		{desc: "Hit loop", host: "loop.example.com", want: "508 Loop Detected", http: "/"},
 		{desc: "Hit default backend with IP address as host", host: "", want: "421 Misdirected Request", http: "/"},
 	} {
@@ -934,6 +963,42 @@ func newHTTPServer(t *testing.T, ctx context.Context, name string, ca *certmanag
 	return l.Addr()
 }
 
+func newHTTPServerProxyProtocol(t *testing.T, ctx context.Context, name string, ca *certmanager.CertManager) net.Addr {
+	var l net.Listener
+	var err error
+	if ca == nil {
+		l, err = net.Listen("tcp", "localhost:0")
+	} else {
+		tlsCfg := ca.TLSConfig()
+		tlsCfg.NextProtos = []string{"h2", "http/1.1"}
+		l, err = tls.Listen("tcp", "localhost:0", tlsCfg)
+	}
+	if err != nil {
+		t.Fatalf("[%s] Listen: %v", name, err)
+	}
+	proxyListener := &proxyproto.Listener{
+		Listener:          l,
+		ReadHeaderTimeout: time.Second,
+	}
+	s := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			conn := req.Context().Value(connCtxKey).(*proxyproto.Conn)
+			f, _ := conn.ProxyHeader().Format()
+			t.Logf("[%s] PROXY HEADER: %q", name, f)
+			fmt.Fprintf(w, "[%s] %s\n", name, req.RequestURI)
+		}),
+		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
+			return context.WithValue(ctx, connCtxKey, c)
+		},
+	}
+	go s.Serve(proxyListener)
+	go func() {
+		<-ctx.Done()
+		s.Close()
+	}()
+	return proxyListener.Addr()
+}
+
 type tcProvider interface {
 	TLSConfig() *tls.Config
 }
@@ -960,6 +1025,50 @@ func newTCPServer(t *testing.T, ctx context.Context, name string, ca tcProvider)
 				continue
 			}
 			t.Logf("[%s] Received connection from %s", name, conn.RemoteAddr())
+			go func(c net.Conn) {
+				fmt.Fprintf(c, "Hello from %s\n", name)
+				c.Close()
+			}(conn)
+		}
+	}()
+	go func() {
+		<-ctx.Done()
+		l.Close()
+	}()
+	return &tcpServer{
+		t:        t,
+		listener: l,
+	}
+}
+
+func newProxyProtocolServer(t *testing.T, ctx context.Context, name string, ca tcProvider) *tcpServer {
+	var l net.Listener
+	var err error
+	if ca == nil {
+		l, err = net.Listen("tcp", "localhost:0")
+	} else {
+		l, err = tls.Listen("tcp", "localhost:0", ca.TLSConfig())
+	}
+	if err != nil {
+		t.Fatalf("[%s] Listen: %v", name, err)
+	}
+	l = &proxyproto.Listener{
+		Listener:          l,
+		ReadHeaderTimeout: time.Second,
+	}
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					break
+				}
+				t.Logf("[%s] Accept: %v", name, err)
+				continue
+			}
+			t.Logf("[%s] Received connection from %s", name, conn.RemoteAddr())
+			f, _ := conn.(*proxyproto.Conn).ProxyHeader().Format()
+			t.Logf("[%s] PROXY HEADER: %q", name, f)
 			go func(c net.Conn) {
 				fmt.Fprintf(c, "Hello from %s\n", name)
 				c.Close()
