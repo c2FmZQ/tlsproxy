@@ -25,6 +25,7 @@ package proxy
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
@@ -54,7 +55,12 @@ const (
 	xForwardedForHeader = "X-Forwarded-For"
 )
 
+type ctxURLKeyType int
+
 var (
+	ctxURLKey        ctxURLKeyType = 1
+	ctxOverrideIDKey ctxURLKeyType = 2
+
 	commaRE = regexp.MustCompile(`, *`)
 )
 
@@ -89,33 +95,53 @@ func (be *Backend) close(ctx context.Context) {
 	}
 }
 
-func (be *Backend) dial(protos ...string) (net.Conn, error) {
-	if len(be.Addresses) == 0 {
+func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error) {
+	var (
+		addresses          = be.Addresses
+		mode               = be.Mode
+		timeout            = be.ForwardTimeout
+		insecureSkipVerify = be.InsecureSkipVerify
+		serverName         = be.ForwardServerName
+		rootCAs            = be.forwardRootCAs
+		next               = &be.next
+	)
+	if id, ok := ctx.Value(ctxOverrideIDKey).(int); ok && id >= 0 && id < len(be.PathOverrides) {
+		po := be.PathOverrides[id]
+		addresses = po.Addresses
+		mode = po.Mode
+		timeout = po.ForwardTimeout
+		insecureSkipVerify = po.InsecureSkipVerify
+		serverName = po.ForwardServerName
+		rootCAs = po.forwardRootCAs
+		next = &po.next
+	}
+
+	if len(addresses) == 0 {
 		return nil, errors.New("no backend addresses")
 	}
 	var max int
 	for {
 		be.mu.Lock()
-		sz := len(be.Addresses)
+		sz := len(addresses)
 		if max == 0 {
 			max = sz
 		}
-		addr := be.Addresses[be.next]
-		be.next = (be.next + 1) % sz
+		addr := addresses[*next]
+		*next = (*next + 1) % sz
 		be.mu.Unlock()
 
 		dialer := &net.Dialer{
-			Timeout:   be.ForwardTimeout,
+			Timeout:   timeout,
 			KeepAlive: 30 * time.Second,
 		}
 		var c net.Conn
 		var err error
-		if be.Mode == ModeTLS || be.Mode == ModeHTTPS {
+		if mode == ModeTLS || mode == ModeHTTPS {
 			tc := &tls.Config{
-				InsecureSkipVerify: be.InsecureSkipVerify,
-				ServerName:         be.ForwardServerName,
+				InsecureSkipVerify: insecureSkipVerify,
+				ServerName:         serverName,
 				NextProtos:         protos,
-				RootCAs:            be.forwardRootCAs,
+				RootCAs:            rootCAs,
 				VerifyConnection: func(cs tls.ConnectionState) error {
 					if len(cs.PeerCertificates) == 0 {
 						return errors.New("no certificate")
@@ -279,11 +305,11 @@ func (be *Backend) reverseProxy() http.Handler {
 			Transport: &cleanRoundTripper{
 				serverNames: be.ServerNames,
 				RoundTripper: &http.Transport{
-					DialContext: func(context.Context, string, string) (net.Conn, error) {
-						return be.dial()
+					DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+						return be.dial(ctx)
 					},
-					DialTLSContext: func(context.Context, string, string) (net.Conn, error) {
-						return be.dial()
+					DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+						return be.dial(ctx)
 					},
 					MaxIdleConns:          100,
 					IdleConnTimeout:       30 * time.Second,
@@ -297,8 +323,8 @@ func (be *Backend) reverseProxy() http.Handler {
 			Transport: &cleanRoundTripper{
 				serverNames: be.ServerNames,
 				RoundTripper: &http2.Transport{
-					DialTLSContext: func(context.Context, string, string, *tls.Config) (net.Conn, error) {
-						return be.dial("h2")
+					DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+						return be.dial(ctx, "h2")
 					},
 					DisableCompression: true,
 					AllowHTTP:          true,
@@ -312,6 +338,43 @@ func (be *Backend) reverseProxy() http.Handler {
 			ModifyResponse: be.reverseProxyModifyResponse,
 		}
 		rp = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := req.Context()
+			host := req.Host
+			if host == "" {
+				host = connServerName(ctx.Value(connCtxKey).(*tls.Conn))
+			}
+			if !slices.Contains(be.ServerNames, host) {
+				if req.Body != nil {
+					req.Body.Close()
+				}
+				http.Error(w, "Misdirected Request", http.StatusMisdirectedRequest)
+				return
+			}
+
+			req.URL.Scheme = "https"
+			if be.Mode == ModeHTTP {
+				req.URL.Scheme = "http"
+			}
+			req.URL.Host = host
+			req.Header.Set(hostHeader, host)
+			ctx = context.WithValue(ctx, ctxURLKey, req.URL.String())
+
+			h := sha256.Sum256([]byte(req.URL.Hostname()))
+			hh := hex.EncodeToString(h[:])
+			req.URL.Host = hh
+		L:
+			for i, po := range be.PathOverrides {
+				for _, prefix := range po.Paths {
+					if !strings.HasPrefix(req.URL.Path, prefix) {
+						continue
+					}
+					req.URL.Host = fmt.Sprintf("%s-%d", hh, i)
+					ctx = context.WithValue(ctx, ctxOverrideIDKey, i)
+					break L
+				}
+			}
+			req = req.WithContext(ctx)
+
 			if req.TLS != nil && req.TLS.NegotiatedProtocol == "h2" {
 				h2.ServeHTTP(w, req)
 			} else {
@@ -323,17 +386,6 @@ func (be *Backend) reverseProxy() http.Handler {
 }
 
 func (be *Backend) reverseProxyDirector(req *http.Request) {
-	req.URL.Scheme = "https"
-	if be.Mode == ModeHTTP {
-		req.URL.Scheme = "http"
-	}
-	host := req.Host
-	if host == "" {
-		host = be.ServerNames[0]
-	}
-	req.URL.Host = host
-	req.Host = host
-	req.Header.Set(hostHeader, host)
 	req.Header.Del(xForwardedForHeader)
 	req.Header.Del(xFCCHeader)
 
@@ -355,7 +407,8 @@ func (be *Backend) reverseProxyModifyResponse(resp *http.Response) error {
 	if resp.ContentLength != -1 {
 		cl = fmt.Sprintf(" content-length:%d", resp.ContentLength)
 	}
-	log.Printf("PRX %s ➔ %s %s ➔ status:%d%s (%q)", formatReqDesc(req), req.Method, req.URL, resp.StatusCode, cl, userAgent(req))
+	url, _ := req.Context().Value(ctxURLKey).(string)
+	log.Printf("PRX %s ➔ %s %s ➔ status:%d%s (%q)", formatReqDesc(req), req.Method, url, resp.StatusCode, cl, userAgent(req))
 
 	if resp.StatusCode != http.StatusMisdirectedRequest && resp.Header.Get(hstsHeader) == "" {
 		resp.Header.Set(hstsHeader, hstsValue)
@@ -384,13 +437,6 @@ func (rt *cleanRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 			req.Body.Close()
 		}
 		return makeResponse(req, http.StatusLoopDetected, nil, req.Header.Get(viaHeader)), nil
-	}
-
-	if !slices.Contains(rt.serverNames, hostFromReq(req)) {
-		if req.Body != nil {
-			req.Body.Close()
-		}
-		return makeResponse(req, http.StatusMisdirectedRequest, nil, ""), nil
 	}
 	return rt.RoundTripper.RoundTrip(req)
 }
