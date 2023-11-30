@@ -374,7 +374,15 @@ func (be *Backend) reverseProxy() http.Handler {
 			if host == "" {
 				host = connServerName(ctx.Value(connCtxKey).(*tls.Conn))
 			}
-			if !slices.Contains(be.ServerNames, host) {
+			req.URL.Scheme = "https"
+			if be.Mode == ModeHTTP {
+				req.URL.Scheme = "http"
+			}
+			req.URL.Host = host
+			req.Header.Set(hostHeader, host)
+			hostname := req.URL.Hostname()
+
+			if !slices.Contains(be.ServerNames, hostname) {
 				if req.Body != nil {
 					req.Body.Close()
 				}
@@ -382,15 +390,9 @@ func (be *Backend) reverseProxy() http.Handler {
 				return
 			}
 
-			req.URL.Scheme = "https"
-			if be.Mode == ModeHTTP {
-				req.URL.Scheme = "http"
-			}
-			req.URL.Host = host
-			req.Header.Set(hostHeader, host)
 			ctx = context.WithValue(ctx, ctxURLKey, req.URL.String())
 
-			h := sha256.Sum256([]byte(req.URL.Hostname()))
+			h := sha256.Sum256([]byte(hostname))
 			hh := hex.EncodeToString(h[:])
 			req.URL.Host = hh
 		L:
