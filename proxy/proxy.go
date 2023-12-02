@@ -1084,7 +1084,7 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 		protos = []string{proto}
 	}
 
-	intConn, err := be.dial(p.ctx, protos...)
+	intConn, err := be.dial(context.WithValue(p.ctx, connCtxKey, extConn), protos...)
 	if err != nil {
 		p.recordEvent("dial error")
 		log.Printf("ERR [-] %s ➔  %q Dial: %v", extConn.RemoteAddr(), serverName, err)
@@ -1124,7 +1124,7 @@ func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
 		return
 	}
 
-	intConn, err := be.dial(p.ctx)
+	intConn, err := be.dial(context.WithValue(p.ctx, connCtxKey, extConn))
 	if err != nil {
 		p.recordEvent("dial error")
 		log.Printf("ERR [-] %s ➔  %q Dial: %v", extConn.RemoteAddr(), serverName, err)

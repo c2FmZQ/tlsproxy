@@ -41,6 +41,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pires/go-proxyproto"
 	"golang.org/x/net/http2"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
@@ -103,6 +104,7 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 		insecureSkipVerify = be.InsecureSkipVerify
 		serverName         = be.ForwardServerName
 		rootCAs            = be.forwardRootCAs
+		proxyProtoVersion  = be.proxyProtocolVersion
 		next               = &be.next
 	)
 	if id, ok := ctx.Value(ctxOverrideIDKey).(int); ok && id >= 0 && id < len(be.PathOverrides) {
@@ -113,6 +115,7 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 		insecureSkipVerify = po.InsecureSkipVerify
 		serverName = po.ForwardServerName
 		rootCAs = po.forwardRootCAs
+		proxyProtoVersion = po.proxyProtocolVersion
 		next = &po.next
 	}
 
@@ -153,9 +156,13 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 					return nil
 				},
 			}
-			c, err = tls.DialWithDialer(dialer, "tcp", addr, tc)
+			tlsDialer := &tls.Dialer{
+				NetDialer: dialer,
+				Config:    tc,
+			}
+			c, err = tlsDialer.DialContext(ctx, "tcp", addr)
 		} else {
-			c, err = dialer.Dial("tcp", addr)
+			c, err = dialer.DialContext(ctx, "tcp", addr)
 		}
 		if err != nil {
 			max--
@@ -164,6 +171,30 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 				continue
 			}
 			return nil, err
+		}
+		if proxyProtoVersion > 0 {
+			conn := ctx.Value(connCtxKey).(*tls.Conn)
+			header := proxyproto.HeaderProxyFromAddrs(proxyProtoVersion, conn.RemoteAddr(), conn.LocalAddr())
+			header.Command = proxyproto.PROXY
+			var tlvs []proxyproto.TLV
+			if sn := connServerName(conn); sn != "" {
+				tlvs = append(tlvs, proxyproto.TLV{
+					Type:  proxyproto.PP2_TYPE_AUTHORITY,
+					Value: []byte(sn),
+				})
+			}
+			if proto := connProto(conn); proto != "" {
+				tlvs = append(tlvs, proxyproto.TLV{
+					Type:  proxyproto.PP2_TYPE_ALPN,
+					Value: []byte(proto),
+				})
+			}
+			if err := header.SetTLVs(tlvs); err != nil {
+				return nil, err
+			}
+			if _, err := header.WriteTo(c); err != nil {
+				return nil, err
+			}
 		}
 		return c, nil
 	}
@@ -343,7 +374,15 @@ func (be *Backend) reverseProxy() http.Handler {
 			if host == "" {
 				host = connServerName(ctx.Value(connCtxKey).(*tls.Conn))
 			}
-			if !slices.Contains(be.ServerNames, host) {
+			req.URL.Scheme = "https"
+			if be.Mode == ModeHTTP {
+				req.URL.Scheme = "http"
+			}
+			req.URL.Host = host
+			req.Header.Set(hostHeader, host)
+			hostname := req.URL.Hostname()
+
+			if !slices.Contains(be.ServerNames, hostname) {
 				if req.Body != nil {
 					req.Body.Close()
 				}
@@ -351,15 +390,9 @@ func (be *Backend) reverseProxy() http.Handler {
 				return
 			}
 
-			req.URL.Scheme = "https"
-			if be.Mode == ModeHTTP {
-				req.URL.Scheme = "http"
-			}
-			req.URL.Host = host
-			req.Header.Set(hostHeader, host)
 			ctx = context.WithValue(ctx, ctxURLKey, req.URL.String())
 
-			h := sha256.Sum256([]byte(req.URL.Hostname()))
+			h := sha256.Sum256([]byte(hostname))
 			hh := hex.EncodeToString(h[:])
 			req.URL.Host = hh
 		L:

@@ -35,6 +35,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -243,6 +244,11 @@ type Backend struct {
 	// prefixes.
 	// Paths are matched by prefix in the order that they are listed here.
 	PathOverrides []*PathOverride `yaml:"pathOverrides"`
+	// ProxyProtocolVersion enables the PROXY protocol on this backend. The
+	// value is the version of the protocol to use, e.g. v1 or v2.
+	// By default, the proxy protocol is not enabled.
+	// See https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt
+	ProxyProtocolVersion string `yaml:"proxyProtocolVersion,omitempty"`
 
 	// TCP connections consist of two streams of data:
 	//
@@ -282,11 +288,12 @@ type Backend struct {
 	recordEvent func(string)
 	tm          *tokenmanager.TokenManager
 
-	tlsConfig      *tls.Config
-	forwardRootCAs *x509.CertPool
-	pkiMap         map[string]*pki.PKIManager
-	bwLimit        *bwLimit
-	connLimit      *rate.Limiter
+	tlsConfig            *tls.Config
+	forwardRootCAs       *x509.CertPool
+	pkiMap               map[string]*pki.PKIManager
+	bwLimit              *bwLimit
+	connLimit            *rate.Limiter
+	proxyProtocolVersion byte
 
 	allowIPs *[]*net.IPNet
 	denyIPs  *[]*net.IPNet
@@ -486,9 +493,15 @@ type PathOverride struct {
 	// long to wait before trying the next address in the list. The default
 	// value is 30 seconds.
 	ForwardTimeout time.Duration `yaml:"forwardTimeout"`
+	// ProxyProtocolVersion enables the PROXY protocol on this backend. The
+	// value is the version of the protocol to use, e.g. v1 or v2.
+	// By default, the proxy protocol is not enabled.
+	// See https://www.haproxy.org/download/2.3/doc/proxy-protocol.txt
+	ProxyProtocolVersion string `yaml:"proxyProtocolVersion,omitempty"`
 
-	forwardRootCAs *x509.CertPool
-	next           int
+	forwardRootCAs       *x509.CertPool
+	proxyProtocolVersion byte
+	next                 int
 }
 
 // LocalOIDCServer is used to configure a local OpenID Provider to
@@ -843,6 +856,11 @@ func (cfg *Config) Check() error {
 			be.ForwardRateLimit = 5
 		}
 		be.connLimit = rate.NewLimiter(rate.Limit(be.ForwardRateLimit), be.ForwardRateLimit)
+		ver, err := validateProxyProtoVersion(be.ProxyProtocolVersion)
+		if err != nil {
+			return fmt.Errorf("backend[%d].ProxyProtocolVersion: %w", i, err)
+		}
+		be.proxyProtocolVersion = ver
 
 		if len(be.PathOverrides) > 0 && be.Mode != ModeHTTP && be.Mode != ModeHTTPS {
 			return fmt.Errorf("backend[%d].PathOverrides is only valid in %s or %s mode", i, ModeHTTP, ModeHTTPS)
@@ -875,9 +893,28 @@ func (cfg *Config) Check() error {
 			if po.ForwardTimeout == 0 {
 				po.ForwardTimeout = 30 * time.Second
 			}
+			ver, err := validateProxyProtoVersion(po.ProxyProtocolVersion)
+			if err != nil {
+				return fmt.Errorf("backend[%d].PathOverrides[%d].ProxyProtocolVersion: %w", i, j, err)
+			}
+			po.proxyProtocolVersion = ver
 		}
 	}
 	return os.MkdirAll(cfg.CacheDir, 0o700)
+}
+
+func validateProxyProtoVersion(s string) (byte, error) {
+	if s == "" {
+		return 0, nil
+	}
+	if len(s) < 2 || s[0] != 'v' {
+		return 0, fmt.Errorf("invalid value %q, expected v1 or v2", s)
+	}
+	v, err := strconv.ParseInt(s[1:], 10, 8)
+	if err != nil {
+		return 0, err
+	}
+	return byte(v), nil
 }
 
 // ReadConfig reads and validates a YAML config file.
