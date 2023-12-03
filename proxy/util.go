@@ -83,10 +83,3 @@ func connIntConn(c net.Conn) net.Conn {
 	}
 	return nil
 }
-
-func connReverseStream(c net.Conn) bool {
-	if v, ok := netwConn(c).Annotation(reverseStreamKey, false).(bool); ok {
-		return v
-	}
-	return false
-}

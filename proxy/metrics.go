@@ -74,13 +74,8 @@ func (p *Proxy) removeConn(c *netw.Conn) int {
 			p.metrics[sn] = m
 		}
 		m.numConnections++
-		if !connReverseStream(c) {
-			m.numBytesSent += c.BytesSent()
-			m.numBytesReceived += c.BytesReceived()
-		} else {
-			m.numBytesSent += c.BytesReceived()
-			m.numBytesReceived += c.BytesSent()
-		}
+		m.numBytesSent += c.BytesSent()
+		m.numBytesReceived += c.BytesReceived()
 	}
 
 	return len(p.connections)
@@ -174,10 +169,6 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		startTime := c.Annotation(startTimeKey, time.Time{}).(time.Time)
 		totalTime := time.Since(startTime)
 		remote := c.RemoteAddr().Network() + ":" + c.RemoteAddr().String()
-		streamID := ""
-		if k.id >= 0 {
-			streamID = fmt.Sprintf(" stream #%d", k.id)
-		}
 
 		switch c.Conn.(type) {
 		case *net.TCPConn:
@@ -187,36 +178,20 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		default:
 			remote += fmt.Sprintf(" %T", c.Conn)
 		}
-		if !connReverseStream(c) {
-			fmt.Fprintf(&buf, "  %s -> %s %s %s%s\n", remote, connServerName(c), connMode(c), connProto(c), streamID)
-			if intConn := connIntConn(c); intConn != nil {
-				fmt.Fprintf(&buf, "  %*s -> %s:%s -> %s:%s\n", len(remote), "",
-					intConn.LocalAddr().Network(), intConn.LocalAddr().String(),
-					intConn.RemoteAddr().Network(), intConn.RemoteAddr().String(),
-				)
-			}
-			fmt.Fprintf(&buf, "          Elapsed:%s Egress:%.1f KB (%.1f KB/s) Ingress:%.1f KB (%.1f KB/s) \n",
-				totalTime.Truncate(100*time.Millisecond),
-				float32(c.BytesSent())/1000, float32(c.BytesSent())/float32(totalTime)*float32(time.Second)/1000,
-				float32(c.BytesReceived())/1000, float32(c.BytesReceived())/float32(totalTime)*float32(time.Second)/1000)
-		} else if intConn := connIntConn(c); intConn != nil {
-			// This is a quic reverse stream: from server to client.
-			// Display everything backwards with arrows pointing in
-			// the other direction.
-			remote := intConn.RemoteAddr().Network() + ":" + intConn.RemoteAddr().String() + " QUIC"
-			fmt.Fprintf(&buf, "  %s <- %s %s %s%s\n", remote, connServerName(c), connMode(c), connProto(c), streamID)
-			fmt.Fprintf(&buf, "  %*s <- %s:%s <- %s:%s\n", len(remote), "",
-				c.LocalAddr().Network(), c.LocalAddr().String(),
-				c.RemoteAddr().Network(), c.RemoteAddr().String(),
+		fmt.Fprintf(&buf, "  %s -> %s %s %s\n", remote, connServerName(c), connMode(c), connProto(c))
+		if intConn := connIntConn(c); intConn != nil {
+			fmt.Fprintf(&buf, "  %*s -> %s:%s -> %s:%s\n", len(remote), "",
+				intConn.LocalAddr().Network(), intConn.LocalAddr().String(),
+				intConn.RemoteAddr().Network(), intConn.RemoteAddr().String(),
 			)
-			fmt.Fprintf(&buf, "          Elapsed:%s Egress:%.1f KB (%.1f KB/s) Ingress:%.1f KB (%.1f KB/s) \n",
-				totalTime.Truncate(100*time.Millisecond),
-				float32(c.BytesReceived())/1000, float32(c.BytesReceived())/float32(totalTime)*float32(time.Second)/1000,
-				float32(c.BytesSent())/1000, float32(c.BytesSent())/float32(totalTime)*float32(time.Second)/1000)
 		}
 		if cert := connClientCert(c); cert != nil {
 			fmt.Fprintf(&buf, "          X509 [%s]\n", certSummary(cert))
 		}
+		fmt.Fprintf(&buf, "          Elapsed:%s Egress:%.1f KB (%.1f KB/s) Ingress:%.1f KB (%.1f KB/s) \n",
+			totalTime.Truncate(100*time.Millisecond),
+			float32(c.BytesSent())/1000, float32(c.BytesSent())/float32(totalTime)*float32(time.Second)/1000,
+			float32(c.BytesReceived())/1000, float32(c.BytesReceived())/float32(totalTime)*float32(time.Second)/1000)
 		fmt.Fprintln(&buf)
 	}
 

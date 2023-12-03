@@ -28,6 +28,7 @@ package netw
 import (
 	"context"
 	"io"
+	"maps"
 	"net"
 	"sync"
 	"time"
@@ -116,6 +117,14 @@ func (c *Conn) Annotation(key string, defaultValue any) any {
 		return v
 	}
 	return defaultValue
+}
+
+func (c *Conn) CopyAnnotationsFrom(cc *Conn) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	maps.Copy(c.annotations, cc.annotations)
 }
 
 // SetLimiter sets the rate limiters for this connection.
