@@ -35,6 +35,8 @@ import (
 	"net"
 	"os"
 	"runtime"
+
+	"github.com/quic-go/quic-go"
 )
 
 // Version is set with -ldflags="-X main.Version=${VERSION}"
@@ -45,6 +47,7 @@ func main() {
 	key := flag.String("key", "", "A file that contains the TLS key to use.")
 	cert := flag.String("cert", "", "A file that contains the TLS certificate to use.")
 	alpn := flag.String("alpn", "", "The ALPN proto to request.")
+	useQUIC := flag.Bool("quic", false, "Use QUIC.")
 	flag.Parse()
 
 	if *versionFlag {
@@ -70,21 +73,58 @@ func main() {
 	if *alpn != "" {
 		protos = append(protos, *alpn)
 	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+		port = "443"
+	}
+	addrs, err := net.LookupHost(host)
+	if err != nil {
+		res := &net.Resolver{
+			PreferGo: true,
+			Dial: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("udp", "8.8.8.8:53")
+			},
+		}
+		addrs, err = res.LookupHost(context.Background(), host)
+	}
+	if err != nil {
+		log.Fatalf("ERR: %v", err)
+	}
+	if len(addrs) == 0 {
+		log.Fatalf("ERR: cannot resolve %s", host)
+	}
+	target := net.JoinHostPort(addrs[0], port)
+
 	tc := &tls.Config{
 		Certificates: certs,
 		NextProtos:   protos,
+		ServerName:   host,
 	}
-	conn, err := tls.Dial("tcp", addr, tc)
-	if err != nil {
-		dialer := &net.Dialer{
-			Resolver: &net.Resolver{
-				Dial: func(_ context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("udp", "8.8.8.8:53")
-				},
-			},
+
+	if *useQUIC {
+		conn, err := quic.DialAddr(context.Background(), target, tc, &quic.Config{})
+		if err != nil {
+			log.Fatalf("ERR: %v", err)
 		}
-		conn, err = tls.DialWithDialer(dialer, "tcp", addr, tc)
+		stream, err := conn.OpenStream()
+		if err != nil {
+			log.Fatalf("ERR: %v", err)
+		}
+		go func() {
+			if _, err := io.Copy(stream, os.Stdin); err != nil && !errors.Is(err, net.ErrClosed) {
+				log.Printf("ERR: %v", err)
+			}
+			stream.Close()
+		}()
+		if _, err := io.Copy(os.Stdout, stream); err != nil {
+			stream.CancelRead(0)
+			log.Printf("ERR: %v", err)
+		}
+		return
 	}
+
+	conn, err := tls.Dial("tcp", target, tc)
 	if err != nil {
 		log.Fatalf("ERR: %v", err)
 	}
@@ -98,4 +138,5 @@ func main() {
 		log.Printf("ERR %v", err)
 	}
 	conn.Close()
+	return
 }

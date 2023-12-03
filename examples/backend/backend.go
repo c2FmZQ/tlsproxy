@@ -44,12 +44,14 @@ import (
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/lestrrat-go/jwx/jwk"
+	"github.com/quic-go/quic-go/http3"
 )
 
 type userIdentity struct {
 	Name      string `json:"name"`
 	FirstName string `json:"firstname"`
 	LastName  string `json:"lastname"`
+	Email     string `json:"email"`
 	Picture   string `json:"picture"`
 	jwt.RegisteredClaims
 }
@@ -58,7 +60,8 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	addr := flag.String("addr", "", "The TCP address to listen on.")
+	addr := flag.String("addr", "", "The address to listen on.")
+	enableH3 := flag.Bool("http3", false, "Enable QUIC and HTTP/3.")
 	jwksURL := flag.String("jwks-url", "", "The URL of the JWKS.")
 	flag.Parse()
 
@@ -76,12 +79,34 @@ func main() {
 		log.Fatal(err)
 	}
 
+	handler := newService(ctx, *jwksURL)
 	server := &http.Server{
-		Addr:      *addr,
-		Handler:   newService(ctx, *jwksURL),
+		Addr: *addr,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if *enableH3 {
+				_, port, _ := net.SplitHostPort(req.Host)
+				if port == "" {
+					port = "443"
+				}
+				w.Header().Set("Alt-Svc", `h3=":`+port+`"; ma=3600;`)
+			}
+			handler.ServeHTTP(w, req)
+		}),
 		TLSConfig: cm.TLSConfig(),
 	}
 	go server.ListenAndServeTLS("", "")
+
+	var h3 *http3.Server
+	if *enableH3 {
+		tc := cm.TLSConfig()
+		tc.NextProtos = []string{"h3"}
+		h3 = &http3.Server{
+			Addr:      *addr,
+			TLSConfig: tc,
+			Handler:   handler,
+		}
+		go h3.ListenAndServe()
+	}
 
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGINT)
@@ -89,6 +114,9 @@ func main() {
 	sig := <-ch
 	log.Printf("INF Received signal %d (%s)", sig, sig)
 	server.Shutdown(ctx)
+	if h3 != nil {
+		h3.Close()
+	}
 }
 
 type service struct {
@@ -128,7 +156,7 @@ func (s *service) getKey(token *jwt.Token) (interface{}, error) {
 }
 
 func (s *service) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	log.Printf("INF %s %s", req.Method, req.RequestURI)
+	log.Printf("INF %s %s %s", req.Proto, req.Method, req.RequestURI)
 
 	var xfcc envoyutil.XFCC
 	var claims userIdentity
@@ -159,13 +187,13 @@ func (s *service) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if pic := claims.Picture; pic != "" {
 		fmt.Fprintf(w, "<img src=\"%s\"><br>\n", html.EscapeString(pic))
 	}
-	if fn := claims.FirstName; fn != "" {
-		fmt.Fprintf(w, "<h1>Hello, %s</h1>\n", html.EscapeString(fn))
+	if name := claims.Name; name != "" {
+		fmt.Fprintf(w, "<h1>Hello, %s</h1>\n", html.EscapeString(name))
 	} else {
-		fmt.Fprintf(w, "<h1>Hello, %s</h1>\n", html.EscapeString(claims.Subject))
+		fmt.Fprintf(w, "<h1>Hello, %s</h1>\n", html.EscapeString(claims.Email))
 	}
 
-	fmt.Fprintf(w, "EMAIL: %s<br>\n", html.EscapeString(claims.Subject))
+	fmt.Fprintf(w, "EMAIL: %s<br>\n", html.EscapeString(claims.Email))
 	if name := claims.Name; name != "" {
 		fmt.Fprintf(w, "NAME: %s<br>\n", html.EscapeString(name))
 	}
@@ -213,6 +241,7 @@ func (s *service) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		fmt.Fprintln(w, "</pre>")
 	}
 
+	fmt.Fprintf(w, "%s<br>\n", req.Proto)
 }
 
 func audienceFromReq(req *http.Request) string {

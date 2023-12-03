@@ -28,6 +28,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -53,6 +54,7 @@ const (
 	ModeTCP            = "TCP"
 	ModeTLS            = "TLS"
 	ModeTLSPassthrough = "TLSPASSTHROUGH"
+	ModeQUIC           = "QUIC"
 	ModeHTTP           = "HTTP"
 	ModeHTTPS          = "HTTPS"
 	ModeLocal          = "LOCAL"
@@ -64,6 +66,7 @@ var (
 		ModeTCP,
 		ModeTLS,
 		ModeTLSPassthrough,
+		ModeQUIC,
 		ModeHTTP,
 		ModeHTTPS,
 		ModeLocal,
@@ -79,6 +82,10 @@ var (
 	}
 	// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
 	defaultALPNProtos = &[]string{"h2", "http/1.1"}
+
+	quicOnlyProtocols = map[string]bool{
+		"h3": true,
+	}
 )
 
 // Config is the TLS proxy configuration.
@@ -96,6 +103,8 @@ type Config struct {
 	// TLSAddr is the address where the proxy will receive TLS connections
 	// and forward them to the backends.
 	TLSAddr string `yaml:"tlsAddr"`
+	// EnableQUIC specifies whether the QUIC protocol should be enabled.
+	EnableQUIC bool `yaml:"enableQUIC,omitempty"`
 	// CacheDir is the directory where the proxy stores TLS certificates.
 	CacheDir string `yaml:"cacheDir,omitempty"`
 	// DefaultServerName is the server name to use when the TLS client
@@ -196,20 +205,39 @@ type Backend struct {
 	//     authentication & authorization.
 	//                +-TCP-PROXY-TCP-+
 	//        CLIENT -+------TLS------+-> BACKEND SERVER
+	// - QUIC: Open a new QUIC connection. If the incoming connection is
+	//     TLS, forward the data on a single bidirectional QUIC stream. If
+	//     the incoming connection is QUIC, forward all streams.
+	//        CLIENT --TLS---> PROXY --QUIC STREAM--> BACKEND SERVER
+	//     Or
+	//        CLIENT --QUIC--> PROXY --QUIC--> BACKEND SERVER
 	// - HTTP: Parses the incoming connection as HTTPS and forwards the
-	//     requests to the backends as HTTP requests. Only HTTP/1 is
-	//     supported.
+	//     requests to the backends as HTTP requests.
 	//        CLIENT --HTTPS--> PROXY --HTTP--> BACKEND SERVER
 	// - HTTPS: Parses the incoming connection as HTTPS and forwards the
-	//     requests to the backends as HTTPS requests. Only HTTP/1 is
-	//     supported.
+	//     requests to the backends as HTTPS requests.
 	//        CLIENT --HTTPS--> PROXY --HTTPS--> BACKEND SERVER
+	// - LOCAL: Behaves exactly like HTTP and HTTPS without backend
+	//     addresses. This mode is intended for local handlers like Oauth2
+	//     redirects.
+	//        CLIENT --HTTPS--> PROXY
 	// - CONSOLE: Indicates that this backend is handled by the proxy itself
 	//     to report its status and metrics. It is strongly recommended
 	//     to use it with ClientAuth and ACL. Otherwise, information from
 	//     the proxy's configuration can be leaked to anyone who knows the
 	//     backend's server name.
 	//        CLIENT --TLS--> PROXY CONSOLE
+	//
+	// QUIC
+	//
+	// If the incoming connection is QUIC and Mode is PLAINTEXT, TLS, HTTP,
+	// HTTPS, LOCAL, or CONSOLE, each QUIC stream is treated like an
+	// incoming TLS connection. For example, PLAINTEXT:
+	//                               ,--STREAM1--> BACKEND SERVER
+	//        CLIENT --QUIC--> PROXY +--STREAM2--> BACKEND SERVER
+	//                               `--STREAM3--> BACKEND SERVER
+	// If Mode is QUIC, all streams are forwards to the backend server.
+	//        CLIENT --QUIC--> PROXY --QUIC--> BACKEND SERVER
 	Mode string `yaml:"mode"`
 	// BWLimit is the name of the bandwidth limit policy to apply to this
 	// backend. All backends using the same policy are subject to common
@@ -285,10 +313,12 @@ type Backend struct {
 	// open when one stream is closed. The default value is 1 minute.
 	HalfCloseTimeout *time.Duration `yaml:"halfCloseTimeout,omitempty"`
 
-	recordEvent func(string)
-	tm          *tokenmanager.TokenManager
+	recordEvent   func(string)
+	tm            *tokenmanager.TokenManager
+	quicTransport io.Closer
 
 	tlsConfig            *tls.Config
+	tlsConfigQUIC        *tls.Config
 	forwardRootCAs       *x509.CertPool
 	pkiMap               map[string]*pki.PKIManager
 	bwLimit              *bwLimit
@@ -300,6 +330,7 @@ type Backend struct {
 
 	httpServer    *http.Server
 	httpConnChan  chan net.Conn
+	http3Handler  http.Handler
 	localHandlers []localHandler
 
 	mu       sync.Mutex
@@ -584,6 +615,9 @@ func (cfg *Config) Check() error {
 		}
 		cfg.MaxOpen = n/2 - 100
 	}
+	if cfg.EnableQUIC && !quicIsEnabled {
+		return errors.New("QUICAddr: QUIC is not supported in this binary")
+	}
 
 	identityProviders := make(map[string]bool)
 	for i, oi := range cfg.OIDCProviders {
@@ -703,6 +737,15 @@ func (cfg *Config) Check() error {
 				be.ALPNProtos = &[]string{"http/1.1"}
 			} else {
 				be.ALPNProtos = defaultALPNProtos
+			}
+		}
+		if be.Mode == ModeQUIC {
+			var falsex bool
+			if be.ServerCloseEndsConnection == nil {
+				be.ServerCloseEndsConnection = &falsex
+			}
+			if be.ClientCloseEndsConnection == nil {
+				be.ClientCloseEndsConnection = &falsex
 			}
 		}
 	}

@@ -3,6 +3,7 @@
 ## next
 
 * Add support for the PROXY protocol defined by HAProxy. https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt
+* Add QUIC and HTTP/3 support. See docs/QUIC.md
 
 ## v0.2.0
 

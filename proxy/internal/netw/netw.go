@@ -82,6 +82,15 @@ type Conn struct {
 	peekBuf []byte
 }
 
+func (c *Conn) StreamID() int64 {
+	if cc, ok := c.Conn.(interface {
+		StreamID() int64
+	}); ok {
+		return cc.StreamID()
+	}
+	return -1
+}
+
 // SetAnnotation sets an annotation. The value can be any go value.
 func (c *Conn) SetAnnotation(key string, value any) {
 	SetAnnotation(c, key, value)
@@ -112,12 +121,23 @@ func (c *Conn) Annotation(key string, defaultValue any) any {
 // SetLimiter sets the rate limiters for this connection.
 // It must be called before the first Read() or Write(). Peek() is OK.
 func (c *Conn) SetLimiters(ingress, egress *rate.Limiter) {
+	if cc, ok := c.Conn.(interface {
+		SetLimiters(ingress, egress *rate.Limiter)
+	}); ok {
+		cc.SetLimiters(ingress, egress)
+		return
+	}
 	c.ingressLimiter = ingress
 	c.egressLimiter = egress
 }
 
 // BytesSent returns the number of bytes sent on this connection so far.
 func (c *Conn) BytesSent() int64 {
+	if cc, ok := c.Conn.(interface {
+		BytesSent() int64
+	}); ok {
+		return cc.BytesSent()
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.bytesSent
@@ -125,6 +145,11 @@ func (c *Conn) BytesSent() int64 {
 
 // BytesReceived returns the number of bytes received on this connection so far.
 func (c *Conn) BytesReceived() int64 {
+	if cc, ok := c.Conn.(interface {
+		BytesReceived() int64
+	}); ok {
+		return cc.BytesReceived()
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.bytesReceived

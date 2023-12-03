@@ -37,6 +37,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"regexp"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"time"
@@ -122,6 +123,22 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 	if len(addresses) == 0 {
 		return nil, errors.New("no backend addresses")
 	}
+	tc := &tls.Config{
+		InsecureSkipVerify: insecureSkipVerify,
+		ServerName:         serverName,
+		NextProtos:         protos,
+		RootCAs:            rootCAs,
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			if len(cs.PeerCertificates) == 0 {
+				return errors.New("no certificate")
+			}
+			cert := cs.PeerCertificates[0]
+			if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok && m.IsRevoked(cert.SerialNumber) {
+				return errRevoked
+			}
+			return nil
+		},
+	}
 	var max int
 	for {
 		be.mu.Lock()
@@ -133,36 +150,26 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 		*next = (*next + 1) % sz
 		be.mu.Unlock()
 
-		dialer := &net.Dialer{
-			Timeout:   timeout,
-			KeepAlive: 30 * time.Second,
-		}
 		var c net.Conn
 		var err error
-		if mode == ModeTLS || mode == ModeHTTPS {
-			tc := &tls.Config{
-				InsecureSkipVerify: insecureSkipVerify,
-				ServerName:         serverName,
-				NextProtos:         protos,
-				RootCAs:            rootCAs,
-				VerifyConnection: func(cs tls.ConnectionState) error {
-					if len(cs.PeerCertificates) == 0 {
-						return errors.New("no certificate")
-					}
-					cert := cs.PeerCertificates[0]
-					if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok && m.IsRevoked(cert.SerialNumber) {
-						return errRevoked
-					}
-					return nil
-				},
-			}
-			tlsDialer := &tls.Dialer{
-				NetDialer: dialer,
-				Config:    tc,
-			}
-			c, err = tlsDialer.DialContext(ctx, "tcp", addr)
+		if mode == ModeQUIC {
+			ctx, cancel := context.WithTimeout(ctx, timeout)
+			c, err = be.dialQUICStream(ctx, addr, tc)
+			cancel()
 		} else {
-			c, err = dialer.DialContext(ctx, "tcp", addr)
+			dialer := &net.Dialer{
+				Timeout:   timeout,
+				KeepAlive: 30 * time.Second,
+			}
+			if mode == ModeTLS || mode == ModeHTTPS {
+				tlsDialer := &tls.Dialer{
+					NetDialer: dialer,
+					Config:    tc,
+				}
+				c, err = tlsDialer.DialContext(ctx, "tcp", addr)
+			} else {
+				c, err = dialer.DialContext(ctx, "tcp", addr)
+			}
 		}
 		if err != nil {
 			max--
@@ -173,7 +180,7 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 			return nil, err
 		}
 		if proxyProtoVersion > 0 {
-			conn := ctx.Value(connCtxKey).(*tls.Conn)
+			conn := ctx.Value(connCtxKey).(net.Conn)
 			header := proxyproto.HeaderProxyFromAddrs(proxyProtoVersion, conn.RemoteAddr(), conn.LocalAddr())
 			header.Command = proxyproto.PROXY
 			var tlvs []proxyproto.TLV
@@ -229,6 +236,8 @@ func (be *Backend) checkIP(addr net.Addr) error {
 	var ip net.IP
 	switch a := addr.(type) {
 	case *net.TCPAddr:
+		ip = a.IP
+	case *net.UDPAddr:
 		ip = a.IP
 	default:
 		return fmt.Errorf("can't get IP address from %T", addr)
@@ -319,8 +328,29 @@ func (be *Backend) localHandlersAndAuthz(next http.Handler) http.Handler {
 	})
 }
 
+func recoverHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("PANIC: %#v\n%s", r, string(debug.Stack()))
+			}
+		}()
+		next.ServeHTTP(w, req)
+	})
+}
+
 func (be *Backend) localHandler() http.Handler {
-	return be.userAuthentication(be.localHandlersAndAuthz(nil))
+	h := be.userAuthentication(be.localHandlersAndAuthz(nil))
+	return recoverHandler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if be.http3Handler != nil && (req.TLS == nil || req.TLS.NegotiatedProtocol != "h3") {
+			_, port, _ := net.SplitHostPort(req.Host)
+			if port == "" {
+				port = "443"
+			}
+			w.Header().Set("Alt-Svc", `h3=":`+port+`"; ma=86400;`)
+		}
+		h.ServeHTTP(w, req)
+	}))
 }
 
 func (be *Backend) reverseProxy() http.Handler {
@@ -368,11 +398,12 @@ func (be *Backend) reverseProxy() http.Handler {
 			},
 			ModifyResponse: be.reverseProxyModifyResponse,
 		}
+		h3 := be.http3ReverseProxy()
 		rp = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			ctx := req.Context()
 			host := req.Host
 			if host == "" {
-				host = connServerName(ctx.Value(connCtxKey).(*tls.Conn))
+				host = connServerName(ctx.Value(connCtxKey).(net.Conn))
 			}
 			req.URL.Scheme = "https"
 			if be.Mode == ModeHTTP {
@@ -408,14 +439,16 @@ func (be *Backend) reverseProxy() http.Handler {
 			}
 			req = req.WithContext(ctx)
 
-			if req.TLS != nil && req.TLS.NegotiatedProtocol == "h2" {
+			if req.TLS != nil && req.TLS.NegotiatedProtocol == "h3" && h3 != nil {
+				h3.ServeHTTP(w, req)
+			} else if req.TLS != nil && req.TLS.NegotiatedProtocol == "h2" {
 				h2.ServeHTTP(w, req)
 			} else {
 				h1.ServeHTTP(w, req)
 			}
 		})
 	}
-	return be.userAuthentication(be.localHandlersAndAuthz(rp))
+	return recoverHandler(be.userAuthentication(be.localHandlersAndAuthz(rp)))
 }
 
 func (be *Backend) reverseProxyDirector(req *http.Request) {
@@ -426,7 +459,7 @@ func (be *Backend) reverseProxyDirector(req *http.Request) {
 	if v := req.Header.Get(viaHeader); v != "" {
 		via = commaRE.Split(req.Header.Get(viaHeader), -1)
 	}
-	via = append(via, req.Proto+" "+req.Context().Value(connCtxKey).(*tls.Conn).LocalAddr().String())
+	via = append(via, req.Proto+" "+req.Context().Value(connCtxKey).(net.Conn).LocalAddr().String())
 	req.Header.Set(viaHeader, strings.Join(via, ", "))
 
 	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 && be.ClientAuth != nil && len(be.ClientAuth.AddClientCertHeader) > 0 {

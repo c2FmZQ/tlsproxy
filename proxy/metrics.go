@@ -27,6 +27,7 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"net"
 	"net/http"
 	"runtime"
 	"sort"
@@ -54,14 +55,14 @@ func (p *Proxy) recordEvent(msg string) {
 func (p *Proxy) addConn(c *netw.Conn) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.connections[connKey{c.LocalAddr(), c.RemoteAddr()}] = c
+	p.connections[connKey{c.LocalAddr(), c.RemoteAddr(), c.StreamID()}] = c
 	return len(p.connections)
 }
 
 func (p *Proxy) removeConn(c *netw.Conn) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	delete(p.connections, connKey{c.LocalAddr(), c.RemoteAddr()})
+	delete(p.connections, connKey{c.LocalAddr(), c.RemoteAddr(), c.StreamID()})
 
 	if sn := c.Annotation(serverNameKey, "").(string); sn != "" && p.backends[beKey{serverName: sn}] != nil {
 		if p.metrics == nil {
@@ -167,11 +168,19 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		c := p.connections[k]
 		startTime := c.Annotation(startTimeKey, time.Time{}).(time.Time)
 		totalTime := time.Since(startTime)
-		remote := c.RemoteAddr().String()
+		remote := c.RemoteAddr().Network() + ":" + c.RemoteAddr().String()
 
+		switch c.Conn.(type) {
+		case *net.TCPConn:
+			remote += " TLS"
+		case *netw.QUICStream, *netw.QUICConn:
+			remote += " QUIC"
+		default:
+			remote += fmt.Sprintf(" %T", c.Conn)
+		}
 		fmt.Fprintf(&buf, "  %s -> %s %s %s\n", remote, connServerName(c), connMode(c), connProto(c))
 		if intConn := connIntConn(c); intConn != nil {
-			fmt.Fprintf(&buf, "  %*s -> %s -> %s\n", len(remote), "", intConn.LocalAddr().String(), intConn.RemoteAddr().String())
+			fmt.Fprintf(&buf, "  %*s -> %s:%s -> %s:%s\n", len(remote), "", intConn.LocalAddr().Network(), intConn.LocalAddr().String(), intConn.RemoteAddr().Network(), intConn.RemoteAddr().String())
 		}
 		if cert := connClientCert(c); cert != nil {
 			fmt.Fprintf(&buf, "          X509 [%s]\n", certSummary(cert))

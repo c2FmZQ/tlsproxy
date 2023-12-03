@@ -25,6 +25,7 @@ backends:
   insecureSkipVerify: true
   addresses:
   - 192.168.1.100:9443
+  alpnProtos: [h3, h2, http/1.1]
   sso:
     provider: google
     generateIdTokens: true
@@ -34,7 +35,7 @@ Then run the example backend.
 
 ```console
 cd examples/backend
-go run . -addr :9443 --jwks-url https://login.EXAMPLE.COM/keys
+go run . -addr :9443 --http3 --jwks-url https://login.EXAMPLE.COM/keys
 ```
 
 And point your favorite browser at https://test.EXAMPLE.COM/

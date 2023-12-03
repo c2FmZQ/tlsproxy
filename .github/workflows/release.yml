@@ -25,6 +25,8 @@ jobs:
       run: go vet ./...
     - name: Run go tests
       run: go test -v ./...
+    - name: Run go tests (QUIC)
+      run: go test -v -tags quic ./...
     - name: Run go tests (-race)
       run: go test -race -timeout=2m -v ./...
     - name: Build test docker image
@@ -82,7 +84,9 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
     - name: Get release version
-      run: echo "VERSION=${GITHUB_REF_NAME}" > version.sh
+      run: |
+        echo "VERSION=${GITHUB_REF_NAME}" > version.sh
+        echo "BUILD_TAGS=" >> version.sh
     - name: Set up QEMU
       # https://github.com/docker/setup-qemu-action/releases/tag/v3.0.0
       uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3
@@ -105,3 +109,4 @@ jobs:
         platforms: linux/amd64,linux/arm64,linux/arm/v7
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
+

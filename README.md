@@ -16,7 +16,8 @@ Overview of features:
 * [x] Terminate TLS connections, and forward the data to any TCP server in plaintext.
 * [x] Terminate TLS connections, and forward the data to any TLS server. The data is encrypted in transit, but the proxy sees the plaintext.
 * [x] Terminate _TCP_ connections, and forward the TLS connection to any TLS server (passthrough). The proxy doesn't see the plaintext.
-* [x] Terminate HTTPS connections, and forward the requests to HTTP or HTTPS servers (not recommended with c2fmzq-server).
+* [x] Terminate HTTPS connections, and forward the requests to HTTP or HTTPS servers (http/1.1, http/2, http/3).
+* [x] Terminate QUIC connections, and forward to data to any QUIC or TLS/TCP server.
 * [x] Support for the [PROXY protocol](https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt) defined by HAProxy.
 * [x] TLS client authentication & authorization (when the proxy terminates the TLS connections).
 * [x] Built-in Certificate Authority for managing client and backend server TLS certificates.
@@ -24,12 +25,12 @@ Overview of features:
 * [x] Access control by IP address.
 * [x] Routing based on Server Name Indication (SNI), with optional default route when SNI isn't used.
 * [x] Simple round-robin load balancing between servers.
-* [x] Support any ALPN protocol in TLS, TLSPASSTHROUGH, or TCP mode.
-* [x] Use the same TCP address (IPAddr:port) for any number of server names, e.g. foo.example.com and bar.example.com on the same xxx.xxx.xxx.xxx:443.
+* [x] Support any ALPN protocol in TLS, TLSPASSTHROUGH, QUIC, or TCP mode.
+* [x] Use the same address (IPAddr:port) for any number of server names, e.g. foo.example.com and bar.example.com on the same xxx.xxx.xxx.xxx:443.
 
 ```mermaid
 flowchart LR
-  subgraph Incoming TLS Connections
+  subgraph Incoming TLS or QUIC Connections
     h1(www.example.com)
     h2(foo.example.com)
     h3(bar.example.com)
@@ -40,7 +41,7 @@ flowchart LR
     be1(HTTP Server)
     be2(HTTPS Server)
     be3(IMAP, SMTP, SSH)
-    be4(Any TCP or TLS Server)
+    be4(Any TCP, TLS, or QUIC Server)
   end
   h1-->prx
   h2-->prx
