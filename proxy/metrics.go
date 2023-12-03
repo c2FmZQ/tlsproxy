@@ -147,11 +147,11 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	for k := range p.events {
 		events = append(events, k)
 	}
-	p.eventsmu.Unlock()
 	sort.Strings(events)
 	for _, e := range events {
 		fmt.Fprintf(&buf, "  %6d x %s\n", p.events[e], e)
 	}
+	p.eventsmu.Unlock()
 
 	fmt.Fprintln(&buf)
 	fmt.Fprintln(&buf, "Current connections:")
