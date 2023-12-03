@@ -78,6 +78,7 @@ func TestQUICConnections(t *testing.T) {
 					"h2",
 					"http/1.1",
 				},
+				ForwardRateLimit: 1000,
 			},
 			// QUIC backend
 			{
@@ -94,6 +95,7 @@ func TestQUICConnections(t *testing.T) {
 				},
 				ForwardRootCAs:    []string{intCA.RootCAPEM()},
 				ForwardServerName: "quic-internal.example.com",
+				ForwardRateLimit:  1000,
 			},
 		},
 	}
@@ -194,6 +196,7 @@ func TestQUICMultiStream(t *testing.T) {
 				},
 				ForwardRootCAs:    []string{ca.RootCAPEM()},
 				ForwardServerName: "quic-internal.example.com",
+				ForwardRateLimit:  1000,
 			},
 		},
 	}

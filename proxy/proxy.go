@@ -78,6 +78,7 @@ const (
 	internalConnKey  = "ic"
 	reportEndKey     = "re"
 	backendKey       = "be"
+	reverseStreamKey = "rs"
 )
 
 var (

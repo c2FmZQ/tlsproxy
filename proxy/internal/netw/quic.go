@@ -43,7 +43,7 @@ var quicConfig = &quic.Config{
 	MaxIdleTimeout: 30 * time.Second,
 }
 
-// NewQUIC returns a wrapper around a quic.Transport to keep track of matrics
+// NewQUIC returns a wrapper around a quic.Transport to keep track of metrics
 // and annotations.
 func NewQUIC(addr string, statelessResetKey quic.StatelessResetKey) (*QUICTransport, error) {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
@@ -404,6 +404,10 @@ var _ net.Conn = (*QUICStream)(nil)
 type QUICStream struct {
 	quic.Stream
 	qc *QUICConn
+}
+
+func (s *QUICStream) streamID() int64 {
+	return int64(s.Stream.StreamID())
 }
 
 func (s *QUICStream) LocalAddr() net.Addr {

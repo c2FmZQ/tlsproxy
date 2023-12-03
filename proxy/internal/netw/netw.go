@@ -84,9 +84,9 @@ type Conn struct {
 
 func (c *Conn) StreamID() int64 {
 	if cc, ok := c.Conn.(interface {
-		StreamID() int64
+		streamID() int64
 	}); ok {
-		return cc.StreamID()
+		return cc.streamID()
 	}
 	return -1
 }

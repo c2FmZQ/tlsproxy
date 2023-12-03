@@ -148,15 +148,19 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 	}
 	log.Printf("QUC [%s] %s:%s ➔ %s|%s:%s", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), cs.ServerName, be.Mode, cs.NegotiatedProtocol)
 
+	setAnnotations := func(c *netw.Conn) {
+		now := time.Now()
+		c.SetAnnotation(startTimeKey, now)
+		c.SetAnnotation(handshakeDoneKey, now)
+		c.SetAnnotation(serverNameKey, cs.ServerName)
+		c.SetAnnotation(protoKey, cs.NegotiatedProtocol)
+		c.SetAnnotation(backendKey, be)
+		c.SetAnnotation(clientCertKey, clientCert)
+	}
+
 	if be.http3Handler != nil && cs.NegotiatedProtocol == "h3" {
 		conn := qc.WrapStream(qc)
-		now := time.Now()
-		conn.SetAnnotation(startTimeKey, now)
-		conn.SetAnnotation(handshakeDoneKey, now)
-		conn.SetAnnotation(serverNameKey, cs.ServerName)
-		conn.SetAnnotation(protoKey, cs.NegotiatedProtocol)
-		conn.SetAnnotation(backendKey, be)
-		conn.SetAnnotation(clientCertKey, clientCert)
+		setAnnotations(conn)
 		defer conn.Close()
 		numOpen := p.addConn(conn)
 		conn.OnClose(func() {
@@ -226,7 +230,10 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 					}
 					return
 				}
-				go be.bridgeQUICStream(ctx, qc, qc.WrapStream(recvStream))
+				conn := qc.WrapStream(recvStream)
+				setAnnotations(conn)
+				conn.SetAnnotation(reverseStreamKey, true)
+				go p.handleQUICStream(ctx, be, qc, conn)
 			}
 		}()
 		go func() {
@@ -239,7 +246,10 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 					}
 					return
 				}
-				go be.bridgeQUICStream(ctx, qc, qc.WrapStream(stream))
+				conn := qc.WrapStream(stream)
+				setAnnotations(conn)
+				conn.SetAnnotation(reverseStreamKey, true)
+				go p.handleQUICStream(ctx, be, qc, conn)
 			}
 		}()
 	}
@@ -254,14 +264,8 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 				}
 				return
 			}
-			now := time.Now()
 			conn := qc.WrapStream(recvStream)
-			conn.SetAnnotation(startTimeKey, now)
-			conn.SetAnnotation(handshakeDoneKey, now)
-			conn.SetAnnotation(serverNameKey, cs.ServerName)
-			conn.SetAnnotation(protoKey, cs.NegotiatedProtocol)
-			conn.SetAnnotation(backendKey, be)
-			conn.SetAnnotation(clientCertKey, clientCert)
+			setAnnotations(conn)
 			go p.handleQUICStream(ctx, be, beConn, conn)
 		}
 	}()
@@ -275,14 +279,8 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 			}
 			return
 		}
-		now := time.Now()
 		conn := qc.WrapStream(stream)
-		conn.SetAnnotation(startTimeKey, now)
-		conn.SetAnnotation(handshakeDoneKey, now)
-		conn.SetAnnotation(serverNameKey, cs.ServerName)
-		conn.SetAnnotation(protoKey, cs.NegotiatedProtocol)
-		conn.SetAnnotation(backendKey, be)
-		conn.SetAnnotation(clientCertKey, clientCert)
+		setAnnotations(conn)
 		go p.handleQUICStream(ctx, be, beConn, conn)
 	}
 }
