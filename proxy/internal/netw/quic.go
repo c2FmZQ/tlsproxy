@@ -32,6 +32,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"slices"
 	"sync"
 	"time"
 
@@ -135,6 +136,21 @@ type QUICConn struct {
 	onClose       func()
 	bytesSent     int64
 	bytesReceived int64
+	streams       []*QUICStream
+}
+
+func (c *QUICConn) Streams() []*QUICStream {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.streams)
+}
+
+func (c *QUICConn) removeStream(qs *QUICStream) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.streams = slices.DeleteFunc(c.streams, func(s *QUICStream) bool {
+		return qs == s
+	})
 }
 
 // SetLimiter sets the rate limiters for this connection.
@@ -268,10 +284,15 @@ func (c *QUICConn) AcceptStream(ctx context.Context) (quic.Stream, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &QUICStream{
+	qs := &QUICStream{
 		Stream: s,
 		qc:     c,
-	}, nil
+		dir:    "<->",
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.streams = append(c.streams, qs)
+	return qs, nil
 }
 
 func (c *QUICConn) AcceptUniStream(ctx context.Context) (quic.ReceiveStream, error) {
@@ -279,10 +300,15 @@ func (c *QUICConn) AcceptUniStream(ctx context.Context) (quic.ReceiveStream, err
 	if err != nil {
 		return nil, err
 	}
-	return &QUICStream{
+	qs := &QUICStream{
 		Stream: &ReceiveOnlyStream{s, c.Context()},
 		qc:     c,
-	}, nil
+		dir:    "<--",
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.streams = append(c.streams, qs)
+	return qs, nil
 }
 
 func (c *QUICConn) OpenStream() (quic.Stream, error) {
@@ -290,10 +316,15 @@ func (c *QUICConn) OpenStream() (quic.Stream, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &QUICStream{
+	qs := &QUICStream{
 		Stream: s,
 		qc:     c,
-	}, nil
+		dir:    "<->",
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.streams = append(c.streams, qs)
+	return qs, nil
 }
 
 func (c *QUICConn) OpenStreamSync(ctx context.Context) (quic.Stream, error) {
@@ -301,10 +332,15 @@ func (c *QUICConn) OpenStreamSync(ctx context.Context) (quic.Stream, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &QUICStream{
+	qs := &QUICStream{
 		Stream: s,
 		qc:     c,
-	}, nil
+		dir:    "<->",
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.streams = append(c.streams, qs)
+	return qs, nil
 }
 
 func (c *QUICConn) OpenUniStream() (quic.SendStream, error) {
@@ -312,10 +348,15 @@ func (c *QUICConn) OpenUniStream() (quic.SendStream, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &QUICStream{
+	qs := &QUICStream{
 		Stream: &SendOnlyStream{s, c.Context()},
 		qc:     c,
-	}, nil
+		dir:    "-->",
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.streams = append(c.streams, qs)
+	return qs, nil
 }
 
 func (c *QUICConn) OpenUniStreamSync(ctx context.Context) (quic.SendStream, error) {
@@ -323,10 +364,15 @@ func (c *QUICConn) OpenUniStreamSync(ctx context.Context) (quic.SendStream, erro
 	if err != nil {
 		return nil, err
 	}
-	return &QUICStream{
+	qs := &QUICStream{
 		Stream: &SendOnlyStream{s, c.Context()},
 		qc:     c,
-	}, nil
+		dir:    "-->",
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.streams = append(c.streams, qs)
+	return qs, nil
 }
 
 func (c *QUICConn) CloseWithError(code quic.ApplicationErrorCode, msg string) error {
@@ -403,11 +449,33 @@ var _ net.Conn = (*QUICStream)(nil)
 // interface.
 type QUICStream struct {
 	quic.Stream
-	qc *QUICConn
+	qc  *QUICConn
+	dir string
+
+	mu         sync.Mutex
+	readDone   bool
+	writeDone  bool
+	bridgeAddr string
+}
+
+func (s *QUICStream) Dir() string {
+	return s.dir
 }
 
 func (s *QUICStream) streamID() int64 {
 	return int64(s.Stream.StreamID())
+}
+
+func (s *QUICStream) BridgeAddr() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bridgeAddr
+}
+
+func (s *QUICStream) SetBridgeAddr(v string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.bridgeAddr = v
 }
 
 func (s *QUICStream) LocalAddr() net.Addr {
@@ -418,6 +486,24 @@ func (s *QUICStream) RemoteAddr() net.Addr {
 	return s.qc.RemoteAddr()
 }
 
+func (s *QUICStream) markReadDone() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.readDone = true
+	if s.writeDone {
+		s.qc.removeStream(s)
+	}
+}
+
+func (s *QUICStream) markWriteDone() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.writeDone = true
+	if s.readDone {
+		s.qc.removeStream(s)
+	}
+}
+
 func (s *QUICStream) Read(b []byte) (int, error) {
 	if l := s.qc.ingressLimiter; l != nil {
 		if err := l.WaitN(s.Context(), len(b)); err != nil {
@@ -425,6 +511,9 @@ func (s *QUICStream) Read(b []byte) (int, error) {
 		}
 	}
 	n, err := s.Stream.Read(b)
+	if err != nil {
+		s.markReadDone()
+	}
 	s.qc.mu.Lock()
 	defer s.qc.mu.Unlock()
 	s.qc.bytesReceived += int64(n)
@@ -438,6 +527,9 @@ func (s *QUICStream) Write(b []byte) (int, error) {
 		}
 	}
 	n, err := s.Stream.Write(b)
+	if err != nil {
+		s.markWriteDone()
+	}
 	s.qc.mu.Lock()
 	defer s.qc.mu.Unlock()
 	s.qc.bytesSent += int64(n)
@@ -445,22 +537,26 @@ func (s *QUICStream) Write(b []byte) (int, error) {
 }
 
 func (s *QUICStream) Close() error {
-	return s.Stream.Close()
+	err := s.Stream.Close()
+	s.markWriteDone()
+	return err
 }
 
 func (s *QUICStream) CancelRead(e quic.StreamErrorCode) {
 	s.Stream.CancelRead(e)
+	s.markReadDone()
 }
 
 func (s *QUICStream) CancelWrite(e quic.StreamErrorCode) {
 	s.Stream.CancelWrite(e)
+	s.markWriteDone()
 }
 
 func (s *QUICStream) CloseRead() error {
-	s.Stream.CancelRead(0)
+	s.CancelRead(0)
 	return nil
 }
 
 func (s *QUICStream) CloseWrite() error {
-	return s.Stream.Close()
+	return s.Close()
 }

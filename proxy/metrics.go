@@ -170,19 +170,32 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		totalTime := time.Since(startTime)
 		remote := c.RemoteAddr().Network() + ":" + c.RemoteAddr().String()
 
-		switch c.Conn.(type) {
+		var streams []*netw.QUICStream
+
+		switch cc := c.Conn.(type) {
 		case *net.TCPConn:
 			remote += " TLS"
-		case *netw.QUICStream, *netw.QUICConn:
+		case *netw.QUICConn:
 			remote += " QUIC"
+			streams = cc.Streams()
 		default:
 			remote += fmt.Sprintf(" %T", c.Conn)
 		}
-		fmt.Fprintf(&buf, "  %s -> %s %s %s\n", remote, connServerName(c), connMode(c), connProto(c))
+		fmt.Fprintf(&buf, "  %s <=> %s %s %s\n", remote, connServerName(c), connMode(c), connProto(c))
+		var intAddr string
 		if intConn := connIntConn(c); intConn != nil {
-			fmt.Fprintf(&buf, "  %*s -> %s:%s -> %s:%s\n", len(remote), "",
-				intConn.LocalAddr().Network(), intConn.LocalAddr().String(),
-				intConn.RemoteAddr().Network(), intConn.RemoteAddr().String(),
+			intAddr = intConn.RemoteAddr().Network() + ":" + intConn.RemoteAddr().String()
+			if len(streams) == 0 {
+				fmt.Fprintf(&buf, "  %*s <-> %s\n", len(remote), "", intAddr)
+			}
+		}
+		for _, stream := range streams {
+			addr := intAddr
+			if addr == "" {
+				addr = stream.BridgeAddr()
+			}
+			fmt.Fprintf(&buf, "  %*s %s %s stream %d\n", len(remote), "", stream.Dir(),
+				addr, stream.StreamID(),
 			)
 		}
 		if cert := connClientCert(c); cert != nil {

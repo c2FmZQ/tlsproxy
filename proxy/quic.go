@@ -232,10 +232,11 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		beConn, err := be.dialQUICBackend(ctx, cs.NegotiatedProtocol)
 		if err != nil {
 			qc.CloseWithError(quicBadGateway, "bad gateway")
-			log.Printf("ERR [%s] %s:%s ➔ %s|%s:%s dialQUICBackend: %v", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), cs.ServerName, be.Mode, cs.NegotiatedProtocol, err)
+			log.Printf("ERR [%s] %s:%s ➔ %s|%s:%s dialQUICBackend: %v", sum, conn.RemoteAddr().Network(), conn.RemoteAddr(), cs.ServerName, be.Mode, cs.NegotiatedProtocol, err)
 			return
 		}
 		defer beConn.Close()
+		conn.SetAnnotation(internalConnKey, beConn)
 
 		var wg sync.WaitGroup
 		wg.Add(1)
@@ -371,6 +372,11 @@ func (p *Proxy) handleQUICTCPStream(ctx context.Context, be *Backend, conn *netw
 
 		conn.SetAnnotation(dialDoneKey, time.Now())
 		conn.SetAnnotation(internalConnKey, intConn)
+		if cc, ok := conn.Conn.(interface {
+			SetBridgeAddr(string)
+		}); ok {
+			cc.SetBridgeAddr(intConn.RemoteAddr().Network() + ":" + intConn.RemoteAddr().String())
+		}
 		log.Printf("STR %s", formatConnDesc(conn))
 
 		if err := be.bridgeConns(conn, intConn); err != nil {
@@ -547,7 +553,14 @@ func (be *Backend) http3ReverseProxy() http.Handler {
 			RoundTripper: &http3.RoundTripper{
 				DisableCompression: true,
 				Dial: func(ctx context.Context, _ string, _ *tls.Config, _ *quic.Config) (quic.EarlyConnection, error) {
-					return be.dialQUICBackend(ctx, "h3")
+					conn, err := be.dialQUICBackend(ctx, "h3")
+					if err != nil {
+						return nil, err
+					}
+					if c, ok := ctx.Value(connCtxKey).(*netw.Conn); ok {
+						c.SetAnnotation(internalConnKey, conn)
+					}
+					return conn, nil
 				},
 			},
 		},
