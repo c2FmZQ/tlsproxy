@@ -31,6 +31,17 @@ type QUICStream struct {
 	Conn
 }
 
+func (QUICStream) Dir() string {
+	return ""
+}
+func (QUICStream) BridgeAddr() string {
+	return ""
+}
+
 type QUICConn struct {
 	net.Conn
+}
+
+func (QUICConn) Streams() []*QUICStream {
+	return nil
 }
