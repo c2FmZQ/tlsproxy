@@ -178,6 +178,9 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		case *netw.QUICConn:
 			remote += " QUIC"
 			streams = cc.Streams()
+			sort.Slice(streams, func(i, j int) bool {
+				return streams[i].StreamID() < streams[j].StreamID()
+			})
 		default:
 			remote += fmt.Sprintf(" %T", c.Conn)
 		}
@@ -193,6 +196,9 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 			addr := intAddr
 			if addr == "" {
 				addr = stream.BridgeAddr()
+			}
+			if addr == "" {
+				addr = "local"
 			}
 			fmt.Fprintf(&buf, "  %*s %s %s stream %d\n", len(remote), "", stream.Dir(),
 				addr, stream.StreamID(),
