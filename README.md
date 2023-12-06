@@ -17,8 +17,8 @@ Overview of features:
 * [x] Terminate TLS connections, and forward the data to any TLS server. The data is encrypted in transit, but the proxy sees the plaintext.
 * [x] Terminate _TCP_ connections, and forward the TLS connection to any TLS server (passthrough). The proxy doesn't see the plaintext.
 * [x] Terminate HTTPS connections, and forward the requests to HTTP or HTTPS servers (http/1.1, http/2, http/3).
-* [x] Terminate QUIC connections, and forward to data to any QUIC or TLS/TCP server.
-* [x] Support for the [PROXY protocol](https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt) defined by HAProxy.
+* [x] Terminate [QUIC](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/QUIC.md) connections, and forward the data to any QUIC or TLS/TCP server.
+* [x] Support for the [PROXY protocol](https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt) defined by HAProxy. (not on QUIC or HTTP/3 backends)
 * [x] TLS client authentication & authorization (when the proxy terminates the TLS connections).
 * [x] Built-in Certificate Authority for managing client and backend server TLS certificates.
 * [x] User authentication with OpenID Connect, SAML, and/or passkeys (for HTTP and HTTPS connections). Optionally issue JSON Web Tokens (JWT) to authenticated users to use with the backend services and/or run a local OpenID Connect server for backend services.

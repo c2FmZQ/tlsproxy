@@ -1,4 +1,4 @@
-FROM golang:1.21.4-alpine3.18 AS build
+FROM golang:1.21.5-alpine3.18 AS build
 MAINTAINER info@c2fmzq.org
 RUN apk update && apk upgrade
 RUN apk add ca-certificates

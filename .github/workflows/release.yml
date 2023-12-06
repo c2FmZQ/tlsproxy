@@ -4,6 +4,9 @@ on:
     tags:
       - "v*.*.*"
 
+env:
+  GOVERSION: '>=1.21.5'
+
 jobs:
   build-and-run-tests:
     name: Build & run tests
@@ -16,7 +19,7 @@ jobs:
       # https://github.com/actions/setup-go/tree/v4.1.0
       uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe
       with:
-        go-version: '>=1.21.4'
+        go-version: ${{ env.GOVERSION }}
     - name: Generate files
       run: go generate ./...
     - name: Build
@@ -49,9 +52,7 @@ jobs:
       # https://github.com/actions/setup-go/tree/v4.1.0
       uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe
       with:
-        go-version: '>=1.21.4'
-    - name: Build release binaries
-      run: ./build-release-binaries.sh
+        go-version: ${{ env.GOVERSION }}
     - name: Extract release notes
       run: |
         ./release-notes.sh "${GITHUB_REF_NAME}" > release-notes.md
@@ -59,6 +60,8 @@ jobs:
           echo "No release notes for ${GITHUB_REF_NAME}. Please update CHANGELOG.md"
           exit 1
         fi
+    - name: Build release binaries
+      run: ./build-release-binaries.sh
     - name: Create release
       # https://github.com/softprops/action-gh-release/tree/v0.1.15
       uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844

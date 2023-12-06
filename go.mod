@@ -7,7 +7,7 @@ require (
 	github.com/c2FmZQ/storage v0.1.1
 	github.com/fxamacker/cbor/v2 v2.5.0
 	github.com/go-test/deep v1.1.0
-	github.com/golang-jwt/jwt/v5 v5.1.0
+	github.com/golang-jwt/jwt/v5 v5.2.0
 	github.com/pires/go-proxyproto v0.7.0
 	github.com/quic-go/quic-go v0.40.0
 	github.com/russellhaering/goxmldsig v1.4.0
@@ -21,7 +21,7 @@ require (
 
 require (
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
-	github.com/google/pprof v0.0.0-20231127191134-f3a68a39ae15 // indirect
+	github.com/google/pprof v0.0.0-20231205033806-a5a03c77bf08 // indirect
 	github.com/jonboulle/clockwork v0.4.0 // indirect
 	github.com/onsi/ginkgo/v2 v2.13.2 // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect

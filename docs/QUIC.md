@@ -15,6 +15,10 @@ cd tlsproxy
 go build -tags quic -o tlsproxy
 ```
 
+Pre-built binaries with quic support are available from _+quic_
+[releases](https://github.com/c2FmZQ/tlsproxy/releases). Likewise, docker images
+with quic support are available from [docker hub](https://hub.docker.com/r/c2fmzq/tlsproxy/tags).
+
 ## Enable QUIC connections
 
 Set `EnableQUIC: true` in the top level configuration. TLSPROXY will listen to

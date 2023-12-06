@@ -1,9 +1,10 @@
 # TLSPROXY Release Notes
 
-## v0.3.0-alpha1
+## v0.3.0-alpha2
 
 * Add support for the PROXY protocol defined by HAProxy. https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt
-* Add QUIC and HTTP/3 support. See docs/QUIC.md
+* Add QUIC and HTTP/3 support. See [docs/QUIC.md](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/QUIC.md).
+* Update to go 1.21.5
 
 ## v0.2.0
 
