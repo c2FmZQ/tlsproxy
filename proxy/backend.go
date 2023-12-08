@@ -39,6 +39,7 @@ import (
 	"regexp"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -347,7 +348,9 @@ func (be *Backend) localHandler() http.Handler {
 			if port == "" {
 				port = "443"
 			}
-			w.Header().Set("Alt-Svc", `h3=":`+port+`"; ma=86400;`)
+			if p, err := strconv.Atoi(port); err == nil && p > 0 && p < 65536 {
+				w.Header().Set("Alt-Svc", fmt.Sprintf("h3=\":%d\"; ma=2592000;", p))
+			}
 		}
 		h.ServeHTTP(w, req)
 	}))
