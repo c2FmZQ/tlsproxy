@@ -27,6 +27,7 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"net"
 	"net/http"
 	"runtime"
 	"sort"
@@ -54,14 +55,14 @@ func (p *Proxy) recordEvent(msg string) {
 func (p *Proxy) addConn(c *netw.Conn) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.connections[connKey{c.LocalAddr(), c.RemoteAddr()}] = c
+	p.connections[connKey{c.LocalAddr(), c.RemoteAddr(), c.StreamID()}] = c
 	return len(p.connections)
 }
 
 func (p *Proxy) removeConn(c *netw.Conn) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	delete(p.connections, connKey{c.LocalAddr(), c.RemoteAddr()})
+	delete(p.connections, connKey{c.LocalAddr(), c.RemoteAddr(), c.StreamID()})
 
 	if sn := c.Annotation(serverNameKey, "").(string); sn != "" && p.backends[beKey{serverName: sn}] != nil {
 		if p.metrics == nil {
@@ -141,11 +142,11 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	for k := range p.events {
 		events = append(events, k)
 	}
-	p.eventsmu.Unlock()
 	sort.Strings(events)
 	for _, e := range events {
 		fmt.Fprintf(&buf, "  %6d x %s\n", p.events[e], e)
 	}
+	p.eventsmu.Unlock()
 
 	fmt.Fprintln(&buf)
 	fmt.Fprintln(&buf, "Current connections:")
@@ -167,11 +168,41 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		c := p.connections[k]
 		startTime := c.Annotation(startTimeKey, time.Time{}).(time.Time)
 		totalTime := time.Since(startTime)
-		remote := c.RemoteAddr().String()
+		remote := c.RemoteAddr().Network() + ":" + c.RemoteAddr().String()
 
-		fmt.Fprintf(&buf, "  %s -> %s %s %s\n", remote, connServerName(c), connMode(c), connProto(c))
+		var streams []*netw.QUICStream
+
+		switch cc := c.Conn.(type) {
+		case *net.TCPConn:
+			remote += " TLS"
+		case *netw.QUICConn:
+			remote += " QUIC"
+			streams = cc.Streams()
+			sort.Slice(streams, func(i, j int) bool {
+				return streams[i].StreamID() < streams[j].StreamID()
+			})
+		default:
+			remote += fmt.Sprintf(" %T", c.Conn)
+		}
+		fmt.Fprintf(&buf, "  %s <=> %s %s %s\n", remote, connServerName(c), connMode(c), connProto(c))
+		var intAddr string
 		if intConn := connIntConn(c); intConn != nil {
-			fmt.Fprintf(&buf, "  %*s -> %s -> %s\n", len(remote), "", intConn.LocalAddr().String(), intConn.RemoteAddr().String())
+			intAddr = intConn.RemoteAddr().Network() + ":" + intConn.RemoteAddr().String()
+			if len(streams) == 0 {
+				fmt.Fprintf(&buf, "  %*s <-> %s\n", len(remote), "", intAddr)
+			}
+		}
+		for _, stream := range streams {
+			addr := intAddr
+			if addr == "" {
+				addr = stream.BridgeAddr()
+			}
+			if addr == "" {
+				addr = "local"
+			}
+			fmt.Fprintf(&buf, "  %*s %s %s stream %d\n", len(remote), "", stream.Dir(),
+				addr, stream.StreamID(),
+			)
 		}
 		if cert := connClientCert(c); cert != nil {
 			fmt.Fprintf(&buf, "          X509 [%s]\n", certSummary(cert))

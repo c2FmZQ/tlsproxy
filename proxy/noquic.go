@@ -21,65 +21,30 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+//go:build !quic
+
 package proxy
 
 import (
+	"context"
 	"crypto/tls"
-	"crypto/x509"
+	"errors"
 	"net"
-
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
+	"net/http"
 )
 
-func netwConn(c net.Conn) *netw.Conn {
-	switch c := c.(type) {
-	case *tls.Conn:
-		return netwConn(c.NetConn())
-	case *netw.Conn:
-		return c
-	default:
-		panic(c)
-	}
+const quicIsEnabled = false
+
+var errQUICNotEnabled = errors.New("QUIC is not enabled in this binary")
+
+func (p *Proxy) startQUIC(context.Context) error {
+	return errQUICNotEnabled
 }
 
-func connServerName(c net.Conn) string {
-	if v, ok := netwConn(c).Annotation(serverNameKey, "").(string); ok {
-		return v
-	}
-	return ""
+func (be *Backend) dialQUICStream(context.Context, string, *tls.Config) (net.Conn, error) {
+	return nil, errQUICNotEnabled
 }
 
-func connProto(c net.Conn) string {
-	if v, ok := netwConn(c).Annotation(protoKey, "").(string); ok {
-		return v
-	}
-	return ""
-}
-
-func connClientCert(c net.Conn) *x509.Certificate {
-	if v, ok := netwConn(c).Annotation(clientCertKey, (*x509.Certificate)(nil)).(*x509.Certificate); ok {
-		return v
-	}
-	return nil
-}
-
-func connBackend(c net.Conn) *Backend {
-	if v, ok := netwConn(c).Annotation(backendKey, (*Backend)(nil)).(*Backend); ok {
-		return v
-	}
-	return nil
-}
-
-func connMode(c net.Conn) string {
-	if be := connBackend(c); be != nil {
-		return be.Mode
-	}
-	return ""
-}
-
-func connIntConn(c net.Conn) net.Conn {
-	if v, ok := netwConn(c).Annotation(internalConnKey, nil).(net.Conn); ok {
-		return v
-	}
+func (be *Backend) http3ReverseProxy() http.Handler {
 	return nil
 }

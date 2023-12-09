@@ -37,12 +37,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -90,12 +92,13 @@ type Proxy struct {
 		HTTPHandler(fallback http.Handler) http.Handler
 		TLSConfig() *tls.Config
 	}
-	cfg          *Config
-	ctx          context.Context
-	cancel       func()
-	listener     net.Listener
-	store        *storage.Storage
-	tokenManager *tokenmanager.TokenManager
+	cfg           *Config
+	ctx           context.Context
+	cancel        func()
+	listener      net.Listener
+	quicTransport io.Closer
+	store         *storage.Storage
+	tokenManager  *tokenmanager.TokenManager
 
 	mu            sync.Mutex
 	connClosed    *sync.Cond
@@ -120,6 +123,7 @@ type beKey struct {
 type connKey struct {
 	dst net.Addr
 	src net.Addr
+	id  int64
 }
 
 type bwLimit struct {
@@ -380,6 +384,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	for _, be := range cfg.Backends {
 		be.recordEvent = p.recordEvent
 		be.tm = p.tokenManager
+		be.quicTransport = p.quicTransport
 
 		for _, sn := range be.ServerNames {
 			key := beKey{serverName: sn}
@@ -550,9 +555,21 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			}
 		}
 		if be.ALPNProtos != nil {
+			*be.ALPNProtos = slices.DeleteFunc(*be.ALPNProtos, func(p string) bool {
+				return quicOnlyProtocols[p] && (be.Mode == ModeTLS || be.Mode == ModeTCP)
+			})
 			tc.NextProtos = *be.ALPNProtos
 		}
+		be.tlsConfigQUIC = tc.Clone()
+		be.tlsConfigQUIC.MinVersion = tls.VersionTLS13
+		// http/3 requires QUIC. Offering it on a TCP connection could
+		// lead to confusion.
+		tc.NextProtos = slices.Clone(tc.NextProtos)
+		tc.NextProtos = slices.DeleteFunc(tc.NextProtos, func(p string) bool {
+			return quicOnlyProtocols[p]
+		})
 		be.tlsConfig = tc
+
 		for _, n := range be.ForwardRootCAs {
 			if be.forwardRootCAs == nil {
 				be.forwardRootCAs = x509.NewCertPool()
@@ -609,12 +626,23 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 
 			be.httpConnChan = make(chan net.Conn)
 			be.httpServer = startInternalHTTPServer(be.localHandler(), be.httpConnChan)
+			if cfg.EnableQUIC && be.ALPNProtos != nil && slices.Contains(*be.ALPNProtos, "h3") {
+				be.http3Handler = be.localHandler()
+			}
 
 		case ModeLocal:
 			be.httpConnChan = make(chan net.Conn)
 			be.httpServer = startInternalHTTPServer(be.localHandler(), be.httpConnChan)
+			if cfg.EnableQUIC && be.ALPNProtos != nil && slices.Contains(*be.ALPNProtos, "h3") {
+				be.http3Handler = be.localHandler()
+			}
 
-		case ModeHTTP, ModeHTTPS:
+		case ModeHTTPS:
+			if cfg.EnableQUIC && be.ALPNProtos != nil && slices.Contains(*be.ALPNProtos, "h3") {
+				be.http3Handler = be.reverseProxy()
+			}
+			fallthrough
+		case ModeHTTP:
 			be.httpConnChan = make(chan net.Conn)
 			be.httpServer = startInternalHTTPServer(be.reverseProxy(), be.httpConnChan)
 		}
@@ -766,6 +794,11 @@ func (p *Proxy) Start(ctx context.Context) error {
 		httpServer.SetKeepAlivesEnabled(false)
 		go serveHTTP(httpServer, httpListener)
 	}
+	if p.cfg.EnableQUIC {
+		if err := p.startQUIC(ctx); err != nil {
+			return err
+		}
+	}
 
 	listener, err := netw.Listen("tcp", p.cfg.TLSAddr)
 	if err != nil {
@@ -789,15 +822,15 @@ func (p *Proxy) ctxWait(s *http.Server) {
 }
 
 func (p *Proxy) acceptLoop() {
-	log.Printf("INF Accepting TLS connections on %s", p.listener.Addr())
+	log.Printf("INF Accepting TLS connections on %s %s", p.listener.Addr().Network(), p.listener.Addr())
 	for {
 		conn, err := p.listener.Accept()
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
-				log.Print("INF Accept loop terminated")
+				log.Print("INF TLS Accept loop terminated")
 				break
 			}
-			log.Printf("ERR Accept: %v", err)
+			log.Printf("ERR TLS Accept: %v", err)
 			continue
 		}
 		go p.handleConnection(conn.(*netw.Conn))
@@ -811,6 +844,9 @@ func (p *Proxy) Stop() {
 		p.cancel()
 	}
 	p.listener.Close()
+	if p.quicTransport != nil {
+		p.quicTransport.Close()
+	}
 	backends := p.cfg.Backends
 	p.cfg.Backends = nil
 	conns := make([]net.Conn, 0, len(p.connections))
@@ -831,6 +867,9 @@ func (p *Proxy) Stop() {
 func (p *Proxy) Shutdown(ctx context.Context) {
 	p.mu.Lock()
 	p.listener.Close()
+	if p.quicTransport != nil {
+		p.quicTransport.Close()
+	}
 	for _, be := range p.cfg.Backends {
 		be.close(ctx)
 	}
@@ -875,6 +914,7 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 }
 
 func (p *Proxy) handleConnection(conn *netw.Conn) {
+	p.recordEvent("tcp connection")
 	defer func() {
 		if r := recover(); r != nil {
 			p.recordEvent("panic")
@@ -932,10 +972,10 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		return
 	}
 	conn.SetAnnotation(backendKey, be)
+	be.incInFlight(1)
 	if l := be.bwLimit; l != nil {
 		conn.SetLimiters(l.ingress, l.egress)
 	}
-	be.incInFlight(1)
 	switch {
 	case be.Mode == ModeTLSPassthrough:
 		if err := p.checkIP(conn); err != nil {
@@ -955,7 +995,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		p.handleHTTPConnection(tls.Server(conn, be.tlsConfig))
 		closeConnNeeded = false
 
-	case be.Mode == ModeTCP || be.Mode == ModeTLS:
+	case be.Mode == ModeTCP || be.Mode == ModeTLS || be.Mode == ModeQUIC:
 		if err := p.checkIP(conn); err != nil {
 			return
 		}
@@ -1189,11 +1229,15 @@ func formatReqDesc(req *http.Request) string {
 		email, _ := claims["email"].(string)
 		ids = append(ids, email)
 	}
-	tlsConn := req.Context().Value(connCtxKey).(*tls.Conn)
-	return formatConnDesc(tlsConn.NetConn().(*netw.Conn), ids...)
+	conn, ok := req.Context().Value(connCtxKey).(net.Conn)
+	if !ok {
+		log.Printf("ERR Request without connCtxKey: %v", req.Context())
+		return ""
+	}
+	return formatConnDesc(conn, ids...)
 }
 
-func formatConnDesc(c *netw.Conn, ids ...string) string {
+func formatConnDesc(c net.Conn, ids ...string) string {
 	serverName := connServerName(c)
 	mode := connMode(c)
 	proto := connProto(c)
@@ -1212,7 +1256,7 @@ func formatConnDesc(c *netw.Conn, ids ...string) string {
 	} else {
 		buf.WriteString("[" + strings.Join(identities, "|") + "] ")
 	}
-	buf.WriteString(c.RemoteAddr().String())
+	buf.WriteString(c.RemoteAddr().Network() + ":" + c.RemoteAddr().String())
 	if serverName != "" {
 		buf.WriteString(" ➔ ")
 		buf.WriteString(serverName)
@@ -1221,9 +1265,9 @@ func formatConnDesc(c *netw.Conn, ids ...string) string {
 			buf.WriteString(":" + proto)
 		}
 		if intConn != nil {
-			buf.WriteString("|" + intConn.LocalAddr().String())
+			buf.WriteString("|" + intConn.LocalAddr().Network() + ":" + intConn.LocalAddr().String())
 			buf.WriteString(" ➔ ")
-			buf.WriteString(intConn.RemoteAddr().String())
+			buf.WriteString(intConn.RemoteAddr().Network() + ":" + intConn.RemoteAddr().String())
 		}
 	}
 	return buf.String()
@@ -1239,7 +1283,6 @@ func setKeepAlive(conn net.Conn) {
 	case *netw.Conn:
 		setKeepAlive(c.Conn)
 	default:
-		log.Fatalf("setKeepAlive called with unexpected type: %T", conn)
 	}
 }
 

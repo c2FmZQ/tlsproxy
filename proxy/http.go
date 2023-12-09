@@ -42,10 +42,11 @@ func startInternalHTTPServer(handler http.Handler, conns <-chan net.Conn) *http.
 		closedCh: make(chan struct{}),
 	}
 	s := &http.Server{
-		Handler:      handler,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  30 * time.Second,
+		Handler:           handler,
+		ReadHeaderTimeout: 30 * time.Second,
+		IdleTimeout:       30 * time.Second,
+		ReadTimeout:       24 * time.Hour,
+		WriteTimeout:      24 * time.Hour,
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
 			return context.WithValue(ctx, connCtxKey, c)
 		},

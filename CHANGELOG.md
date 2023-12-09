@@ -1,8 +1,11 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.3.0
 
 * Add support for the PROXY protocol defined by HAProxy. https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt
+* Add QUIC and HTTP/3 support. See [docs/QUIC.md](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/QUIC.md).
+* Increase timeouts for proxied HTTP requests to 24 hours for large uploads or downloads.
+* Update to go 1.21.5
 
 ## v0.2.0
 

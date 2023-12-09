@@ -21,65 +21,27 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package proxy
+//go:build !quic
 
-import (
-	"crypto/tls"
-	"crypto/x509"
-	"net"
+package netw
 
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
-)
+import "net"
 
-func netwConn(c net.Conn) *netw.Conn {
-	switch c := c.(type) {
-	case *tls.Conn:
-		return netwConn(c.NetConn())
-	case *netw.Conn:
-		return c
-	default:
-		panic(c)
-	}
+type QUICStream struct {
+	Conn
 }
 
-func connServerName(c net.Conn) string {
-	if v, ok := netwConn(c).Annotation(serverNameKey, "").(string); ok {
-		return v
-	}
+func (*QUICStream) Dir() string {
+	return ""
+}
+func (*QUICStream) BridgeAddr() string {
 	return ""
 }
 
-func connProto(c net.Conn) string {
-	if v, ok := netwConn(c).Annotation(protoKey, "").(string); ok {
-		return v
-	}
-	return ""
+type QUICConn struct {
+	net.Conn
 }
 
-func connClientCert(c net.Conn) *x509.Certificate {
-	if v, ok := netwConn(c).Annotation(clientCertKey, (*x509.Certificate)(nil)).(*x509.Certificate); ok {
-		return v
-	}
-	return nil
-}
-
-func connBackend(c net.Conn) *Backend {
-	if v, ok := netwConn(c).Annotation(backendKey, (*Backend)(nil)).(*Backend); ok {
-		return v
-	}
-	return nil
-}
-
-func connMode(c net.Conn) string {
-	if be := connBackend(c); be != nil {
-		return be.Mode
-	}
-	return ""
-}
-
-func connIntConn(c net.Conn) net.Conn {
-	if v, ok := netwConn(c).Annotation(internalConnKey, nil).(net.Conn); ok {
-		return v
-	}
+func (*QUICConn) Streams() []*QUICStream {
 	return nil
 }
