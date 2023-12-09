@@ -21,7 +21,7 @@ with quic support are available from [docker hub](https://hub.docker.com/r/c2fmz
 
 ## Enable QUIC connections
 
-Set `EnableQUIC: true` in the top level configuration. TLSPROXY will listen to
+Set `enableQUIC: true` in the top level configuration. TLSPROXY will listen to
 the same address as `TLSAddr`, but on UDP instead of TCP.
 
 QUIC uses the same TLS credentials as usual.
