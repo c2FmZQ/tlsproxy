@@ -515,7 +515,7 @@ func (be *Backend) reverseProxyModifyResponse(resp *http.Response) error {
 	if resp.StatusCode != http.StatusMisdirectedRequest && resp.Header.Get(hstsHeader) == "" {
 		resp.Header.Set(hstsHeader, hstsValue)
 	}
-	if resp.StatusCode == http.StatusOK && resp.Header.Get("Alt-Svc") == "" {
+	if resp.StatusCode >= 200 && resp.StatusCode < 400 && resp.Header.Get("Alt-Svc") == "" {
 		be.setAltSvc(resp.Header, req)
 	}
 	return nil
