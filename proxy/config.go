@@ -230,9 +230,8 @@ type Backend struct {
 	//
 	// QUIC
 	//
-	// If the incoming connection is QUIC and Mode is PLAINTEXT, TLS, HTTP,
-	// HTTPS, LOCAL, or CONSOLE, each QUIC stream is treated like an
-	// incoming TLS connection. For example, PLAINTEXT:
+	// If the incoming connection is QUIC and Mode is TCP or TLS, each QUIC
+	// stream is treated like an incoming TLS connection.
 	//                               ,--STREAM1--> BACKEND SERVER
 	//        CLIENT --QUIC--> PROXY +--STREAM2--> BACKEND SERVER
 	//                               `--STREAM3--> BACKEND SERVER
