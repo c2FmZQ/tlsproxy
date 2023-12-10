@@ -241,7 +241,8 @@ func (s *service) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		fmt.Fprintln(w, "</pre>")
 	}
 
-	fmt.Fprintf(w, "%s<br>\n", req.Proto)
+	fmt.Fprintf(w, "Proto: %s<br>\n", req.Proto)
+	fmt.Fprintf(w, "Via: %s\n", html.EscapeString(req.Header.Get("via")))
 }
 
 func audienceFromReq(req *http.Request) string {
