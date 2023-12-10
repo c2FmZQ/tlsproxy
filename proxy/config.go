@@ -744,6 +744,9 @@ func (cfg *Config) Check() error {
 		if be.ALPNProtos == nil {
 			be.ALPNProtos = defaultALPNProtos
 		}
+		if be.BackendProto != nil && be.Mode != ModeHTTP && be.Mode != ModeHTTPS {
+			return fmt.Errorf("backend[%d].BackendProto: field is not valid in mode %s", i, be.Mode)
+		}
 		if be.Mode == ModeQUIC {
 			var falsex bool
 			if be.ServerCloseEndsConnection == nil {
