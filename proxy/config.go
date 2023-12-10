@@ -190,6 +190,12 @@ type Backend struct {
 	//
 	// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
 	ALPNProtos *[]string `yaml:"alpnProtos,omitempty"`
+	// BackendProto specifies which protocol to use when forwarding an HTTPS
+	// request to the backend. This field is only valid in modes HTTP and
+	// HTTPS. If unspecified, the same protocol used by the client will be
+	// used with the backend.
+	// The value should be an ALPN protocol, e.g.: http/1.1, h2, or h3.
+	BackendProto string `yaml:"backendProto,omitempty"`
 	// Mode controls how the proxy communicates with the backend.
 	// - PLAINTEXT: Use a plaintext, non-encrypted, TCP connection. This is
 	//     the default mode.
@@ -505,6 +511,12 @@ type PathOverride struct {
 	Addresses []string `yaml:"addresses,omitempty"`
 	// Mode is either HTTP or HTTPS.
 	Mode string `yaml:"mode"`
+	// BackendProto specifies which protocol to use when forwarding an HTTPS
+	// request to the backend. This field is only valid in modes HTTP and
+	// HTTPS. If unspecified, the same protocol used by the client will be
+	// used with the backend.
+	// The value should be an ALPN protocol, e.g.: http/1.1, h2, or h3.
+	BackendProto string `yaml:"backendProto,omitempty"`
 	// InsecureSkipVerify disabled the verification of the backend server's
 	// TLS certificate. See https://pkg.go.dev/crypto/tls#Config
 	InsecureSkipVerify bool `yaml:"insecureSkipVerify,omitempty"`

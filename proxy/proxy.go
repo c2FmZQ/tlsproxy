@@ -637,12 +637,10 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				be.http3Handler = be.localHandler()
 			}
 
-		case ModeHTTPS:
+		case ModeHTTPS, ModeHTTP:
 			if cfg.EnableQUIC && be.ALPNProtos != nil && slices.Contains(*be.ALPNProtos, "h3") {
 				be.http3Handler = be.reverseProxy()
 			}
-			fallthrough
-		case ModeHTTP:
 			be.httpConnChan = make(chan net.Conn)
 			be.httpServer = startInternalHTTPServer(be.reverseProxy(), be.httpConnChan)
 		}

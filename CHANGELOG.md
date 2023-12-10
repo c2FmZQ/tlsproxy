@@ -2,7 +2,8 @@
 
 ## next
 
-* Fix QUIC stream direction in metrics
+* Decouple frontend and backend protocols in reverse-proxy modes.
+* Fix QUIC stream direction in metrics.
 
 ## v0.3.0
 
