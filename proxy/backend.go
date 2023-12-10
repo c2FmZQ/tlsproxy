@@ -367,12 +367,6 @@ func (be *Backend) setAltSvc(header http.Header, req *http.Request) {
 	}
 }
 
-type funcRoundTripper func(req *http.Request) (*http.Response, error)
-
-func (rt funcRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	return rt(req)
-}
-
 func (be *Backend) reverseProxy() http.Handler {
 	if len(be.Addresses) == 0 {
 		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -381,51 +375,9 @@ func (be *Backend) reverseProxy() http.Handler {
 		})
 		return recoverHandler(be.userAuthentication(be.localHandlersAndAuthz(h)))
 	}
-	h1 := &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return be.dial(ctx)
-		},
-		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return be.dial(ctx)
-		},
-		MaxIdleConns:          100,
-		IdleConnTimeout:       30 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	}
-	h2 := &http2.Transport{
-		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
-			return be.dial(ctx, "h2")
-		},
-		DisableCompression: true,
-		AllowHTTP:          true,
-		ReadIdleTimeout:    30 * time.Second,
-		WriteByteTimeout:   30 * time.Second,
-		CountError: func(errType string) {
-			be.recordEvent("http2 client error: " + errType)
-		},
-	}
-	h3 := be.http3Transport()
-
 	reverseProxy := &httputil.ReverseProxy{
-		Director: be.reverseProxyDirector,
-		Transport: funcRoundTripper(func(req *http.Request) (*http.Response, error) {
-			proto := "http/1.1"
-			if id, ok := req.Context().Value(ctxOverrideIDKey).(int); ok && id >= 0 && id < len(be.PathOverrides) && be.PathOverrides[id].BackendProto != nil {
-				proto = *be.PathOverrides[id].BackendProto
-			} else if be.BackendProto != nil {
-				proto = *be.BackendProto
-			}
-			if proto == "" && req.TLS != nil && req.TLS.NegotiatedProtocol != "" {
-				proto = req.TLS.NegotiatedProtocol
-			}
-			if proto == "h3" && h3 != nil {
-				return h3.RoundTrip(req)
-			}
-			if proto == "h2" {
-				return h2.RoundTrip(req)
-			}
-			return h1.RoundTrip(req)
-		}),
+		Director:       be.reverseProxyDirector,
+		Transport:      be.reverseProxyTransport(),
 		ModifyResponse: be.reverseProxyModifyResponse,
 	}
 
@@ -501,6 +453,58 @@ func (be *Backend) reverseProxyDirector(req *http.Request) {
 	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 && be.ClientAuth != nil && len(be.ClientAuth.AddClientCertHeader) > 0 {
 		addXFCCHeader(req, be.ClientAuth.AddClientCertHeader)
 	}
+}
+
+type funcRoundTripper func(req *http.Request) (*http.Response, error)
+
+func (rt funcRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return rt(req)
+}
+
+func (be *Backend) reverseProxyTransport() http.RoundTripper {
+	h1 := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return be.dial(ctx)
+		},
+		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return be.dial(ctx)
+		},
+		MaxIdleConns:          100,
+		IdleConnTimeout:       30 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+	h2 := &http2.Transport{
+		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+			return be.dial(ctx, "h2")
+		},
+		DisableCompression: true,
+		AllowHTTP:          true,
+		ReadIdleTimeout:    30 * time.Second,
+		WriteByteTimeout:   30 * time.Second,
+		CountError: func(errType string) {
+			be.recordEvent("http2 client error: " + errType)
+		},
+	}
+	h3 := be.http3Transport()
+
+	return funcRoundTripper(func(req *http.Request) (*http.Response, error) {
+		proto := "http/1.1"
+		if id, ok := req.Context().Value(ctxOverrideIDKey).(int); ok && id >= 0 && id < len(be.PathOverrides) && be.PathOverrides[id].BackendProto != nil {
+			proto = *be.PathOverrides[id].BackendProto
+		} else if be.BackendProto != nil {
+			proto = *be.BackendProto
+		}
+		if proto == "" && req.TLS != nil && req.TLS.NegotiatedProtocol != "" {
+			proto = req.TLS.NegotiatedProtocol
+		}
+		if proto == "h3" && h3 != nil {
+			return h3.RoundTrip(req)
+		}
+		if proto == "h2" {
+			return h2.RoundTrip(req)
+		}
+		return h1.RoundTrip(req)
+	})
 }
 
 func (be *Backend) reverseProxyModifyResponse(resp *http.Response) error {
