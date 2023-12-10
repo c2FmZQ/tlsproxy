@@ -555,10 +555,10 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			}
 		}
 		if be.ALPNProtos != nil {
-			*be.ALPNProtos = slices.DeleteFunc(*be.ALPNProtos, func(p string) bool {
+			tc.NextProtos = slices.Clone(*be.ALPNProtos)
+			tc.NextProtos = slices.DeleteFunc(tc.NextProtos, func(p string) bool {
 				return quicOnlyProtocols[p] && (be.Mode == ModeTLS || be.Mode == ModeTCP)
 			})
-			tc.NextProtos = *be.ALPNProtos
 		}
 		be.tlsConfigQUIC = tc.Clone()
 		be.tlsConfigQUIC.MinVersion = tls.VersionTLS13
