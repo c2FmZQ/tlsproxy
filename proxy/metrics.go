@@ -200,8 +200,23 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 			if addr == "" {
 				addr = "local"
 			}
-			fmt.Fprintf(&buf, "  %*s %s %s stream %d\n", len(remote), "", stream.Dir(),
-				addr, stream.StreamID(),
+			streamID := stream.StreamID()
+			var dir string
+			// bit 0: 0 -> client initiated, 1 -> server initiated
+			// bit 1: 0 -> bidirectional, 1 -> unidirectional
+			switch streamID & 0x3 {
+			case 0x0, 0x1:
+				// bidi, client or server initiated
+				dir = "<->"
+			case 0x2:
+				// uni, client initiated
+				dir = "-->"
+			case 0x3:
+				// uni, server initiated
+				dir = "<--"
+			}
+			fmt.Fprintf(&buf, "  %*s %s %s stream %d\n", len(remote), "", dir,
+				addr, streamID,
 			)
 		}
 		if cert := connClientCert(c); cert != nil {

@@ -1,5 +1,9 @@
 # TLSPROXY Release Notes
 
+## next
+
+* Fix QUIC stream direction in metrics
+
 ## v0.3.0
 
 * Add support for the PROXY protocol defined by HAProxy. https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt

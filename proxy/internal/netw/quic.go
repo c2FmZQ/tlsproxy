@@ -287,7 +287,6 @@ func (c *QUICConn) AcceptStream(ctx context.Context) (quic.Stream, error) {
 	qs := &QUICStream{
 		Stream: s,
 		qc:     c,
-		dir:    "<->",
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -303,7 +302,6 @@ func (c *QUICConn) AcceptUniStream(ctx context.Context) (quic.ReceiveStream, err
 	qs := &QUICStream{
 		Stream: &ReceiveOnlyStream{s, c.Context()},
 		qc:     c,
-		dir:    "<--",
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -319,7 +317,6 @@ func (c *QUICConn) OpenStream() (quic.Stream, error) {
 	qs := &QUICStream{
 		Stream: s,
 		qc:     c,
-		dir:    "<->",
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -335,7 +332,6 @@ func (c *QUICConn) OpenStreamSync(ctx context.Context) (quic.Stream, error) {
 	qs := &QUICStream{
 		Stream: s,
 		qc:     c,
-		dir:    "<->",
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -351,7 +347,6 @@ func (c *QUICConn) OpenUniStream() (quic.SendStream, error) {
 	qs := &QUICStream{
 		Stream: &SendOnlyStream{s, c.Context()},
 		qc:     c,
-		dir:    "-->",
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -367,7 +362,6 @@ func (c *QUICConn) OpenUniStreamSync(ctx context.Context) (quic.SendStream, erro
 	qs := &QUICStream{
 		Stream: &SendOnlyStream{s, c.Context()},
 		qc:     c,
-		dir:    "-->",
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -449,17 +443,12 @@ var _ net.Conn = (*QUICStream)(nil)
 // interface.
 type QUICStream struct {
 	quic.Stream
-	qc  *QUICConn
-	dir string
+	qc *QUICConn
 
 	mu         sync.Mutex
 	readDone   bool
 	writeDone  bool
 	bridgeAddr string
-}
-
-func (s *QUICStream) Dir() string {
-	return s.dir
 }
 
 func (s *QUICStream) streamID() int64 {
