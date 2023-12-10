@@ -75,7 +75,7 @@ func TestReadConfig(t *testing.T) {
 				},
 				ForwardRateLimit: 5,
 				Mode:             "HTTP",
-				ALPNProtos:       &[]string{"http/1.1"},
+				ALPNProtos:       &[]string{"h2", "http/1.1"},
 				ForwardTimeout:   30 * time.Second,
 			},
 			{
@@ -87,7 +87,7 @@ func TestReadConfig(t *testing.T) {
 				},
 				ForwardRateLimit:   5,
 				Mode:               "HTTPS",
-				ALPNProtos:         &[]string{"http/1.1"},
+				ALPNProtos:         &[]string{"h2", "http/1.1"},
 				InsecureSkipVerify: true,
 				ForwardTimeout:     30 * time.Second,
 			},

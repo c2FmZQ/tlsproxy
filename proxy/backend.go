@@ -374,117 +374,117 @@ func (rt funcRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 }
 
 func (be *Backend) reverseProxy() http.Handler {
-	var rp http.Handler
 	if len(be.Addresses) == 0 {
-		rp = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			log.Printf("PRX %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL, http.StatusNotFound, userAgent(req))
 			http.NotFound(w, req)
 		})
-	} else {
-		h1 := &http.Transport{
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return be.dial(ctx)
-			},
-			DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return be.dial(ctx)
-			},
-			MaxIdleConns:          100,
-			IdleConnTimeout:       30 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
+		return recoverHandler(be.userAuthentication(be.localHandlersAndAuthz(h)))
+	}
+	h1 := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return be.dial(ctx)
+		},
+		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return be.dial(ctx)
+		},
+		MaxIdleConns:          100,
+		IdleConnTimeout:       30 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+	h2 := &http2.Transport{
+		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+			return be.dial(ctx, "h2")
+		},
+		DisableCompression: true,
+		AllowHTTP:          true,
+		ReadIdleTimeout:    30 * time.Second,
+		WriteByteTimeout:   30 * time.Second,
+		CountError: func(errType string) {
+			be.recordEvent("http2 client error: " + errType)
+		},
+	}
+	h3 := be.http3Transport()
+
+	reverseProxy := &httputil.ReverseProxy{
+		Director: be.reverseProxyDirector,
+		Transport: funcRoundTripper(func(req *http.Request) (*http.Response, error) {
+			proto := "http/1.1"
+			if id, ok := req.Context().Value(ctxOverrideIDKey).(int); ok && id >= 0 && id < len(be.PathOverrides) && be.PathOverrides[id].BackendProto != nil {
+				proto = *be.PathOverrides[id].BackendProto
+			} else if be.BackendProto != nil {
+				proto = *be.BackendProto
+			}
+			if proto == "" && req.TLS != nil && req.TLS.NegotiatedProtocol != "" {
+				proto = req.TLS.NegotiatedProtocol
+			}
+			if proto == "h3" && h3 != nil {
+				return h3.RoundTrip(req)
+			}
+			if proto == "h2" {
+				return h2.RoundTrip(req)
+			}
+			return h1.RoundTrip(req)
+		}),
+		ModifyResponse: be.reverseProxyModifyResponse,
+	}
+
+	return recoverHandler(be.userAuthentication(be.localHandlersAndAuthz(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
+		host := req.Host
+		if host == "" {
+			host = connServerName(ctx.Value(connCtxKey).(net.Conn))
 		}
-		h2 := &http2.Transport{
-			DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
-				return be.dial(ctx, "h2")
-			},
-			DisableCompression: true,
-			AllowHTTP:          true,
-			ReadIdleTimeout:    30 * time.Second,
-			WriteByteTimeout:   30 * time.Second,
-			CountError: func(errType string) {
-				be.recordEvent("http2 client error: " + errType)
-			},
+		req.URL.Scheme = "https"
+		if be.Mode == ModeHTTP {
+			req.URL.Scheme = "http"
 		}
-		h3 := be.http3Transport()
+		req.URL.Host = host
+		req.Header.Set(hostHeader, host)
+		hostname := req.URL.Hostname()
 
-		reverseProxy := &httputil.ReverseProxy{
-			Director: be.reverseProxyDirector,
-			Transport: funcRoundTripper(func(req *http.Request) (*http.Response, error) {
-				proto := be.BackendProto
-				if id, ok := req.Context().Value(ctxOverrideIDKey).(int); ok && id >= 0 && id < len(be.PathOverrides) && be.PathOverrides[id].BackendProto != "" {
-					proto = be.PathOverrides[id].BackendProto
-				}
-				if proto == "" && req.TLS != nil && req.TLS.NegotiatedProtocol != "" {
-					proto = req.TLS.NegotiatedProtocol
-				}
-				if proto == "h3" && h3 != nil {
-					return h3.RoundTrip(req)
-				}
-				if proto == "h2" {
-					return h2.RoundTrip(req)
-				}
-				return h1.RoundTrip(req)
-			}),
-			ModifyResponse: be.reverseProxyModifyResponse,
+		if !slices.Contains(be.ServerNames, hostname) {
+			if req.Body != nil {
+				req.Body.Close()
+			}
+			http.Error(w, "Misdirected Request", http.StatusMisdirectedRequest)
+			return
 		}
 
-		rp = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			ctx := req.Context()
-			host := req.Host
-			if host == "" {
-				host = connServerName(ctx.Value(connCtxKey).(net.Conn))
-			}
-			req.URL.Scheme = "https"
-			if be.Mode == ModeHTTP {
-				req.URL.Scheme = "http"
-			}
-			req.URL.Host = host
-			req.Header.Set(hostHeader, host)
-			hostname := req.URL.Hostname()
+		ctx = context.WithValue(ctx, ctxURLKey, req.URL.String())
 
-			if !slices.Contains(be.ServerNames, hostname) {
-				if req.Body != nil {
-					req.Body.Close()
-				}
-				http.Error(w, "Misdirected Request", http.StatusMisdirectedRequest)
-				return
-			}
-
-			ctx = context.WithValue(ctx, ctxURLKey, req.URL.String())
-
-			h := sha256.Sum256([]byte(hostname))
-			hh := hex.EncodeToString(h[:])
-			req.URL.Host = hh
-		L:
-			for i, po := range be.PathOverrides {
-				for _, prefix := range po.Paths {
-					if !strings.HasPrefix(req.URL.Path, prefix) {
-						continue
-					}
-					req.URL.Host = fmt.Sprintf("%s-%d", hh, i)
-					ctx = context.WithValue(ctx, ctxOverrideIDKey, i)
-					break L
-				}
-			}
-			req = req.WithContext(ctx)
-
-			hops := commaRE.Split(req.Header.Get(viaHeader), -1)
-			_, me, _ := strings.Cut(hops[len(hops)-1], " ")
-			hops = hops[:len(hops)-1]
-			for _, via := range hops {
-				_, via, _ = strings.Cut(via, " ")
-				if via != me {
+		h := sha256.Sum256([]byte(hostname))
+		hh := hex.EncodeToString(h[:])
+		req.URL.Host = hh
+	L:
+		for i, po := range be.PathOverrides {
+			for _, prefix := range po.Paths {
+				if !strings.HasPrefix(req.URL.Path, prefix) {
 					continue
 				}
-				if req.Body != nil {
-					req.Body.Close()
-				}
-				http.Error(w, req.Header.Get(viaHeader), http.StatusLoopDetected)
-				return
+				req.URL.Host = fmt.Sprintf("%s-%d", hh, i)
+				ctx = context.WithValue(ctx, ctxOverrideIDKey, i)
+				break L
 			}
-			reverseProxy.ServeHTTP(w, req)
-		})
-	}
-	return recoverHandler(be.userAuthentication(be.localHandlersAndAuthz(rp)))
+		}
+		req = req.WithContext(ctx)
+
+		hops := commaRE.Split(req.Header.Get(viaHeader), -1)
+		_, me, _ := strings.Cut(hops[len(hops)-1], " ")
+		hops = hops[:len(hops)-1]
+		for _, via := range hops {
+			_, via, _ = strings.Cut(via, " ")
+			if via != me {
+				continue
+			}
+			if req.Body != nil {
+				req.Body.Close()
+			}
+			http.Error(w, req.Header.Get(viaHeader), http.StatusLoopDetected)
+			return
+		}
+		reverseProxy.ServeHTTP(w, req)
+	}))))
 }
 
 func (be *Backend) reverseProxyDirector(req *http.Request) {
