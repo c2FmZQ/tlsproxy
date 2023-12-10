@@ -2,7 +2,7 @@
 
 ## next
 
-* Decouple frontend and backend protocols in reverse-proxy modes.
+* Decouple frontend and backend protocols in `mode: http` and `mode: https`. The ALPN protocols that TLSPROXY accepts are specified in `alpnProtos: [...]`, and the protocol to use with the request to the backend is specified with `backendProto: ...`, which defaults to `http/1.1`. The previous behavior was to use the same protocol that the client used. It is still possible to do that by setting `backendProto` explicitly to an empty string.
 * Fix QUIC stream direction in metrics.
 
 ## v0.3.0
