@@ -555,10 +555,10 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			}
 		}
 		if be.ALPNProtos != nil {
-			*be.ALPNProtos = slices.DeleteFunc(*be.ALPNProtos, func(p string) bool {
+			tc.NextProtos = slices.Clone(*be.ALPNProtos)
+			tc.NextProtos = slices.DeleteFunc(tc.NextProtos, func(p string) bool {
 				return quicOnlyProtocols[p] && (be.Mode == ModeTLS || be.Mode == ModeTCP)
 			})
-			tc.NextProtos = *be.ALPNProtos
 		}
 		be.tlsConfigQUIC = tc.Clone()
 		be.tlsConfigQUIC.MinVersion = tls.VersionTLS13
@@ -637,12 +637,10 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				be.http3Handler = be.localHandler()
 			}
 
-		case ModeHTTPS:
+		case ModeHTTPS, ModeHTTP:
 			if cfg.EnableQUIC && be.ALPNProtos != nil && slices.Contains(*be.ALPNProtos, "h3") {
 				be.http3Handler = be.reverseProxy()
 			}
-			fallthrough
-		case ModeHTTP:
 			be.httpConnChan = make(chan net.Conn)
 			be.httpServer = startInternalHTTPServer(be.reverseProxy(), be.httpConnChan)
 		}

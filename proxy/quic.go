@@ -37,7 +37,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/http/httputil"
 	"sync"
 	"time"
 
@@ -545,25 +544,18 @@ func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUI
 	}
 }
 
-func (be *Backend) http3ReverseProxy() http.Handler {
-	return &httputil.ReverseProxy{
-		Director: be.reverseProxyDirector,
-		Transport: &cleanRoundTripper{
-			serverNames: be.ServerNames,
-			RoundTripper: &http3.RoundTripper{
-				DisableCompression: true,
-				Dial: func(ctx context.Context, _ string, _ *tls.Config, _ *quic.Config) (quic.EarlyConnection, error) {
-					conn, err := be.dialQUICBackend(ctx, "h3")
-					if err != nil {
-						return nil, err
-					}
-					if c, ok := ctx.Value(connCtxKey).(*netw.Conn); ok {
-						c.SetAnnotation(internalConnKey, conn)
-					}
-					return conn, nil
-				},
-			},
+func (be *Backend) http3Transport() http.RoundTripper {
+	return &http3.RoundTripper{
+		DisableCompression: true,
+		Dial: func(ctx context.Context, _ string, _ *tls.Config, _ *quic.Config) (quic.EarlyConnection, error) {
+			conn, err := be.dialQUICBackend(ctx, "h3")
+			if err != nil {
+				return nil, err
+			}
+			if c, ok := ctx.Value(connCtxKey).(*netw.Conn); ok {
+				c.SetAnnotation(internalConnKey, conn)
+			}
+			return conn, nil
 		},
-		ModifyResponse: be.reverseProxyModifyResponse,
 	}
 }

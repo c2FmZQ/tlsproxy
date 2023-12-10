@@ -45,6 +45,6 @@ func (be *Backend) dialQUICStream(context.Context, string, *tls.Config) (net.Con
 	return nil, errQUICNotEnabled
 }
 
-func (be *Backend) http3ReverseProxy() http.Handler {
+func (be *Backend) http3Transport() http.RoundTripper {
 	return nil
 }

@@ -178,21 +178,24 @@ type Backend struct {
 	// ALPNProtos specifies the list of ALPN procotols supported by this
 	// backend. The ACME acme-tls/1 protocol doesn't need to be specified.
 	//
-	// The default values are:
-	//   [http/1.1] for HTTP and HTTPS modes, and
-	//   [h2, http/1.1] for all the other modes.
+	// The default values are: [h2, http/1.1]
 	//
-	// To enable HTTP/2 in HTTPS mode, set the value to [h2, http/1.1]
-	// explicitly. Only do this if the backend server supports HTTP/2.
-	//
+	// Set the value to [h3, h2, http/1.1] to enable HTTP/3.
 	// Set the value to an empty slice [] to disable ALPN.
 	// The negotiated protocol is forwarded to the backends that use TLS.
 	//
 	// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
 	ALPNProtos *[]string `yaml:"alpnProtos,omitempty"`
+	// BackendProto specifies which protocol to use when forwarding an HTTPS
+	// request to the backend. This field is only valid in modes HTTP and
+	// HTTPS.
+	// The value should be an ALPN protocol, e.g.: http/1.1, h2, or h3. The default is http/1.1.
+	// If the value is set explicitly to "", the same protocol used by the
+	//  client will be used with the backend.
+	BackendProto *string `yaml:"backendProto,omitempty"`
 	// Mode controls how the proxy communicates with the backend.
 	// - PLAINTEXT: Use a plaintext, non-encrypted, TCP connection. This is
-	//     the default mode.
+	// the the default mode.
 	//        CLIENT --TLS--> PROXY ----> BACKEND SERVER
 	// - TLS: Open a new TLS connection. Set ForwardServerName, ForwardRootCAs,
 	//     and/or InsecureSkipVerify to verify the identity of the server.
@@ -505,6 +508,13 @@ type PathOverride struct {
 	Addresses []string `yaml:"addresses,omitempty"`
 	// Mode is either HTTP or HTTPS.
 	Mode string `yaml:"mode"`
+	// BackendProto specifies which protocol to use when forwarding an HTTPS
+	// request to the backend. This field is only valid in modes HTTP and
+	// HTTPS.
+	// The value should be an ALPN protocol, e.g.: http/1.1, h2, or h3.
+	// If the value is set explicitly to "", the same protocol used by the
+	//  client will be used with the backend.
+	BackendProto *string `yaml:"backendProto,omitempty"`
 	// InsecureSkipVerify disabled the verification of the backend server's
 	// TLS certificate. See https://pkg.go.dev/crypto/tls#Config
 	InsecureSkipVerify bool `yaml:"insecureSkipVerify,omitempty"`
@@ -732,11 +742,10 @@ func (cfg *Config) Check() error {
 			return fmt.Errorf("backend[%d].ClientAuth: client auth is not compatible with TLS Passthrough", i)
 		}
 		if be.ALPNProtos == nil {
-			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS {
-				be.ALPNProtos = &[]string{"http/1.1"}
-			} else {
-				be.ALPNProtos = defaultALPNProtos
-			}
+			be.ALPNProtos = defaultALPNProtos
+		}
+		if be.BackendProto != nil && be.Mode != ModeHTTP && be.Mode != ModeHTTPS {
+			return fmt.Errorf("backend[%d].BackendProto: field is not valid in mode %s", i, be.Mode)
 		}
 		if be.Mode == ModeQUIC {
 			var falsex bool
