@@ -38,8 +38,7 @@ When forwarding QUIC connections to `mode: TCP` or `mode: TLS` backends, each
 incoming QUIC stream is treated like a separate TLS connection.
 
 When forwarding QUIC connections to `mode: HTTPS` backends, the incoming HTTP
-requests are proxied to the backend according to the negotiated ALPN protocol.
-If the protocol is `h3`, the requests are proxied using HTTP/3. If the protocol
+requests are proxied to the backend according to the value of `backendProto`. If the value is `h3`, the requests are proxied using HTTP/3. If the value
 is `h2`, the requests are proxied using HTTP/2 over TCP. Otherwise, the requests
 are proxied using HTTP/1.1.
 
