@@ -125,10 +125,11 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 		return nil, errors.New("no backend addresses")
 	}
 	tc := &tls.Config{
-		InsecureSkipVerify: insecureSkipVerify,
-		ServerName:         serverName,
-		NextProtos:         protos,
-		RootCAs:            rootCAs,
+		InsecureSkipVerify:   insecureSkipVerify,
+		ServerName:           serverName,
+		NextProtos:           protos,
+		RootCAs:              rootCAs,
+		GetClientCertificate: be.getClientCert(ctx),
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			if len(cs.PeerCertificates) == 0 {
 				return errors.New("no certificate")

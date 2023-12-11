@@ -1,7 +1,8 @@
 # TLSPROXY Release Notes
 
-next:
+## next
 
+* Use the certificate provided by _Let's Encrypt_ to authenticate with backends when backends require client authentication.
 * go: upgraded github.com/quic-go/quic-go v0.40.0 => v0.40.1 (CVE-2023-49295)
 
 ## v0.3.1

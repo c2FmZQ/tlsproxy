@@ -90,7 +90,7 @@ func TestProxyBackends(t *testing.T) {
 	be2 := newTCPServer(t, ctx, "backend2", nil)
 	// Backends with TLS enabled.
 	be3 := newTCPServer(t, ctx, "backend3", intCA)
-	be4 := newTCPServer(t, ctx, "backend4", intCA)
+	be4 := newTCPServer(t, ctx, "backend4", caWithClientAuth{intCA, extCA})
 	// Backends with special proto.
 	be5 := newTCPServer(t, ctx, "backend5", intCA)
 	be6 := newTCPServer(t, ctx, "backend6", intCA)
@@ -1002,6 +1002,20 @@ func newHTTPServerProxyProtocol(t *testing.T, ctx context.Context, name string, 
 
 type tcProvider interface {
 	TLSConfig() *tls.Config
+}
+
+type caWithClientAuth struct {
+	tcProvider
+	rootCA interface {
+		RootCACertPool() *x509.CertPool
+	}
+}
+
+func (ca caWithClientAuth) TLSConfig() *tls.Config {
+	tc := ca.tcProvider.TLSConfig()
+	tc.ClientAuth = tls.RequireAndVerifyClientCert
+	tc.ClientCAs = ca.rootCA.RootCACertPool()
+	return tc
 }
 
 func newTCPServer(t *testing.T, ctx context.Context, name string, ca tcProvider) *tcpServer {
