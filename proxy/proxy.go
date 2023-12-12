@@ -324,6 +324,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		cfg := passkeys.Config{
 			Store:              p.store,
 			Other:              other.identityProvider,
+			RefreshInterval:    pp.RefreshInterval,
 			Endpoint:           pp.Endpoint,
 			EventRecorder:      er,
 			CookieManager:      cm,
