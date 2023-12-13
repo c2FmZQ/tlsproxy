@@ -1,5 +1,9 @@
 # TLSPROXY Release Notes
 
+next:
+
+* go: upgraded github.com/quic-go/quic-go v0.40.0 => v0.40.1 (CVE-2023-49295)
+
 ## v0.3.1
 
 * Decouple frontend and backend protocols in `mode: http` and `mode: https`. The ALPN protocols that TLSPROXY accepts are specified in `alpnProtos: [...]`, and the protocol to use with the request to the backend is specified with `backendProto: ...`, which defaults to `http/1.1`. The previous behavior was to use the same protocol that the client used. It is still possible to do that by setting `backendProto` explicitly to an empty string.
