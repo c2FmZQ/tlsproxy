@@ -91,6 +91,7 @@ type Proxy struct {
 	certManager interface {
 		HTTPHandler(fallback http.Handler) http.Handler
 		TLSConfig() *tls.Config
+		GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error)
 	}
 	cfg           *Config
 	ctx           context.Context
@@ -570,6 +571,26 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			return quicOnlyProtocols[p]
 		})
 		be.tlsConfig = tc
+
+		be.getClientCert = func(ctx context.Context) func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			serverName := connServerName(ctx.Value(connCtxKey).(net.Conn))
+			return func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+				// autocert wants a ClientHelloInfo. Create one with reasonable values.
+				hello := &tls.ClientHelloInfo{
+					ServerName:       serverName,
+					SignatureSchemes: cri.SignatureSchemes,
+					SupportedCurves: []tls.CurveID{
+						tls.CurveP256,
+					},
+					CipherSuites: []uint16{
+						tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+						tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+						tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+					},
+				}
+				return p.certManager.GetCertificate(hello)
+			}
+		}
 
 		for _, n := range be.ForwardRootCAs {
 			if be.forwardRootCAs == nil {

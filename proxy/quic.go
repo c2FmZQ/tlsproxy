@@ -126,9 +126,9 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 			qc.Close()
 		}
 	}()
-	ctx := qc.Context()
 	conn := qc.WrapStream(qc)
 	defer conn.Close()
+	ctx := context.WithValue(qc.Context(), connCtxKey, conn)
 
 	p.recordEvent("quic connection")
 	numOpen := p.addConn(conn)
@@ -360,7 +360,7 @@ func (p *Proxy) handleQUICTCPStream(ctx context.Context, be *Backend, conn *netw
 		be.httpConnChan <- conn
 
 	case ModeTCP, ModeTLS:
-		intConn, err := be.dial(context.WithValue(ctx, connCtxKey, conn), connProto(conn))
+		intConn, err := be.dial(ctx, connProto(conn))
 		if err != nil {
 			p.recordEvent("dial error")
 			log.Printf("ERR [-] %s:%s ➔  %q Dial: %v", conn.RemoteAddr().Network(), conn.RemoteAddr(), serverName, err)
@@ -503,10 +503,11 @@ func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUI
 	}
 
 	tc := &tls.Config{
-		InsecureSkipVerify: insecureSkipVerify,
-		ServerName:         serverName,
-		NextProtos:         []string{proto},
-		RootCAs:            rootCAs,
+		InsecureSkipVerify:   insecureSkipVerify,
+		ServerName:           serverName,
+		NextProtos:           []string{proto},
+		RootCAs:              rootCAs,
+		GetClientCertificate: be.getClientCert(ctx),
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			if len(cs.PeerCertificates) == 0 {
 				return errors.New("no certificate")

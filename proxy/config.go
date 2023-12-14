@@ -24,6 +24,7 @@
 package proxy
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -322,6 +323,7 @@ type Backend struct {
 	tlsConfig            *tls.Config
 	tlsConfigQUIC        *tls.Config
 	forwardRootCAs       *x509.CertPool
+	getClientCert        func(context.Context) func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
 	pkiMap               map[string]*pki.PKIManager
 	bwLimit              *bwLimit
 	connLimit            *rate.Limiter

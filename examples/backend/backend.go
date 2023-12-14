@@ -27,6 +27,7 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"html"
@@ -62,6 +63,7 @@ func main() {
 
 	addr := flag.String("addr", "", "The address to listen on.")
 	enableH3 := flag.Bool("http3", false, "Enable QUIC and HTTP/3.")
+	clientAuth := flag.Bool("client-auth", false, "Enable TLS client authentication.")
 	jwksURL := flag.String("jwks-url", "", "The URL of the JWKS.")
 	flag.Parse()
 
@@ -94,12 +96,18 @@ func main() {
 		}),
 		TLSConfig: cm.TLSConfig(),
 	}
+	if *clientAuth {
+		server.TLSConfig.ClientAuth = tls.RequireAndVerifyClientCert
+	}
 	go server.ListenAndServeTLS("", "")
 
 	var h3 *http3.Server
 	if *enableH3 {
 		tc := cm.TLSConfig()
 		tc.NextProtos = []string{"h3"}
+		if *clientAuth {
+			tc.ClientAuth = tls.RequireAndVerifyClientCert
+		}
 		h3 = &http3.Server{
 			Addr:      *addr,
 			TLSConfig: tc,
@@ -241,6 +249,9 @@ func (s *service) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		fmt.Fprintln(w, "</pre>")
 	}
 
+	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 {
+		fmt.Fprintf(w, "Client Certificate: %s<br>\n", req.TLS.PeerCertificates[0].Subject)
+	}
 	fmt.Fprintf(w, "Proto: %s<br>\n", req.Proto)
 	fmt.Fprintf(w, "Via: %s\n", html.EscapeString(req.Header.Get("via")))
 }
