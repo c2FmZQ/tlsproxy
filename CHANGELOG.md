@@ -1,5 +1,9 @@
 # TLSPROXY Release Notes
 
+## next
+
+* Add an option to refresh the identity used with passkeys (`refreshInterval`).
+
 ## v0.3.2
 
 * Use the certificate provided by _Let's Encrypt_ to authenticate with backends when backends require client authentication.
