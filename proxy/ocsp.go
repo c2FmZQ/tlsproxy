@@ -106,8 +106,12 @@ func (c *ocspCache) flushLoop(ctx context.Context) {
 
 func (c *ocspCache) flush() error {
 	var items []ocspCacheItem
+	now := time.Now()
 	for _, k := range c.cache.Keys() {
 		if v, ok := c.cache.Peek(k); ok {
+			if now.After(v.NextUpdate) {
+				continue
+			}
 			items = append(items, ocspCacheItem{
 				Key:   k,
 				Value: v.Raw,
