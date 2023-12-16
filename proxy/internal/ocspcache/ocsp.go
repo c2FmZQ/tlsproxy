@@ -21,7 +21,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package proxy
+package ocspcache
 
 import (
 	"bytes"
@@ -52,14 +52,14 @@ var (
 	errOCSPInternal = errors.New("internal error")
 )
 
-func newOCSPCache(store *storage.Storage) *ocspCache {
+func New(store *storage.Storage) *OCSPCache {
 	var empty []ocspCacheItem
 	store.CreateEmptyFile(ocspFile, &empty)
 	c, err := lru.New2Q[string, *ocsp.Response](ocspCacheSize)
 	if err != nil {
 		log.Panicf("newOCSPCache: %v", err)
 	}
-	cache := &ocspCache{
+	cache := &OCSPCache{
 		store: store,
 		cache: c,
 	}
@@ -67,7 +67,7 @@ func newOCSPCache(store *storage.Storage) *ocspCache {
 	return cache
 }
 
-type ocspCache struct {
+type OCSPCache struct {
 	store *storage.Storage
 	cache *lru.TwoQueueCache[string, *ocsp.Response]
 }
@@ -77,7 +77,7 @@ type ocspCacheItem struct {
 	Value []byte
 }
 
-func (c *ocspCache) load() {
+func (c *OCSPCache) load() {
 	var items []ocspCacheItem
 	if err := c.store.ReadDataFile(ocspFile, &items); err != nil {
 		log.Printf("ERR OCSP ReadDataFile: %v", err)
@@ -91,7 +91,7 @@ func (c *ocspCache) load() {
 	}
 }
 
-func (c *ocspCache) flushLoop(ctx context.Context) {
+func (c *OCSPCache) FlushLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -104,7 +104,7 @@ func (c *ocspCache) flushLoop(ctx context.Context) {
 	}
 }
 
-func (c *ocspCache) flush() error {
+func (c *OCSPCache) flush() error {
 	var items []ocspCacheItem
 	now := time.Now()
 	for _, k := range c.cache.Keys() {
@@ -121,7 +121,7 @@ func (c *ocspCache) flush() error {
 	return c.store.SaveDataFile(ocspFile, &items)
 }
 
-func (c *ocspCache) verifyChains(chains [][]*x509.Certificate) error {
+func (c *OCSPCache) VerifyChains(chains [][]*x509.Certificate) error {
 	var lastError error
 nextChain:
 	for _, chain := range chains {
@@ -170,7 +170,7 @@ func certHash(b []byte) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func (c *ocspCache) getResponse(cert, issuer *x509.Certificate) (*ocsp.Response, error) {
+func (c *OCSPCache) getResponse(cert, issuer *x509.Certificate) (*ocsp.Response, error) {
 	hash := certHash(cert.Raw)
 	if resp, ok := c.cache.Get(hash); ok && time.Now().Before(resp.NextUpdate) {
 		return resp, nil

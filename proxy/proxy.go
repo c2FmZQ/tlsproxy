@@ -61,6 +61,7 @@ import (
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/oidc"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/passkeys"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
@@ -107,7 +108,7 @@ type Proxy struct {
 	backends      map[beKey]*Backend
 	connections   map[connKey]*netw.Conn
 	pkis          map[string]*pki.PKIManager
-	ocspCache     *ocspCache
+	ocspCache     *ocspcache.OCSPCache
 	bwLimits      map[string]*bwLimit
 
 	metrics   map[string]*backendMetrics
@@ -187,7 +188,7 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 		tokenManager: tm,
 		connections:  make(map[connKey]*netw.Conn),
 		pkis:         make(map[string]*pki.PKIManager),
-		ocspCache:    newOCSPCache(store),
+		ocspCache:    ocspcache.New(store),
 		bwLimits:     make(map[string]*bwLimit),
 	}
 	if err := p.Reconfigure(cfg); err != nil {
@@ -232,7 +233,7 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 		store:        store,
 		tokenManager: tm,
 		pkis:         make(map[string]*pki.PKIManager),
-		ocspCache:    newOCSPCache(store),
+		ocspCache:    ocspcache.New(store),
 		bwLimits:     make(map[string]*bwLimit),
 	}
 	if err := p.Reconfigure(cfg); err != nil {
@@ -551,7 +552,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						return fmt.Errorf("%w [%s]", errRevoked, sum)
 					}
 				} else if len(cert.OCSPServer) > 0 {
-					if err := p.ocspCache.verifyChains(cs.VerifiedChains); err != nil {
+					if err := p.ocspCache.VerifyChains(cs.VerifiedChains); err != nil {
 						p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (OCSP:%v)", sum, cs.ServerName, err))
 						return fmt.Errorf("%w [%s]", errRevoked, sum)
 					}
@@ -839,7 +840,7 @@ func (p *Proxy) Start(ctx context.Context) error {
 
 	go p.ctxWait(httpServer)
 	go p.tokenManager.KeyRotationLoop(p.ctx)
-	go p.ocspCache.flushLoop(p.ctx)
+	go p.ocspCache.FlushLoop(p.ctx)
 	go p.acceptLoop()
 	return nil
 }

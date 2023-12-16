@@ -46,6 +46,7 @@ import (
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
@@ -325,7 +326,7 @@ type Backend struct {
 	forwardRootCAs       *x509.CertPool
 	getClientCert        func(context.Context) func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
 	pkiMap               map[string]*pki.PKIManager
-	ocspCache            *ocspCache
+	ocspCache            *ocspcache.OCSPCache
 	bwLimit              *bwLimit
 	connLimit            *rate.Limiter
 	proxyProtocolVersion byte
