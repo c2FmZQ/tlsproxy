@@ -77,7 +77,6 @@ func (p *Proxy) RevokeAllCertificates(ctx context.Context, reason string) (retEr
 		Key:          accountKey,
 		UserAgent:    "tlsproxy",
 	}
-	_ = client
 L:
 	for k, v := range cache.Entries {
 		if k == accountKeyKey {
