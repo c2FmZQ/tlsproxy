@@ -1,5 +1,9 @@
 # TLSPROXY Release Notes
 
+## next
+
+* Add a flag to revoke all cached certificates. This is useful when a server is decommissioned or compromised.
+
 ## v0.3.2
 
 * Use the certificate provided by _Let's Encrypt_ to authenticate with backends when backends require client authentication.

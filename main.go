@@ -50,6 +50,7 @@ func main() {
 
 	configFile := flag.String("config", "", "The config file name.")
 	versionFlag := flag.Bool("v", false, "Show the version.")
+	revokeFlag := flag.String("revoke-all-certificates", "", "Revoke all cached certificates. The value is the recocation code: unspecified, keyCompromise, superseded, or cessationOfOperation")
 	passphraseFlag := flag.String("passphrase", os.Getenv("TLSPROXY_PASSPHRASE"), "The passphrase to encrypt the TLS keys on disk.")
 	shutdownGraceFlag := flag.Duration("shutdown-grace-period", time.Minute, "The shutdown grace period.")
 	testFlag := flag.Bool("use-ephemeral-certificate-manager", false, "Use an ephemeral certificate manager. This is for testing purposes only.")
@@ -86,6 +87,14 @@ func main() {
 	}
 	if err != nil {
 		log.Fatalf("FATAL %v", err)
+	}
+	if !*testFlag && *revokeFlag != "" {
+		log.Print("WRN Revoking all certificates")
+		if err := p.RevokeAllCertificates(ctx, *revokeFlag); err != nil {
+			log.Fatalf("ERR: %v", err)
+		}
+		log.Print("WRN Done")
+		os.Exit(0)
 	}
 	if err := p.Start(ctx); err != nil {
 		log.Fatal(err)
