@@ -325,6 +325,7 @@ type Backend struct {
 	forwardRootCAs       *x509.CertPool
 	getClientCert        func(context.Context) func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
 	pkiMap               map[string]*pki.PKIManager
+	ocspCache            *ocspCache
 	bwLimit              *bwLimit
 	connLimit            *rate.Limiter
 	proxyProtocolVersion byte

@@ -1,5 +1,10 @@
 # TLSPROXY Release Notes
 
+## next
+
+* Verify the status of client certificates when OCSP servers are specified.
+* Fix bug that prevented the PKI WASM client from loading on chrome 119.
+
 ## v0.3.2
 
 * Use the certificate provided by _Let's Encrypt_ to authenticate with backends when backends require client authentication.

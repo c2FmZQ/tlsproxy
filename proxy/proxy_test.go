@@ -870,6 +870,7 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 		connections:  make(map[connKey]*netw.Conn),
 		store:        store,
 		tokenManager: tm,
+		ocspCache:    newOCSPCache(),
 		bwLimits:     make(map[string]*bwLimit),
 	}
 	p.Reconfigure(cfg)

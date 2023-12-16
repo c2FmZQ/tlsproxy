@@ -135,8 +135,15 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 				return errors.New("no certificate")
 			}
 			cert := cs.PeerCertificates[0]
-			if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok && m.IsRevoked(cert.SerialNumber) {
-				return errRevoked
+			if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok {
+				if m.IsRevoked(cert.SerialNumber) {
+					return errRevoked
+				}
+			} else if len(cert.OCSPServer) > 0 {
+				if err := be.ocspCache.verifyChains(cs.VerifiedChains); err != nil {
+					be.recordEvent(fmt.Sprintf("backend X509 %s [%s] (OCSP:%v)", cs.ServerName, cert.Subject, err))
+					return errRevoked
+				}
 			}
 			return nil
 		},

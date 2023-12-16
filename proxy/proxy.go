@@ -107,6 +107,7 @@ type Proxy struct {
 	backends      map[beKey]*Backend
 	connections   map[connKey]*netw.Conn
 	pkis          map[string]*pki.PKIManager
+	ocspCache     *ocspCache
 	bwLimits      map[string]*bwLimit
 
 	metrics   map[string]*backendMetrics
@@ -186,6 +187,7 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 		tokenManager: tm,
 		connections:  make(map[connKey]*netw.Conn),
 		pkis:         make(map[string]*pki.PKIManager),
+		ocspCache:    newOCSPCache(store),
 		bwLimits:     make(map[string]*bwLimit),
 	}
 	if err := p.Reconfigure(cfg); err != nil {
@@ -230,6 +232,7 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 		store:        store,
 		tokenManager: tm,
 		pkis:         make(map[string]*pki.PKIManager),
+		ocspCache:    newOCSPCache(store),
 		bwLimits:     make(map[string]*bwLimit),
 	}
 	if err := p.Reconfigure(cfg); err != nil {
@@ -386,6 +389,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		be.recordEvent = p.recordEvent
 		be.tm = p.tokenManager
 		be.quicTransport = p.quicTransport
+		be.ocspCache = p.ocspCache
 
 		for _, sn := range be.ServerNames {
 			key := beKey{serverName: sn}
@@ -541,9 +545,16 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				}
 				cert := cs.PeerCertificates[0]
 				sum := certSummary(cert)
-				if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok && m.IsRevoked(cert.SerialNumber) {
-					p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (revoked)", sum, cs.ServerName))
-					return fmt.Errorf("%w [%s]", errRevoked, sum)
+				if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok {
+					if m.IsRevoked(cert.SerialNumber) {
+						p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (revoked)", sum, cs.ServerName))
+						return fmt.Errorf("%w [%s]", errRevoked, sum)
+					}
+				} else if len(cert.OCSPServer) > 0 {
+					if err := p.ocspCache.verifyChains(cs.VerifiedChains); err != nil {
+						p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (OCSP:%v)", sum, cs.ServerName, err))
+						return fmt.Errorf("%w [%s]", errRevoked, sum)
+					}
 				}
 				if err := be.authorize(cert); err != nil {
 					p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s", sum, cs.ServerName))
@@ -828,6 +839,7 @@ func (p *Proxy) Start(ctx context.Context) error {
 
 	go p.ctxWait(httpServer)
 	go p.tokenManager.KeyRotationLoop(p.ctx)
+	go p.ocspCache.flushLoop(p.ctx)
 	go p.acceptLoop()
 	return nil
 }
