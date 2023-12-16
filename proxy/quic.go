@@ -518,7 +518,7 @@ func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUI
 					return errRevoked
 				}
 			} else if len(cert.OCSPServer) > 0 {
-				if err := be.ocspCache.VerifyChains(cs.VerifiedChains); err != nil {
+				if err := be.ocspCache.VerifyChains(cs.VerifiedChains, cs.OCSPResponse); err != nil {
 					be.recordEvent(fmt.Sprintf("backend X509 %s [%s] (OCSP:%v)", cs.ServerName, cert.Subject, err))
 					return errRevoked
 				}

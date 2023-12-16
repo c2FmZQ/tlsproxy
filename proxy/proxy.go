@@ -55,6 +55,7 @@ import (
 	"github.com/c2FmZQ/storage/crypto"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
+	"golang.org/x/crypto/ocsp"
 	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
 
@@ -552,7 +553,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						return fmt.Errorf("%w [%s]", errRevoked, sum)
 					}
 				} else if len(cert.OCSPServer) > 0 {
-					if err := p.ocspCache.VerifyChains(cs.VerifiedChains); err != nil {
+					if err := p.ocspCache.VerifyChains(cs.VerifiedChains, cs.OCSPResponse); err != nil {
 						p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (OCSP:%v)", sum, cs.ServerName, err))
 						return fmt.Errorf("%w [%s]", errRevoked, sum)
 					}
@@ -938,7 +939,28 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 		if hello.ServerName == "" {
 			hello.ServerName = p.defaultServerName()
 		}
-		return getCert(hello)
+		cert, err := getCert(hello)
+		if err != nil {
+			return nil, err
+		}
+		if len(cert.Certificate) < 2 {
+			return cert, nil
+		}
+		if cert.Leaf == nil {
+			c, err := x509.ParseCertificate(cert.Certificate[0])
+			if err != nil {
+				return nil, err
+			}
+			cert.Leaf = c
+		}
+		issuer, err := x509.ParseCertificate(cert.Certificate[1])
+		if err != nil {
+			return nil, err
+		}
+		if ocspResp, err := p.ocspCache.Response(cert.Leaf, issuer, time.Hour); err == nil && ocspResp.Status == ocsp.Good {
+			cert.OCSPStaple = ocspResp.Raw
+		}
+		return cert, nil
 	}
 	tc.NextProtos = *defaultALPNProtos
 	tc.MinVersion = tls.VersionTLS12

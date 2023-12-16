@@ -2,6 +2,7 @@
 
 ## next
 
+* Implement OCSP stapling.
 * Verify the status of client and server certificates when OCSP servers are specified.
 * Fix bug that prevented the PKI WASM client from loading on chrome 119.
 

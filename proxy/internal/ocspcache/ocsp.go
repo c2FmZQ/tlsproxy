@@ -121,7 +121,18 @@ func (c *OCSPCache) flush() error {
 	return c.store.SaveDataFile(ocspFile, &items)
 }
 
-func (c *OCSPCache) VerifyChains(chains [][]*x509.Certificate) error {
+func (c *OCSPCache) VerifyChains(chains [][]*x509.Certificate, stapled []byte) error {
+	if stapled != nil && len(chains) > 0 && len(chains[0]) > 1 {
+		cert, issuer := chains[0][0], chains[0][1]
+		if resp, err := ocsp.ParseResponseForCert(stapled, cert, issuer); err == nil && time.Now().Before(resp.NextUpdate) && resp.Status == ocsp.Good {
+			hash := certHash(cert.Raw)
+			if resp, ok := c.cache.Get(hash); ok && resp.Status == ocsp.Revoked {
+				// Someone is playing tricks on us.
+				return errOCSPRevoked
+			}
+			c.cache.Add(hash, resp)
+		}
+	}
 	var lastError error
 nextChain:
 	for _, chain := range chains {
@@ -133,7 +144,7 @@ nextChain:
 			if i+1 < len(chain) {
 				issuer = chain[i+1]
 			}
-			resp, err := c.getResponse(cert, issuer)
+			resp, err := c.Response(cert, issuer, 0)
 			if err == errOCSPInternal {
 				continue
 			}
@@ -170,9 +181,9 @@ func certHash(b []byte) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func (c *OCSPCache) getResponse(cert, issuer *x509.Certificate) (*ocsp.Response, error) {
+func (c *OCSPCache) Response(cert, issuer *x509.Certificate, margin time.Duration) (*ocsp.Response, error) {
 	hash := certHash(cert.Raw)
-	if resp, ok := c.cache.Get(hash); ok && time.Now().Before(resp.NextUpdate) {
+	if resp, ok := c.cache.Get(hash); ok && time.Now().Add(margin).Before(resp.NextUpdate) {
 		return resp, nil
 	}
 	resp, err := fetchOCSP(cert, issuer)

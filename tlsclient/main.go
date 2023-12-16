@@ -35,8 +35,10 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/quic-go/quic-go"
+	"golang.org/x/crypto/ocsp"
 )
 
 // Version is set with -ldflags="-X main.Version=${VERSION}"
@@ -48,6 +50,7 @@ func main() {
 	cert := flag.String("cert", "", "A file that contains the TLS certificate to use.")
 	alpn := flag.String("alpn", "", "The ALPN proto to request.")
 	useQUIC := flag.Bool("quic", false, "Use QUIC.")
+	verifyOCSP := flag.Bool("ocsp", false, "Require stapled OCSP response.")
 	flag.Parse()
 
 	if *versionFlag {
@@ -100,6 +103,30 @@ func main() {
 		Certificates: certs,
 		NextProtos:   protos,
 		ServerName:   host,
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			if !*verifyOCSP {
+				return nil
+			}
+			if len(cs.OCSPResponse) == 0 {
+				return errors.New("no ocsp response")
+			}
+			cert := cs.PeerCertificates[0]
+			issuer := cert
+			if len(cs.PeerCertificates) > 1 {
+				issuer = cs.PeerCertificates[1]
+			}
+			resp, err := ocsp.ParseResponseForCert(cs.OCSPResponse, cert, issuer)
+			if err != nil {
+				return err
+			}
+			if time.Now().After(resp.NextUpdate) {
+				return errors.New("ocsp response is expired")
+			}
+			if resp.Status != ocsp.Good {
+				return errors.New("ocsp response status is not good")
+			}
+			return nil
+		},
 	}
 
 	if *useQUIC {
