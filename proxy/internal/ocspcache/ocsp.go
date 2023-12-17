@@ -26,7 +26,6 @@ package ocspcache
 import (
 	"bytes"
 	"context"
-	"crypto"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
@@ -199,14 +198,14 @@ func (c *OCSPCache) Response(cert, issuer *x509.Certificate, margin time.Duratio
 }
 
 func (c *OCSPCache) fetchOCSP(cert, issuer *x509.Certificate) (*ocsp.Response, error) {
-	ocspReq, err := ocsp.CreateRequest(cert, issuer, &ocsp.RequestOptions{Hash: crypto.SHA256})
+	ocspReq, err := ocsp.CreateRequest(cert, issuer, nil)
 	if err != nil {
 		log.Printf("ERR ocsp.CreateRequest: %v", err)
 		return nil, errOCSPInternal
 	}
 	var ocspResp *ocsp.Response
 	for _, server := range cert.OCSPServer {
-		ocspResp, err = c.fetchOneOCSP(issuer, ocspReq, server)
+		ocspResp, err = c.fetchOneOCSP(cert, issuer, ocspReq, server)
 		if err != nil || ocspResp.Status == ocsp.Unknown {
 			continue
 		}
@@ -217,7 +216,7 @@ func (c *OCSPCache) fetchOCSP(cert, issuer *x509.Certificate) (*ocsp.Response, e
 	return ocspResp, err
 }
 
-func (c *OCSPCache) fetchOneOCSP(issuer *x509.Certificate, ocspReq []byte, server string) (*ocsp.Response, error) {
+func (c *OCSPCache) fetchOneOCSP(cert, issuer *x509.Certificate, ocspReq []byte, server string) (*ocsp.Response, error) {
 	httpReq, err := http.NewRequest(http.MethodPost, server, bytes.NewReader(ocspReq))
 	if err != nil {
 		log.Printf("ERR http.NewRequest: %v", err)
@@ -240,7 +239,7 @@ func (c *OCSPCache) fetchOneOCSP(issuer *x509.Certificate, ocspReq []byte, serve
 	}
 	ocspResp, err := ocsp.ParseResponse(body, issuer)
 	if err != nil {
-		log.Printf("ERR ocsp.ParseResponse: %v", err)
+		log.Printf("ERR ocsp.ParseResponse for %s from %s: %v", cert.Subject, server, err)
 		return nil, errOCSPProtocol
 	}
 	return ocspResp, nil

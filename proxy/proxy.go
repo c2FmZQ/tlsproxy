@@ -960,6 +960,8 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 		}
 		if ocspResp, err := p.ocspCache.Response(cert.Leaf, issuer, time.Hour); err == nil && ocspResp.Status == ocsp.Good {
 			cert.OCSPStaple = ocspResp.Raw
+		} else {
+			p.recordEvent("ocsp staple error for " + hello.ServerName)
 		}
 		return cert, nil
 	}
