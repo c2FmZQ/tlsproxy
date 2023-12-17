@@ -89,11 +89,9 @@ func main() {
 		log.Fatalf("FATAL %v", err)
 	}
 	if !*testFlag && *revokeFlag != "" {
-		log.Print("WRN Revoking all certificates")
 		if err := p.RevokeAllCertificates(ctx, *revokeFlag); err != nil {
-			log.Fatalf("ERR: %v", err)
+			log.Fatalf("ERR RevokeAllCertificates: %v", err)
 		}
-		log.Print("WRN Done")
 		os.Exit(0)
 	}
 	if err := p.Start(ctx); err != nil {

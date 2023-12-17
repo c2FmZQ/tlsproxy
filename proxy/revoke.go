@@ -34,6 +34,7 @@ import (
 	"log"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/c2FmZQ/storage/autocertcache"
 	"golang.org/x/crypto/acme"
@@ -55,10 +56,13 @@ func (p *Proxy) RevokeAllCertificates(ctx context.Context, reason string) error 
 	}
 	var toRevoke []string
 	for k := range certs {
-		log.Printf("WRN Revoke ACME certificate %s", k)
 		toRevoke = append(toRevoke, k)
 	}
 	sort.Strings(toRevoke)
+
+	if len(toRevoke) == 0 {
+		return nil
+	}
 
 	accountKey, err := p.acmeAccountKey(ctx)
 	if err != nil {
@@ -69,13 +73,28 @@ func (p *Proxy) RevokeAllCertificates(ctx context.Context, reason string) error 
 		Key:          accountKey,
 		UserAgent:    "tlsproxy",
 	}
-
-	return errors.New("XXX")
+	log.Print("!!!")
+	log.Print("!!! WARNING")
+	log.Print("!!!")
+	if n := len(toRevoke); n == 1 {
+		log.Print("!!! About to REVOKE 1 certificate:")
+	} else {
+		log.Printf("!!! About to REVOKE %d certificates:", n)
+	}
+	log.Print("!!!")
+	for _, key := range toRevoke {
+		log.Printf("!!!   %s", key)
+	}
+	log.Print("!!!")
+	log.Print("!!! Press CTRL-C now to abort.")
+	log.Print("!!!")
+	time.Sleep(10 * time.Second)
 
 	for _, key := range toRevoke {
 		if err := client.RevokeCert(ctx, certs[key].PrivateKey.(crypto.Signer), certs[key].Certificate[0], reasonCode); err != nil {
 			return err
 		}
+		log.Printf("!!! Revoked: %s", key)
 	}
 	return p.certManager.(*autocert.Manager).Cache.(*autocertcache.Cache).DeleteKeys(ctx, toRevoke)
 }
