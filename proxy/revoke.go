@@ -26,63 +26,158 @@ package proxy
 import (
 	"context"
 	"crypto"
+	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 
+	"github.com/c2FmZQ/storage/autocertcache"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
+	"golang.org/x/net/idna"
 )
 
+const acmeAccountKey = "acme_account+key"
+
 // RevokeAllCertificates revokes all the certificates in the cache.
-func (p *Proxy) RevokeAllCertificates(ctx context.Context, reason string) (retErr error) {
-	const accountKeyKey = "acme_account+key"
-
-	revocationReason, err := parseRevocationReason(reason)
+func (p *Proxy) RevokeAllCertificates(ctx context.Context, reason string) error {
+	reasonCode, err := parseRevocationReason(reason)
 	if err != nil {
 		return err
 	}
-	var cache struct {
-		Entries map[string]string `json:"entries"`
-	}
-	commit, err := p.store.OpenForUpdate("autocert", &cache)
+	certs, err := p.acmeAllCerts(ctx)
 	if err != nil {
 		return err
 	}
-	defer commit(false, &retErr)
+	var toRevoke []string
+	for k := range certs {
+		log.Printf("WRN Revoke ACME certificate %s", k)
+		toRevoke = append(toRevoke, k)
+	}
+	sort.Strings(toRevoke)
 
-	b64AccountKey, ok := cache.Entries[accountKeyKey]
-	if !ok {
-		return errors.New("no account key")
-	}
-	pemAccountKey, err := base64.StdEncoding.DecodeString(b64AccountKey)
+	accountKey, err := p.acmeAccountKey(ctx)
 	if err != nil {
-		return fmt.Errorf("invalid account key: %w", err)
+		return err
 	}
-	derAccountKey, _ := pem.Decode(pemAccountKey)
-	if derAccountKey == nil {
-		return errors.New("invalid account key")
-	}
-	accountKey, err := parsePrivateKey(derAccountKey.Bytes)
-	if err != nil {
-		return fmt.Errorf("invalid account key: %w", err)
-	}
-
 	client := &acme.Client{
 		DirectoryURL: autocert.DefaultACMEDirectory,
 		Key:          accountKey,
 		UserAgent:    "tlsproxy",
 	}
+
+	return errors.New("XXX")
+
+	for _, key := range toRevoke {
+		if err := client.RevokeCert(ctx, certs[key].PrivateKey.(crypto.Signer), certs[key].Certificate[0], reasonCode); err != nil {
+			return err
+		}
+	}
+	return p.certManager.(*autocert.Manager).Cache.(*autocertcache.Cache).DeleteKeys(ctx, toRevoke)
+}
+
+func (p *Proxy) revokeUnusedCertificates(ctx context.Context) error {
+	names := make(map[string]bool)
+	for _, be := range p.cfg.Backends {
+		for _, n := range be.ServerNames {
+			names[n] = true
+		}
+	}
+	certs, err := p.acmeAllCerts(ctx)
+	if err != nil {
+		return err
+	}
+	var toRevoke []string
 L:
-	for k, v := range cache.Entries {
-		if k == accountKeyKey {
+	for k, cert := range certs {
+		for _, n := range cert.Leaf.DNSNames {
+			if names[n] {
+				continue L
+			}
+		}
+		if len(cert.Leaf.DNSNames) > 0 {
+			n := cert.Leaf.DNSNames[0]
+			if nn, err := idna.Lookup.ToUnicode(n); err == nil {
+				n = nn
+			}
+			log.Printf("WRN Unused ACME certificate for %s (%s)", n, k)
+			toRevoke = append(toRevoke, k)
+		}
+	}
+	sort.Strings(toRevoke)
+
+	if p.cfg.RevokeUnusedCertificates == nil || !*p.cfg.RevokeUnusedCertificates {
+		if len(toRevoke) > 0 {
+			log.Print("WRN Set \"revokeUnusedCertificates: true\" to automatically revoke unused certificates")
+		}
+		return nil
+	}
+
+	accountKey, err := p.acmeAccountKey(ctx)
+	if err != nil {
+		return err
+	}
+	client := &acme.Client{
+		DirectoryURL: autocert.DefaultACMEDirectory,
+		Key:          accountKey,
+		UserAgent:    "tlsproxy",
+	}
+	for _, key := range toRevoke {
+		if err := client.RevokeCert(ctx, certs[key].PrivateKey.(crypto.Signer), certs[key].Certificate[0], acme.CRLReasonUnspecified); err != nil {
+			return err
+		}
+	}
+	return p.certManager.(*autocert.Manager).Cache.(*autocertcache.Cache).DeleteKeys(ctx, toRevoke)
+}
+
+func (p *Proxy) acmeAccountKey(ctx context.Context) (crypto.Signer, error) {
+	m, ok := p.certManager.(*autocert.Manager)
+	if !ok {
+		return nil, fmt.Errorf("not implemented with %T", p.certManager)
+	}
+	cache, ok := m.Cache.(*autocertcache.Cache)
+	if !ok {
+		return nil, fmt.Errorf("not implemented with %T", m.Cache)
+	}
+	pemAccountKey, err := cache.Get(ctx, acmeAccountKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid account key: %w", err)
+	}
+	derAccountKey, _ := pem.Decode(pemAccountKey)
+	if derAccountKey == nil {
+		return nil, errors.New("invalid account key")
+	}
+	accountKey, err := parsePrivateKey(derAccountKey.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("invalid account key: %w", err)
+	}
+	return accountKey, nil
+}
+
+func (p *Proxy) acmeAllCerts(ctx context.Context) (map[string]*tls.Certificate, error) {
+	m, ok := p.certManager.(*autocert.Manager)
+	if !ok {
+		return nil, fmt.Errorf("not implemented with %T", p.certManager)
+	}
+	cache, ok := m.Cache.(*autocertcache.Cache)
+	if !ok {
+		return nil, fmt.Errorf("not implemented with %T", m.Cache)
+	}
+	keys, err := cache.Keys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]*tls.Certificate)
+L:
+	for _, k := range keys {
+		if k == acmeAccountKey {
 			continue
 		}
-		data, err := base64.StdEncoding.DecodeString(v)
+		data, err := cache.Get(ctx, k)
 		if err != nil {
 			log.Printf("ERR %s: %v", k, err)
 			continue
@@ -113,13 +208,18 @@ L:
 			log.Printf("ERR %s: missing cert", k)
 			continue
 		}
-		if err := client.RevokeCert(ctx, privKey, certs[0], revocationReason); err != nil {
-			log.Printf("ERR %s: %v", k, err)
+		leaf, err := x509.ParseCertificate(certs[0])
+		if err != nil {
+			log.Printf("ERR %s: %s", k, err)
 			continue
 		}
-		delete(cache.Entries, k)
+		out[k] = &tls.Certificate{
+			Certificate: certs,
+			PrivateKey:  privKey,
+			Leaf:        leaf,
+		}
 	}
-	return commit(true, nil)
+	return out, nil
 }
 
 func parseRevocationReason(reason string) (acme.CRLReasonCode, error) {
@@ -127,11 +227,11 @@ func parseRevocationReason(reason string) (acme.CRLReasonCode, error) {
 	case "unspecified":
 		return acme.CRLReasonUnspecified, nil
 	case "keyCompromise":
-		return acme.CRLReasonUnspecified, nil
+		return acme.CRLReasonKeyCompromise, nil
 	case "superseded":
-		return acme.CRLReasonUnspecified, nil
+		return acme.CRLReasonSuperseded, nil
 	case "cessationOfOperation":
-		return acme.CRLReasonUnspecified, nil
+		return acme.CRLReasonCessationOfOperation, nil
 	default:
 		return acme.CRLReasonUnspecified, errors.New("invalid revocation reason")
 	}

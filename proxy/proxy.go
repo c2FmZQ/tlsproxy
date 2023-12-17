@@ -765,6 +765,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	p.pkis = pkis
 	p.cfg = cfg
 	go p.reAuthorize()
+	go p.revokeUnusedCertificates(p.ctx)
 	return nil
 }
 

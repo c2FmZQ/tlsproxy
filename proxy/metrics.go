@@ -35,6 +35,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/idna"
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
@@ -244,7 +245,11 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		}
 		fmt.Fprintf(&buf, "Backend[%d] %s%s%s%s\n", i, be.Mode, clientAuth, protos, sso)
 		for j, sn := range be.ServerNames {
-			fmt.Fprintf(&buf, "  ServerName[%d]: %s\n", j, sn)
+			if nn, err := idna.Lookup.ToUnicode(sn); err == nil && sn != nn {
+				fmt.Fprintf(&buf, "  ServerName[%d]: %s (%s)\n", j, nn, sn)
+			} else {
+				fmt.Fprintf(&buf, "  ServerName[%d]: %s\n", j, sn)
+			}
 		}
 		for j, a := range be.Addresses {
 			fmt.Fprintf(&buf, "  Address[%d]: %s\n", j, a)

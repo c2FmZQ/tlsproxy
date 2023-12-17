@@ -117,6 +117,10 @@ type Config struct {
 	Backends []*Backend `yaml:"backends"`
 	// Email is optionally included in the requests to letsencrypt.
 	Email string `yaml:"email,omitempty"`
+	// RevokeUnusedCertificates indicates that unused ACME certificates
+	// should be revoked. The default is false, but may change in the
+	// future.
+	RevokeUnusedCertificates *bool `yaml:"removeUnusedCertificates,omitempty"`
 	// MaxOpen is the maximum number of open incoming connections.
 	MaxOpen int `yaml:"maxOpen,omitempty"`
 	// AcceptTOS indicates acceptance of the Let's Encrypt Terms of Service.

@@ -1,5 +1,10 @@
 # TLSPROXY Release Notes
 
+## next
+
+* Add an option to automatically revoke unused _Let's encrypt_ certificates.
+* Add a flag to revoke all cached certificates. This is useful when a server is decommissioned or compromised.
+
 ## v0.3.3
 
 * Implement OCSP stapling.
@@ -7,7 +12,6 @@
 * Fix bug that prevented the PKI WASM client from loading on chrome 119.
 * Handle Internationalized Domain Names correctly.
 * Add an option to refresh the identity used with passkeys (`refreshInterval`).
-* Add a flag to revoke all cached certificates. This is useful when a server is decommissioned or compromised.
 
 ## v0.3.2
 
