@@ -44,11 +44,13 @@ import (
 
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/storage/crypto"
+	"github.com/pires/go-proxyproto"
+
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
-	"github.com/pires/go-proxyproto"
 )
 
 func TestProxyBackends(t *testing.T) {
@@ -870,6 +872,7 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 		connections:  make(map[connKey]*netw.Conn),
 		store:        store,
 		tokenManager: tm,
+		ocspCache:    ocspcache.New(store),
 		bwLimits:     make(map[string]*bwLimit),
 	}
 	p.Reconfigure(cfg)

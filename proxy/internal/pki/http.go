@@ -493,7 +493,9 @@ func (m *PKIManager) handleStaticFile(w http.ResponseWriter, req *http.Request) 
 	if strings.HasSuffix(file, ".bz2") {
 		rr = bzip2.NewReader(r)
 	}
-	if t := mime.TypeByExtension(filepath.Ext(file)); t != "" {
+	if file == "pki.wasm.bz2" {
+		w.Header().Set("content-type", "application/wasm")
+	} else if t := mime.TypeByExtension(filepath.Ext(file)); t != "" {
 		w.Header().Set("content-type", t)
 	}
 	etag, ok := staticEtags[file]

@@ -2,6 +2,10 @@
 
 ## next
 
+* Implement OCSP stapling.
+* Verify the status of client and server certificates when OCSP servers are specified.
+* Fix bug that prevented the PKI WASM client from loading on chrome 119.
+* Handle Internationalized Domain Names correctly.
 * Add an option to refresh the identity used with passkeys (`refreshInterval`).
 
 ## v0.3.2
