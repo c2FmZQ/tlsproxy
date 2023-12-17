@@ -115,15 +115,17 @@ type Config struct {
 	DefaultServerName string `yaml:"defaultServerName,omitempty"`
 	// Backends is the list of service backends.
 	Backends []*Backend `yaml:"backends"`
-	// Email is optionally included in the requests to letsencrypt.
+	// Email is optionally sent to Let's Encrypt when registering a new
+	// account.
 	Email string `yaml:"email,omitempty"`
-	// RevokeUnusedCertificates indicates that unused ACME certificates
+	// RevokeUnusedCertificates indicates that unused certificates
 	// should be revoked. The default is false, but may change in the
-	// future.
+	// future. See https://letsencrypt.org/docs/revoking/
 	RevokeUnusedCertificates *bool `yaml:"revokeUnusedCertificates,omitempty"`
 	// MaxOpen is the maximum number of open incoming connections.
 	MaxOpen int `yaml:"maxOpen,omitempty"`
 	// AcceptTOS indicates acceptance of the Let's Encrypt Terms of Service.
+	// See https://letsencrypt.org/repository/
 	AcceptTOS bool `yaml:"acceptTOS"`
 	// OIDCProviders is the list of OIDC providers.
 	OIDCProviders []*ConfigOIDC `yaml:"oidc,omitempty"`
