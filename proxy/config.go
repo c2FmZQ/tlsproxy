@@ -42,6 +42,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/idna"
 	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
 
@@ -771,7 +772,11 @@ func (cfg *Config) Check() error {
 	beKeys := make(map[beKey]bool)
 	for i, be := range cfg.Backends {
 		for j, sn := range be.ServerNames {
-			sn = strings.ToLower(sn)
+			if asc, err := idna.Lookup.ToASCII(sn); err != nil {
+				return fmt.Errorf("backend[%d].ServerNames[%d]: %v", i, j, err)
+			} else {
+				sn = asc
+			}
 			be.ServerNames[j] = sn
 			if serverNames[sn] == nil {
 				serverNames[sn] = be
