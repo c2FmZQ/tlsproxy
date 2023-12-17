@@ -1,6 +1,6 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.3.3
 
 * Implement OCSP stapling.
 * Verify the status of client and server certificates when OCSP servers are specified.
