@@ -62,14 +62,18 @@ func New(store *storage.Storage) *OCSPCache {
 	cache := &OCSPCache{
 		store: store,
 		cache: c,
+		client: &http.Client{
+			Timeout: 5 * time.Second,
+		},
 	}
 	cache.load()
 	return cache
 }
 
 type OCSPCache struct {
-	store *storage.Storage
-	cache *lru.TwoQueueCache[string, *ocsp.Response]
+	store  *storage.Storage
+	cache  *lru.TwoQueueCache[string, *ocsp.Response]
+	client *http.Client
 }
 
 type ocspCacheItem struct {
@@ -186,14 +190,14 @@ func (c *OCSPCache) Response(cert, issuer *x509.Certificate, margin time.Duratio
 	if resp, ok := c.cache.Get(hash); ok && time.Now().Add(margin).Before(resp.NextUpdate) {
 		return resp, nil
 	}
-	resp, err := fetchOCSP(cert, issuer)
+	resp, err := c.fetchOCSP(cert, issuer)
 	if err == nil {
 		c.cache.Add(hash, resp)
 	}
 	return resp, err
 }
 
-func fetchOCSP(cert, issuer *x509.Certificate) (*ocsp.Response, error) {
+func (c *OCSPCache) fetchOCSP(cert, issuer *x509.Certificate) (*ocsp.Response, error) {
 	ocspReq, err := ocsp.CreateRequest(cert, issuer, nil)
 	if err != nil {
 		log.Printf("ERR ocsp.CreateRequest: %v", err)
@@ -201,7 +205,7 @@ func fetchOCSP(cert, issuer *x509.Certificate) (*ocsp.Response, error) {
 	}
 	var ocspResp *ocsp.Response
 	for _, server := range cert.OCSPServer {
-		ocspResp, err = fetchOneOCSP(issuer, ocspReq, server)
+		ocspResp, err = c.fetchOneOCSP(issuer, ocspReq, server)
 		if err != nil || ocspResp.Status == ocsp.Unknown {
 			continue
 		}
@@ -212,7 +216,7 @@ func fetchOCSP(cert, issuer *x509.Certificate) (*ocsp.Response, error) {
 	return ocspResp, err
 }
 
-func fetchOneOCSP(issuer *x509.Certificate, ocspReq []byte, server string) (*ocsp.Response, error) {
+func (c *OCSPCache) fetchOneOCSP(issuer *x509.Certificate, ocspReq []byte, server string) (*ocsp.Response, error) {
 	httpReq, err := http.NewRequest(http.MethodPost, server, bytes.NewReader(ocspReq))
 	if err != nil {
 		log.Printf("ERR http.NewRequest: %v", err)
@@ -221,7 +225,8 @@ func fetchOneOCSP(issuer *x509.Certificate, ocspReq []byte, server string) (*ocs
 	httpReq.Header.Set("content-type", "application/ocsp-request")
 	httpReq.Header.Set("accept", "application/ocsp-response")
 	httpReq.Header.Set("user-agent", "tlsproxy")
-	httpResp, err := http.DefaultClient.Do(httpReq)
+
+	httpResp, err := c.client.Do(httpReq)
 	if err != nil {
 		log.Printf("ERR %s: %v", server, err)
 		return nil, errOCSPProtocol
