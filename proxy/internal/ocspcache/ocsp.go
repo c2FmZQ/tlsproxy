@@ -26,6 +26,7 @@ package ocspcache
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
@@ -198,7 +199,7 @@ func (c *OCSPCache) Response(cert, issuer *x509.Certificate, margin time.Duratio
 }
 
 func (c *OCSPCache) fetchOCSP(cert, issuer *x509.Certificate) (*ocsp.Response, error) {
-	ocspReq, err := ocsp.CreateRequest(cert, issuer, nil)
+	ocspReq, err := ocsp.CreateRequest(cert, issuer, &ocsp.RequestOptions{Hash: crypto.SHA256})
 	if err != nil {
 		log.Printf("ERR ocsp.CreateRequest: %v", err)
 		return nil, errOCSPInternal
