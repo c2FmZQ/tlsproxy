@@ -434,6 +434,11 @@ type ConfigPasskey struct {
 	// be used to authenticate the user before registering their first
 	// passkey.
 	IdentityProvider string `yaml:"identityProvider"`
+	// RefreshInterval is the amount of time after which users must
+	// re-authenticate with the other identity provider.
+	// The value is a go duration, e.g. '500h'
+	// The default value of 0 means no re-authentication is required.
+	RefreshInterval time.Duration `yaml:"refreshInterval"`
 	// Endpoint is a URL on this proxy that will handle the passkey
 	// authentication.
 	Endpoint string `yaml:"endpoint"`

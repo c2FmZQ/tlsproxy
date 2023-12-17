@@ -98,6 +98,7 @@ type Config struct {
 	Other interface {
 		RequestLogin(w http.ResponseWriter, req *http.Request, origURL string)
 	}
+	RefreshInterval    time.Duration
 	Endpoint           string
 	EventRecorder      EventRecorder
 	CookieManager      *cookiemanager.CookieManager
@@ -254,7 +255,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	token, err := m.cfg.OtherCookieManager.ValidateAuthTokenCookie(req)
 	if err != nil {
 		switch mode {
-		case "RegisterNewID":
+		case "RegisterNewID", "RefreshID":
 			req.URL.Scheme = "https"
 			req.URL.Host = req.Host
 			m.cfg.Other.RequestLogin(w, req, req.URL.String())
@@ -266,7 +267,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	}
 
 	switch mode {
-	case "Login", "RegisterNewID":
+	case "Login", "RegisterNewID", "RefreshID":
 		nonce := req.Form.Get("nonce")
 		d, ok := m.nonces[nonce]
 		if !ok {
@@ -288,7 +289,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			Mode:        mode,
 			Nonce:       nonce,
 		}
-		if mode == "RegisterNewID" {
+		if mode == "RegisterNewID" || mode == "RefreshID" {
 			data.Email, _ = token.Claims.(jwt.MapClaims)["email"].(string)
 			data.IsAllowed = m.subjectIsAllowed(data.Email)
 			data.IsRegistered = m.subjectIsRegistered(data.Email)
@@ -349,11 +350,30 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		claims, err := m.processAssertion(req.Form.Get("args"))
+		claims, err := m.processAssertion(req.Form.Get("args"), token)
 		if err != nil {
 			log.Printf("ERR processAssertion: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
+		}
+		if m.cfg.RefreshInterval > 0 {
+			iat, err := jwt.MapClaims(claims).GetIssuedAt()
+			if err != nil || iat == nil || time.Since(iat.Time) > m.cfg.RefreshInterval {
+				m.cfg.EventRecorder.Record("passkey refreshID required")
+				u := req.URL
+				args := u.Query()
+				args.Set("get", "RefreshID")
+				u.Scheme = "https"
+				u.Host = req.Host
+				u.RawQuery = args.Encode()
+				w.Header().Set("content-type", "application/json")
+				json.NewEncoder(w).Encode(map[string]any{
+					"result": "refresh",
+					"email":  claims["email"],
+					"url":    u.String(),
+				})
+				return
+			}
 		}
 		m.cfg.EventRecorder.Record("passkey check request")
 		var host string
@@ -850,7 +870,7 @@ func (m *Manager) assertionOptions() (*AssertionOptions, error) {
 	return opts, nil
 }
 
-func (m *Manager) processAssertion(jsargs string) (claims map[string]any, retErr error) {
+func (m *Manager) processAssertion(jsargs string, token *jwt.Token) (claims map[string]any, retErr error) {
 	m.vacuum()
 	var args struct {
 		ID                string `json:"id"`
@@ -919,6 +939,13 @@ func (m *Manager) processAssertion(jsargs string) (claims map[string]any, retErr
 		return nil, err
 	}
 	key.LastSeen = time.Now().UTC()
+
+	if token != nil {
+		// Refresh claims if ID matches.
+		if nc, ok := token.Claims.(jwt.MapClaims); ok && nc["sub"] == u.Claims["sub"] && nc["email"] == u.Claims["email"] {
+			u.Claims = nc
+		}
+	}
 
 	c := maps.Clone(u.Claims)
 	h := sha256.Sum256(key.ID)
