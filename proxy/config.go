@@ -120,7 +120,7 @@ type Config struct {
 	// RevokeUnusedCertificates indicates that unused ACME certificates
 	// should be revoked. The default is false, but may change in the
 	// future.
-	RevokeUnusedCertificates *bool `yaml:"removeUnusedCertificates,omitempty"`
+	RevokeUnusedCertificates *bool `yaml:"revokeUnusedCertificates,omitempty"`
 	// MaxOpen is the maximum number of open incoming connections.
 	MaxOpen int `yaml:"maxOpen,omitempty"`
 	// AcceptTOS indicates acceptance of the Let's Encrypt Terms of Service.

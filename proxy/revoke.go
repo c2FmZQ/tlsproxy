@@ -81,6 +81,8 @@ func (p *Proxy) RevokeAllCertificates(ctx context.Context, reason string) error 
 }
 
 func (p *Proxy) revokeUnusedCertificates(ctx context.Context) error {
+	actuallyRevoke := p.cfg.RevokeUnusedCertificates != nil && *p.cfg.RevokeUnusedCertificates
+
 	names := make(map[string]bool)
 	for _, be := range p.cfg.Backends {
 		for _, n := range be.ServerNames {
@@ -104,15 +106,15 @@ L:
 			if nn, err := idna.Lookup.ToUnicode(n); err == nil {
 				n = nn
 			}
-			log.Printf("WRN Unused ACME certificate for %s (%s)", n, k)
+			log.Printf("INF Unused certificate: %s (%s)", n, k)
 			toRevoke = append(toRevoke, k)
 		}
 	}
 	sort.Strings(toRevoke)
 
-	if p.cfg.RevokeUnusedCertificates == nil || !*p.cfg.RevokeUnusedCertificates {
+	if !actuallyRevoke {
 		if len(toRevoke) > 0 {
-			log.Print("WRN Set \"revokeUnusedCertificates: true\" to automatically revoke unused certificates")
+			log.Print("INF Set \"revokeUnusedCertificates: true\" to automatically revoke unused certificates")
 		}
 		return nil
 	}
@@ -130,6 +132,7 @@ L:
 		if err := client.RevokeCert(ctx, certs[key].PrivateKey.(crypto.Signer), certs[key].Certificate[0], acme.CRLReasonUnspecified); err != nil {
 			return err
 		}
+		log.Printf("INF Revoked unused certificate: %s", key)
 	}
 	return p.certManager.(*autocert.Manager).Cache.(*autocertcache.Cache).DeleteKeys(ctx, toRevoke)
 }
