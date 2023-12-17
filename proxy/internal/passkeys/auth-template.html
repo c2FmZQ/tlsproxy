@@ -24,13 +24,17 @@
 {{- if eq .Mode "Login" }}
     <a class="button" href="{{.Self}}?get=RegisterNewID&nonce={{.Nonce}}">Register New Identity</a>
 {{- end }}
-{{- if eq .Mode "RegisterNewID" }}
+{{- if ne .Mode "Login" }}
     <a class="button" onclick="switchAccount({{.Self}}+'?get=Login&nonce={{.Nonce}}');">Switch Account</a>
 {{- end }}
   </div>
   <div id="message">
 {{- if eq .Mode "Login" }}
     <div><a class="button big" onclick="loginWithPasskey({{.RedirectURL}},{{.Nonce}});">Login</a></div>
+{{- end }}
+{{- if eq .Mode "RefreshID" }}
+    <div>{{.Email}}</div>
+    <div><a class="button" onclick="loginWithPasskey({{.RedirectURL}},{{.Nonce}});">Refresh ID</a></div>
 {{- end }}
 {{- if eq .Mode "RegisterNewID" }}
     <div>{{.Email}}</div>

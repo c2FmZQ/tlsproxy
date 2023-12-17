@@ -55,12 +55,14 @@ import (
 	"github.com/c2FmZQ/storage/crypto"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
+	"golang.org/x/crypto/ocsp"
 	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/oidc"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/passkeys"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
@@ -107,6 +109,7 @@ type Proxy struct {
 	backends      map[beKey]*Backend
 	connections   map[connKey]*netw.Conn
 	pkis          map[string]*pki.PKIManager
+	ocspCache     *ocspcache.OCSPCache
 	bwLimits      map[string]*bwLimit
 
 	metrics   map[string]*backendMetrics
@@ -186,6 +189,7 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 		tokenManager: tm,
 		connections:  make(map[connKey]*netw.Conn),
 		pkis:         make(map[string]*pki.PKIManager),
+		ocspCache:    ocspcache.New(store),
 		bwLimits:     make(map[string]*bwLimit),
 	}
 	if err := p.Reconfigure(cfg); err != nil {
@@ -230,6 +234,7 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 		store:        store,
 		tokenManager: tm,
 		pkis:         make(map[string]*pki.PKIManager),
+		ocspCache:    ocspcache.New(store),
 		bwLimits:     make(map[string]*bwLimit),
 	}
 	if err := p.Reconfigure(cfg); err != nil {
@@ -325,6 +330,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		cfg := passkeys.Config{
 			Store:              p.store,
 			Other:              other.identityProvider,
+			RefreshInterval:    pp.RefreshInterval,
 			Endpoint:           pp.Endpoint,
 			EventRecorder:      er,
 			CookieManager:      cm,
@@ -386,6 +392,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		be.recordEvent = p.recordEvent
 		be.tm = p.tokenManager
 		be.quicTransport = p.quicTransport
+		be.ocspCache = p.ocspCache
 
 		for _, sn := range be.ServerNames {
 			key := beKey{serverName: sn}
@@ -541,9 +548,16 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				}
 				cert := cs.PeerCertificates[0]
 				sum := certSummary(cert)
-				if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok && m.IsRevoked(cert.SerialNumber) {
-					p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (revoked)", sum, cs.ServerName))
-					return fmt.Errorf("%w [%s]", errRevoked, sum)
+				if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok {
+					if m.IsRevoked(cert.SerialNumber) {
+						p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (revoked)", sum, cs.ServerName))
+						return fmt.Errorf("%w [%s]", errRevoked, sum)
+					}
+				} else if len(cert.OCSPServer) > 0 {
+					if err := p.ocspCache.VerifyChains(cs.VerifiedChains, cs.OCSPResponse); err != nil {
+						p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (OCSP:%v)", sum, cs.ServerName, err))
+						return fmt.Errorf("%w [%s]", errRevoked, sum)
+					}
 				}
 				if err := be.authorize(cert); err != nil {
 					p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s", sum, cs.ServerName))
@@ -828,6 +842,7 @@ func (p *Proxy) Start(ctx context.Context) error {
 
 	go p.ctxWait(httpServer)
 	go p.tokenManager.KeyRotationLoop(p.ctx)
+	go p.ocspCache.FlushLoop(p.ctx)
 	go p.acceptLoop()
 	return nil
 }
@@ -925,7 +940,30 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 		if hello.ServerName == "" {
 			hello.ServerName = p.defaultServerName()
 		}
-		return getCert(hello)
+		cert, err := getCert(hello)
+		if err != nil {
+			return nil, err
+		}
+		if len(cert.Certificate) < 2 {
+			return cert, nil
+		}
+		if cert.Leaf == nil {
+			c, err := x509.ParseCertificate(cert.Certificate[0])
+			if err != nil {
+				return nil, err
+			}
+			cert.Leaf = c
+		}
+		issuer, err := x509.ParseCertificate(cert.Certificate[1])
+		if err != nil {
+			return nil, err
+		}
+		if ocspResp, err := p.ocspCache.Response(cert.Leaf, issuer, time.Hour); err == nil && ocspResp.Status == ocsp.Good {
+			cert.OCSPStaple = ocspResp.Raw
+		} else {
+			p.recordEvent("ocsp staple error for " + hello.ServerName)
+		}
+		return cert, nil
 	}
 	tc.NextProtos = *defaultALPNProtos
 	tc.MinVersion = tls.VersionTLS12

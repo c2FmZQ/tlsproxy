@@ -26,6 +26,7 @@ Overview of features:
 * [x] Routing based on Server Name Indication (SNI), with optional default route when SNI isn't used.
 * [x] Simple round-robin load balancing between servers.
 * [x] Support any ALPN protocol in TLS, TLSPASSTHROUGH, QUIC, or TCP mode.
+* [x] OCSP stapling and OCSP certificate verification.
 * [x] Use the same address (IPAddr:port) for any number of server names, e.g. foo.example.com and bar.example.com on the same xxx.xxx.xxx.xxx:443.
 
 ```mermaid

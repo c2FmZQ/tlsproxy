@@ -42,10 +42,12 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/idna"
 	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
@@ -325,6 +327,7 @@ type Backend struct {
 	forwardRootCAs       *x509.CertPool
 	getClientCert        func(context.Context) func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
 	pkiMap               map[string]*pki.PKIManager
+	ocspCache            *ocspcache.OCSPCache
 	bwLimit              *bwLimit
 	connLimit            *rate.Limiter
 	proxyProtocolVersion byte
@@ -432,6 +435,11 @@ type ConfigPasskey struct {
 	// be used to authenticate the user before registering their first
 	// passkey.
 	IdentityProvider string `yaml:"identityProvider"`
+	// RefreshInterval is the amount of time after which users must
+	// re-authenticate with the other identity provider.
+	// The value is a go duration, e.g. '500h'
+	// The default value of 0 means no re-authentication is required.
+	RefreshInterval time.Duration `yaml:"refreshInterval"`
 	// Endpoint is a URL on this proxy that will handle the passkey
 	// authentication.
 	Endpoint string `yaml:"endpoint"`
@@ -764,7 +772,11 @@ func (cfg *Config) Check() error {
 	beKeys := make(map[beKey]bool)
 	for i, be := range cfg.Backends {
 		for j, sn := range be.ServerNames {
-			sn = strings.ToLower(sn)
+			if asc, err := idna.Lookup.ToASCII(sn); err != nil {
+				return fmt.Errorf("backend[%d].ServerNames[%d]: %v", i, j, err)
+			} else {
+				sn = asc
+			}
 			be.ServerNames[j] = sn
 			if serverNames[sn] == nil {
 				serverNames[sn] = be
