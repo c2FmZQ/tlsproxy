@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/beevik/etree v1.2.0
-	github.com/c2FmZQ/storage v0.1.1
+	github.com/c2FmZQ/storage v0.1.2
 	github.com/fxamacker/cbor/v2 v2.5.0
 	github.com/go-test/deep v1.1.0
 	github.com/golang-jwt/jwt/v5 v5.2.0

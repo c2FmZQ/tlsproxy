@@ -766,6 +766,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	p.pkis = pkis
 	p.cfg = cfg
 	go p.reAuthorize()
+	go p.revokeUnusedCertificates(context.Background())
 	return nil
 }
 
@@ -1367,9 +1368,6 @@ func loadCerts(p *x509.CertPool, s string) error {
 func hostFromReq(req *http.Request) string {
 	host := req.Host
 	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	if h, err := idna.Lookup.ToASCII(host); err == nil {
 		host = h
 	}
 	return host
