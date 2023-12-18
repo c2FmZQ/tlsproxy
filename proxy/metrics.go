@@ -104,6 +104,9 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	totals := make(map[string]*backendMetrics)
 	for k, v := range p.metrics {
 		m := *v
+		if n, err := idna.Lookup.ToUnicode(k); err == nil {
+			k = n
+		}
 		totals[k] = &m
 	}
 	for _, c := range p.connections {
