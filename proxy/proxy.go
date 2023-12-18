@@ -1370,9 +1370,6 @@ func hostFromReq(req *http.Request) string {
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
-	if h, err := idna.Lookup.ToASCII(host); err == nil {
-		host = h
-	}
 	return host
 }
 
