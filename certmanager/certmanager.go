@@ -40,6 +40,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"golang.org/x/net/idna"
 )
 
 // CertManager is an X509 certificate manager that also acts as a certificate
@@ -129,6 +131,9 @@ func (cm *CertManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certific
 
 // GetCert returns a new tls.Certificate with name as the subject's common name.
 func (cm *CertManager) GetCert(name string) (*tls.Certificate, error) {
+	if n, err := idna.Lookup.ToASCII(name); err == nil {
+		name = n
+	}
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	if c := cm.certs[name]; c != nil {

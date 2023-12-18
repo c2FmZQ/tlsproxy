@@ -45,6 +45,7 @@ import (
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/storage/crypto"
 	"github.com/pires/go-proxyproto"
+	"golang.org/x/net/idna"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
@@ -129,14 +130,14 @@ func TestProxyBackends(t *testing.T) {
 			// TLS backends.
 			{
 				ServerNames: []string{
-					"other.example.com",
+					"øäåé©©.example.com",
 				},
 				Addresses: []string{
 					be3.listener.Addr().String(),
 				},
 				Mode:              "TLS",
 				ForwardRootCAs:    []string{intCA.RootCAPEM()},
-				ForwardServerName: "other-internal.example.com",
+				ForwardServerName: "øäåé©©-internal.example.com",
 			},
 			// TLS backends, require clients to present a certificate.
 			{
@@ -318,8 +319,8 @@ func TestProxyBackends(t *testing.T) {
 		{desc: "Hit backend2 http/1.1", host: "example.com", want: "Hello from backend2\n", protos: []string{"http/1.1"}},
 		{desc: "Hit backend1 again", host: "www.example.com", want: "Hello from backend1\n"},
 		{desc: "Hit backend2 again", host: "www.example.com", want: "Hello from backend2\n"},
-		{desc: "Hit backend3", host: "other.example.com", want: "Hello from backend3\n"},
-		{desc: "Hit backend3 http2", host: "other.example.com", want: "Hello from backend3\n", protos: []string{"h2"}},
+		{desc: "Hit backend3", host: "øäåé©©.example.com", want: "Hello from backend3\n"},
+		{desc: "Hit backend3 http2", host: "øäåé©©.example.com", want: "Hello from backend3\n", protos: []string{"h2"}},
 		{desc: "Hit backend4", host: "secure.example.com", want: "Hello from backend4\n", certName: "client.example.com"},
 		{desc: "Hit backend4 no cert", host: "secure.example.com", expError: true},
 		{desc: "Hit backend4 bad proto", host: "secure.example.com", certName: "client.example.com", protos: []string{"ftp"}, expError: true},
@@ -880,6 +881,9 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 }
 
 func tlsGet(name, addr, msg string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate, protos []string) (string, error) {
+	if n, err := idna.Lookup.ToASCII(name); err == nil {
+		name = n
+	}
 	c, err := tls.Dial("tcp", addr, &tls.Config{
 		ServerName:         name,
 		InsecureSkipVerify: name == "",
@@ -902,6 +906,9 @@ func tlsGet(name, addr, msg string, rootCA *certmanager.CertManager, clientCerts
 }
 
 func httpGet(name, addr, path string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate) (string, error) {
+	if n, err := idna.Lookup.ToASCII(name); err == nil {
+		name = n
+	}
 	client := &http.Client{
 		Transport: &http.Transport{
 			DialTLSContext: func(context.Context, string, string) (net.Conn, error) {

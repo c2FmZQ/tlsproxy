@@ -1,5 +1,9 @@
 # TLSPROXY Release Notes
 
+## next
+
+* IDN fixes and tests
+
 ## v0.3.3
 
 * Implement OCSP stapling.
