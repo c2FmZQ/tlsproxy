@@ -90,7 +90,12 @@ func (p *Proxy) RevokeAllCertificates(ctx context.Context, reason string) error 
 	log.Print("!!!")
 	time.Sleep(10 * time.Second)
 
+	now := time.Now()
 	for _, key := range toRevoke {
+		if now.After(certs[key].Leaf.NotAfter) {
+			log.Printf("!!! Expired: %s", key)
+			continue
+		}
 		if err := client.RevokeCert(ctx, certs[key].PrivateKey.(crypto.Signer), certs[key].Certificate[0], reasonCode); err != nil {
 			return err
 		}
@@ -147,7 +152,12 @@ L:
 		Key:          accountKey,
 		UserAgent:    "tlsproxy",
 	}
+	now := time.Now()
 	for _, key := range toRevoke {
+		if now.After(certs[key].Leaf.NotAfter) {
+			log.Printf("INF Expired certificate: %s", key)
+			continue
+		}
 		if err := client.RevokeCert(ctx, certs[key].PrivateKey.(crypto.Signer), certs[key].Certificate[0], acme.CRLReasonUnspecified); err != nil {
 			return err
 		}
