@@ -12,7 +12,7 @@ require (
 	github.com/pires/go-proxyproto v0.7.0
 	github.com/quic-go/quic-go v0.40.1
 	github.com/russellhaering/goxmldsig v1.4.0
-	golang.org/x/crypto v0.16.0
+	golang.org/x/crypto v0.17.0
 	golang.org/x/net v0.19.0
 	golang.org/x/sys v0.15.0
 	golang.org/x/time v0.5.0
