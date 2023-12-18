@@ -74,7 +74,7 @@ func TestSSOEnforceOIDC(t *testing.T) {
 					Name:          "test-idp",
 					AuthEndpoint:  idp.URL + "/authorization",
 					TokenEndpoint: idp.URL + "/token",
-					RedirectURL:   "https://oauth2.example.com/redirect",
+					RedirectURL:   "https://öauth2.example.com/redirect",
 					ClientID:      "CLIENTID",
 					ClientSecret:  "CLIENTSECRET",
 					Domain:        "example.com",
@@ -99,6 +99,7 @@ func TestSSOEnforceOIDC(t *testing.T) {
 				},
 				{
 					ServerNames: []string{
+						"öauth2.example.com",
 						"oauth2.example.com",
 					},
 					Mode:             "HTTPS",
@@ -218,7 +219,7 @@ func TestSSOEnforcePasskey(t *testing.T) {
 					Name:          "test-idp",
 					AuthEndpoint:  idp.URL + "/authorization",
 					TokenEndpoint: idp.URL + "/token",
-					RedirectURL:   "https://oauth2.example.com/redirect",
+					RedirectURL:   "https://öauth2.example.com/redirect",
 					ClientID:      "CLIENTID",
 					ClientSecret:  "CLIENTSECRET",
 					Domain:        "example.com",
@@ -250,6 +251,7 @@ func TestSSOEnforcePasskey(t *testing.T) {
 				},
 				{
 					ServerNames: []string{
+						"öauth2.example.com",
 						"oauth2.example.com",
 						"login.example.com",
 					},
@@ -493,7 +495,10 @@ func newIDPServer(t *testing.T) *idpServer {
 			}
 		},
 		Clients: []oidc.Client{
-			{ID: "CLIENTID", Secret: "CLIENTSECRET", RedirectURI: []string{"https://oauth2.example.com/redirect"}},
+			{ID: "CLIENTID", Secret: "CLIENTSECRET", RedirectURI: []string{
+				"https://öauth2.example.com/redirect",
+				"https://oauth2.example.com/redirect",
+			}},
 		},
 		EventRecorder: eventRecorder{record: func(string) {}},
 	}

@@ -111,6 +111,9 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		if sn == "" || connBackend(c) == (*Backend)(nil) {
 			continue
 		}
+		if n, err := idna.Lookup.ToUnicode(sn); err == nil {
+			sn = n
+		}
 		m := totals[sn]
 		if m == nil {
 			m = &backendMetrics{}
@@ -185,7 +188,11 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		default:
 			remote += fmt.Sprintf(" %T", c.Conn)
 		}
-		fmt.Fprintf(&buf, "  %s <=> %s %s %s\n", remote, connServerName(c), connMode(c), connProto(c))
+		sn := connServerName(c)
+		if n, err := idna.Lookup.ToUnicode(sn); err == nil {
+			sn = n
+		}
+		fmt.Fprintf(&buf, "  %s <=> %s %s %s\n", remote, sn, connMode(c), connProto(c))
 		var intAddr string
 		if intConn := connIntConn(c); intConn != nil {
 			intAddr = intConn.RemoteAddr().Network() + ":" + intConn.RemoteAddr().String()

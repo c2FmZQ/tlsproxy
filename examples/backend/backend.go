@@ -188,7 +188,7 @@ func (s *service) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	w.Header().Set("content-type", "text/html")
+	w.Header().Set("content-type", "text/html; charset=utf-8")
 
 	fmt.Fprintln(w, "token is valid<br>")
 
