@@ -800,7 +800,7 @@ func (cfg *Config) Check() error {
 		}
 		pkis[p.Name] = true
 		if p.Endpoint != "" {
-			host, _, err := hostAndPath(p.Endpoint)
+			host, _, _, err := hostAndPath(p.Endpoint)
 			if err != nil {
 				return fmt.Errorf("pki[%d].Endpoint %q: %v", i, p.Endpoint, err)
 			}
@@ -916,7 +916,9 @@ func (cfg *Config) Check() error {
 			}
 			be.denyIPs = &ips
 		}
-		be.ForwardServerName = strings.ToLower(be.ForwardServerName)
+		if n, err := idna.Lookup.ToASCII(be.ForwardServerName); err == nil {
+			be.ForwardServerName = n
+		}
 		if be.ForwardRateLimit == 0 {
 			be.ForwardRateLimit = 5
 		}

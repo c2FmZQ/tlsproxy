@@ -34,6 +34,7 @@ import (
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
+	"golang.org/x/net/idna"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
@@ -104,8 +105,6 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, email
 }
 
 func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Request, authToken *jwt.Token) error {
-	audience := audienceFromReq(req)
-
 	c, ok := authToken.Claims.(jwt.MapClaims)
 	if !ok {
 		return errors.New("internal error")
@@ -124,7 +123,7 @@ func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Reque
 		claims[k] = v
 	}
 	claims["iat"] = now.Unix()
-	claims["aud"] = audience
+	claims["aud"] = audienceForToken(req)
 	token, err := cm.tm.CreateToken(claims, "ES256")
 	if err != nil {
 		return err
@@ -234,4 +233,19 @@ func audienceFromReq(req *http.Request) string {
 		host = h
 	}
 	return "https://" + host + "/"
+}
+
+func audienceForToken(req *http.Request) any {
+	host := req.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	uniHost, err := idna.Lookup.ToUnicode(host)
+	if err != nil || uniHost == host {
+		return "https://" + host + "/"
+	}
+	return []string{
+		"https://" + host + "/",
+		"https://" + uniHost + "/",
+	}
 }

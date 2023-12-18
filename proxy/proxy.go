@@ -56,6 +56,7 @@ import (
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/crypto/ocsp"
+	"golang.org/x/net/idna"
 	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
 
@@ -272,7 +273,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	er := eventRecorder{record: p.recordEvent}
 	identityProviders := make(map[string]idp)
 	for _, pp := range cfg.OIDCProviders {
-		host, _, _ := hostAndPath(pp.RedirectURL)
+		_, host, _, _ := hostAndPath(pp.RedirectURL)
 		issuer := "https://" + host + "/"
 		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer)
 		oidcCfg := oidc.Config{
@@ -298,7 +299,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		}
 	}
 	for _, pp := range cfg.SAMLProviders {
-		host, _, _ := hostAndPath(pp.ACSURL)
+		_, host, _, _ := hostAndPath(pp.ACSURL)
 		issuer := "https://" + host + "/"
 		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer)
 		samlCfg := saml.Config{
@@ -324,7 +325,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		if !ok {
 			return fmt.Errorf("invalid identityProvider %q", pp.IdentityProvider)
 		}
-		host, _, _ := hostAndPath(pp.Endpoint)
+		_, host, _, _ := hostAndPath(pp.Endpoint)
 		issuer := "https://" + host + "/"
 		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer)
 		cfg := passkeys.Config{
@@ -683,7 +684,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 
 	addLocalHandler := func(h localHandler, urls ...string) {
 		for _, v := range urls {
-			host, path, err := hostAndPath(v)
+			host, _, path, err := hostAndPath(v)
 			if err != nil {
 				log.Printf("ERR %s: %v", v, err)
 				continue
@@ -1316,7 +1317,11 @@ func formatConnDesc(c net.Conn, ids ...string) string {
 	buf.WriteString(c.RemoteAddr().Network() + ":" + c.RemoteAddr().String())
 	if serverName != "" {
 		buf.WriteString(" ➔ ")
-		buf.WriteString(serverName)
+		if sn, err := idna.Lookup.ToUnicode(serverName); err == nil {
+			buf.WriteString(sn)
+		} else {
+			buf.WriteString(serverName)
+		}
 		buf.WriteString("|" + mode)
 		if proto != "" {
 			buf.WriteString(":" + proto)
@@ -1364,19 +1369,31 @@ func hostFromReq(req *http.Request) string {
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
-	return strings.ToLower(host)
+	if h, err := idna.Lookup.ToASCII(host); err == nil {
+		host = h
+	}
+	return host
 }
 
-func hostAndPath(urlString string) (string, string, error) {
+// hostAndPath returns asciiHost, unicodeHost, port, err
+func hostAndPath(urlString string) (string, string, string, error) {
 	url, err := url.Parse(urlString)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	host := url.Host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
-	return strings.ToLower(host), url.Path, nil
+	ascHost, err := idna.Lookup.ToASCII(host)
+	if err != nil {
+		return "", "", "", err
+	}
+	uniHost, err := idna.Lookup.ToUnicode(ascHost)
+	if err != nil {
+		return "", "", "", err
+	}
+	return ascHost, uniHost, url.Path, nil
 }
 
 func certSummary(c *x509.Certificate) string {
