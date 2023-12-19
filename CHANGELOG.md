@@ -1,6 +1,6 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.3.4
 
 * Add an option to automatically revoke unused _Let's encrypt_ certificates.
 * Add a flag to revoke all cached certificates. This is useful when a server is decommissioned or compromised.

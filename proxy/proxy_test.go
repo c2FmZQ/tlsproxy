@@ -45,7 +45,6 @@ import (
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/storage/crypto"
 	"github.com/pires/go-proxyproto"
-	"golang.org/x/net/idna"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
@@ -881,9 +880,7 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 }
 
 func tlsGet(name, addr, msg string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate, protos []string) (string, error) {
-	if n, err := idna.Lookup.ToASCII(name); err == nil {
-		name = n
-	}
+	name = idnaToASCII(name)
 	c, err := tls.Dial("tcp", addr, &tls.Config{
 		ServerName:         name,
 		InsecureSkipVerify: name == "",
@@ -906,9 +903,7 @@ func tlsGet(name, addr, msg string, rootCA *certmanager.CertManager, clientCerts
 }
 
 func httpGet(name, addr, path string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate) (string, error) {
-	if n, err := idna.Lookup.ToASCII(name); err == nil {
-		name = n
-	}
+	name = idnaToASCII(name)
 	client := &http.Client{
 		Transport: &http.Transport{
 			DialTLSContext: func(context.Context, string, string) (net.Conn, error) {

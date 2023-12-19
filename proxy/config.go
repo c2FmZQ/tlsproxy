@@ -42,7 +42,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/idna"
 	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
 
@@ -158,6 +157,8 @@ type BWLimit struct {
 type Backend struct {
 	// ServerNames is the list of all the server names for this service,
 	// e.g. example.com, www.example.com.
+	// Internationalized names are converted to ascii using the IDNA2008
+	// lookup standard as implemented by golang.org/x/net/idna.
 	ServerNames []string `yaml:"serverNames"`
 	// ClientAuth specifies that the TLS client's identity must be verified.
 	ClientAuth *ClientAuth `yaml:"clientAuth,omitempty"`
@@ -643,6 +644,7 @@ func (cfg *Config) Check() error {
 	if cfg.EnableQUIC && !quicIsEnabled {
 		return errors.New("QUICAddr: QUIC is not supported in this binary")
 	}
+	cfg.DefaultServerName = idnaToASCII(cfg.DefaultServerName)
 
 	identityProviders := make(map[string]bool)
 	for i, oi := range cfg.OIDCProviders {
@@ -682,13 +684,13 @@ func (cfg *Config) Check() error {
 			return fmt.Errorf("oidc[%d].ClientSecret must be set", i)
 		}
 		if oi.Domain != "" {
-			u, _ := url.Parse(oi.RedirectURL)
-			host := u.Host
-			if h, _, err := net.SplitHostPort(host); err == nil {
-				host = h
+			oi.Domain = idnaToASCII(oi.Domain)
+			host, _, _, err := hostAndPath(oi.RedirectURL)
+			if err != nil {
+				return fmt.Errorf("oidc[%d].RedirectURL %q: %v", i, oi.RedirectURL, err)
 			}
 			if !strings.HasSuffix(host, oi.Domain) {
-				return fmt.Errorf("oidc[%d].Domain %q must be part of RedirectURL", i, oi.Domain)
+				return fmt.Errorf("oidc[%d].Domain %q must be part of RedirectURL (%s)", i, oi.Domain, host)
 			}
 		}
 	}
@@ -710,13 +712,13 @@ func (cfg *Config) Check() error {
 			return fmt.Errorf("saml[%d].ACSURL must be set", i)
 		}
 		if s.Domain != "" {
-			u, _ := url.Parse(s.ACSURL)
-			host := u.Host
-			if h, _, err := net.SplitHostPort(host); err == nil {
-				host = h
+			s.Domain = idnaToASCII(s.Domain)
+			host, _, _, err := hostAndPath(s.ACSURL)
+			if err != nil {
+				return fmt.Errorf("saml[%d].ACSURL %q: %v", i, s.ACSURL, err)
 			}
 			if !strings.HasSuffix(host, s.Domain) {
-				return fmt.Errorf("saml[%d].Domain %q must be part of ACSURL", i, s.Domain)
+				return fmt.Errorf("saml[%d].Domain %q must be part of ACSURL (%s)", i, s.Domain, host)
 			}
 		}
 	}
@@ -735,13 +737,13 @@ func (cfg *Config) Check() error {
 			return fmt.Errorf("passkey[%d].IdentityProvider has unexpected value %q", i, pp.IdentityProvider)
 		}
 		if pp.Domain != "" {
-			u, _ := url.Parse(pp.Endpoint)
-			host := u.Host
-			if h, _, err := net.SplitHostPort(host); err == nil {
-				host = h
+			pp.Domain = idnaToASCII(pp.Domain)
+			host, _, _, err := hostAndPath(pp.Endpoint)
+			if err != nil {
+				return fmt.Errorf("passkey[%d].Endpoint %q: %v", i, pp.Endpoint, err)
 			}
 			if !strings.HasSuffix(host, pp.Domain) {
-				return fmt.Errorf("passkey[%d].Domain %q must be part of Endpoint", i, pp.Domain)
+				return fmt.Errorf("passkey[%d].Domain %q must be part of Endpoint (%s)", i, pp.Domain, host)
 			}
 		}
 	}
@@ -778,11 +780,7 @@ func (cfg *Config) Check() error {
 	beKeys := make(map[beKey]bool)
 	for i, be := range cfg.Backends {
 		for j, sn := range be.ServerNames {
-			if asc, err := idna.Lookup.ToASCII(sn); err != nil {
-				return fmt.Errorf("backend[%d].ServerNames[%d]: %v", i, j, err)
-			} else {
-				sn = asc
-			}
+			sn = idnaToASCII(sn)
 			be.ServerNames[j] = sn
 			if serverNames[sn] == nil {
 				serverNames[sn] = be
@@ -922,9 +920,7 @@ func (cfg *Config) Check() error {
 			}
 			be.denyIPs = &ips
 		}
-		if n, err := idna.Lookup.ToASCII(be.ForwardServerName); err == nil {
-			be.ForwardServerName = n
-		}
+		be.ForwardServerName = idnaToASCII(be.ForwardServerName)
 		if be.ForwardRateLimit == 0 {
 			be.ForwardRateLimit = 5
 		}
@@ -963,6 +959,7 @@ func (cfg *Config) Check() error {
 					return fmt.Errorf("backend[%d].PathOverrides[%d].ForwardRootCAs[%d]: %w", i, j, k, err)
 				}
 			}
+			po.ForwardServerName = idnaToASCII(po.ForwardServerName)
 			if po.ForwardTimeout == 0 {
 				po.ForwardTimeout = 30 * time.Second
 			}

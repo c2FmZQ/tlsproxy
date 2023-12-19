@@ -56,7 +56,6 @@ import (
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/crypto/ocsp"
-	"golang.org/x/net/idna"
 	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
 
@@ -551,21 +550,21 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				sum := certSummary(cert)
 				if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok {
 					if m.IsRevoked(cert.SerialNumber) {
-						p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (revoked)", sum, cs.ServerName))
+						p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (revoked)", sum, idnaToUnicode(cs.ServerName)))
 						return fmt.Errorf("%w [%s]", errRevoked, sum)
 					}
 				} else if len(cert.OCSPServer) > 0 {
 					if err := p.ocspCache.VerifyChains(cs.VerifiedChains, cs.OCSPResponse); err != nil {
-						p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (OCSP:%v)", sum, cs.ServerName, err))
+						p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (OCSP:%v)", sum, idnaToUnicode(cs.ServerName), err))
 						return fmt.Errorf("%w [%s]", errRevoked, sum)
 					}
 				}
 				if err := be.authorize(cert); err != nil {
-					p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s", sum, cs.ServerName))
+					p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s", sum, idnaToUnicode(cs.ServerName)))
 					return fmt.Errorf("%w [%s]", err, sum)
 				}
 				if sum != "" {
-					p.recordEvent(fmt.Sprintf("allow X509 [%s] to %s", sum, cs.ServerName))
+					p.recordEvent(fmt.Sprintf("allow X509 [%s] to %s", sum, idnaToUnicode(cs.ServerName)))
 				}
 				return nil
 			}
@@ -784,18 +783,18 @@ func (p *Proxy) reAuthorize() {
 		be, err := p.backend(serverName, proto)
 		if err != nil {
 			p.recordEvent(err.Error())
-			log.Printf("BAD [-] ReAuth %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
+			log.Printf("BAD [-] ReAuth %s ➔ %q: %v", conn.RemoteAddr(), idnaToUnicode(serverName), err)
 			conn.Close()
 			continue
 		}
 		if oldBE := connBackend(conn); be.Mode != oldBE.Mode {
-			log.Printf("INF [-] ReAuth %s ➔  %q backend mode changed %s->%s", conn.RemoteAddr(), serverName, oldBE.Mode, be.Mode)
+			log.Printf("INF [-] ReAuth %s ➔  %q backend mode changed %s->%s", conn.RemoteAddr(), idnaToUnicode(serverName), oldBE.Mode, be.Mode)
 			conn.Close()
 			continue
 		}
 		if err := be.checkIP(conn.RemoteAddr()); err != nil {
 			p.recordEvent(serverName + " CheckIP " + err.Error())
-			log.Printf("BAD [-] ReAuth %s ➔ %q CheckIP: %v", conn.RemoteAddr(), serverName, err)
+			log.Printf("BAD [-] ReAuth %s ➔ %q CheckIP: %v", conn.RemoteAddr(), idnaToUnicode(serverName), err)
 			conn.Close()
 			continue
 		}
@@ -805,7 +804,7 @@ func (p *Proxy) reAuthorize() {
 		clientCert := connClientCert(conn)
 		if err := be.authorize(clientCert); err != nil {
 			p.recordEvent(err.Error())
-			log.Printf("BAD [-] ReAuth %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), serverName, certSummary(clientCert), err)
+			log.Printf("BAD [-] ReAuth %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), idnaToUnicode(serverName), certSummary(clientCert), err)
 			conn.Close()
 			continue
 		}
@@ -963,7 +962,7 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 		if ocspResp, err := p.ocspCache.Response(cert.Leaf, issuer, time.Hour); err == nil && ocspResp.Status == ocsp.Good {
 			cert.OCSPStaple = ocspResp.Raw
 		} else {
-			p.recordEvent("ocsp staple error for " + hello.ServerName)
+			p.recordEvent("ocsp staple error for " + idnaToUnicode(hello.ServerName))
 		}
 		return cert, nil
 	}
@@ -1070,7 +1069,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 func (p *Proxy) checkIP(conn *netw.Conn) error {
 	be := connBackend(conn)
 	if err := be.checkIP(conn.RemoteAddr()); err != nil {
-		serverName := connServerName(conn)
+		serverName := idnaToUnicode(connServerName(conn))
 		p.recordEvent(serverName + " CheckIP " + err.Error())
 		log.Printf("BAD [-] %s ➔ %q CheckIP: %v", conn.RemoteAddr(), serverName, err)
 		sendUnrecognizedName(conn)
@@ -1082,7 +1081,7 @@ func (p *Proxy) checkIP(conn *netw.Conn) error {
 func (p *Proxy) handleACMEConnection(conn *tls.Conn) {
 	ctx, cancel := context.WithTimeout(p.ctx, 2*time.Minute)
 	defer cancel()
-	serverName := connServerName(conn)
+	serverName := idnaToUnicode(connServerName(conn))
 	log.Printf("INF ACME %s ➔  %s", conn.RemoteAddr(), serverName)
 	if err := conn.HandshakeContext(ctx); err != nil {
 		p.recordEvent("tls handshake failed")
@@ -1099,7 +1098,7 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 	if err := conn.HandshakeContext(ctx); err != nil {
 		switch {
 		case err.Error() == "tls: client didn't provide a certificate":
-			p.recordEvent(fmt.Sprintf("deny no cert to %s", serverName))
+			p.recordEvent(fmt.Sprintf("deny no cert to %s", idnaToUnicode(serverName)))
 		case errors.Is(err, errAccessDenied):
 			p.recordEvent("access denied")
 		case errors.Is(err, errRevoked):
@@ -1107,7 +1106,7 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 		default:
 			p.recordEvent("tls handshake failed")
 		}
-		log.Printf("BAD [-] %s ➔ %q Handshake: %v", conn.RemoteAddr(), serverName, unwrapErr(err))
+		log.Printf("BAD [-] %s ➔ %q Handshake: %v", conn.RemoteAddr(), idnaToUnicode(serverName), unwrapErr(err))
 		return false
 	}
 	netwConn(conn).SetAnnotation(handshakeDoneKey, time.Now())
@@ -1129,7 +1128,7 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 	if be.ClientAuth != nil && be.ClientAuth.ACL != nil {
 		if err := be.authorize(clientCert); err != nil {
 			p.recordEvent(err.Error())
-			log.Printf("BAD [-] %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), serverName, certSummary(clientCert), err)
+			log.Printf("BAD [-] %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), idnaToUnicode(serverName), certSummary(clientCert), err)
 			return false
 		}
 	}
@@ -1145,19 +1144,19 @@ func (p *Proxy) handleHTTPConnection(conn *tls.Conn) {
 	be := connBackend(conn)
 	if err := be.connLimit.Wait(p.ctx); err != nil {
 		p.recordEvent(err.Error())
-		log.Printf("ERR [-] %s ➔  %q Wait: %v", conn.RemoteAddr(), serverName, err)
+		log.Printf("ERR [-] %s ➔  %q Wait: %v", conn.RemoteAddr(), idnaToUnicode(serverName), err)
 		conn.Close()
 		return
 	}
 	if be.Mode != ModeConsole && be.Mode != ModeLocal && be.Mode != ModeHTTP && be.Mode != ModeHTTPS {
 		p.recordEvent("wrong mode")
-		log.Printf("ERR [-] %s ➔  %q Mode is not [CONSOLE, LOCAL, HTTP, HTTPS]", conn.RemoteAddr(), serverName)
+		log.Printf("ERR [-] %s ➔  %q Mode is not [CONSOLE, LOCAL, HTTP, HTTPS]", conn.RemoteAddr(), idnaToUnicode(serverName))
 		conn.Close()
 		return
 	}
 	if be.httpConnChan == nil {
 		p.recordEvent("conn chan nil")
-		log.Printf("ERR [-] %s ➔  %q conn channel is nil", conn.RemoteAddr(), serverName)
+		log.Printf("ERR [-] %s ➔  %q conn channel is nil", conn.RemoteAddr(), idnaToUnicode(serverName))
 		conn.Close()
 		return
 	}
@@ -1174,7 +1173,7 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 	be := connBackend(extConn)
 	if err := be.connLimit.Wait(p.ctx); err != nil {
 		p.recordEvent(err.Error())
-		log.Printf("ERR [-] %s ➔  %q Wait: %v", extConn.RemoteAddr(), serverName, err)
+		log.Printf("ERR [-] %s ➔  %q Wait: %v", extConn.RemoteAddr(), idnaToUnicode(serverName), err)
 		return
 	}
 
@@ -1186,7 +1185,7 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 	intConn, err := be.dial(context.WithValue(p.ctx, connCtxKey, extConn), protos...)
 	if err != nil {
 		p.recordEvent("dial error")
-		log.Printf("ERR [-] %s ➔  %q Dial: %v", extConn.RemoteAddr(), serverName, err)
+		log.Printf("ERR [-] %s ➔  %q Dial: %v", extConn.RemoteAddr(), idnaToUnicode(serverName), err)
 		return
 	}
 	defer intConn.Close()
@@ -1218,7 +1217,7 @@ func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
 	be := connBackend(extConn)
 	if err := be.connLimit.Wait(p.ctx); err != nil {
 		p.recordEvent(err.Error())
-		log.Printf("ERR [-] %s ➔  %q Wait: %v", extConn.RemoteAddr(), serverName, err)
+		log.Printf("ERR [-] %s ➔  %q Wait: %v", extConn.RemoteAddr(), idnaToUnicode(serverName), err)
 		sendInternalError(extConn)
 		return
 	}
@@ -1226,7 +1225,7 @@ func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
 	intConn, err := be.dial(context.WithValue(p.ctx, connCtxKey, extConn))
 	if err != nil {
 		p.recordEvent("dial error")
-		log.Printf("ERR [-] %s ➔  %q Dial: %v", extConn.RemoteAddr(), serverName, err)
+		log.Printf("ERR [-] %s ➔  %q Dial: %v", extConn.RemoteAddr(), idnaToUnicode(serverName), err)
 		sendInternalError(extConn)
 		return
 	}
@@ -1318,11 +1317,7 @@ func formatConnDesc(c net.Conn, ids ...string) string {
 	buf.WriteString(c.RemoteAddr().Network() + ":" + c.RemoteAddr().String())
 	if serverName != "" {
 		buf.WriteString(" ➔ ")
-		if sn, err := idna.Lookup.ToUnicode(serverName); err == nil {
-			buf.WriteString(sn)
-		} else {
-			buf.WriteString(serverName)
-		}
+		buf.WriteString(idnaToUnicode(serverName))
 		buf.WriteString("|" + mode)
 		if proto != "" {
 			buf.WriteString(":" + proto)
@@ -1383,14 +1378,9 @@ func hostAndPath(urlString string) (string, string, string, error) {
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
-	ascHost, err := idna.Lookup.ToASCII(host)
-	if err != nil {
-		return "", "", "", err
-	}
-	uniHost, err := idna.Lookup.ToUnicode(ascHost)
-	if err != nil {
-		return "", "", "", err
-	}
+	ascHost := idnaToASCII(host)
+	uniHost := idnaToUnicode(ascHost)
+
 	return ascHost, uniHost, url.Path, nil
 }
 

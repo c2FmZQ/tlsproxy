@@ -28,6 +28,8 @@ import (
 	"crypto/x509"
 	"net"
 
+	"golang.org/x/net/idna"
+
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
 
@@ -82,4 +84,18 @@ func connIntConn(c net.Conn) net.Conn {
 		return v
 	}
 	return nil
+}
+
+func idnaToASCII(h string) string {
+	if n, err := idna.Lookup.ToASCII(h); err == nil {
+		return n
+	}
+	return h
+}
+
+func idnaToUnicode(h string) string {
+	if n, err := idna.Lookup.ToUnicode(h); err == nil {
+		return n
+	}
+	return h
 }

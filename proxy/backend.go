@@ -141,7 +141,7 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 				}
 			} else if len(cert.OCSPServer) > 0 {
 				if err := be.ocspCache.VerifyChains(cs.VerifiedChains, cs.OCSPResponse); err != nil {
-					be.recordEvent(fmt.Sprintf("backend X509 %s [%s] (OCSP:%v)", cs.ServerName, cert.Subject, err))
+					be.recordEvent(fmt.Sprintf("backend X509 %s [%s] (OCSP:%v)", idnaToUnicode(cs.ServerName), cert.Subject, err))
 					return errRevoked
 				}
 			}

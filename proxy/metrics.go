@@ -35,7 +35,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/net/idna"
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
@@ -104,9 +103,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	totals := make(map[string]*backendMetrics)
 	for k, v := range p.metrics {
 		m := *v
-		if n, err := idna.Lookup.ToUnicode(k); err == nil {
-			k = n
-		}
+		k = idnaToUnicode(k)
 		totals[k] = &m
 	}
 	for _, c := range p.connections {
@@ -114,9 +111,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		if sn == "" || connBackend(c) == (*Backend)(nil) {
 			continue
 		}
-		if n, err := idna.Lookup.ToUnicode(sn); err == nil {
-			sn = n
-		}
+		sn = idnaToUnicode(sn)
 		m := totals[sn]
 		if m == nil {
 			m = &backendMetrics{}
@@ -191,11 +186,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		default:
 			remote += fmt.Sprintf(" %T", c.Conn)
 		}
-		sn := connServerName(c)
-		if n, err := idna.Lookup.ToUnicode(sn); err == nil {
-			sn = n
-		}
-		fmt.Fprintf(&buf, "  %s <=> %s %s %s\n", remote, sn, connMode(c), connProto(c))
+		fmt.Fprintf(&buf, "  %s <=> %s %s %s\n", remote, idnaToUnicode(connServerName(c)), connMode(c), connProto(c))
 		var intAddr string
 		if intConn := connIntConn(c); intConn != nil {
 			intAddr = intConn.RemoteAddr().Network() + ":" + intConn.RemoteAddr().String()
@@ -255,7 +246,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		}
 		fmt.Fprintf(&buf, "Backend[%d] %s%s%s%s\n", i, be.Mode, clientAuth, protos, sso)
 		for j, sn := range be.ServerNames {
-			if nn, err := idna.Lookup.ToUnicode(sn); err == nil && sn != nn {
+			if nn := idnaToUnicode(sn); sn != nn {
 				fmt.Fprintf(&buf, "  ServerName[%d]: %s (%s)\n", j, nn, sn)
 			} else {
 				fmt.Fprintf(&buf, "  ServerName[%d]: %s\n", j, sn)

@@ -39,7 +39,6 @@ import (
 	"github.com/c2FmZQ/storage/autocertcache"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
-	"golang.org/x/net/idna"
 )
 
 const acmeAccountKey = "acme_account+key"
@@ -126,10 +125,7 @@ L:
 			}
 		}
 		if len(cert.Leaf.DNSNames) > 0 {
-			n := cert.Leaf.DNSNames[0]
-			if nn, err := idna.Lookup.ToUnicode(n); err == nil {
-				n = nn
-			}
+			n := idnaToUnicode(cert.Leaf.DNSNames[0])
 			log.Printf("INF Unused certificate: %s (%s)", n, k)
 			toRevoke = append(toRevoke, k)
 		}

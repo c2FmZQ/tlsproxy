@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"net"
 	"net/http"
 	"slices"
 	"sort"
@@ -277,15 +278,15 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 		return false
 	}
 	userID, _ := claims["email"].(string)
-	host := hostFromReq(req)
+	host := connServerName(req.Context().Value(connCtxKey).(net.Conn))
 	_, userDomain, _ := strings.Cut(userID, "@")
 	if be.SSO.ACL != nil && !slices.Contains(*be.SSO.ACL, userID) && !slices.Contains(*be.SSO.ACL, "@"+userDomain) {
-		be.recordEvent(fmt.Sprintf("deny SSO %s to %s", userID, host))
+		be.recordEvent(fmt.Sprintf("deny SSO %s to %s", userID, idnaToUnicode(host)))
 		log.Printf("REQ %s ➔ %s %s ➔ status:%d (SSO) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden, userAgent(req))
 		be.servePermissionDenied(w, req)
 		return false
 	}
-	be.recordEvent(fmt.Sprintf("allow SSO %s to %s", userID, host))
+	be.recordEvent(fmt.Sprintf("allow SSO %s to %s", userID, idnaToUnicode(host)))
 	return true
 }
 

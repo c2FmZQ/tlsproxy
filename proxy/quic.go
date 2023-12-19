@@ -181,17 +181,17 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 	}
 
 	if err := be.checkIP(conn.RemoteAddr()); err != nil {
-		p.recordEvent(cs.ServerName + " CheckIP " + err.Error())
-		log.Printf("BAD [%s] %s:%s ➔ %q CheckIP: %v", sum, conn.RemoteAddr().Network(), conn.RemoteAddr(), cs.ServerName, err)
+		p.recordEvent(idnaToUnicode(cs.ServerName) + " CheckIP " + err.Error())
+		log.Printf("BAD [%s] %s:%s ➔ %q CheckIP: %v", sum, conn.RemoteAddr().Network(), conn.RemoteAddr(), idnaToUnicode(cs.ServerName), err)
 		qc.CloseWithError(quicAccessDenied, "access denied")
 		return
 	}
 
-	log.Printf("QUC [%s] %s:%s ➔ %s|%s:%s", sum, conn.RemoteAddr().Network(), conn.RemoteAddr(), cs.ServerName, be.Mode, cs.NegotiatedProtocol)
+	log.Printf("QUC [%s] %s:%s ➔ %s|%s:%s", sum, conn.RemoteAddr().Network(), conn.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol)
 	if err := be.connLimit.Wait(ctx); err != nil {
 		if !errors.Is(err, context.Canceled) {
 			p.recordEvent(err.Error())
-			log.Printf("ERR [%s] %s ➔  %q Wait: %v", sum, conn.RemoteAddr(), cs.ServerName, err)
+			log.Printf("ERR [%s] %s ➔  %q Wait: %v", sum, conn.RemoteAddr(), idnaToUnicode(cs.ServerName), err)
 		}
 		return
 	}
@@ -208,7 +208,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		if errors.As(err, &idleTimeout) && idleTimeout.Timeout() {
 			return
 		}
-		log.Printf("ERR [%s] %s:%s ➔ %s|%s:%s %s: %v", sum, conn.RemoteAddr().Network(), conn.RemoteAddr(), cs.ServerName, be.Mode, cs.NegotiatedProtocol, tag, err)
+		log.Printf("ERR [%s] %s:%s ➔ %s|%s:%s %s: %v", sum, conn.RemoteAddr().Network(), conn.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol, tag, err)
 	}
 
 	if be.http3Handler != nil && cs.NegotiatedProtocol == "h3" {
@@ -231,7 +231,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		beConn, err := be.dialQUICBackend(ctx, cs.NegotiatedProtocol)
 		if err != nil {
 			qc.CloseWithError(quicBadGateway, "bad gateway")
-			log.Printf("ERR [%s] %s:%s ➔ %s|%s:%s dialQUICBackend: %v", sum, conn.RemoteAddr().Network(), conn.RemoteAddr(), cs.ServerName, be.Mode, cs.NegotiatedProtocol, err)
+			log.Printf("ERR [%s] %s:%s ➔ %s|%s:%s dialQUICBackend: %v", sum, conn.RemoteAddr().Network(), conn.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol, err)
 			return
 		}
 		defer beConn.Close()
@@ -343,7 +343,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 }
 
 func (p *Proxy) handleQUICTCPStream(ctx context.Context, be *Backend, conn *netw.Conn) {
-	serverName := connServerName(conn)
+	serverName := idnaToUnicode(connServerName(conn))
 	closeConnNeeded := true
 	defer func() {
 		if closeConnNeeded {
@@ -396,7 +396,7 @@ func (p *Proxy) handleQUICTCPStream(ctx context.Context, be *Backend, conn *netw
 }
 
 func (be *Backend) handleQUICQUICStream(ctx context.Context, dest *netw.QUICConn, conn *netw.Conn) {
-	serverName := connServerName(conn)
+	serverName := idnaToUnicode(connServerName(conn))
 	qs, ok := conn.Conn.(*netw.QUICStream)
 	if !ok {
 		log.Printf("ERR [-] %s ➔  %q not a QUICStream", conn.RemoteAddr(), serverName)
@@ -519,7 +519,7 @@ func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUI
 				}
 			} else if len(cert.OCSPServer) > 0 {
 				if err := be.ocspCache.VerifyChains(cs.VerifiedChains, cs.OCSPResponse); err != nil {
-					be.recordEvent(fmt.Sprintf("backend X509 %s [%s] (OCSP:%v)", cs.ServerName, cert.Subject, err))
+					be.recordEvent(fmt.Sprintf("backend X509 %s [%s] (OCSP:%v)", idnaToUnicode(cs.ServerName), cert.Subject, err))
 					return errRevoked
 				}
 			}
