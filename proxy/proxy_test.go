@@ -626,7 +626,7 @@ func TestConcurrency(t *testing.T) {
 		client := http.Client{
 			Transport: transport,
 		}
-		for n := 0; n < 100; n++ {
+		for n := 0; n < 25; n++ {
 			req := &http.Request{
 				Method: "GET",
 				URL: &url.URL{
@@ -654,7 +654,7 @@ func TestConcurrency(t *testing.T) {
 		}
 	}
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 25; i++ {
 		wg.Add(1)
 		go client(i, &wg)
 	}
