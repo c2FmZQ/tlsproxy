@@ -1,5 +1,12 @@
 # TLSPROXY Release Notes
 
+## next
+
+* Add missing lock in revoke.go
+* Fix bug that could close legitimate connections after a config change.
+* Fixed some flaky tests.
+* Add buildinfo to metrics page.
+
 ## v0.3.4
 
 * Add an option to automatically revoke unused _Let's encrypt_ certificates.

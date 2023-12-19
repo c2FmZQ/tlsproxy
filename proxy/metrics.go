@@ -30,6 +30,7 @@ import (
 	"net"
 	"net/http"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -288,8 +289,6 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 
 	fmt.Fprintln(&buf, "Runtime:")
 	fmt.Fprintf(&buf, "  Uptime:       %12s\n", time.Since(p.startTime).Truncate(time.Second))
-	fmt.Fprintf(&buf, "  GoVersion:    %12s\n", runtime.Version())
-	fmt.Fprintf(&buf, "  OS/Arch:      %12s\n", runtime.GOOS+"/"+runtime.GOARCH)
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
 	fmt.Fprintf(&buf, "  NumCPU:       %12d\n", runtime.NumCPU())
@@ -364,6 +363,12 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		}
 	} else {
 		fmt.Fprintf(&buf, "Too many GoroutineProfile records: %d\n", n)
+	}
+
+	if info, ok := debug.ReadBuildInfo(); ok {
+		fmt.Fprintln(&buf)
+		fmt.Fprintln(&buf, "Buildinfo:")
+		fmt.Fprintln(&buf, info)
 	}
 }
 

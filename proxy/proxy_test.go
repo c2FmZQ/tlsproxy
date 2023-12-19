@@ -33,9 +33,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -340,8 +342,7 @@ func TestProxyBackends(t *testing.T) {
 	} {
 		got, err := get(tc.host, tc.certName, tc.protos, tc.http)
 		if tc.expError != (err != nil) {
-			t.Errorf("%s: Got error %v, want %v", tc.desc, (err != nil), tc.expError)
-			t.Logf("Body: %q err: %v", got, err)
+			t.Fatalf("%s: Got error %v, want %v. Body: %q err: %v", tc.desc, (err != nil), tc.expError, got, err)
 			continue
 		}
 		if err != nil {
@@ -524,6 +525,7 @@ func TestAuthnAuthz(t *testing.T) {
 }
 
 func TestConcurrency(t *testing.T) {
+	openFileLimit()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -615,6 +617,7 @@ func TestConcurrency(t *testing.T) {
 		"tls.example.com",
 		"passthru.example.com",
 	}
+	failCh := make(chan bool)
 	client := func(id int, wg *sync.WaitGroup) {
 		defer wg.Done()
 		host := hosts[id%len(hosts)]
@@ -626,7 +629,7 @@ func TestConcurrency(t *testing.T) {
 		client := http.Client{
 			Transport: transport,
 		}
-		for n := 0; n < 25; n++ {
+		for n := 0; n < 50; n++ {
 			req := &http.Request{
 				Method: "GET",
 				URL: &url.URL{
@@ -639,6 +642,7 @@ func TestConcurrency(t *testing.T) {
 			resp, err := client.Do(req)
 			if err != nil {
 				t.Errorf("[%d] get failed: %v", id, err)
+				failCh <- true
 				return
 			}
 			if _, err := io.ReadAll(resp.Body); err != nil {
@@ -649,16 +653,23 @@ func TestConcurrency(t *testing.T) {
 			}
 			if resp.StatusCode != 200 {
 				t.Errorf("[%d] Status: %s", id, resp.Status)
+				failCh <- true
 				return
 			}
 		}
 	}
 	var wg sync.WaitGroup
-	for i := 0; i < 25; i++ {
+	for i := 0; i < 50; i++ {
 		wg.Add(1)
 		go client(i, &wg)
 	}
-	wg.Wait()
+	go func() {
+		wg.Wait()
+		close(failCh)
+	}()
+	if _, ok := <-failCh; ok {
+		t.FailNow()
+	}
 }
 
 func TestBandwidthLimit(t *testing.T) {
@@ -960,6 +971,7 @@ func newHTTPServer(t *testing.T, ctx context.Context, name string, ca *certmanag
 			}
 			fmt.Fprintf(w, "[%s] %s\n", name, r.RequestURI)
 		}),
+		ErrorLog: log.New(os.Stderr, "["+name+"] ", 0),
 	}
 	go s.Serve(l)
 	go func() {
@@ -996,6 +1008,7 @@ func newHTTPServerProxyProtocol(t *testing.T, ctx context.Context, name string, 
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
 			return context.WithValue(ctx, connCtxKey, c)
 		},
+		ErrorLog: log.New(os.Stderr, "["+name+"] ", 0),
 	}
 	go s.Serve(proxyListener)
 	go func() {
@@ -1041,7 +1054,7 @@ func newTCPServer(t *testing.T, ctx context.Context, name string, ca tcProvider)
 				if errors.Is(err, net.ErrClosed) {
 					break
 				}
-				t.Logf("[%s] Accept: %v", name, err)
+				t.Errorf("[%s] Accept: %v", name, err)
 				continue
 			}
 			t.Logf("[%s] Received connection from %s", name, conn.RemoteAddr())
@@ -1083,7 +1096,7 @@ func newProxyProtocolServer(t *testing.T, ctx context.Context, name string, ca t
 				if errors.Is(err, net.ErrClosed) {
 					break
 				}
-				t.Logf("[%s] Accept: %v", name, err)
+				t.Errorf("[%s] Accept: %v", name, err)
 				continue
 			}
 			t.Logf("[%s] Received connection from %s", name, conn.RemoteAddr())

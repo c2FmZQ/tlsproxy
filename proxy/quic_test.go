@@ -223,8 +223,8 @@ func TestQUICMultiStream(t *testing.T) {
 		}
 		t.Logf("Dialed connection to %s", dest)
 		client.run(conn)
-		conn.CloseWithError(0, "done")
 		<-ch
+		conn.CloseWithError(0, "done")
 
 		if got, want := client.received, server.sent; !reflect.DeepEqual(got, want) {
 			t.Errorf("Client received = %#v, want %#v", got, want)

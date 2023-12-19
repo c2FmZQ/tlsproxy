@@ -44,6 +44,10 @@ func netwConn(c net.Conn) *netw.Conn {
 	}
 }
 
+func connServerNameIsSet(c net.Conn) bool {
+	return netwConn(c).Annotation(serverNameKey, nil) != nil
+}
+
 func connServerName(c net.Conn) string {
 	if v, ok := netwConn(c).Annotation(serverNameKey, "").(string); ok {
 		return v
