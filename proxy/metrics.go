@@ -244,6 +244,9 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		protos := ""
 		if be.ALPNProtos != nil {
 			protos = " ALPN[" + strings.Join(*be.ALPNProtos, ",") + "]"
+			if be.BackendProto != nil {
+				protos += "->" + *be.BackendProto
+			}
 		}
 		fmt.Fprintf(&buf, "Backend[%d] %s%s%s%s\n", i, be.Mode, clientAuth, protos, sso)
 		for j, sn := range be.ServerNames {
