@@ -1,11 +1,11 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.3.5
 
 * Add missing lock in revoke.go
 * Fix bug that could close legitimate connections after a config change.
 * Fixed some flaky tests.
-* Add buildinfo to metrics page.
+* Add backendProto and buildinfo to metrics page.
 
 ## v0.3.4
 
