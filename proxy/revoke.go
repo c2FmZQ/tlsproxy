@@ -107,11 +107,13 @@ func (p *Proxy) revokeUnusedCertificates(ctx context.Context) error {
 	actuallyRevoke := p.cfg.RevokeUnusedCertificates != nil && *p.cfg.RevokeUnusedCertificates
 
 	names := make(map[string]bool)
+	p.mu.Lock()
 	for _, be := range p.cfg.Backends {
 		for _, n := range be.ServerNames {
 			names[n] = true
 		}
 	}
+	p.mu.Unlock()
 	certs, err := p.acmeAllCerts(ctx)
 	if err != nil {
 		return err

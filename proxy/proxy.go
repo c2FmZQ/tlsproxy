@@ -778,12 +778,15 @@ func (p *Proxy) reAuthorize() {
 	p.mu.Unlock()
 
 	for _, conn := range conns {
+		if !connServerNameIsSet(conn) {
+			continue
+		}
 		serverName := connServerName(conn)
 		proto := connProto(conn)
 		be, err := p.backend(serverName, proto)
 		if err != nil {
 			p.recordEvent(err.Error())
-			log.Printf("BAD [-] ReAuth %s ➔ %q: %v", conn.RemoteAddr(), idnaToUnicode(serverName), err)
+			log.Printf("BAD [-] ReAuth %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
 			conn.Close()
 			continue
 		}
