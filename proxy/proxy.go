@@ -661,19 +661,19 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 
 			be.httpConnChan = make(chan net.Conn)
 			be.httpServer = startInternalHTTPServer(be.localHandler(), be.httpConnChan)
-			if cfg.EnableQUIC && be.ALPNProtos != nil && slices.Contains(*be.ALPNProtos, "h3") {
+			if *cfg.EnableQUIC && be.ALPNProtos != nil && slices.Contains(*be.ALPNProtos, "h3") {
 				be.http3Handler = be.localHandler()
 			}
 
 		case ModeLocal:
 			be.httpConnChan = make(chan net.Conn)
 			be.httpServer = startInternalHTTPServer(be.localHandler(), be.httpConnChan)
-			if cfg.EnableQUIC && be.ALPNProtos != nil && slices.Contains(*be.ALPNProtos, "h3") {
+			if *cfg.EnableQUIC && be.ALPNProtos != nil && slices.Contains(*be.ALPNProtos, "h3") {
 				be.http3Handler = be.localHandler()
 			}
 
 		case ModeHTTPS, ModeHTTP:
-			if cfg.EnableQUIC && be.ALPNProtos != nil && slices.Contains(*be.ALPNProtos, "h3") {
+			if *cfg.EnableQUIC && be.ALPNProtos != nil && slices.Contains(*be.ALPNProtos, "h3") {
 				be.http3Handler = be.reverseProxy()
 			}
 			be.httpConnChan = make(chan net.Conn)
@@ -765,7 +765,6 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	p.pkis = pkis
 	p.cfg = cfg
 	go p.reAuthorize()
-	go p.revokeUnusedCertificates(context.Background())
 	return nil
 }
 
@@ -831,7 +830,7 @@ func (p *Proxy) Start(ctx context.Context) error {
 		httpServer.SetKeepAlivesEnabled(false)
 		go serveHTTP(httpServer, httpListener)
 	}
-	if p.cfg.EnableQUIC {
+	if *p.cfg.EnableQUIC {
 		if err := p.startQUIC(ctx); err != nil {
 			return err
 		}
@@ -844,6 +843,7 @@ func (p *Proxy) Start(ctx context.Context) error {
 	p.listener = listener
 	p.ctx, p.cancel = context.WithCancel(ctx)
 
+	go p.revokeUnusedCertificates(p.ctx)
 	go p.ctxWait(httpServer)
 	go p.tokenManager.KeyRotationLoop(p.ctx)
 	go p.ocspCache.FlushLoop(p.ctx)

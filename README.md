@@ -59,6 +59,8 @@ flowchart LR
 ```yaml
 # Indicate acceptance of the Let's Encrypt Terms of Service.
 acceptTOS: true
+# The email address is used by Let's Encrypt to send important notifications.
+email: <your email address>
 
 # The HTTP address must be reachable from the internet via port 80 for the
 # letsencrypt ACME http-01 challenge to work. If the httpAddr is empty, the

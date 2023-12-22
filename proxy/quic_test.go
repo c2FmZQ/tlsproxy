@@ -59,11 +59,10 @@ func TestQUICConnections(t *testing.T) {
 	be2 := newQUICServer(t, ctx, "QUIC Backend", []string{"h3", "imap"}, intCA)
 
 	cfg := &Config{
-		HTTPAddr:   "localhost:0",
-		TLSAddr:    "localhost:0",
-		EnableQUIC: true,
-		CacheDir:   t.TempDir(),
-		MaxOpen:    1000,
+		HTTPAddr: "localhost:0",
+		TLSAddr:  "localhost:0",
+		CacheDir: t.TempDir(),
+		MaxOpen:  1000,
 		Backends: []*Backend{
 			// TCP backend
 			{
@@ -177,11 +176,10 @@ func TestQUICMultiStream(t *testing.T) {
 	}()
 
 	cfg := &Config{
-		HTTPAddr:   "localhost:0",
-		TLSAddr:    "localhost:0",
-		EnableQUIC: true,
-		CacheDir:   t.TempDir(),
-		MaxOpen:    1000,
+		HTTPAddr: "localhost:0",
+		TLSAddr:  "localhost:0",
+		CacheDir: t.TempDir(),
+		MaxOpen:  1000,
 		Backends: []*Backend{
 			{
 				ServerNames: []string{

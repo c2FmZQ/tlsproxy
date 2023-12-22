@@ -1,5 +1,12 @@
 # TLSPROXY Release Notes
 
+## v0.4.0
+
+* This version changes these config options:
+  * `enableQUIC` now defaults to `true` if the binary is compiled with QUIC support, e.g. `+quic` releases.
+  * `alpnProtos` now includes `h3` by default when QUIC is enabled and mode is one of `HTTP`, `HTTPS`, `QUIC`, `LOCAL`, or `CONSOLE`.
+  * `revokeUnusedCertificates` now defaults to `true`, and revocation is only done at the time the proxy starts.
+
 ## v0.3.5
 
 * Add missing lock in revoke.go
