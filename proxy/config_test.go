@@ -137,6 +137,15 @@ func TestReadConfig(t *testing.T) {
 			},
 		},
 	}
+	v := quicIsEnabled
+	want.EnableQUIC = &v
+	if quicIsEnabled {
+		for _, be := range want.Backends {
+			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS {
+				be.ALPNProtos = defaultALPNProtosPlusH3
+			}
+		}
+	}
 
 	if diff := deep.Equal(want, got); diff != nil {
 		t.Errorf("ReadConfig() = %#v, want %#v", got, want)

@@ -104,7 +104,7 @@ func (p *Proxy) RevokeAllCertificates(ctx context.Context, reason string) error 
 }
 
 func (p *Proxy) revokeUnusedCertificates(ctx context.Context) error {
-	actuallyRevoke := p.cfg.RevokeUnusedCertificates != nil && *p.cfg.RevokeUnusedCertificates
+	actuallyRevoke := p.cfg.RevokeUnusedCertificates == nil || *p.cfg.RevokeUnusedCertificates
 
 	names := make(map[string]bool)
 	p.mu.Lock()

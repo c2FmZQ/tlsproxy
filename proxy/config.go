@@ -83,7 +83,8 @@ var (
 		"dns",
 	}
 	// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-	defaultALPNProtos = &[]string{"h2", "http/1.1"}
+	defaultALPNProtos       = &[]string{"h2", "http/1.1"}
+	defaultALPNProtosPlusH3 = &[]string{"h3", "h2", "http/1.1"}
 
 	quicOnlyProtocols = map[string]bool{
 		"h3": true,
@@ -106,7 +107,8 @@ type Config struct {
 	// and forward them to the backends.
 	TLSAddr string `yaml:"tlsAddr"`
 	// EnableQUIC specifies whether the QUIC protocol should be enabled.
-	EnableQUIC bool `yaml:"enableQUIC,omitempty"`
+	// The default is true if the binary is compiled with QUIC support.
+	EnableQUIC *bool `yaml:"enableQUIC,omitempty"`
 	// CacheDir is the directory where the proxy stores TLS certificates.
 	CacheDir string `yaml:"cacheDir,omitempty"`
 	// DefaultServerName is the server name to use when the TLS client
@@ -118,8 +120,8 @@ type Config struct {
 	// account.
 	Email string `yaml:"email,omitempty"`
 	// RevokeUnusedCertificates indicates that unused certificates
-	// should be revoked. The default is false, but may change in the
-	// future. See https://letsencrypt.org/docs/revoking/
+	// should be revoked. The default is true.
+	// See https://letsencrypt.org/docs/revoking/
 	RevokeUnusedCertificates *bool `yaml:"revokeUnusedCertificates,omitempty"`
 	// MaxOpen is the maximum number of open incoming connections.
 	MaxOpen int `yaml:"maxOpen,omitempty"`
@@ -188,9 +190,11 @@ type Backend struct {
 	// ALPNProtos specifies the list of ALPN procotols supported by this
 	// backend. The ACME acme-tls/1 protocol doesn't need to be specified.
 	//
-	// The default values are: [h2, http/1.1]
+	// The default values are:
+	//  * [h2, http/1.1] when QUIC is not enabled
+	//  * [h3, h2, http/1.1] when QUIC is enabled and Mode is one of:
+	//      HTTP, HTTPS, QUIC, LOCAL, CONSOLE
 	//
-	// Set the value to [h3, h2, http/1.1] to enable HTTP/3.
 	// Set the value to an empty slice [] to disable ALPN.
 	// The negotiated protocol is forwarded to the backends that use TLS.
 	//
@@ -201,7 +205,7 @@ type Backend struct {
 	// HTTPS.
 	// The value should be an ALPN protocol, e.g.: http/1.1, h2, or h3. The default is http/1.1.
 	// If the value is set explicitly to "", the same protocol used by the
-	//  client will be used with the backend.
+	// client will be used with the backend.
 	BackendProto *string `yaml:"backendProto,omitempty"`
 	// Mode controls how the proxy communicates with the backend.
 	// - PLAINTEXT: Use a plaintext, non-encrypted, TCP connection. This is
@@ -641,8 +645,12 @@ func (cfg *Config) Check() error {
 		}
 		cfg.MaxOpen = n/2 - 100
 	}
-	if cfg.EnableQUIC && !quicIsEnabled {
-		return errors.New("QUICAddr: QUIC is not supported in this binary")
+	if cfg.EnableQUIC == nil {
+		v := quicIsEnabled
+		cfg.EnableQUIC = &v
+	}
+	if *cfg.EnableQUIC && !quicIsEnabled {
+		return errors.New("EnableQUIC: QUIC is not supported in this binary")
 	}
 	cfg.DefaultServerName = idnaToASCII(cfg.DefaultServerName)
 
@@ -760,7 +768,11 @@ func (cfg *Config) Check() error {
 			return fmt.Errorf("backend[%d].ClientAuth: client auth is not compatible with TLS Passthrough", i)
 		}
 		if be.ALPNProtos == nil {
-			be.ALPNProtos = defaultALPNProtos
+			if *cfg.EnableQUIC && (be.Mode == ModeHTTP || be.Mode == ModeHTTPS || be.Mode == ModeQUIC || be.Mode == ModeLocal || be.Mode == ModeConsole) {
+				be.ALPNProtos = defaultALPNProtosPlusH3
+			} else {
+				be.ALPNProtos = defaultALPNProtos
+			}
 		}
 		if be.BackendProto != nil && be.Mode != ModeHTTP && be.Mode != ModeHTTPS {
 			return fmt.Errorf("backend[%d].BackendProto: field is not valid in mode %s", i, be.Mode)
