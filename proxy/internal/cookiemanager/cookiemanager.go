@@ -217,11 +217,11 @@ func (cm *CookieManager) ValidateAuthorizationHeader(req *http.Request) (*jwt.To
 	return tok, nil
 }
 
-func FilterOutAuthTokenCookie(req *http.Request) {
+func FilterOutAuthTokenCookie(req *http.Request, names ...string) {
 	cookies := req.Cookies()
 	req.Header.Del("Cookie")
 	for _, c := range cookies {
-		if c.Name != tlsProxyAuthCookie {
+		if c.Name != tlsProxyAuthCookie && !slices.Contains(names, c.Name) {
 			req.AddCookie(c)
 		}
 	}

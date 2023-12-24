@@ -51,6 +51,7 @@ type ctxAuthKey struct{}
 
 const (
 	xTLSProxyUserIDHeader = "X-tlsproxy-user-id"
+	sessionIDCookieName   = "TLSPROXYSID"
 )
 
 var (
@@ -261,7 +262,7 @@ func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Reques
 
 func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bool {
 	// Filter out the tlsproxy auth cookie.
-	cookiemanager.FilterOutAuthTokenCookie(req)
+	cookiemanager.FilterOutAuthTokenCookie(req, sessionIDCookieName)
 
 	if be.SSO == nil || !pathMatches(be.SSO.Paths, req.URL.Path) {
 		return true
@@ -339,9 +340,8 @@ func pathMatches(prefixes []string, path string) bool {
 }
 
 func (be *Backend) sessionID(w http.ResponseWriter, req *http.Request) string {
-	const cookieName = "TLSPROXYSID"
 	var sid string
-	if cookie, err := req.Cookie(cookieName); err == nil {
+	if cookie, err := req.Cookie(sessionIDCookieName); err == nil {
 		sid = cookie.Value
 	} else {
 		var buf [16]byte
@@ -349,7 +349,7 @@ func (be *Backend) sessionID(w http.ResponseWriter, req *http.Request) string {
 		sid = hex.EncodeToString(buf[:])
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     cookieName,
+		Name:     sessionIDCookieName,
 		Value:    sid,
 		Path:     "/",
 		Expires:  time.Now().Add(30 * 24 * time.Hour),
