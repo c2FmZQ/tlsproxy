@@ -305,7 +305,6 @@ func TestSSOEnforcePasskey(t *testing.T) {
 			req.Header = hdr
 		}
 		req.Header.Set("x-csrf-check", "1")
-		req.Header.Set("x-skip-login-confirmation", "true")
 		resp, err := client.Do(req)
 		if err != nil {
 			t.Fatalf("%s: get failed: %v", urlToGet, err)
