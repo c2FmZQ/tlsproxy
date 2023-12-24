@@ -203,6 +203,7 @@ func (be *Backend) serveLogin(w http.ResponseWriter, req *http.Request) {
 	tok := req.Form.Get("redirect")
 	if tok == "" {
 		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
 	}
 	url, err := be.validateTokenForURL(w, req, tok)
 	if err != nil {
