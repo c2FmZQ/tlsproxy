@@ -25,11 +25,14 @@ package proxy
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -41,6 +44,7 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/passkeys"
 )
 
 type ctxAuthKey struct{}
@@ -55,6 +59,9 @@ var (
 	//go:embed permission-denied-template.html
 	permissionDeniedEmbed    string
 	permissionDeniedTemplate *template.Template
+	//go:embed login-template.html
+	loginEmbed    string
+	loginTemplate *template.Template
 	//go:embed logout-template.html
 	logoutEmbed    string
 	logoutTemplate *template.Template
@@ -67,6 +74,7 @@ var (
 
 func init() {
 	permissionDeniedTemplate = template.Must(template.New("permission-denied").Parse(permissionDeniedEmbed))
+	loginTemplate = template.Must(template.New("login").Parse(loginEmbed))
 	logoutTemplate = template.Must(template.New("logout").Parse(logoutEmbed))
 	ssoStatusTemplate = template.Must(template.New("sso-status").Parse(ssoStatusEmbed))
 }
@@ -181,7 +189,7 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 		}
 		data.Claims = append(data.Claims, kv{k, fmt.Sprint(claims[k])})
 	}
-	token, _, err := be.makeTokenForURL(req)
+	token, _, err := be.makeTokenForURL(w, req)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -190,28 +198,28 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 	ssoStatusTemplate.Execute(w, data)
 }
 
+func (be *Backend) serveLogin(w http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
+	tok := req.Form.Get("redirect")
+	if tok == "" {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+	}
+	url, err := be.validateTokenForURL(w, req, tok)
+	if err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	be.SSO.p.RequestLogin(w, req, url)
+}
+
 func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
 	if be.SSO != nil {
 		be.SSO.cm.ClearCookies(w)
 	}
 	req.ParseForm()
 	if tokenStr := req.Form.Get("u"); tokenStr != "" {
-		tok, err := be.tm.ValidateToken(tokenStr)
-		if err == jwt.ErrTokenExpired {
-			http.Error(w, "data expired", http.StatusBadRequest)
-			return
-		}
+		url, err := be.validateTokenForURL(w, req, tokenStr)
 		if err != nil {
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
-		c, ok := tok.Claims.(jwt.MapClaims)
-		if !ok {
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
-		url, ok := c["url"].(string)
-		if !ok {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -226,7 +234,7 @@ func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Reques
 	if claims := claimsFromCtx(req.Context()); claims != nil {
 		email, _ = claims["email"].(string)
 	}
-	token, url, err := be.makeTokenForURL(req)
+	token, url, err := be.makeTokenForURL(w, req)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -270,11 +278,38 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 	// * the backend has ForceReAuth set, and the last authentication
 	//   either on a different host, or too long ago.
 	if claims == nil || (be.SSO.ForceReAuth != 0 && (claims["hhash"] != hex.EncodeToString(hh[:]) || time.Since(iat) > be.SSO.ForceReAuth)) {
-		u := req.URL
-		u.Scheme = "https"
-		u.Host = req.Host
-		log.Printf("REQ %s ➔ %s %s ➔ status:%d (SSO) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusFound, userAgent(req))
-		be.SSO.p.RequestLogin(w, req, u.String())
+		if req.Method != http.MethodGet {
+			log.Printf("REQ %s ➔ %s %s ➔ status:%d (SSO) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden, userAgent(req))
+			http.Error(w, "authentication required", http.StatusForbidden)
+			return false
+		}
+		token, url, err := be.makeTokenForURL(w, req)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return false
+		}
+		if _, ok := be.SSO.p.(*passkeys.Manager); ok || req.Header.Get("x-skip-login-confirmation") != "" {
+			log.Printf("REQ %s ➔ %s %s ➔ status:%d (SSO) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusFound, userAgent(req))
+			http.Redirect(w, req, "/.sso/login?redirect="+token, http.StatusFound)
+			return false
+		}
+		log.Printf("REQ %s ➔ %s %s ➔ status:%d (SSO) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden, userAgent(req))
+		data := struct {
+			URL        string
+			DisplayURL string
+			Token      string
+			IDP        string
+		}{
+			URL:        url,
+			DisplayURL: url,
+			Token:      token,
+			IDP:        be.SSO.actualIDP,
+		}
+		if len(data.DisplayURL) > 100 {
+			data.DisplayURL = data.DisplayURL[:97] + "..."
+		}
+		w.WriteHeader(http.StatusForbidden)
+		loginTemplate.Execute(w, data)
 		return false
 	}
 	userID, _ := claims["email"].(string)
@@ -302,13 +337,55 @@ func pathMatches(prefixes []string, path string) bool {
 	return false
 }
 
-func (be *Backend) makeTokenForURL(req *http.Request) (string, string, error) {
+func (be *Backend) sessionID(w http.ResponseWriter, req *http.Request) string {
+	const cookieName = "TLSPROXYSID"
+	var sid string
+	if cookie, err := req.Cookie(cookieName); err == nil {
+		sid = cookie.Value
+	} else {
+		var buf [16]byte
+		io.ReadFull(rand.Reader, buf[:])
+		sid = hex.EncodeToString(buf[:])
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieName,
+		Value:    sid,
+		Path:     "/",
+		Expires:  time.Now().Add(30 * 24 * time.Hour),
+		Secure:   true,
+		HttpOnly: true,
+	})
+	return sid
+}
+
+func (be *Backend) makeTokenForURL(w http.ResponseWriter, req *http.Request) (string, string, error) {
+	sid := be.sessionID(w, req)
+	displayURL := "https://" + idnaToUnicode(req.Host) + req.URL.String()
 	u := req.URL
 	u.Scheme = "https"
 	u.Host = req.Host
 	token, err := be.tm.CreateToken(jwt.MapClaims{
 		"url": u.String(),
-		"exp": time.Now().Add(time.Hour).Unix(),
+		"sid": sid,
 	}, "EdDSA")
-	return token, u.String(), err
+	return token, displayURL, err
+}
+
+func (be *Backend) validateTokenForURL(w http.ResponseWriter, req *http.Request, token string) (string, error) {
+	tok, err := be.tm.ValidateToken(token)
+	if err != nil {
+		return "", err
+	}
+	c, ok := tok.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", errors.New("invalid token")
+	}
+	if c["sid"] != be.sessionID(w, req) {
+		return "", errors.New("invalid token")
+	}
+	url, ok := c["url"].(string)
+	if !ok {
+		return "", errors.New("invalid token")
+	}
+	return url, nil
 }

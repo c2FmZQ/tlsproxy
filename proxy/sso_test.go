@@ -144,10 +144,12 @@ func TestSSOEnforceOIDC(t *testing.T) {
 			Method: "GET",
 			URL:    u,
 			Host:   u.Host,
+			Header: hdr,
 		}
-		if hdr != nil {
-			req.Header = hdr
+		if req.Header == nil {
+			req.Header = make(http.Header)
 		}
+		req.Header.Set("x-skip-login-confirmation", "true")
 		resp, err := client.Do(req)
 		if err != nil {
 			t.Fatalf("%s: get failed: %v", urlToGet, err)
@@ -274,10 +276,6 @@ func TestSSOEnforcePasskey(t *testing.T) {
 	}
 
 	get := func(urlToGet string, hdr http.Header, postBody []byte) (int, string, string) {
-		u, err := url.Parse(urlToGet)
-		if err != nil {
-			t.Fatalf("%q: %v", urlToGet, err)
-		}
 		transport := http.DefaultTransport.(*http.Transport).Clone()
 		transport.TLSClientConfig = &tls.Config{
 			RootCAs: ca.RootCACertPool(),
@@ -295,20 +293,19 @@ func TestSSOEnforcePasskey(t *testing.T) {
 			Transport: transport,
 			Jar:       jar,
 		}
-		req := &http.Request{
-			Method: "GET",
-			URL:    u,
-			Host:   u.Host,
+		req, err := http.NewRequest("GET", urlToGet, nil)
+		if err != nil {
+			t.Fatalf("http.NewRequest: %v", err)
 		}
 		if postBody != nil {
 			req.Method = "POST"
 			req.Body = io.NopCloser(bytes.NewReader(postBody))
 		}
-		if hdr == nil {
-			hdr = make(http.Header)
+		if hdr != nil {
+			req.Header = hdr
 		}
-		hdr.Set("x-csrf-check", "1")
-		req.Header = hdr
+		req.Header.Set("x-csrf-check", "1")
+		req.Header.Set("x-skip-login-confirmation", "true")
 		resp, err := client.Do(req)
 		if err != nil {
 			t.Fatalf("%s: get failed: %v", urlToGet, err)
