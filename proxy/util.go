@@ -115,5 +115,5 @@ func formatSize10[T float64 | int64](n T) string {
 	if n > 1000 {
 		return fmt.Sprintf("%.1f KB", float64(n)/1000)
 	}
-	return fmt.Sprintf("%d B", int64(n))
+	return fmt.Sprintf("%d \u00A0B", int64(n)) // \u00A0 is &nbsp;
 }
