@@ -39,6 +39,7 @@ import (
 
 	yaml "gopkg.in/yaml.v3"
 
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
 
@@ -69,25 +70,29 @@ func (p *Proxy) addConn(c *netw.Conn) int {
 	return len(p.connections)
 }
 
+func (p *Proxy) setCounters(c *netw.Conn, serverName string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.metrics == nil {
+		p.metrics = make(map[string]*backendMetrics)
+	}
+	m := p.metrics[serverName]
+	if m == nil {
+		m = &backendMetrics{
+			numConnections:   counter.New(time.Minute, time.Second),
+			numBytesSent:     counter.New(time.Minute, time.Second),
+			numBytesReceived: counter.New(time.Minute, time.Second),
+		}
+		p.metrics[serverName] = m
+	}
+	m.numConnections.Incr(1)
+	c.SetCounters(m.numBytesSent, m.numBytesReceived)
+}
+
 func (p *Proxy) removeConn(c *netw.Conn) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	delete(p.connections, connKey{c.LocalAddr(), c.RemoteAddr(), c.StreamID()})
-
-	if sn := c.Annotation(serverNameKey, "").(string); sn != "" && p.backends[beKey{serverName: sn}] != nil {
-		if p.metrics == nil {
-			p.metrics = make(map[string]*backendMetrics)
-		}
-		m := p.metrics[sn]
-		if m == nil {
-			m = &backendMetrics{}
-			p.metrics[sn] = m
-		}
-		m.numConnections++
-		m.numBytesSent += c.BytesSent()
-		m.numBytesReceived += c.BytesReceived()
-	}
-
 	return len(p.connections)
 }
 
@@ -102,8 +107,10 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	type backendMetric struct {
 		ServerName     string
 		NumConnections int64
-		Egress         int64
-		Ingress        int64
+		Egress         string
+		Ingress        string
+		EgressRate     string
+		IngressRate    string
 	}
 	type proxyEvent struct {
 		Description string
@@ -194,21 +201,6 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		k = idnaToUnicode(k)
 		totals[k] = &m
 	}
-	for _, c := range p.connections {
-		sn := c.Annotation(serverNameKey, "").(string)
-		if sn == "" || connBackend(c) == (*Backend)(nil) {
-			continue
-		}
-		sn = idnaToUnicode(sn)
-		m := totals[sn]
-		if m == nil {
-			m = &backendMetrics{}
-			totals[sn] = m
-		}
-		m.numConnections++
-		m.numBytesSent += c.BytesSent()
-		m.numBytesReceived += c.BytesReceived()
-	}
 
 	var serverNames []string
 	var maxLen int
@@ -223,9 +215,11 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	for _, s := range serverNames {
 		data.Metrics = append(data.Metrics, backendMetric{
 			ServerName:     s,
-			NumConnections: totals[s].numConnections,
-			Egress:         totals[s].numBytesSent,
-			Ingress:        totals[s].numBytesReceived,
+			NumConnections: totals[s].numConnections.Value(),
+			Egress:         formatSize10(totals[s].numBytesSent.Value()),
+			Ingress:        formatSize10(totals[s].numBytesReceived.Value()),
+			EgressRate:     formatSize10(totals[s].numBytesSent.Rate(time.Minute)) + "/s",
+			IngressRate:    formatSize10(totals[s].numBytesReceived.Rate(time.Minute)) + "/s",
 		})
 	}
 
@@ -329,10 +323,10 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 			connection.ClientID = certSummary(cert)
 		}
 		connection.Time = totalTime.Truncate(100 * time.Millisecond).String()
-		connection.EgressBytes = fmt.Sprintf("%.1f KB", float32(c.BytesSent())/1000)
-		connection.EgressRate = fmt.Sprintf("%.1f KB/s", float32(c.BytesSent())/float32(totalTime)*float32(time.Second)/1000)
-		connection.IngressBytes = fmt.Sprintf("%.1f KB", float32(c.BytesReceived())/1000)
-		connection.IngressRate = fmt.Sprintf("%.1f KB/s", float32(c.BytesReceived())/float32(totalTime)*float32(time.Second)/1000)
+		connection.EgressBytes = formatSize10(c.BytesSent())
+		connection.EgressRate = formatSize10(c.ByteRateSent()) + "/s"
+		connection.IngressBytes = formatSize10(c.BytesReceived())
+		connection.IngressRate = formatSize10(c.ByteRateReceived()) + "/s"
 
 		data.Connections = append(data.Connections, connection)
 	}

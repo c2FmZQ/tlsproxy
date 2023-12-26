@@ -27,8 +27,10 @@ import (
 	"crypto/tls"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
 
@@ -82,6 +84,7 @@ func TestConnWrapper(t *testing.T) {
 	}
 	tconn := conn.(*tls.Conn)
 	nwconn := tconn.NetConn().(*netw.Conn)
+	nwconn.SetCounters(counter.New(time.Second, time.Second), counter.New(time.Second, time.Second))
 	if err := tconn.Handshake(); err != nil {
 		t.Fatalf("[SERVER] Handshake: %v", err)
 	}
