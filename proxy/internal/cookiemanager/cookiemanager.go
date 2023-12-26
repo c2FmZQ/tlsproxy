@@ -42,6 +42,7 @@ import (
 const (
 	tlsProxyAuthCookie    = "TLSPROXYAUTH"
 	tlsProxyIDTokenCookie = "TLSPROXYIDTOKEN"
+	tlsProxyNonce         = "TLSPROXYNONCE"
 )
 
 type CookieManager struct {
@@ -139,6 +140,33 @@ func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Reque
 	}
 	http.SetCookie(w, cookie)
 	return nil
+}
+
+func (cm *CookieManager) SetNonce(w http.ResponseWriter, nonce string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     tlsProxyNonce,
+		Value:    nonce,
+		Domain:   cm.domain,
+		Path:     "/",
+		SameSite: http.SameSiteLaxMode,
+		Secure:   true,
+		HttpOnly: true,
+	})
+}
+
+func (cm *CookieManager) Nonce(w http.ResponseWriter, req *http.Request) string {
+	http.SetCookie(w, &http.Cookie{
+		Name:     tlsProxyNonce,
+		Domain:   cm.domain,
+		Path:     "/",
+		MaxAge:   -1,
+		Secure:   true,
+		HttpOnly: true,
+	})
+	if c, err := req.Cookie(tlsProxyNonce); err == nil {
+		return c.Value
+	}
+	return ""
 }
 
 func (cm *CookieManager) ClearCookies(w http.ResponseWriter) error {

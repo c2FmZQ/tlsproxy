@@ -261,9 +261,6 @@ func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Reques
 }
 
 func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bool {
-	// Filter out the tlsproxy auth cookie.
-	cookiemanager.FilterOutAuthTokenCookie(req, sessionIDCookieName)
-
 	if be.SSO == nil || !pathMatches(be.SSO.Paths, req.URL.Path) {
 		return true
 	}
@@ -324,6 +321,9 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 		return false
 	}
 	be.recordEvent(fmt.Sprintf("allow SSO %s to %s", userID, idnaToUnicode(host)))
+
+	// Filter out the tlsproxy auth cookie.
+	cookiemanager.FilterOutAuthTokenCookie(req, sessionIDCookieName)
 	return true
 }
 
@@ -353,6 +353,7 @@ func (be *Backend) sessionID(w http.ResponseWriter, req *http.Request) string {
 		Value:    sid,
 		Path:     "/",
 		Expires:  time.Now().Add(30 * 24 * time.Hour),
+		SameSite: http.SameSiteStrictMode,
 		Secure:   true,
 		HttpOnly: true,
 	})
@@ -381,7 +382,8 @@ func (be *Backend) validateTokenForURL(w http.ResponseWriter, req *http.Request,
 	if !ok {
 		return "", errors.New("invalid token")
 	}
-	if c["sid"] != be.sessionID(w, req) {
+	if sid := be.sessionID(w, req); sid != c["sid"] {
+		log.Printf("ERR session ID mismatch %q != %q", sid, c["sid"])
 		return "", errors.New("invalid token")
 	}
 	url, ok := c["url"].(string)
