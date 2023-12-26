@@ -49,8 +49,6 @@ import (
 
 type CookieManager interface {
 	SetAuthTokenCookie(w http.ResponseWriter, userID, email, sessionID, host string, extraClaims map[string]any) error
-	SetNonce(w http.ResponseWriter, nonce string)
-	Nonce(w http.ResponseWriter, req *http.Request) string
 	ClearCookies(w http.ResponseWriter) error
 }
 
@@ -144,7 +142,6 @@ func (p *Provider) RequestLogin(w http.ResponseWriter, req *http.Request, origUR
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	p.cm.SetNonce(w, idStr)
 	http.Redirect(w, req, url, http.StatusFound)
 	p.er.Record("saml auth request")
 }
@@ -200,7 +197,7 @@ func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	}
 	p.mu.Unlock()
 
-	if !ok || id != p.cm.Nonce(w, req) {
+	if !ok {
 		p.er.Record("invalid state")
 		http.Error(w, "timeout", http.StatusForbidden)
 		return

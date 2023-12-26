@@ -3,7 +3,7 @@
 ## next
 
 * Add a confirmation page before redirecting to the remote identity provider's OIDC or SAML login page.
-* Add nonce cookies to the OIDC and SAML login flows.
+* Add a nonce cookie to the OIDC login flow.
 
 ## v0.4.0
 
