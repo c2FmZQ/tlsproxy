@@ -1,5 +1,9 @@
 # TLSPROXY Release Notes
 
+## next
+
+* Convert the metrics page to HTML.
+
 ## v0.4.0
 
 * This version changes these config options:
