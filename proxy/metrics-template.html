@@ -29,6 +29,7 @@ h1 {
 #panels {
   background-color: white;
   margin-left: 1rem;
+  margin-right: 1rem;
   white-space: nowrap;
 }
 #backends > div {
@@ -58,6 +59,48 @@ h1 {
   background-color: white;
   z-index: 1;
   transform: translate(0, 1px);
+}
+.table {
+  display: grid;
+  justify-items: stretch;
+  width: fit-content;
+  gap: 0;
+  border: solid 1px #f0f0f0;
+  margin-left: 2rem;
+}
+.col2 {
+  grid-template-columns: repeat(2, auto);
+}
+.col3 {
+  grid-template-columns: repeat(3, auto);
+}
+.col4 {
+  grid-template-columns: repeat(4, auto);
+}
+.col5 {
+  grid-template-columns: repeat(5, auto);
+}
+.col6 {
+  grid-template-columns: repeat(6, auto);
+}
+.hdr {
+  display: contents;
+  font-weight: bold;
+}
+.row {
+  display: contents;
+}
+.table > div > div {
+  padding-right: 1rem;
+  text-align: right;
+  width: -webkit-fill-available;
+}
+.table > div.row:nth-child(even) > div {
+  background-color: #f8f8f8;
+}
+
+.group > div:nth-child(even) {
+  background-color: #f8f8f8;
 }
 </style>
 <script>
@@ -122,71 +165,79 @@ function selectTab(target) {
 
 <div id="panel-backend-metrics">
 <h2>Backend metrics</h2>
-  <div style="padding-left: 2rem; display: grid; grid-template-columns: auto auto auto auto auto auto; justify-items: end; width: fit-content; column-gap: 1rem;">
-    <div style="justify-self: left">Server</div>
-    <div>Count</div>
-    <div>Egress</div>
-    <div>&nbsp;</div>
-    <div>Ingress</div>
-    <div>&nbsp;</div>
+  <div class="table col6">
+    <div class="hdr">
+      <div style="text-align: left">Server</div>
+      <div>Count</div>
+      <div>Egress</div>
+      <div>&nbsp;</div>
+      <div>Ingress</div>
+      <div>&nbsp;</div>
+    </div>
 {{- range .Metrics }}
-    <div style="justify-self: left">{{.ServerName}}</div>
-    <div>{{.NumConnections}}</div>
-    <div>{{.Egress}}</div>
-    <div>({{.EgressRate}})</div>
-    <div>{{.Ingress}}</div>
-    <div>({{.IngressRate}})</div>
+    <div class="row">
+      <div style="text-align: left">{{.ServerName}}</div>
+      <div>{{.NumConnections}}</div>
+      <div>{{.Egress}}</div>
+      <div>({{.EgressRate}})</div>
+      <div>{{.Ingress}}</div>
+      <div>({{.IngressRate}})</div>
+    </div>
 {{- end }}
   </div>
 </div>
 
 <div id="panel-events">
 <h2>Events</h2>
-  <div style="padding-left: 2rem; display: grid; grid-template-columns: auto auto; justify-items: end; width: fit-content; column-gap: 1rem;">
+  <div class="table col2">
 {{- range .Events }}
-    <div>{{.Count}}</div>
-    <div style="justify-self: left">{{.Description}}</div>
+    <div class="row">
+      <div>{{.Count}}</div>
+      <div style="text-align: left">{{.Description}}</div>
+    </div>
 {{- end }}
   </div>
 </div>
 
-<div id="panel-connections">
+<div id="panel-connections" class="group">
 <h2>Connections</h2>
 {{- range .Connections }}
-  <div style="padding-left: 2rem; padding-top: 0.5rem; display: grid; grid-template-columns: auto auto; justify-items: left; width: fit-content; column-gap: 1rem;">
-    <div>{{.SourceAddr}} {{.Type}}</div>
-    <div>&lt;=&gt; {{.ServerName}} {{.Mode}} {{.Proto}}</div>
+  <div>
+    <div style="margin-left: 2rem; padding-top: 0.5rem; display: grid; grid-template-columns: auto auto; justify-items: left; width: fit-content; column-gap: 1rem;">
+      <div>{{.SourceAddr}} {{.Type}}</div>
+      <div>&lt;=&gt; {{.ServerName}} {{.Mode}} {{.Proto}}</div>
   {{- range .Destinations }}
-    <div>&nbsp;</div>
-    <div>{{.Direction}} {{.Address}} {{.Stream}}</div>
+      <div>&nbsp;</div>
+      <div>{{.Direction}} {{.Address}} {{.Stream}}</div>
   {{- end }}
-  </div>
+    </div>
   {{- if len .ClientID | ne 0}}
-  <div style="padding-left: 5rem;">X509 [{{.ClientID}}]</div>
+    <div style="padding-left: 5rem;">X509 [{{.ClientID}}]</div>
   {{- end }}
-  <div style="padding-left: 5rem;">Elapsed:{{.Time}} Egress:{{.EgressBytes}} ({{.EgressRate}}) Ingress:{{.IngressBytes}} ({{.IngressRate}})</div>
+    <div style="padding-left: 5rem;">Elapsed:{{.Time}} Egress:{{.EgressBytes}} ({{.EgressRate}}) Ingress:{{.IngressBytes}} ({{.IngressRate}})</div>
+  </div>
 {{- end }}
 </div>
 
-<div id="panel-backends">
+<div id="panel-backends" class="group">
 {{- range $i, $be := .Backends }}
   <div style="margin-top: 1rem;">
 Backend[{{$i}}]: {{.Mode}} {{.ALPNProtos}} {{.BackendProto}} {{.SSO}}
   {{- if len .ServerNames | ne 0 }}
-    <div style="padding-left: 1rem;">ServerNames:</div>
+    <div style="margin-left: 1rem;">ServerNames:</div>
     {{- range .ServerNames }}
-    <div style="padding-left: 2rem;">{{.}}</div>
+    <div style="margin-left: 2rem;">{{.}}</div>
     {{- end }}
   {{- end }}
   {{- if len .Addresses | ne 0 }}
-    <div style="padding-left: 1rem;">Addresses:</div>
+    <div style="margin-left: 1rem;">Addresses:</div>
     {{- range .Addresses }}
-    <div style="padding-left: 2rem;">{{.}}</div>
+    <div style="margin-left: 2rem;">{{.}}</div>
     {{- end }}
   {{- end }}
   {{- if len .Handlers | ne 0 }}
-    <div style="padding-left: 1rem;">Local handlers:</div>
-    <div style="padding-left: 2rem; display: grid; grid-template-columns: auto auto auto; justify-items: left; width: fit-content; column-gap: 1rem;">
+    <div style="margin-left: 1rem;">Local handlers:</div>
+    <div style="margin-left: 2rem; display: grid; grid-template-columns: auto auto auto; justify-items: left; width: fit-content; column-gap: 1rem;">
     {{- range .Handlers }}
       <div>{{ if .Bypass}}[X]{{ else }}[ ]{{ end }}</div>
       <div>https://{{.HostPath}}</div>
@@ -200,48 +251,56 @@ Backend[{{$i}}]: {{.Mode}} {{.ALPNProtos}} {{.BackendProto}} {{.SSO}}
 
 <div id="panel-memory">
 <h2>Memory profile</h2>
-  <div style="padding-left:1rem;display: grid; grid-template-columns: auto auto auto; justify-items: end; width: fit-content; column-gap: 1rem;">
-    <div>Size</div>
-    <div>Count</div>
-    <div style="justify-self: left">Function</div>
+  <div class="table col3">
+    <div class="hdr">
+      <div>Size</div>
+      <div>Count</div>
+      <div style="text-align: left">Function</div>
+    </div>
 {{- range .Memory }}
-    <div>{{.Size}}</div>
-    <div>{{.Count}}</div>
-    <div style="justify-self: left">{{.Func}}</div>
+    <div class="row">
+      <div>{{.Size}}</div>
+      <div>{{.Count}}</div>
+      <div style="text-align: left">{{.Func}}</div>
+    </div>
 {{- end }}
   </div>
 </div>
 
 <div id="panel-runtime">
 <h2>Runtime</h2>
-  <div style="padding-left:1rem;display: grid; grid-template-columns: auto auto; justify-items: end; width: fit-content; column-gap: 1rem;">
-    <div style="justify-self: left">Uptime:</div><div>{{.Runtime.Uptime}}</div>
-    <div style="justify-self: left">NumCPU:</div><div>{{.Runtime.NumCPU}}</div>
-    <div style="justify-self: left">NumGoroutine:</div><div>{{.Runtime.NumGoroutine}}</div>
-    <div style="justify-self: left">Mallocs:</div><div>{{.Runtime.Mallocs}}</div>
-    <div style="justify-self: left">Frees:</div><div>{{.Runtime.Frees}}</div>
-    <div style="justify-self: left">HeapObjects:</div><div>{{.Runtime.HeapObjects}}</div>
-    <div style="justify-self: left">HeapAlloc:</div><div>{{.Runtime.HeapAlloc}}</div>
-    <div style="justify-self: left">NextGC:</div><div>{{.Runtime.NextGC}}</div>
-    <div style="justify-self: left">NumGC:</div><div>{{.Runtime.NumGC}}</div>
+  <div class="table col2">
+    <div class="row"><div style="text-align: left">Uptime:</div><div>{{.Runtime.Uptime}}</div></div>
+    <div class="row"><div style="text-align: left">NumCPU:</div><div>{{.Runtime.NumCPU}}</div></div>
+    <div class="row"><div style="text-align: left">NumGoroutine:</div><div>{{.Runtime.NumGoroutine}}</div></div>
+    <div class="row"><div style="text-align: left">Mallocs:</div><div>{{.Runtime.Mallocs}}</div></div>
+    <div class="row"><div style="text-align: left">Frees:</div><div>{{.Runtime.Frees}}</div></div>
+    <div class="row"><div style="text-align: left">HeapObjects:</div><div>{{.Runtime.HeapObjects}}</div></div>
+    <div class="row"><div style="text-align: left">HeapAlloc:</div><div>{{.Runtime.HeapAlloc}}</div></div>
+    <div class="row"><div style="text-align: left">NextGC:</div><div>{{.Runtime.NextGC}}</div></div>
+    <div class="row"><div style="text-align: left">NumGC:</div><div>{{.Runtime.NumGC}}</div></div>
   </div>
 </div>
 
 <div id="panel-goroutines">
 <h2>Goroutines</h2>
-  <div style="padding-left:1rem;display: grid; grid-template-columns: auto auto; justify-items: end; width: fit-content; column-gap: 1rem;">
-    <div>Count</div>
-    <div style="justify-self: left">Function</div>
+  <div class="table col2">
+    <div class="hdr">
+      <div>Count</div>
+      <div style="text-align: left">Function</div>
+    </div>
 {{- range .Goroutines }}
-    <div>{{.Count}}</div>
-    <div style="justify-self: left">{{.Func}}</div>
+    <div class="row">
+      <div>{{.Count}}</div>
+      <div style="text-align: left">{{.Func}}</div>
+    </div>
 {{- end }}
   </div>
 </div>
 
 <div id="panel-buildinfo">
 <h2>Build Info</h2>
-<pre style="padding-left: 1rem;">
+<pre style="margin-left: 1rem; background-color: #f0f0f0;">
 {{.BuildInfo}}
 </pre>
 </div>
