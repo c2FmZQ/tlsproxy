@@ -38,6 +38,8 @@ import (
 	"time"
 )
 
+var timeNow = time.Now
+
 // New returns a new Counter.
 func New(maxPeriod, resolution time.Duration) *Counter {
 	size := int64(maxPeriod)/int64(resolution) + 1
@@ -47,7 +49,7 @@ func New(maxPeriod, resolution time.Duration) *Counter {
 	return &Counter{
 		size:  int(size),
 		rez:   resolution,
-		time:  time.Now(),
+		time:  time.Now().Truncate(resolution),
 		slots: make([]int64, int(size)),
 	}
 }
@@ -108,7 +110,7 @@ func (c *Counter) Rate(period time.Duration) float64 {
 }
 
 func (c *Counter) advance() {
-	now := time.Now().Truncate(c.rez)
+	now := timeNow().Truncate(c.rez)
 	if !now.After(c.time) {
 		return
 	}
