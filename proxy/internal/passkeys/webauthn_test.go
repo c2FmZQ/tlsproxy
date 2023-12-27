@@ -1,7 +1,7 @@
 // MIT License
 //
 // Copyright (c) 2023 TTBT Enterprises LLC
-// Copyright (c) 2023 Robin Thellend <rthellend@thellend.com>
+// Copyright (c) 2023 Robin Thellend <rthellend@rthellend.com>
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
