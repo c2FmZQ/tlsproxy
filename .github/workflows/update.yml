@@ -34,5 +34,5 @@ jobs:
       # https://github.com/peter-evans/create-pull-request/releases/tag/v5.0.2
       uses: peter-evans/create-pull-request@153407881ec5c347639a548ade7d8ad1d6740e38
       with:
-        - title: GO update
-        - body-path: .update-log
+        title: GO update
+        body-path: .update-log
