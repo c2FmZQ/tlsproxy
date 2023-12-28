@@ -1,6 +1,6 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.4.1
 
 * Add a confirmation page before redirecting to the remote identity provider's OIDC or SAML login page.
 * Add a nonce cookie to the OIDC login flow.
