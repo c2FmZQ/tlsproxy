@@ -1,0 +1,9 @@
+GO version: go1.21.5
+go: downloading github.com/golang-jwt/jwt v3.2.2+incompatible
+go: downloading github.com/hashicorp/golang-lru v1.0.2
+go: downloading github.com/fxamacker/cbor v1.5.1
+go: downloading github.com/onsi/ginkgo v1.16.5
+go: downloading golang.org/x/exp v0.0.0-20231226003508-02704c960a9b
+go: downloading go.uber.org/mock v0.4.0
+go: upgraded go.uber.org/mock v0.3.0 => v0.4.0
+go: upgraded golang.org/x/exp v0.0.0-20231214170342-aacd6d4b4611 => v0.0.0-20231226003508-02704c960a9b
