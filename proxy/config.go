@@ -515,8 +515,9 @@ type BackendSSO struct {
 	// authenticate users with backend services that support OpenID Connect.
 	LocalOIDCServer *LocalOIDCServer `yaml:"localOIDCServer,omitempty"`
 
-	p  identityProvider
-	cm *cookiemanager.CookieManager
+	p         identityProvider
+	cm        *cookiemanager.CookieManager
+	actualIDP string
 }
 
 // PathOverride specifies different backend parameters for some path prefixes.

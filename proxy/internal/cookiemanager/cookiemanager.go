@@ -42,6 +42,7 @@ import (
 const (
 	tlsProxyAuthCookie    = "TLSPROXYAUTH"
 	tlsProxyIDTokenCookie = "TLSPROXYIDTOKEN"
+	tlsProxyNonce         = "TLSPROXYNONCE"
 )
 
 type CookieManager struct {
@@ -141,6 +142,33 @@ func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Reque
 	return nil
 }
 
+func (cm *CookieManager) SetNonce(w http.ResponseWriter, nonce string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     tlsProxyNonce,
+		Value:    nonce,
+		Domain:   cm.domain,
+		Path:     "/",
+		SameSite: http.SameSiteLaxMode,
+		Secure:   true,
+		HttpOnly: true,
+	})
+}
+
+func (cm *CookieManager) Nonce(w http.ResponseWriter, req *http.Request) string {
+	http.SetCookie(w, &http.Cookie{
+		Name:     tlsProxyNonce,
+		Domain:   cm.domain,
+		Path:     "/",
+		MaxAge:   -1,
+		Secure:   true,
+		HttpOnly: true,
+	})
+	if c, err := req.Cookie(tlsProxyNonce); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
 func (cm *CookieManager) ClearCookies(w http.ResponseWriter) error {
 	cookie := &http.Cookie{
 		Name:     tlsProxyAuthCookie,
@@ -217,11 +245,11 @@ func (cm *CookieManager) ValidateAuthorizationHeader(req *http.Request) (*jwt.To
 	return tok, nil
 }
 
-func FilterOutAuthTokenCookie(req *http.Request) {
+func FilterOutAuthTokenCookie(req *http.Request, names ...string) {
 	cookies := req.Cookies()
 	req.Header.Del("Cookie")
 	for _, c := range cookies {
-		if c.Name != tlsProxyAuthCookie {
+		if c.Name != tlsProxyAuthCookie && !slices.Contains(names, c.Name) {
 			req.AddCookie(c)
 		}
 	}

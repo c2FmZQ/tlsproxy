@@ -54,15 +54,16 @@ textarea {
   padding: 0.25rem;
 }
 .certs>div:nth-child(odd) {
-  background-color: #444;
+  background-color: lightblue;
 }
 .certs>div:nth-child(even) {
-  background-color: #555;
+  background-color: skyblue;
 }
 .onerow {
   display: grid;
   grid-template-columns: 1fr 5fr 1fr;
   gap: 0;
+  border: solid 1px grey;
 }
 .usednow {
   border: solid 1px yellow;
