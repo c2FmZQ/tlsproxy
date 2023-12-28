@@ -28,7 +28,7 @@ jobs:
         echo 'CHANGES:'
         echo '```'
         ./scripts/update-go-version.sh >> .update-log
-        go get -u ./... >> .update-log
+        go get -u ./... >> .update-log 2>&1
         echo '```'
     - name: Create pull request
       # https://github.com/peter-evans/create-pull-request/releases/tag/v5.0.2
