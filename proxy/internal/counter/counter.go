@@ -92,17 +92,10 @@ func (c *Counter) Rate(period time.Duration) float64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.advance()
-	if period > time.Duration(c.steps)*c.rez {
-		period = time.Duration(c.steps) * c.rez
-	}
-	steps := int64(period) / int64(c.rez)
-	if steps > int64(c.size) {
-		steps = int64(c.size)
-	}
+	period = min(period, time.Duration(c.steps)*c.rez, time.Duration(c.size)*c.rez)
+	steps := min(int64(period)/int64(c.rez), int64(c.size))
 	pastValue := c.slots[(c.head+c.size-int(steps))%c.size]
-	pastTime := c.time.Add(-period)
-
-	deltaTime := c.time.Sub(pastTime).Seconds()
+	deltaTime := period.Seconds()
 	if deltaTime == 0 {
 		return 0
 	}
@@ -117,9 +110,7 @@ func (c *Counter) advance() {
 	steps := int64(now.Sub(c.time)) / int64(c.rez)
 	c.time = now
 	c.steps += steps
-	if steps > int64(c.size) {
-		steps = int64(c.size)
-	}
+	steps = min(steps, int64(c.size))
 	v := c.slots[c.head]
 	for steps > 0 {
 		c.head = (c.head + 1) % c.size
