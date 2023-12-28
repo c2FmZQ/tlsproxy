@@ -169,6 +169,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 	}
 	be.incInFlight(1)
 	conn.SetAnnotation(backendKey, be)
+	p.setCounters(conn, cs.ServerName)
 
 	if numOpen >= p.cfg.MaxOpen {
 		p.recordEvent("too many open connections")

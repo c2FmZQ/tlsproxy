@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Metrics</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
+<link rel="icon" href="/favicon.ico" />
+<style>
+html {
+  font-family: monospace;
+  background-color: white;
+  color: black;
+  height: 100%;
+}
+body {
+  margin: 0;
+  height: 100%;
+  min-width: fit-content;
+}
+#header {
+  padding-top: 0.5rem;
+  margin-bottom: 1rem;
+  font-family: roboto, arial, sans-serif;
+  background: linear-gradient(30deg, skyblue, slateblue);
+}
+h1 {
+  margin-left: 1rem;
+}
+#panels {
+  background-color: white;
+  margin-left: 1rem;
+  margin-right: 1rem;
+  white-space: nowrap;
+}
+#backends > div {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+#tabs {
+  display: inline-flex;
+  border-bottom: 1px solid black;
+  z-index: 0;
+  padding-top: 0.25rem;
+  width: 100%;
+}
+.tab {
+  white-space: nowrap;
+  display: inline;
+  border: 1px solid black;
+  border-bottom: none;
+  padding: 0.5rem;
+  margin-left: 0.25rem;
+  background-color: lightgrey;
+  border-radius: 0.5rem 0.5rem 0 0;
+  cursor: pointer;
+}
+.tab.selected {
+  font-weight: bold;
+  background-color: white;
+  z-index: 1;
+  transform: translate(0, 1px);
+}
+.table {
+  display: grid;
+  justify-items: stretch;
+  width: fit-content;
+  gap: 0;
+  border: solid 1px #f0f0ff;
+  margin-left: 2rem;
+}
+.col2 {
+  grid-template-columns: repeat(2, auto);
+}
+.col3 {
+  grid-template-columns: repeat(3, auto);
+}
+.col4 {
+  grid-template-columns: repeat(4, auto);
+}
+.col5 {
+  grid-template-columns: repeat(5, auto);
+}
+.col6 {
+  grid-template-columns: repeat(6, auto);
+}
+.hdr {
+  display: contents;
+  font-weight: bold;
+}
+.row {
+  display: contents;
+}
+.table > div > div {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  text-align: right;
+  width: -webkit-fill-available;
+}
+.table > div.row:nth-child(even) > div {
+  background-color: #f8f8ff;
+}
+
+.group > div:nth-child(even) {
+  background-color: #f8f8ff;
+}
+</style>
+<script>
+let tabs = [
+  { id: 'metrics', name: 'Metrics', show: ['panel-backend-metrics', 'panel-events'] },
+  { id: 'connections', name: 'Connections', show: ['panel-connections'] },
+  { id: 'backends', name: 'Backends', show: ['panel-backends'] },
+  { id: 'runtime', name: 'Runtime', show: ['panel-runtime', 'panel-goroutines'] },
+  { id: 'memory', name: 'Memory Profile', show: ['panel-memory'] },
+  { id: 'buildinfo', name: 'Build Info', show: ['panel-buildinfo'] },
+];
+function init() {
+  let hash = window.location.hash.replace(/^#/, '');
+  if (!hash) hash = tabs[0].id;
+  const tabse = document.querySelector('div#tabs');
+  for (let tab of tabs) {
+     tab.e = document.createElement('div');
+     tab.e.classList.add('tab');
+     tab.e.setAttribute('id', 'tab-'+tab.id);
+     tab.e.setAttribute('tabindex', '0');
+     tab.e.textContent = tab.name;
+     tab.e.addEventListener('click', ev => selectTab(ev.target));
+     tab.e.addEventListener('focus', ev => selectTab(ev.target));
+     tabse.appendChild(tab.e);
+     if (hash === tab.id) {
+       tab.e.classList.add('selected');
+       selectTab(tab.e);
+     }
+  }
+  if (!document.querySelector('.tab.selected')) {
+    selectTab(tabs[0].e);
+  }
+}
+
+function selectTab(target) {
+  target.focus();
+  target.blur();
+  target.classList.add('selected');
+  for (let tab of tabs) {
+    if (tab.e === target) {
+      window.location.hash = tab.id;
+    } else if (tab.e) {
+      tab.e.classList.remove('selected');
+    }
+    for (let sh of tab.show) {
+      let e = document.getElementById(sh);
+      if (!e) continue;
+      e.style.display = tab.e === target ? 'block' : 'none';
+    }
+  }
+}
+</script>
+</head>
+<body onload="init();">
+<div id="header">
+<h1>TLSPROXY {{.Version}}</h1>
+
+<div id="tabs"></div>
+</div>
+
+<div id="panels">
+
+<div id="panel-backend-metrics">
+<h2>Backend metrics</h2>
+  <div class="table col6">
+    <div class="hdr">
+      <div style="text-align: left; grid-column: 1;">Server</div>
+      <div style="text-align: center; grid-column: 2; border-left: 1px solid #f0f0f0;">Count</div>
+      <div style="text-align: center; grid-column: 3 / 5; border-left: 1px solid #f0f0f0;">Egress</div>
+      <div style="text-align: center; grid-column: 5 / 7; border-left: 1px solid #f0f0f0;">Ingress</div>
+    </div>
+{{- range .Metrics }}
+    <div class="row">
+      <div style="text-align: left">{{.ServerName}}</div>
+      <div style="border-left: 1px solid #f0f0f0;">{{.NumConnections}}</div>
+      <div style="border-left: 1px solid #f0f0f0;">{{.Egress}}</div>
+      <div>({{.EgressRate}})</div>
+      <div style="border-left: 1px solid #f0f0f0;">{{.Ingress}}</div>
+      <div>({{.IngressRate}})</div>
+    </div>
+{{- end }}
+  </div>
+</div>
+
+<div id="panel-events">
+<h2>Events</h2>
+  <div class="table col2">
+{{- range .Events }}
+    <div class="row">
+      <div>{{.Count}}</div>
+      <div style="text-align: left">{{.Description}}</div>
+    </div>
+{{- end }}
+  </div>
+</div>
+
+<div id="panel-connections" class="group">
+<h2>Connections</h2>
+{{- range .Connections }}
+  <div>
+    <div style="margin-left: 2rem; padding-top: 0.5rem; display: grid; grid-template-columns: auto auto; justify-items: left; width: fit-content; column-gap: 1rem;">
+      <div>{{.SourceAddr}} {{.Type}}</div>
+      <div>&lt;=&gt; {{.ServerName}} {{.Mode}} {{.Proto}}</div>
+  {{- range .Destinations }}
+      <div>&nbsp;</div>
+      <div>{{.Direction}} {{.Address}} {{.Stream}}</div>
+  {{- end }}
+    </div>
+  {{- if len .ClientID | ne 0}}
+    <div style="padding-left: 5rem;">X509 [{{.ClientID}}]</div>
+  {{- end }}
+    <div style="padding-left: 5rem;">Elapsed:{{.Time}} Egress:{{.EgressBytes}} ({{.EgressRate}}) Ingress:{{.IngressBytes}} ({{.IngressRate}})</div>
+  </div>
+{{- end }}
+</div>
+
+<div id="panel-backends" class="group">
+{{- range $i, $be := .Backends }}
+  <div style="margin-top: 1rem;">
+Backend[{{$i}}]: {{.Mode}} {{.ALPNProtos}} {{.BackendProto}} {{.SSO}}
+  {{- if len .ServerNames | ne 0 }}
+    <div style="margin-left: 1rem;">ServerNames:</div>
+    {{- range .ServerNames }}
+    <div style="margin-left: 2rem;">{{.}}</div>
+    {{- end }}
+  {{- end }}
+  {{- if len .Addresses | ne 0 }}
+    <div style="margin-left: 1rem;">Addresses:</div>
+    {{- range .Addresses }}
+    <div style="margin-left: 2rem;">{{.}}</div>
+    {{- end }}
+  {{- end }}
+  {{- if len .Handlers | ne 0 }}
+    <div style="margin-left: 1rem;">Local handlers:</div>
+    <div style="margin-left: 2rem; display: grid; grid-template-columns: auto auto auto; justify-items: left; width: fit-content; column-gap: 1rem;">
+    {{- range .Handlers }}
+      <div>{{ if .Bypass}}[X]{{ else }}[ ]{{ end }}</div>
+      <div>https://{{.HostPath}}</div>
+      <div>{{.Desc}}</div>
+    {{- end }}
+    </div>
+  {{- end }}
+  </div>
+{{- end }}
+</div>
+
+<div id="panel-memory">
+<h2>Memory profile</h2>
+  <div class="table col3">
+    <div class="hdr">
+      <div>Size</div>
+      <div>Count</div>
+      <div style="text-align: left">Function</div>
+    </div>
+{{- range .Memory }}
+    <div class="row">
+      <div>{{.Size}}</div>
+      <div>{{.Count}}</div>
+      <div style="text-align: left">{{.Func}}</div>
+    </div>
+{{- end }}
+  </div>
+</div>
+
+<div id="panel-runtime">
+<h2>Runtime</h2>
+  <div class="table col2">
+    <div class="row"><div style="text-align: left">Uptime:</div><div>{{.Runtime.Uptime}}</div></div>
+    <div class="row"><div style="text-align: left">NumCPU:</div><div>{{.Runtime.NumCPU}}</div></div>
+    <div class="row"><div style="text-align: left">NumGoroutine:</div><div>{{.Runtime.NumGoroutine}}</div></div>
+    <div class="row"><div style="text-align: left">Mallocs:</div><div>{{.Runtime.Mallocs}}</div></div>
+    <div class="row"><div style="text-align: left">Frees:</div><div>{{.Runtime.Frees}}</div></div>
+    <div class="row"><div style="text-align: left">HeapObjects:</div><div>{{.Runtime.HeapObjects}}</div></div>
+    <div class="row"><div style="text-align: left">HeapAlloc:</div><div>{{.Runtime.HeapAlloc}}</div></div>
+    <div class="row"><div style="text-align: left">NextGC:</div><div>{{.Runtime.NextGC}}</div></div>
+    <div class="row"><div style="text-align: left">NumGC:</div><div>{{.Runtime.NumGC}}</div></div>
+  </div>
+</div>
+
+<div id="panel-goroutines">
+<h2>Goroutines</h2>
+  <div class="table col2">
+    <div class="hdr">
+      <div>Count</div>
+      <div style="text-align: left">Function</div>
+    </div>
+{{- range .Goroutines }}
+    <div class="row">
+      <div>{{.Count}}</div>
+      <div style="text-align: left">{{.Func}}</div>
+    </div>
+{{- end }}
+  </div>
+</div>
+
+<div id="panel-buildinfo">
+<h2>Build Info</h2>
+<pre style="margin-left: 1rem; background-color: #f0f0ff;">
+{{.BuildInfo}}
+</pre>
+</div>
+
+</div>
+
+</body>
+</html>

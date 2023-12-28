@@ -61,6 +61,7 @@ import (
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/oidc"
@@ -136,9 +137,9 @@ type bwLimit struct {
 }
 
 type backendMetrics struct {
-	numConnections   int64
-	numBytesSent     int64
-	numBytesReceived int64
+	numConnections   *counter.Counter
+	numBytesSent     *counter.Counter
+	numBytesReceived *counter.Counter
 }
 
 type eventRecorder struct {
@@ -1044,6 +1045,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	}
 	conn.SetAnnotation(backendKey, be)
 	be.incInFlight(1)
+	p.setCounters(conn, serverName)
 	if l := be.bwLimit; l != nil {
 		conn.SetLimiters(l.ingress, l.egress)
 	}

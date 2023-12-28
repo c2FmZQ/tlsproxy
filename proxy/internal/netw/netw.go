@@ -34,6 +34,8 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
+
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
 )
 
 // Listen creates a net listener that is instrumented to store per connection
@@ -58,10 +60,12 @@ func (l listener) Accept() (net.Conn, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Conn{
-		Conn:        c,
-		ctx:         ctx,
-		cancel:      cancel,
-		annotations: make(map[string]any),
+		Conn:          c,
+		ctx:           ctx,
+		cancel:        cancel,
+		annotations:   make(map[string]any),
+		bytesSent:     newCounter(),
+		bytesReceived: newCounter(),
 	}, nil
 }
 
@@ -69,16 +73,18 @@ func (l listener) Accept() (net.Conn, error) {
 type Conn struct {
 	net.Conn
 
-	ctx            context.Context
-	cancel         func()
-	ingressLimiter *rate.Limiter
-	egressLimiter  *rate.Limiter
+	ctx             context.Context
+	cancel          func()
+	ingressLimiter  *rate.Limiter
+	egressLimiter   *rate.Limiter
+	bytesSent       *counter.Counter
+	bytesReceived   *counter.Counter
+	upBytesSent     *counter.Counter
+	upBytesReceived *counter.Counter
 
-	mu            sync.Mutex
-	onClose       func()
-	annotations   map[string]any
-	bytesSent     int64
-	bytesReceived int64
+	mu          sync.Mutex
+	onClose     func()
+	annotations map[string]any
 
 	peekBuf []byte
 }
@@ -140,6 +146,16 @@ func (c *Conn) SetLimiters(ingress, egress *rate.Limiter) {
 	c.egressLimiter = egress
 }
 
+func (c *Conn) SetCounters(sent, received *counter.Counter) {
+	if cc, ok := c.Conn.(interface {
+		SetCounters(sent, received *counter.Counter)
+	}); ok {
+		cc.SetCounters(sent, received)
+	}
+	c.upBytesSent = sent
+	c.upBytesReceived = received
+}
+
 // BytesSent returns the number of bytes sent on this connection so far.
 func (c *Conn) BytesSent() int64 {
 	if cc, ok := c.Conn.(interface {
@@ -147,9 +163,7 @@ func (c *Conn) BytesSent() int64 {
 	}); ok {
 		return cc.BytesSent()
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.bytesSent
+	return c.bytesSent.Value()
 }
 
 // BytesReceived returns the number of bytes received on this connection so far.
@@ -159,9 +173,29 @@ func (c *Conn) BytesReceived() int64 {
 	}); ok {
 		return cc.BytesReceived()
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.bytesReceived
+	return c.bytesReceived.Value()
+}
+
+// ByteRateSent returns the rate of bytes sent on this connection in the last
+// minute.
+func (c *Conn) ByteRateSent() float64 {
+	if cc, ok := c.Conn.(interface {
+		ByteRateSent() float64
+	}); ok {
+		return cc.ByteRateSent()
+	}
+	return c.bytesSent.Rate(time.Minute)
+}
+
+// ByteRateReceived returns the rate of bytes received on this connection in the
+// last minute.
+func (c *Conn) ByteRateReceived() float64 {
+	if cc, ok := c.Conn.(interface {
+		ByteRateReceived() float64
+	}); ok {
+		return cc.ByteRateReceived()
+	}
+	return c.bytesReceived.Rate(time.Minute)
 }
 
 // OnClose sets a callback function that will be called when the connection
@@ -199,17 +233,17 @@ func (c *Conn) Read(b []byte) (int, error) {
 		}
 	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if len(c.peekBuf) > 0 {
 		n := copy(b, c.peekBuf)
 		c.peekBuf = c.peekBuf[n:]
-		c.bytesReceived += int64(n)
+		c.bytesReceived.Incr(int64(n))
+		c.mu.Unlock()
 		return n, nil
 	}
 	c.mu.Unlock()
 	n, err := c.Conn.Read(b)
-	c.mu.Lock()
-	c.bytesReceived += int64(n)
+	c.bytesReceived.Incr(int64(n))
+	c.upBytesReceived.Incr(int64(n))
 	return n, err
 }
 
@@ -220,9 +254,8 @@ func (c *Conn) Write(b []byte) (int, error) {
 		}
 	}
 	n, err := c.Conn.Write(b)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.bytesSent += int64(n)
+	c.bytesSent.Incr(int64(n))
+	c.upBytesSent.Incr(int64(n))
 	return n, err
 }
 
@@ -236,4 +269,8 @@ func (c *Conn) Close() error {
 		f()
 	}
 	return c.Conn.Close()
+}
+
+func newCounter() *counter.Counter {
+	return counter.New(time.Minute, time.Second)
 }

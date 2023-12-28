@@ -26,6 +26,7 @@ package proxy
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"net"
 
 	"golang.org/x/net/idna"
@@ -102,4 +103,17 @@ func idnaToUnicode(h string) string {
 		return n
 	}
 	return h
+}
+
+func formatSize10[T float64 | int64](n T) string {
+	if n > 1000000000 {
+		return fmt.Sprintf("%.1f GB", float64(n)/1000000000)
+	}
+	if n > 1000000 {
+		return fmt.Sprintf("%.1f MB", float64(n)/1000000)
+	}
+	if n > 1000 {
+		return fmt.Sprintf("%.1f KB", float64(n)/1000)
+	}
+	return fmt.Sprintf("%d \u00A0B", int64(n)) // \u00A0 is &nbsp;
 }

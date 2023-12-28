@@ -27,10 +27,12 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"html/template"
 	"net"
 	"net/http"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -38,11 +40,20 @@ import (
 
 	yaml "gopkg.in/yaml.v3"
 
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
 
 //go:embed c2.png
 var iconBytes []byte
+
+//go:embed metrics-template.html
+var metricsEmbed string
+var metricsTemplate *template.Template
+
+func init() {
+	metricsTemplate = template.Must(template.New("metrics").Parse(metricsEmbed))
+}
 
 func (p *Proxy) recordEvent(msg string) {
 	p.eventsmu.Lock()
@@ -60,38 +71,125 @@ func (p *Proxy) addConn(c *netw.Conn) int {
 	return len(p.connections)
 }
 
+func (p *Proxy) setCounters(c *netw.Conn, serverName string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.metrics == nil {
+		p.metrics = make(map[string]*backendMetrics)
+	}
+	m := p.metrics[serverName]
+	if m == nil {
+		m = &backendMetrics{
+			numConnections:   counter.New(time.Minute, time.Second),
+			numBytesSent:     counter.New(time.Minute, time.Second),
+			numBytesReceived: counter.New(time.Minute, time.Second),
+		}
+		p.metrics[serverName] = m
+	}
+	m.numConnections.Incr(1)
+	c.SetCounters(m.numBytesSent, m.numBytesReceived)
+}
+
 func (p *Proxy) removeConn(c *netw.Conn) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	delete(p.connections, connKey{c.LocalAddr(), c.RemoteAddr(), c.StreamID()})
-
-	if sn := c.Annotation(serverNameKey, "").(string); sn != "" && p.backends[beKey{serverName: sn}] != nil {
-		if p.metrics == nil {
-			p.metrics = make(map[string]*backendMetrics)
-		}
-		m := p.metrics[sn]
-		if m == nil {
-			m = &backendMetrics{}
-			p.metrics[sn] = m
-		}
-		m.numConnections++
-		m.numBytesSent += c.BytesSent()
-		m.numBytesReceived += c.BytesReceived()
-	}
-
 	return len(p.connections)
 }
 
 func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
-	if req.URL.Path != "/" {
-		http.NotFound(w, req)
-		return
-	}
-	w.Header().Set("content-type", "text/plain; charset=utf-8")
 	req.ParseForm()
 	if v := req.Form.Get("refresh"); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			w.Header().Set("refresh", strconv.Itoa(i))
+		}
+	}
+
+	type backendMetric struct {
+		ServerName     string
+		NumConnections int64
+		Egress         string
+		Ingress        string
+		EgressRate     string
+		IngressRate    string
+	}
+	type proxyEvent struct {
+		Description string
+		Count       int64
+	}
+	type connDest struct {
+		Address   string
+		Stream    string
+		Direction string
+	}
+	type connection struct {
+		SourceAddr   string
+		Type         string
+		ServerName   string
+		Mode         string
+		Proto        string
+		Destinations []connDest
+		Time         string
+		EgressBytes  string
+		EgressRate   string
+		IngressBytes string
+		IngressRate  string
+		ClientID     string
+	}
+	type handler struct {
+		Bypass   bool
+		HostPath string
+		Desc     string
+	}
+	type backend struct {
+		Mode         string
+		ALPNProtos   string
+		BackendProto string
+		ClientAuth   string
+		SSO          string
+		ServerNames  []string
+		Addresses    []string
+		Handlers     []handler
+	}
+	type runtimeData struct {
+		Uptime       string
+		NumCPU       int
+		NumGoroutine int
+		Mallocs      uint64
+		Frees        uint64
+		HeapObjects  uint64
+		HeapAlloc    uint64
+		NextGC       uint64
+		NumGC        uint32
+	}
+	type memoryProf struct {
+		Size  int64
+		Count int64
+		Func  string
+	}
+	type goroutine struct {
+		Count int
+		Func  string
+	}
+
+	var data struct {
+		Version     string
+		Metrics     []backendMetric
+		Events      []proxyEvent
+		Connections []connection
+		Backends    []backend
+		Runtime     runtimeData
+		Memory      []memoryProf
+		Goroutines  []goroutine
+		BuildInfo   string
+	}
+	if info, ok := debug.ReadBuildInfo(); ok {
+		data.BuildInfo = info.String()
+		const v = "main.Version="
+		for _, s := range info.Settings {
+			if p := strings.Index(s.Value, v); p >= 0 && s.Key == "-ldflags" {
+				data.Version = strings.TrimSuffix(s.Value[p+len(v):], `"`)
+			}
 		}
 	}
 
@@ -107,21 +205,6 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		k = idnaToUnicode(k)
 		totals[k] = &m
 	}
-	for _, c := range p.connections {
-		sn := c.Annotation(serverNameKey, "").(string)
-		if sn == "" || connBackend(c) == (*Backend)(nil) {
-			continue
-		}
-		sn = idnaToUnicode(sn)
-		m := totals[sn]
-		if m == nil {
-			m = &backendMetrics{}
-			totals[sn] = m
-		}
-		m.numConnections++
-		m.numBytesSent += c.BytesSent()
-		m.numBytesReceived += c.BytesReceived()
-	}
 
 	var serverNames []string
 	var maxLen int
@@ -132,27 +215,33 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		serverNames = append(serverNames, k)
 	}
 	sort.Strings(serverNames)
-	fmt.Fprintln(&buf, "Backend metrics:")
-	fmt.Fprintf(&buf, "  %*s %12s %12s %12s\n", -maxLen, "Server", "Count", "Egress", "Ingress")
+
 	for _, s := range serverNames {
-		fmt.Fprintf(&buf, "  %*s %12d %12d %12d\n", -maxLen, s, totals[s].numConnections, totals[s].numBytesSent, totals[s].numBytesReceived)
+		data.Metrics = append(data.Metrics, backendMetric{
+			ServerName:     s,
+			NumConnections: totals[s].numConnections.Value(),
+			Egress:         formatSize10(totals[s].numBytesSent.Value()),
+			Ingress:        formatSize10(totals[s].numBytesReceived.Value()),
+			EgressRate:     formatSize10(totals[s].numBytesSent.Rate(time.Minute)) + "/s",
+			IngressRate:    formatSize10(totals[s].numBytesReceived.Rate(time.Minute)) + "/s",
+		})
 	}
 
-	fmt.Fprintln(&buf)
-	fmt.Fprintln(&buf, "Event counts:")
 	p.eventsmu.Lock()
 	events := make([]string, 0, len(p.events))
 	for k := range p.events {
 		events = append(events, k)
 	}
 	sort.Strings(events)
+
 	for _, e := range events {
-		fmt.Fprintf(&buf, "  %6d x %s\n", p.events[e], e)
+		data.Events = append(data.Events, proxyEvent{
+			Description: e,
+			Count:       p.events[e],
+		})
 	}
 	p.eventsmu.Unlock()
 
-	fmt.Fprintln(&buf)
-	fmt.Fprintln(&buf, "Current connections:")
 	keys := make([]connKey, 0, len(p.connections))
 	for k := range p.connections {
 		keys = append(keys, k)
@@ -167,32 +256,42 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		}
 		return sa < sb
 	})
+
 	for _, k := range keys {
 		c := p.connections[k]
 		startTime := c.Annotation(startTimeKey, time.Time{}).(time.Time)
 		totalTime := time.Since(startTime)
 		remote := c.RemoteAddr().Network() + ":" + c.RemoteAddr().String()
 
+		connection := connection{
+			SourceAddr: remote,
+			ServerName: idnaToUnicode(connServerName(c)),
+			Mode:       connMode(c),
+			Proto:      connProto(c),
+		}
 		var streams []*netw.QUICStream
 
 		switch cc := c.Conn.(type) {
 		case *net.TCPConn:
-			remote += " TLS"
+			connection.Type = "TLS"
 		case *netw.QUICConn:
-			remote += " QUIC"
+			connection.Type = "QUIC"
 			streams = cc.Streams()
 			sort.Slice(streams, func(i, j int) bool {
 				return streams[i].StreamID() < streams[j].StreamID()
 			})
 		default:
-			remote += fmt.Sprintf(" %T", c.Conn)
+			connection.Type = fmt.Sprintf(" %T", c.Conn)
 		}
-		fmt.Fprintf(&buf, "  %s <=> %s %s %s\n", remote, idnaToUnicode(connServerName(c)), connMode(c), connProto(c))
+
 		var intAddr string
 		if intConn := connIntConn(c); intConn != nil {
 			intAddr = intConn.RemoteAddr().Network() + ":" + intConn.RemoteAddr().String()
 			if len(streams) == 0 {
-				fmt.Fprintf(&buf, "  %*s <-> %s\n", len(remote), "", intAddr)
+				connection.Destinations = append(connection.Destinations, connDest{
+					Address:   intAddr,
+					Direction: "<->",
+				})
 			}
 		}
 		for _, stream := range streams {
@@ -218,93 +317,72 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 				// uni, server initiated
 				dir = "<--"
 			}
-			fmt.Fprintf(&buf, "  %*s %s %s stream %d\n", len(remote), "", dir,
-				addr, streamID,
-			)
+			connection.Destinations = append(connection.Destinations, connDest{
+				Address:   addr,
+				Stream:    fmt.Sprintf("stream %d", streamID),
+				Direction: dir,
+			})
 		}
 		if cert := connClientCert(c); cert != nil {
-			fmt.Fprintf(&buf, "          X509 [%s]\n", certSummary(cert))
+			connection.ClientID = certSummary(cert)
 		}
-		fmt.Fprintf(&buf, "          Elapsed:%s Egress:%.1f KB (%.1f KB/s) Ingress:%.1f KB (%.1f KB/s) \n",
-			totalTime.Truncate(100*time.Millisecond),
-			float32(c.BytesSent())/1000, float32(c.BytesSent())/float32(totalTime)*float32(time.Second)/1000,
-			float32(c.BytesReceived())/1000, float32(c.BytesReceived())/float32(totalTime)*float32(time.Second)/1000)
-		fmt.Fprintln(&buf)
+		connection.Time = totalTime.Truncate(100 * time.Millisecond).String()
+		connection.EgressBytes = formatSize10(c.BytesSent())
+		connection.EgressRate = formatSize10(c.ByteRateSent()) + "/s"
+		connection.IngressBytes = formatSize10(c.BytesReceived())
+		connection.IngressRate = formatSize10(c.ByteRateReceived()) + "/s"
+
+		data.Connections = append(data.Connections, connection)
 	}
 
-	for i, be := range p.cfg.Backends {
-		sso := ""
+	for _, be := range p.cfg.Backends {
+		backend := backend{
+			Mode: be.Mode,
+		}
 		if be.SSO != nil {
-			sso = fmt.Sprintf(" SSO %s %s", be.SSO.Provider, strings.Join(be.SSO.Paths, ","))
+			backend.SSO = fmt.Sprintf(" SSO %s %s", be.SSO.Provider, strings.Join(be.SSO.Paths, ","))
 		}
-		clientAuth := ""
 		if be.ClientAuth != nil {
-			clientAuth = " TLS ClientAuth"
+			backend.ClientAuth = " TLS ClientAuth"
 		}
-		protos := ""
 		if be.ALPNProtos != nil {
-			protos = " ALPN[" + strings.Join(*be.ALPNProtos, ",") + "]"
+			protos := " ALPN[" + strings.Join(*be.ALPNProtos, ",") + "]"
 			if be.BackendProto != nil {
 				protos += "->" + *be.BackendProto
 			}
+			backend.ALPNProtos = protos
 		}
-		fmt.Fprintf(&buf, "Backend[%d] %s%s%s%s\n", i, be.Mode, clientAuth, protos, sso)
-		for j, sn := range be.ServerNames {
-			if nn := idnaToUnicode(sn); sn != nn {
-				fmt.Fprintf(&buf, "  ServerName[%d]: %s (%s)\n", j, nn, sn)
-			} else {
-				fmt.Fprintf(&buf, "  ServerName[%d]: %s\n", j, sn)
-			}
+		for _, sn := range be.ServerNames {
+			backend.ServerNames = append(backend.ServerNames, idnaToUnicode(sn))
 		}
-		for j, a := range be.Addresses {
-			fmt.Fprintf(&buf, "  Address[%d]: %s\n", j, a)
+		backend.Addresses = slices.Clone(be.Addresses)
+		for _, h := range be.localHandlers {
+			host := "<any>"
+			if h.host != "" {
+				host = h.host
+			}
+			backend.Handlers = append(backend.Handlers, handler{
+				Bypass:   h.ssoBypass,
+				HostPath: host + h.path,
+				Desc:     h.desc,
+			})
 		}
-		if len(be.localHandlers) > 0 {
-			fmt.Fprintf(&buf, "  Local Handlers:\n")
-			type item struct {
-				bypass   string
-				hostPath string
-				desc     string
-			}
-			items := make([]item, 0, len(be.localHandlers))
-			var sz int
-			for _, h := range be.localHandlers {
-				bypass := " "
-				if h.ssoBypass {
-					bypass = "X"
-				}
-				host := "<any>"
-				if h.host != "" {
-					host = h.host
-				}
-				hostPath := host + h.path
-				items = append(items, item{bypass, hostPath, h.desc})
-				if l := len(hostPath); l > sz {
-					sz = l
-				}
-			}
-			for _, i := range items {
-				fmt.Fprintf(&buf, "    [%s] https://%*s %s\n", i.bypass, -sz, i.hostPath, i.desc)
-			}
-		}
-		fmt.Fprintln(&buf)
+		data.Backends = append(data.Backends, backend)
 	}
 
-	fmt.Fprintln(&buf, "Runtime:")
-	fmt.Fprintf(&buf, "  Uptime:       %12s\n", time.Since(p.startTime).Truncate(time.Second))
+	data.Runtime.Uptime = time.Since(p.startTime).Truncate(time.Second).String()
+	data.Runtime.NumCPU = runtime.NumCPU()
+	data.Runtime.NumGoroutine = runtime.NumGoroutine()
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
-	fmt.Fprintf(&buf, "  NumCPU:       %12d\n", runtime.NumCPU())
-	fmt.Fprintf(&buf, "  NumGoroutine: %12d\n", runtime.NumGoroutine())
-	fmt.Fprintf(&buf, "  Mallocs:      %12d\n", memStats.Mallocs)
-	fmt.Fprintf(&buf, "  Frees:        %12d\n", memStats.Frees)
-	fmt.Fprintf(&buf, "  HeapObjects:  %12d\n", memStats.HeapObjects)
-	fmt.Fprintf(&buf, "  HeapAlloc:    %12d\n", memStats.HeapAlloc)
-	fmt.Fprintf(&buf, "  NextGC:       %12d\n", memStats.NextGC)
-	fmt.Fprintf(&buf, "  NumGC:        %12d\n", memStats.NumGC)
-	fmt.Fprintln(&buf)
-	memProf := make([]runtime.MemProfileRecord, 100)
-	fmt.Fprintln(&buf, "Memory Profile:")
+	data.Runtime.Mallocs = memStats.Mallocs
+	data.Runtime.Frees = memStats.Frees
+	data.Runtime.HeapObjects = memStats.HeapObjects
+	data.Runtime.HeapAlloc = memStats.HeapAlloc
+	data.Runtime.NextGC = memStats.NextGC
+	data.Runtime.NumGC = memStats.NumGC
+
+	memProf := make([]runtime.MemProfileRecord, 200)
 	if n, ok := runtime.MemProfile(memProf, false); ok {
 		type item struct {
 			b int64
@@ -323,13 +401,14 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 			return items[i].b > items[j].b
 		})
 		for _, item := range items {
-			fmt.Fprintf(&buf, "%12d %4d %s()\n", item.b, item.n, item.f)
+			data.Memory = append(data.Memory, memoryProf{
+				Size:  item.b,
+				Count: item.n,
+				Func:  item.f,
+			})
 		}
-	} else {
-		fmt.Fprintf(&buf, "Too many MemProfile records: %d\n", n)
 	}
-	fmt.Fprintln(&buf)
-	fmt.Fprintln(&buf, "Goroutines:")
+
 	goProf := make([]runtime.StackRecord, runtime.NumGoroutine()+10)
 	if n, ok := runtime.GoroutineProfile(goProf); ok {
 		count := make(map[string]int)
@@ -362,17 +441,16 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 			return items[i].n > items[j].n
 		})
 		for _, item := range items {
-			fmt.Fprintf(&buf, "  %4d %s()\n", item.n, item.f)
+			data.Goroutines = append(data.Goroutines, goroutine{
+				Count: item.n,
+				Func:  item.f,
+			})
 		}
-	} else {
-		fmt.Fprintf(&buf, "Too many GoroutineProfile records: %d\n", n)
 	}
 
-	if info, ok := debug.ReadBuildInfo(); ok {
-		fmt.Fprintln(&buf)
-		fmt.Fprintln(&buf, "Buildinfo:")
-		fmt.Fprintln(&buf, info)
-	}
+	metricsTemplate.Execute(&buf, data)
+	w.Header().Set("content-type", "text/html; charset=utf-8")
+	w.Header().Set("content-length", fmt.Sprintf("%d", buf.Len()))
 }
 
 func (p *Proxy) configHandler(w http.ResponseWriter, req *http.Request) {

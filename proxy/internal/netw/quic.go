@@ -38,6 +38,8 @@ import (
 
 	"github.com/quic-go/quic-go"
 	"golang.org/x/time/rate"
+
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
 )
 
 var quicConfig = &quic.Config{
@@ -89,7 +91,7 @@ func (t *QUICTransport) Dial(ctx context.Context, addr net.Addr, tc *tls.Config)
 	if err != nil {
 		return nil, err
 	}
-	return &QUICConn{qc: conn}, nil
+	return newQUICConn(conn), nil
 }
 
 func (t *QUICTransport) DialEarly(ctx context.Context, addr net.Addr, tc *tls.Config) (*QUICConn, error) {
@@ -97,7 +99,7 @@ func (t *QUICTransport) DialEarly(ctx context.Context, addr net.Addr, tc *tls.Co
 	if err != nil {
 		return nil, err
 	}
-	return &QUICConn{qc: conn}, nil
+	return newQUICConn(conn), nil
 }
 
 // QUICListener is a wrapper around quic.Listener.
@@ -110,7 +112,7 @@ func (l *QUICListener) Accept(ctx context.Context) (*QUICConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &QUICConn{qc: conn}, nil
+	return newQUICConn(conn), nil
 }
 
 func (l *QUICListener) Addr() net.Addr {
@@ -125,6 +127,14 @@ var _ net.Conn = (*QUICConn)(nil)
 var _ quic.Connection = (*QUICConn)(nil)
 var _ quic.EarlyConnection = (*QUICConn)(nil)
 
+func newQUICConn(qc quic.Connection) *QUICConn {
+	return &QUICConn{
+		qc:            qc,
+		bytesSent:     newCounter(),
+		bytesReceived: newCounter(),
+	}
+}
+
 // QUICConn is a wrapper around quic.Connection.
 type QUICConn struct {
 	qc quic.Connection
@@ -132,11 +142,13 @@ type QUICConn struct {
 	ingressLimiter *rate.Limiter
 	egressLimiter  *rate.Limiter
 
-	mu            sync.Mutex
-	onClose       func()
-	bytesSent     int64
-	bytesReceived int64
-	streams       []*QUICStream
+	mu              sync.Mutex
+	onClose         func()
+	bytesSent       *counter.Counter
+	bytesReceived   *counter.Counter
+	upBytesSent     *counter.Counter
+	upBytesReceived *counter.Counter
+	streams         []*QUICStream
 }
 
 func (c *QUICConn) Streams() []*QUICStream {
@@ -160,18 +172,32 @@ func (c *QUICConn) SetLimiters(ingress, egress *rate.Limiter) {
 	c.egressLimiter = egress
 }
 
+// SetCounters sets the byte counters to use for this connection.
+func (c *QUICConn) SetCounters(sent, received *counter.Counter) {
+	c.upBytesSent = sent
+	c.upBytesReceived = received
+}
+
 // BytesSent returns the number of bytes sent on this connection so far.
 func (c *QUICConn) BytesSent() int64 {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.bytesSent
+	return c.bytesSent.Value()
 }
 
 // BytesReceived returns the number of bytes received on this connection so far.
 func (c *QUICConn) BytesReceived() int64 {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.bytesReceived
+	return c.bytesReceived.Value()
+}
+
+// ByteRateSent returns the rate of bytes sent on this connection in the last
+// minute.
+func (c *QUICConn) ByteRateSent() float64 {
+	return c.bytesSent.Rate(time.Minute)
+}
+
+// ByteRateReceived returns the rate of bytes received on this connection in the
+// last minute.
+func (c *QUICConn) ByteRateReceived() float64 {
+	return c.bytesReceived.Rate(time.Minute)
 }
 
 func (c *QUICConn) HandshakeComplete() <-chan struct{} {
@@ -233,18 +259,22 @@ func (c *QUICConn) WrapStream(s any) *Conn {
 	case *QUICConn:
 		ctx, cancel := context.WithCancel(c.Context())
 		return &Conn{
-			Conn:        v,
-			ctx:         ctx,
-			cancel:      cancel,
-			annotations: make(map[string]any),
+			Conn:          v,
+			ctx:           ctx,
+			cancel:        cancel,
+			annotations:   make(map[string]any),
+			bytesSent:     newCounter(),
+			bytesReceived: newCounter(),
 		}
 	case *QUICStream:
 		ctx, cancel := context.WithCancel(c.Context())
 		return &Conn{
-			Conn:        v,
-			ctx:         ctx,
-			cancel:      cancel,
-			annotations: make(map[string]any),
+			Conn:          v,
+			ctx:           ctx,
+			cancel:        cancel,
+			annotations:   make(map[string]any),
+			bytesSent:     newCounter(),
+			bytesReceived: newCounter(),
 		}
 	case quic.Stream:
 		stream = v
@@ -503,9 +533,8 @@ func (s *QUICStream) Read(b []byte) (int, error) {
 	if err != nil {
 		s.markReadDone()
 	}
-	s.qc.mu.Lock()
-	defer s.qc.mu.Unlock()
-	s.qc.bytesReceived += int64(n)
+	s.qc.bytesReceived.Incr(int64(n))
+	s.qc.upBytesReceived.Incr(int64(n))
 	return n, err
 }
 
@@ -519,9 +548,8 @@ func (s *QUICStream) Write(b []byte) (int, error) {
 	if err != nil {
 		s.markWriteDone()
 	}
-	s.qc.mu.Lock()
-	defer s.qc.mu.Unlock()
-	s.qc.bytesSent += int64(n)
+	s.qc.bytesSent.Incr(int64(n))
+	s.qc.upBytesSent.Incr(int64(n))
 	return n, err
 }
 

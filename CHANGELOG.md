@@ -4,6 +4,7 @@
 
 * Add a confirmation page before redirecting to the remote identity provider's OIDC or SAML login page.
 * Add a nonce cookie to the OIDC login flow.
+* Convert the metrics page to HTML.
 
 ## v0.4.0
 
