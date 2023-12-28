@@ -24,6 +24,7 @@
 package proxy
 
 import (
+	"bytes"
 	_ "embed"
 	"fmt"
 	"html/template"
@@ -191,6 +192,9 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 	}
+
+	var buf bytes.Buffer
+	defer buf.WriteTo(w)
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -444,8 +448,9 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	metricsTemplate.Execute(&buf, data)
 	w.Header().Set("content-type", "text/html; charset=utf-8")
-	metricsTemplate.Execute(w, data)
+	w.Header().Set("content-length", fmt.Sprintf("%d", buf.Len()))
 }
 
 func (p *Proxy) configHandler(w http.ResponseWriter, req *http.Request) {
