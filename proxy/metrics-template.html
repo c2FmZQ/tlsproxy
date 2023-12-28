@@ -91,7 +91,8 @@ h1 {
   display: contents;
 }
 .table > div > div {
-  padding-right: 1rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
   text-align: right;
   width: -webkit-fill-available;
 }
@@ -167,20 +168,18 @@ function selectTab(target) {
 <h2>Backend metrics</h2>
   <div class="table col6">
     <div class="hdr">
-      <div style="text-align: left">Server</div>
-      <div>Count</div>
-      <div>Egress</div>
-      <div>&nbsp;</div>
-      <div>Ingress</div>
-      <div>&nbsp;</div>
+      <div style="text-align: left; grid-column: 1;">Server</div>
+      <div style="text-align: center; grid-column: 2; border-left: 1px solid #f0f0f0;">Count</div>
+      <div style="text-align: center; grid-column: 3 / 5; border-left: 1px solid #f0f0f0;">Egress</div>
+      <div style="text-align: center; grid-column: 5 / 7; border-left: 1px solid #f0f0f0;">Ingress</div>
     </div>
 {{- range .Metrics }}
     <div class="row">
       <div style="text-align: left">{{.ServerName}}</div>
-      <div>{{.NumConnections}}</div>
-      <div>{{.Egress}}</div>
+      <div style="border-left: 1px solid #f0f0f0;">{{.NumConnections}}</div>
+      <div style="border-left: 1px solid #f0f0f0;">{{.Egress}}</div>
       <div>({{.EgressRate}})</div>
-      <div>{{.Ingress}}</div>
+      <div style="border-left: 1px solid #f0f0f0;">{{.Ingress}}</div>
       <div>({{.IngressRate}})</div>
     </div>
 {{- end }}
