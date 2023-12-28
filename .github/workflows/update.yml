@@ -2,7 +2,7 @@ name: Update GO
 on:
   workflow_dispatch:
   schedule:
-    - cron: '* * * * WED'
+    - cron: '0 12 * * WED'
 
 env:
   GOVERSION: '>=1.21.5'
@@ -25,14 +25,14 @@ jobs:
         go-version: ${{ env.GOVERSION }}
     - name: Update GO
       run: |
-        echo 'CHANGES:'
-        echo '```'
+        echo '```' > .update-log
         ./scripts/update-go-version.sh >> .update-log
-        go get -u ./... >> .update-log 2>&1
-        echo '```'
+        go get -u ./... 2>&1 | grep upgrade >> .update-log
+        echo '```' >> .update-log
     - name: Create pull request
       # https://github.com/peter-evans/create-pull-request/releases/tag/v5.0.2
       uses: peter-evans/create-pull-request@153407881ec5c347639a548ade7d8ad1d6740e38
       with:
         title: GO update
         body-path: .update-log
+        branch: automated-go-update/patch
