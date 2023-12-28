@@ -269,6 +269,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		callback         string
 		domain           string
 		cm               *cookiemanager.CookieManager
+		actualIDP        string
 	}
 	er := eventRecorder{record: p.recordEvent}
 	identityProviders := make(map[string]idp)
@@ -296,6 +297,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			callback:         pp.RedirectURL,
 			domain:           pp.Domain,
 			cm:               cm,
+			actualIDP:        guessIDP(pp.AuthEndpoint),
 		}
 	}
 	for _, pp := range cfg.SAMLProviders {
@@ -318,6 +320,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			callback:         pp.ACSURL,
 			domain:           pp.Domain,
 			cm:               cm,
+			actualIDP:        guessIDP(pp.SSOURL),
 		}
 	}
 	for _, pp := range cfg.PasskeyProviders {
@@ -417,6 +420,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			}
 			be.SSO.p = idp.identityProvider
 			be.SSO.cm = idp.cm
+			be.SSO.actualIDP = idp.actualIDP
 			be.localHandlers = append(be.localHandlers,
 				localHandler{
 					desc:      "SSO identity",
@@ -428,6 +432,12 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 					desc:      "Style Sheet",
 					path:      "/.sso/style.css",
 					handler:   logHandler(http.HandlerFunc(be.serveSSOStyle)),
+					ssoBypass: true,
+				},
+				localHandler{
+					desc:      "SSO Login",
+					path:      "/.sso/login",
+					handler:   logHandler(http.HandlerFunc(be.serveLogin)),
 					ssoBypass: true,
 				},
 				localHandler{
@@ -1407,6 +1417,19 @@ func certSummary(c *x509.Certificate) string {
 		parts = append(parts, "URI:"+v.String())
 	}
 	return strings.Join(parts, ";")
+}
+
+func guessIDP(url string) string {
+	if strings.HasPrefix(url, "https://accounts.google.com/") {
+		return "google"
+	}
+	if strings.HasPrefix(url, "https://facebook.com/") {
+		return "facebook"
+	}
+	if strings.HasPrefix(url, "https://github.com/") {
+		return "github"
+	}
+	return ""
 }
 
 func unwrapErr(err error) error {

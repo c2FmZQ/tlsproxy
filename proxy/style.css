@@ -1,8 +1,9 @@
 html {
   margin: 0;
   height: 100%;
-  background-color: black;
-  color: white;
+  background: linear-gradient(30deg, skyblue, slateblue);
+  background-attachment: fixed;
+  color: black;
 }
 body {
   margin: 0;
@@ -15,7 +16,7 @@ body {
   right: 2rem;
 }
 a {
-  color: white;
+  color: black;
   cursor: pointer;
 }
 a.button {
@@ -25,23 +26,22 @@ a.button {
   background-color: lightgray;
   color: black;
   margin: 0;
-  padding: 0.25rem;
-  line-height: 1.5rem;
+  padding: 0.5rem;
+  line-height: 2.25rem;
   white-space: nowrap;
 }
 a.button:hover {
   background-color: darkgray;
 }
 #message {
-  color: white;
+  color: black;
   text-align: center;
   position: fixed;
   left: 50vw;
   top: 50vh;
   transform: translate(-50%, -50%);
   padding: 1rem;
-  background-color: black;
-  width: clamp(20rem, 40rem, 90vw);
+  width: clamp(20rem, fit-content, 90vw);
   max-height: 80vh;
   overflow: scroll;
 }

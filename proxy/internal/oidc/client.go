@@ -70,6 +70,8 @@ type Config struct {
 // CookieManager is the interface to set and clear the auth token.
 type CookieManager interface {
 	SetAuthTokenCookie(w http.ResponseWriter, userID, email, sessionID, host string, extraClaims map[string]any) error
+	SetNonce(w http.ResponseWriter, nonce string)
+	Nonce(w http.ResponseWriter, req *http.Request) string
 	ClearCookies(w http.ResponseWriter) error
 }
 
@@ -179,6 +181,7 @@ func (p *ProviderClient) RequestLogin(w http.ResponseWriter, req *http.Request, 
 		"&nonce=" + nonceStr +
 		"&code_challenge=" + base64.RawURLEncoding.EncodeToString(cvh[:]) +
 		"&code_challenge_method=S256"
+	p.cm.SetNonce(w, nonceStr)
 	http.Redirect(w, req, url, http.StatusFound)
 	p.er.Record("oidc auth request")
 }
@@ -195,7 +198,7 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 	}
 	nonce := req.Form.Get("state")
 	state, ok := p.states[nonce]
-	invalid := !ok || state.Seen
+	invalid := !ok || state.Seen || nonce != p.cm.Nonce(w, req)
 	if ok {
 		state.Seen = true
 	}
