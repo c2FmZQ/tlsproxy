@@ -1,6 +1,7 @@
 name: Update GO
 on:
-  schedule:
+  - workflow_dispatch
+  - schedule:
     - cron: '* * * * WED'
 
 env:
