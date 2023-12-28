@@ -24,15 +24,16 @@ jobs:
       with:
         go-version: ${{ env.GOVERSION }}
     - name: Update GO
+      id: update_go
       run: |
-        echo '```' > .update-log
-        ./scripts/update-go-version.sh >> .update-log
-        go get -u ./... 2>&1 | grep upgrade >> .update-log
-        echo '```' >> .update-log
+        echo '```' >> $GITHUB_OUTPUT
+        ./scripts/update-go-version.sh >> $GITHUB_OUTPUT
+        go get -u ./... 2>&1 | grep upgrade >> $GITHUB_OUTPUT
+        echo '```' >> $GITHUB_OUTPUT
     - name: Create pull request
       # https://github.com/peter-evans/create-pull-request/releases/tag/v5.0.2
       uses: peter-evans/create-pull-request@153407881ec5c347639a548ade7d8ad1d6740e38
       with:
         title: GO update
-        body-path: .update-log
+        body: ${{join(steps.update_go.outputs.*, '\n')}}
         branch: automated-go-update/patch
