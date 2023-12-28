@@ -1,0 +1,37 @@
+name: Update GO
+on:
+  schedule:
+    - cron: '* * * * WED'
+
+env:
+  GOVERSION: '>=1.21.5'
+
+jobs:
+  build-and-run-tests:
+    name: Check for updates
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+    - name: Checkout
+      # https://github.com/actions/checkout/tree/v4.1.1
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+    - name: Set up Go
+      # https://github.com/actions/setup-go/tree/v4.1.0
+      uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe
+      with:
+        go-version: ${{ env.GOVERSION }}
+    - name: Update GO
+      run: |
+        echo 'CHANGES:'
+        echo '```'
+        ./scripts/update-go-version.sh >> .update-log
+        go get -u ./... >> .update-log
+        echo '```'
+    - name: Create pull request
+      # https://github.com/peter-evans/create-pull-request/releases/tag/v5.0.2
+      uses: peter-evans/create-pull-request@153407881ec5c347639a548ade7d8ad1d6740e38
+      with:
+        - title: GO update
+        - body-path: .update-log
