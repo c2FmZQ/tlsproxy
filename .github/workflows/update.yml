@@ -35,4 +35,6 @@ jobs:
       with:
         title: GO update
         body-path: /tmp/go-update.log
+        commit-message: Automated go update
         branch: automated-go-update/patch
+        delete-branch: true
