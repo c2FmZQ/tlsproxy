@@ -1,5 +1,6 @@
 # TLSPROXY Release Notes
 
+* go: upgraded github.com/google/pprof v0.0.0-20231212022811-ec68065c825e => v0.0.0-20231229022155-5aaadb5f27d9
 ## v0.4.1
 
 * Add a confirmation page before redirecting to the remote identity provider's OIDC or SAML login page.
