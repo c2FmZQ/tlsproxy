@@ -24,8 +24,9 @@ jobs:
       with:
         go-version: ${{ env.GOVERSION }}
     - name: Update go
-      run: ./scripts/update-go-version.sh >> /tmp/go-update.log
+      run: ./scripts/update-go-version.sh > /tmp/go-update.log
     - name: Create pull request
+      id: cpr
       # https://github.com/peter-evans/create-pull-request/releases/tag/v5.0.2
       uses: peter-evans/create-pull-request@153407881ec5c347639a548ade7d8ad1d6740e38
       with:
@@ -34,3 +35,8 @@ jobs:
         commit-message: Automated go update
         branch: automated-go-update/patch
         delete-branch: true
+    - name: Check outputs
+      if: ${{ steps.cpr.outputs.pull-request-number }}
+      run: |
+        echo "Pull Request Number - ${{ steps.cpr.outputs.pull-request-number }}"
+        echo "Pull Request URL - ${{ steps.cpr.outputs.pull-request-url }}"
