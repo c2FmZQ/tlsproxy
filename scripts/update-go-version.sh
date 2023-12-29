@@ -15,10 +15,11 @@ deps=$(go get -u ./... 2>&1 | grep upgrade)
 
 sed -n '1,2p' < CHANGELOG.md > CHANGELOG.md-new
 if [[ -n $(git status -s Dockerfile) ]]; then
-  echo "* update to go '${version}" | tee -a CHANGELOG.md-new
+  echo "* update go: ${version}" | tee -a CHANGELOG.md-new
 fi
 if [[ -n "${deps}" ]]; then
-  echo "${deps}" | sed -re 's/^/* /g' | tee -a CHANGELOG.md-new
+  echo "* update go dependencies:"
+  echo "${deps}" | sed -re 's/^/  * /g' | tee -a CHANGELOG.md-new
 fi
 sed -n '3,$p' < CHANGELOG.md >> CHANGELOG.md-new
 mv CHANGELOG.md-new CHANGELOG.md
