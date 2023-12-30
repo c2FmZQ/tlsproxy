@@ -465,6 +465,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	enc := yaml.NewEncoder(&cfgbuf)
 	enc.SetIndent(2)
 	enc.Encode(cfg)
+	enc.Close()
 	data.Config = cfgbuf.String()
 
 	metricsTemplate.Execute(&buf, data)
