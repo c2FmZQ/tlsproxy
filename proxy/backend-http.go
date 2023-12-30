@@ -74,7 +74,6 @@ func (be *Backend) localHandler() http.Handler {
 			return
 		}
 		if !be.handleLocalEndpointsAndAuthorize(w, req) {
-			be.setAltSvc(w.Header(), req)
 			return
 		}
 		log.Printf("PRX %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL, http.StatusNotFound, userAgent(req))
@@ -104,7 +103,6 @@ func (be *Backend) reverseProxy() http.Handler {
 			return
 		}
 		if !be.handleLocalEndpointsAndAuthorize(w, req) {
-			be.setAltSvc(w.Header(), req)
 			return
 		}
 
@@ -207,6 +205,7 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 		return h.path == reqPath || (h.matchPrefix && strings.HasPrefix(reqPath, h.path+"/"))
 	})
 	if hi >= 0 && be.localHandlers[hi].ssoBypass {
+		be.setAltSvc(w.Header(), req)
 		be.localHandlers[hi].handler.ServeHTTP(w, req)
 		return false
 	}
@@ -214,6 +213,7 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 		return false
 	}
 	if hi >= 0 && !be.localHandlers[hi].ssoBypass {
+		be.setAltSvc(w.Header(), req)
 		be.localHandlers[hi].handler.ServeHTTP(w, req)
 		return false
 	}
