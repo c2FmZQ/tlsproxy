@@ -287,7 +287,7 @@ type Backend struct {
 	// PathOverrides specifies different backend parameters for some path
 	// prefixes.
 	// Paths are matched by prefix in the order that they are listed here.
-	PathOverrides []*PathOverride `yaml:"pathOverrides"`
+	PathOverrides []*PathOverride `yaml:"pathOverrides,omitempty"`
 	// ProxyProtocolVersion enables the PROXY protocol on this backend. The
 	// value is the version of the protocol to use, e.g. v1 or v2.
 	// By default, the proxy protocol is not enabled.
@@ -450,7 +450,7 @@ type ConfigPasskey struct {
 	// re-authenticate with the other identity provider.
 	// The value is a go duration, e.g. '500h'
 	// The default value of 0 means no re-authentication is required.
-	RefreshInterval time.Duration `yaml:"refreshInterval"`
+	RefreshInterval time.Duration `yaml:"refreshInterval,omitempty"`
 	// Endpoint is a URL on this proxy that will handle the passkey
 	// authentication.
 	Endpoint string `yaml:"endpoint"`
@@ -507,7 +507,7 @@ type BackendSSO struct {
 	Paths []string `yaml:"paths,omitempty"`
 	// SetUserIDHeader indicates that the x-tlsproxy-user-id header should
 	// be set with the email address of the user.
-	SetUserIDHeader bool `yaml:"setUserIdHeader"`
+	SetUserIDHeader bool `yaml:"setUserIdHeader,omitempty"`
 	// GenerateIDTokens indicates that the proxy should generate ID tokens
 	// for authenticated users.
 	GenerateIDTokens bool `yaml:"generateIdTokens,omitempty"`
