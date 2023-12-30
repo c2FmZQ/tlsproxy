@@ -87,25 +87,26 @@ func claimsFromCtx(ctx context.Context) jwt.MapClaims {
 	return nil
 }
 
-func (be *Backend) userAuthentication(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		req.Header.Del(xTLSProxyUserIDHeader)
-		if be.SSO != nil {
-			claims, cont := be.checkCookies(w, req)
-			if !cont {
-				return
-			}
-			if claims != nil {
-				if email, ok := claims["email"].(string); ok && email != "" {
-					if be.SSO.SetUserIDHeader {
-						req.Header.Set(xTLSProxyUserIDHeader, email)
-					}
-					req = req.WithContext(context.WithValue(req.Context(), authCtxKey, claims))
+// authenticateUser inspects the request headers to get the user's identity, if
+// available. It modifies the request headers and context.
+// It returns true if processing of the request should continue.
+func (be *Backend) authenticateUser(w http.ResponseWriter, req **http.Request) bool {
+	(*req).Header.Del(xTLSProxyUserIDHeader)
+	if be.SSO != nil {
+		claims, cont := be.checkCookies(w, *req)
+		if !cont {
+			return false
+		}
+		if claims != nil {
+			if email, ok := claims["email"].(string); ok && email != "" {
+				if be.SSO.SetUserIDHeader {
+					(*req).Header.Set(xTLSProxyUserIDHeader, email)
 				}
+				*req = (*req).WithContext(context.WithValue((*req).Context(), authCtxKey, claims))
 			}
 		}
-		next.ServeHTTP(w, req)
-	})
+	}
+	return true
 }
 
 func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.MapClaims, bool) {
