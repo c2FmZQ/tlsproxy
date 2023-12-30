@@ -64,7 +64,12 @@ var (
 // localHandler returns an HTTP handler for backends that are served entirely by
 // the proxy itself. The requests are never forwarded to a remote server.
 func (be *Backend) localHandler() http.Handler {
-	return recoverHandler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("PANIC: %#v\n%s", r, string(debug.Stack()))
+			}
+		}()
 		if !be.authenticateUser(w, &req) {
 			return
 		}
@@ -74,7 +79,7 @@ func (be *Backend) localHandler() http.Handler {
 		}
 		log.Printf("PRX %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL, http.StatusNotFound, userAgent(req))
 		http.NotFound(w, req)
-	}))
+	})
 }
 
 // reverseProxy returns an HTTP handler for backends that act as a reverse
@@ -89,7 +94,12 @@ func (be *Backend) reverseProxy() http.Handler {
 		ModifyResponse: be.reverseProxyModifyResponse,
 	}
 
-	return recoverHandler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("PANIC: %#v\n%s", r, string(debug.Stack()))
+			}
+		}()
 		if !be.authenticateUser(w, &req) {
 			return
 		}
@@ -162,17 +172,6 @@ func (be *Backend) reverseProxy() http.Handler {
 		}
 
 		reverseProxy.ServeHTTP(w, req.WithContext(ctx))
-	}))
-}
-
-func recoverHandler(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("PANIC: %#v\n%s", r, string(debug.Stack()))
-			}
-		}()
-		next.ServeHTTP(w, req)
 	})
 }
 

@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+* Refactor HTTP handlers. No functional change.
+
 ## v0.4.1
 
 * Add a confirmation page before redirecting to the remote identity provider's OIDC or SAML login page.
