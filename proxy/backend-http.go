@@ -106,10 +106,10 @@ func (be *Backend) reverseProxy() http.Handler {
 			return
 		}
 
-		// Verify that the HTTP request is directed at a server names
+		// Verify that the HTTP request is directed at a server name
 		// that's configured for this backend. This prevents clients
-		// from using one servername in the TLS handshake, and then
-		// a different servername in the request.
+		// from using one server name in the TLS handshake, and then
+		// a different server name in the request.
 		ctx := req.Context()
 		host := req.Host
 		if host == "" {
@@ -135,16 +135,14 @@ func (be *Backend) reverseProxy() http.Handler {
 		// Detect forwarding loops using the via headers.
 		me := req.Context().Value(connCtxKey).(net.Conn).LocalAddr().String()
 		hops := commaRE.Split(req.Header.Get(viaHeader), -1)
-		for _, via := range hops[:len(hops)-1] {
-			_, via, _ = strings.Cut(via, " ")
-			if via != me {
-				continue
+		for _, via := range hops {
+			if _, via, _ = strings.Cut(via, " "); via == me {
+				if req.Body != nil {
+					req.Body.Close()
+				}
+				http.Error(w, req.Header.Get(viaHeader), http.StatusLoopDetected)
+				return
 			}
-			if req.Body != nil {
-				req.Body.Close()
-			}
-			http.Error(w, req.Header.Get(viaHeader), http.StatusLoopDetected)
-			return
 		}
 		hops = append(hops, req.Proto+" "+me)
 		req.Header.Set(viaHeader, strings.Join(hops, ", "))
