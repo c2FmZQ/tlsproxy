@@ -1,6 +1,8 @@
 # TLSPROXY Release Notes
 
 * Refactor HTTP handlers. No functional change.
+* Minor changes to the metrics page: combine runtime and memory profile, add config.
+* Remove the /config endpoint.
 
 ## v0.4.1
 

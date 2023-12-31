@@ -182,6 +182,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		Memory      []memoryProf
 		Goroutines  []goroutine
 		BuildInfo   string
+		Config      string
 	}
 	if info, ok := debug.ReadBuildInfo(); ok {
 		data.BuildInfo = info.String()
@@ -448,15 +449,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	metricsTemplate.Execute(&buf, data)
-	w.Header().Set("content-type", "text/html; charset=utf-8")
-	w.Header().Set("content-length", fmt.Sprintf("%d", buf.Len()))
-}
-
-func (p *Proxy) configHandler(w http.ResponseWriter, req *http.Request) {
-	p.mu.Lock()
 	cfg := p.cfg.clone()
-	p.mu.Unlock()
 	for _, p := range cfg.OIDCProviders {
 		p.ClientSecret = "**REDACTED**"
 	}
@@ -468,11 +461,16 @@ func (p *Proxy) configHandler(w http.ResponseWriter, req *http.Request) {
 			client.Secret = "**REDACTED**"
 		}
 	}
-	w.Header().Set("content-type", "text/plain; charset=utf-8")
-	enc := yaml.NewEncoder(w)
+	var cfgbuf bytes.Buffer
+	enc := yaml.NewEncoder(&cfgbuf)
 	enc.SetIndent(2)
 	enc.Encode(cfg)
 	enc.Close()
+	data.Config = cfgbuf.String()
+
+	metricsTemplate.Execute(&buf, data)
+	w.Header().Set("content-type", "text/html; charset=utf-8")
+	w.Header().Set("content-length", fmt.Sprintf("%d", buf.Len()))
 }
 
 func (p *Proxy) faviconHandler(w http.ResponseWriter, req *http.Request) {

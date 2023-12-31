@@ -108,9 +108,9 @@ h1 {
 let tabs = [
   { id: 'metrics', name: 'Metrics', show: ['panel-backend-metrics', 'panel-events'] },
   { id: 'connections', name: 'Connections', show: ['panel-connections'] },
+  { id: 'runtime', name: 'Runtime', show: ['panel-runtime', 'panel-memory', 'panel-goroutines'] },
   { id: 'backends', name: 'Backends', show: ['panel-backends'] },
-  { id: 'runtime', name: 'Runtime', show: ['panel-runtime', 'panel-goroutines'] },
-  { id: 'memory', name: 'Memory Profile', show: ['panel-memory'] },
+  { id: 'config', name: 'Config', show: ['panel-config'] },
   { id: 'buildinfo', name: 'Build Info', show: ['panel-buildinfo'] },
 ];
 function init() {
@@ -248,6 +248,21 @@ Backend[{{$i}}]: {{.Mode}} {{.ALPNProtos}} {{.BackendProto}} {{.SSO}}
 {{- end }}
 </div>
 
+<div id="panel-runtime">
+<h2>Runtime</h2>
+  <div class="table col2">
+    <div class="row"><div style="text-align: left">Uptime:</div><div>{{.Runtime.Uptime}}</div></div>
+    <div class="row"><div style="text-align: left">NumCPU:</div><div>{{.Runtime.NumCPU}}</div></div>
+    <div class="row"><div style="text-align: left">NumGoroutine:</div><div>{{.Runtime.NumGoroutine}}</div></div>
+    <div class="row"><div style="text-align: left">Mallocs:</div><div>{{.Runtime.Mallocs}}</div></div>
+    <div class="row"><div style="text-align: left">Frees:</div><div>{{.Runtime.Frees}}</div></div>
+    <div class="row"><div style="text-align: left">HeapObjects:</div><div>{{.Runtime.HeapObjects}}</div></div>
+    <div class="row"><div style="text-align: left">HeapAlloc:</div><div>{{.Runtime.HeapAlloc}}</div></div>
+    <div class="row"><div style="text-align: left">NextGC:</div><div>{{.Runtime.NextGC}}</div></div>
+    <div class="row"><div style="text-align: left">NumGC:</div><div>{{.Runtime.NumGC}}</div></div>
+  </div>
+</div>
+
 <div id="panel-memory">
 <h2>Memory profile</h2>
   <div class="table col3">
@@ -266,21 +281,6 @@ Backend[{{$i}}]: {{.Mode}} {{.ALPNProtos}} {{.BackendProto}} {{.SSO}}
   </div>
 </div>
 
-<div id="panel-runtime">
-<h2>Runtime</h2>
-  <div class="table col2">
-    <div class="row"><div style="text-align: left">Uptime:</div><div>{{.Runtime.Uptime}}</div></div>
-    <div class="row"><div style="text-align: left">NumCPU:</div><div>{{.Runtime.NumCPU}}</div></div>
-    <div class="row"><div style="text-align: left">NumGoroutine:</div><div>{{.Runtime.NumGoroutine}}</div></div>
-    <div class="row"><div style="text-align: left">Mallocs:</div><div>{{.Runtime.Mallocs}}</div></div>
-    <div class="row"><div style="text-align: left">Frees:</div><div>{{.Runtime.Frees}}</div></div>
-    <div class="row"><div style="text-align: left">HeapObjects:</div><div>{{.Runtime.HeapObjects}}</div></div>
-    <div class="row"><div style="text-align: left">HeapAlloc:</div><div>{{.Runtime.HeapAlloc}}</div></div>
-    <div class="row"><div style="text-align: left">NextGC:</div><div>{{.Runtime.NextGC}}</div></div>
-    <div class="row"><div style="text-align: left">NumGC:</div><div>{{.Runtime.NumGC}}</div></div>
-  </div>
-</div>
-
 <div id="panel-goroutines">
 <h2>Goroutines</h2>
   <div class="table col2">
@@ -295,6 +295,13 @@ Backend[{{$i}}]: {{.Mode}} {{.ALPNProtos}} {{.BackendProto}} {{.SSO}}
     </div>
 {{- end }}
   </div>
+</div>
+
+<div id="panel-config">
+<h2>Config</h2>
+<pre style="margin-left: 1rem; background-color: #f0f0ff;">
+{{.Config}}
+</pre>
 </div>
 
 <div id="panel-buildinfo">

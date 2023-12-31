@@ -666,7 +666,6 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			be.localHandlers = append(be.localHandlers,
 				localHandler{desc: "Metrics", path: "/", handler: logHandler(http.HandlerFunc(p.metricsHandler))},
 				localHandler{desc: "Icon", path: "/favicon.ico", handler: logHandler(http.HandlerFunc(p.faviconHandler))},
-				localHandler{desc: "Proxy Config", path: "/config", handler: logHandler(http.HandlerFunc(p.configHandler))},
 			)
 			addPProfHandlers(&be.localHandlers)
 
