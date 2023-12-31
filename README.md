@@ -157,13 +157,9 @@ See the [godoc](https://pkg.go.dev/github.com/c2FmZQ/tlsproxy/proxy#section-docu
 
 Install from the source code:
 ```console
-go install github.com/c2FmZQ/tlsproxy@latest
-```
-
-Or, clone the repository:
-```console
 git clone https://github.com/c2FmZQ/tlsproxy.git
 cd tlsproxy
+go generate ./...
 go build -o tlsproxy
 ```
 
