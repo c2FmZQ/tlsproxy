@@ -1,5 +1,8 @@
 # TLSPROXY Release Notes
 
+* Minor changes to the metrics page: combine runtime and memory profile, add config.
+* Remove the /config endpoint.
+
 ## v0.4.1
 
 * Add a confirmation page before redirecting to the remote identity provider's OIDC or SAML login page.
