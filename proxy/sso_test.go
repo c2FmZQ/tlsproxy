@@ -38,6 +38,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/c2FmZQ/storage"
@@ -181,6 +182,9 @@ func TestSSOEnforceOIDC(t *testing.T) {
 	}
 	if got, want := len(cookies), 2; got != want {
 		t.Errorf("len(cookies) = %v, want %v", got, want)
+	}
+	if idp.count == 0 {
+		t.Error("IDP Server never called")
 	}
 
 	hdr := http.Header{}
@@ -390,6 +394,10 @@ func TestSSOEnforcePasskey(t *testing.T) {
 		t.Errorf("Body = %v, want %v", got, want)
 	}
 
+	if idp.count == 0 {
+		t.Error("IDP Server never called")
+	}
+
 	// Logout
 	code, body, _ = get("https://"+host+"/.sso/logout", nil, nil)
 	if got, want := code, 200; got != want {
@@ -468,6 +476,9 @@ type idpServer struct {
 	*httptest.Server
 	t          *testing.T
 	oidcServer *oidc.ProviderServer
+
+	mu    sync.Mutex
+	count int
 }
 
 func newIDPServer(t *testing.T) *idpServer {
@@ -512,6 +523,10 @@ func newIDPServer(t *testing.T) *idpServer {
 				t.Logf("[IDP SERVER]  %s: %v", k, v)
 			}
 			next.ServeHTTP(w, req)
+
+			idp.mu.Lock()
+			defer idp.mu.Unlock()
+			idp.count++
 		})
 	}
 	mux.Handle("/.well-known/openid-configuration", log(idp.oidcServer.ServeConfig))
