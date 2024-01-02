@@ -144,11 +144,33 @@ type QUICConn struct {
 
 	mu              sync.Mutex
 	onClose         func()
+	annotations     map[string]any
 	bytesSent       *counter.Counter
 	bytesReceived   *counter.Counter
 	upBytesSent     *counter.Counter
 	upBytesReceived *counter.Counter
 	streams         []*QUICStream
+}
+
+// SetAnnotation sets an annotation. The value can be any go value.
+func (c *QUICConn) SetAnnotation(key string, value any) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.annotations == nil {
+		c.annotations = make(map[string]any)
+	}
+	c.annotations[key] = value
+}
+
+// Annotation retrieves an annotation that was previously set on the connection.
+// The defaultValue is returned if the annotation was never set.
+func (c *QUICConn) Annotation(key string, defaultValue any) any {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if v, ok := c.annotations[key]; ok {
+		return v
+	}
+	return defaultValue
 }
 
 func (c *QUICConn) Streams() []*QUICStream {

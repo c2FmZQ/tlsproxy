@@ -29,6 +29,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 )
@@ -46,5 +47,9 @@ func (be *Backend) dialQUICStream(context.Context, string, *tls.Config) (net.Con
 }
 
 func (be *Backend) http3Transport() http.RoundTripper {
+	return nil
+}
+
+func http3Server(http.Handler) io.Closer {
 	return nil
 }

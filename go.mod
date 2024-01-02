@@ -2,6 +2,8 @@ module github.com/c2FmZQ/tlsproxy
 
 go 1.21
 
+replace github.com/quic-go/quic-go => ../quic-go/
+
 require (
 	github.com/beevik/etree v1.2.0
 	github.com/c2FmZQ/storage v0.1.2

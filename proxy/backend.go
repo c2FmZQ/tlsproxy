@@ -62,6 +62,10 @@ func (be *Backend) close(ctx context.Context) {
 		be.httpServer.Close()
 		close(be.httpConnChan)
 		be.httpServer = nil
+		if h3 := be.http3Server; h3 != nil {
+			be.http3Server = nil
+			h3.Close()
+		}
 		return
 	}
 	go be.httpServer.Shutdown(ctx)
@@ -69,6 +73,10 @@ func (be *Backend) close(ctx context.Context) {
 	if be.inFlight == 0 {
 		close(be.httpConnChan)
 		be.httpServer = nil
+		if h3 := be.http3Server; h3 != nil {
+			be.http3Server = nil
+			h3.Close()
+		}
 	}
 }
 
