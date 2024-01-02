@@ -50,6 +50,8 @@ const (
 	quicIsEnabled         = true
 	statelessResetKeyFile = "quic-stateless-reset-key"
 
+	tlsUnrecognizedName = tls.AlertError(0x70)
+
 	quicUnrecognizedName = quic.ApplicationErrorCode(0x1001)
 	quicAccessDenied     = quic.ApplicationErrorCode(0x1002)
 	quicBadGateway       = quic.ApplicationErrorCode(0x1003)
@@ -81,10 +83,7 @@ func (p *Proxy) startQUIC(ctx context.Context) error {
 			}
 		}
 		log.Printf("ERR QUIC connection %s %s", hello.ServerName, hello.SupportedProtos)
-		return nil, &quic.ApplicationError{
-			ErrorCode:    quicUnrecognizedName,
-			ErrorMessage: fmt.Sprintf("unrecognized name: %s", hello.ServerName),
-		}
+		return nil, tlsUnrecognizedName
 	}
 	qt, err := netw.NewQUIC(p.cfg.TLSAddr, statelessResetKey)
 	if err != nil {

@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+* Return the proper TLS error when a QUIC client requests an unknown server name and/or alpn protocol.
+
 ## v0.4.2
 
 * Minor changes to the metrics page: combine runtime and memory profile, add config.
