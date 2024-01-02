@@ -81,10 +81,7 @@ func (p *Proxy) startQUIC(ctx context.Context) error {
 			}
 		}
 		log.Printf("ERR QUIC connection %s %s", hello.ServerName, hello.SupportedProtos)
-		return nil, &quic.ApplicationError{
-			ErrorCode:    quicUnrecognizedName,
-			ErrorMessage: fmt.Sprintf("unrecognized name: %s", hello.ServerName),
-		}
+		return nil, tlsUnrecognizedName
 	}
 	qt, err := netw.NewQUIC(p.cfg.TLSAddr, statelessResetKey)
 	if err != nil {
@@ -511,17 +508,17 @@ func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUI
 		GetClientCertificate: be.getClientCert(ctx),
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			if len(cs.PeerCertificates) == 0 {
-				return errors.New("no certificate")
+				return tlsCertificateRequired
 			}
 			cert := cs.PeerCertificates[0]
 			if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok {
 				if m.IsRevoked(cert.SerialNumber) {
-					return errRevoked
+					return tlsCertificateRevoked
 				}
 			} else if len(cert.OCSPServer) > 0 {
 				if err := be.ocspCache.VerifyChains(cs.VerifiedChains, cs.OCSPResponse); err != nil {
 					be.recordEvent(fmt.Sprintf("backend X509 %s [%s] (OCSP:%v)", idnaToUnicode(cs.ServerName), cert.Subject, err))
-					return errRevoked
+					return tlsCertificateRevoked
 				}
 			}
 			return nil
