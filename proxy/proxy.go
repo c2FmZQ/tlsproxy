@@ -563,9 +563,8 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 					p.recordEvent(fmt.Sprintf("deny no cert to %s", idnaToUnicode(cs.ServerName)))
 					if cs.Version == tls.VersionTLS12 {
 						return tlsBadCertificate
-					} else {
-						return tlsCertificateRequired
 					}
+					return tlsCertificateRequired
 				}
 				cert := cs.PeerCertificates[0]
 				sum := certSummary(cert)
