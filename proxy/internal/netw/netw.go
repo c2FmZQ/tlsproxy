@@ -69,6 +69,15 @@ func (l listener) Accept() (net.Conn, error) {
 	}, nil
 }
 
+func NewConnForTest(c net.Conn) *Conn {
+	return &Conn{
+		Conn:        c,
+		ctx:         context.Background(),
+		cancel:      func() {},
+		annotations: make(map[string]any),
+	}
+}
+
 // Conn is a wrapper around net.Conn that stores annotations and metrics.
 type Conn struct {
 	net.Conn

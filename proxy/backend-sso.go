@@ -363,8 +363,10 @@ func (be *Backend) sessionID(w http.ResponseWriter, req *http.Request) string {
 
 func (be *Backend) makeTokenForURL(w http.ResponseWriter, req *http.Request) (string, string, error) {
 	sid := be.sessionID(w, req)
-	displayURL := "https://" + idnaToUnicode(req.Host) + req.URL.String()
 	u := req.URL
+	u.Scheme = ""
+	u.Host = ""
+	displayURL := "https://" + idnaToUnicode(req.Host) + u.String()
 	u.Scheme = "https"
 	u.Host = req.Host
 	token, err := be.tm.CreateToken(jwt.MapClaims{
