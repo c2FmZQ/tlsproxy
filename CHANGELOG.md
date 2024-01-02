@@ -1,6 +1,7 @@
 # TLSPROXY Release Notes
 
 * Return the proper TLS error when a QUIC client requests an unknown server name and/or alpn protocol.
+* Return the proper TLS error when a client certificate is revoked.
 
 ## v0.4.2
 
