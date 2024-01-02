@@ -212,7 +212,7 @@ func (be *Backend) authorize(cert *x509.Certificate) error {
 			return nil
 		}
 	}
-	return errAccessDenied
+	return tlsAccessDenied
 }
 
 func (be *Backend) checkIP(addr net.Addr) error {
