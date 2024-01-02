@@ -106,17 +106,17 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 		GetClientCertificate: be.getClientCert(ctx),
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			if len(cs.PeerCertificates) == 0 {
-				return errors.New("no certificate")
+				return tlsCertificateRequired
 			}
 			cert := cs.PeerCertificates[0]
 			if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok {
 				if m.IsRevoked(cert.SerialNumber) {
-					return errRevoked
+					return tlsCertificateRevoked
 				}
 			} else if len(cert.OCSPServer) > 0 {
 				if err := be.ocspCache.VerifyChains(cs.VerifiedChains, cs.OCSPResponse); err != nil {
 					be.recordEvent(fmt.Sprintf("backend X509 %s [%s] (OCSP:%v)", idnaToUnicode(cs.ServerName), cert.Subject, err))
-					return errRevoked
+					return tlsCertificateRevoked
 				}
 			}
 			return nil
@@ -212,7 +212,7 @@ func (be *Backend) authorize(cert *x509.Certificate) error {
 			return nil
 		}
 	}
-	return errAccessDenied
+	return tlsAccessDenied
 }
 
 func (be *Backend) checkIP(addr net.Addr) error {
