@@ -82,6 +82,7 @@ const (
 	reportEndKey     = "re"
 	backendKey       = "be"
 
+	tlsBadCertificate      = tls.AlertError(0x2a)
 	tlsCertificateRevoked  = tls.AlertError(0x2c)
 	tlsAccessDenied        = tls.AlertError(0x31)
 	tlsUnrecognizedName    = tls.AlertError(0x70)
@@ -553,13 +554,18 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			tc.VerifyConnection = func(cs tls.ConnectionState) error {
 				be, err := p.backend(cs.ServerName, cs.NegotiatedProtocol)
 				if err != nil {
-					return err
+					return tlsUnrecognizedName
 				}
 				if be.ClientAuth == nil {
 					return nil
 				}
-				if len(cs.PeerCertificates) == 0 {
-					return tlsCertificateRequired
+				if len(cs.PeerCertificates) == 0 || len(cs.VerifiedChains) == 0 {
+					p.recordEvent(fmt.Sprintf("deny no cert to %s", idnaToUnicode(cs.ServerName)))
+					if cs.Version == tls.VersionTLS12 {
+						return tlsBadCertificate
+					} else {
+						return tlsCertificateRequired
+					}
 				}
 				cert := cs.PeerCertificates[0]
 				sum := certSummary(cert)
