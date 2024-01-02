@@ -81,11 +81,15 @@ const (
 	internalConnKey  = "ic"
 	reportEndKey     = "re"
 	backendKey       = "be"
+
+	tlsCertificateRevoked  = tls.AlertError(0x2c)
+	tlsAccessDenied        = tls.AlertError(0x31)
+	tlsUnrecognizedName    = tls.AlertError(0x70)
+	tlsCertificateRequired = tls.AlertError(0x74)
 )
 
 var (
 	errAccessDenied = errors.New("access denied")
-	errRevoked      = errors.New("revoked")
 )
 
 // Proxy receives TLS connections and forwards them to the configured
@@ -555,24 +559,24 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 					return nil
 				}
 				if len(cs.PeerCertificates) == 0 {
-					return errors.New("no certificate")
+					return tlsCertificateRequired
 				}
 				cert := cs.PeerCertificates[0]
 				sum := certSummary(cert)
 				if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok {
 					if m.IsRevoked(cert.SerialNumber) {
 						p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (revoked)", sum, idnaToUnicode(cs.ServerName)))
-						return fmt.Errorf("%w [%s]", errRevoked, sum)
+						return tlsCertificateRevoked
 					}
 				} else if len(cert.OCSPServer) > 0 {
 					if err := p.ocspCache.VerifyChains(cs.VerifiedChains, cs.OCSPResponse); err != nil {
 						p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (OCSP:%v)", sum, idnaToUnicode(cs.ServerName), err))
-						return fmt.Errorf("%w [%s]", errRevoked, sum)
+						return tlsCertificateRevoked
 					}
 				}
 				if err := be.authorize(cert); err != nil {
 					p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s", sum, idnaToUnicode(cs.ServerName)))
-					return fmt.Errorf("%w [%s]", err, sum)
+					return tlsAccessDenied
 				}
 				if sum != "" {
 					p.recordEvent(fmt.Sprintf("allow X509 [%s] to %s", sum, idnaToUnicode(cs.ServerName)))
@@ -1113,9 +1117,9 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 		switch {
 		case err.Error() == "tls: client didn't provide a certificate":
 			p.recordEvent(fmt.Sprintf("deny no cert to %s", idnaToUnicode(serverName)))
-		case errors.Is(err, errAccessDenied):
+		case errors.Is(err, tlsAccessDenied):
 			p.recordEvent("access denied")
-		case errors.Is(err, errRevoked):
+		case errors.Is(err, tlsCertificateRevoked):
 			p.recordEvent("cert is revoked")
 		default:
 			p.recordEvent("tls handshake failed")

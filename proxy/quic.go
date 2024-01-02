@@ -50,8 +50,6 @@ const (
 	quicIsEnabled         = true
 	statelessResetKeyFile = "quic-stateless-reset-key"
 
-	tlsUnrecognizedName = tls.AlertError(0x70)
-
 	quicUnrecognizedName = quic.ApplicationErrorCode(0x1001)
 	quicAccessDenied     = quic.ApplicationErrorCode(0x1002)
 	quicBadGateway       = quic.ApplicationErrorCode(0x1003)
@@ -510,17 +508,17 @@ func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUI
 		GetClientCertificate: be.getClientCert(ctx),
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			if len(cs.PeerCertificates) == 0 {
-				return errors.New("no certificate")
+				return tlsCertificateRequired
 			}
 			cert := cs.PeerCertificates[0]
 			if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok {
 				if m.IsRevoked(cert.SerialNumber) {
-					return errRevoked
+					return tlsCertificateRevoked
 				}
 			} else if len(cert.OCSPServer) > 0 {
 				if err := be.ocspCache.VerifyChains(cs.VerifiedChains, cs.OCSPResponse); err != nil {
 					be.recordEvent(fmt.Sprintf("backend X509 %s [%s] (OCSP:%v)", idnaToUnicode(cs.ServerName), cert.Subject, err))
-					return errRevoked
+					return tlsCertificateRevoked
 				}
 			}
 			return nil
