@@ -31,6 +31,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"maps"
 	"net"
 	"slices"
 	"sync"
@@ -290,7 +291,7 @@ func (c *QUICConn) WrapStream(s any) *Conn {
 		}
 	case *QUICStream:
 		ctx, cancel := context.WithCancel(c.Context())
-		return &Conn{
+		cc := &Conn{
 			Conn:          v,
 			ctx:           ctx,
 			cancel:        cancel,
@@ -298,6 +299,10 @@ func (c *QUICConn) WrapStream(s any) *Conn {
 			bytesSent:     newCounter(),
 			bytesReceived: newCounter(),
 		}
+		c.mu.Lock()
+		maps.Copy(cc.annotations, c.annotations)
+		c.mu.Unlock()
+		return cc
 	case quic.Stream:
 		stream = v
 	case quic.SendStream:
@@ -308,7 +313,7 @@ func (c *QUICConn) WrapStream(s any) *Conn {
 		log.Panicf("PANIC WrapStream called with %T", v)
 	}
 	ctx, cancel := context.WithCancel(c.Context())
-	return &Conn{
+	cc := &Conn{
 		Conn: &QUICStream{
 			Stream: stream,
 			qc:     c,
@@ -317,6 +322,10 @@ func (c *QUICConn) WrapStream(s any) *Conn {
 		cancel:      cancel,
 		annotations: make(map[string]any),
 	}
+	c.mu.Lock()
+	maps.Copy(cc.annotations, c.annotations)
+	c.mu.Unlock()
+	return cc
 }
 
 func (c *QUICConn) LocalAddr() net.Addr {

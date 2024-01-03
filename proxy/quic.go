@@ -311,7 +311,6 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 				return
 			}
 			cc := qc.WrapStream(recvStream)
-			cc.CopyAnnotationsFrom(conn)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -329,7 +328,6 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 				return
 			}
 			cc := qc.WrapStream(stream)
-			cc.CopyAnnotationsFrom(conn)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
