@@ -113,7 +113,7 @@ type Proxy struct {
 	connClosed    *sync.Cond
 	defServerName string
 	backends      map[beKey]*Backend
-	connections   map[connKey]*netw.Conn
+	connections   map[connKey]annotatedConnection
 	pkis          map[string]*pki.PKIManager
 	ocspCache     *ocspcache.OCSPCache
 	bwLimits      map[string]*bwLimit
@@ -193,7 +193,7 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 		},
 		store:        store,
 		tokenManager: tm,
-		connections:  make(map[connKey]*netw.Conn),
+		connections:  make(map[connKey]annotatedConnection),
 		pkis:         make(map[string]*pki.PKIManager),
 		ocspCache:    ocspcache.New(store),
 		bwLimits:     make(map[string]*bwLimit),
@@ -236,7 +236,7 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 	}
 	p := &Proxy{
 		certManager:  cm,
-		connections:  make(map[connKey]*netw.Conn),
+		connections:  make(map[connKey]annotatedConnection),
 		store:        store,
 		tokenManager: tm,
 		pkis:         make(map[string]*pki.PKIManager),
@@ -789,7 +789,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 
 func (p *Proxy) reAuthorize() {
 	p.mu.Lock()
-	conns := make([]*netw.Conn, 0, len(p.connections))
+	conns := make([]annotatedConnection, 0, len(p.connections))
 	for _, c := range p.connections {
 		conns = append(conns, c)
 	}

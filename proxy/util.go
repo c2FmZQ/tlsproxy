@@ -46,8 +46,13 @@ func netwConn(c net.Conn) *netw.Conn {
 }
 
 type annotatedConnection interface {
+	net.Conn
 	Annotation(key string, defaultValue any) any
 	SetAnnotation(key string, value any)
+	BytesSent() int64
+	BytesReceived() int64
+	ByteRateSent() float64
+	ByteRateReceived() float64
 }
 
 func annotatedConn(c net.Conn) annotatedConnection {
@@ -55,6 +60,8 @@ func annotatedConn(c net.Conn) annotatedConnection {
 	case *tls.Conn:
 		return netwConn(c.NetConn())
 	case *netw.Conn:
+		return c
+	case *netw.QUICConn:
 		return c
 	default:
 		panic(c)
