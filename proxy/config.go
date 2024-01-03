@@ -404,6 +404,9 @@ type ConfigOIDC struct {
 	// {"openid", "email", "profile"} or {"openid", "email",
 	// "public_profile"}.
 	Scopes []string `yaml:"scopes,omitempty"`
+	// HostedDomain specifies that the HD param should be used.
+	// https://developers.google.com/identity/openid-connect/openid-connect#hd-param
+	HostedDomain string `yaml:"hostedDomain,omitempty"`
 	// TokenEndpoint is the token endpoint. It must be set only if
 	// DiscoveryURL is not set.
 	TokenEndpoint string `yaml:"tokenEndpoint,omitempty"`

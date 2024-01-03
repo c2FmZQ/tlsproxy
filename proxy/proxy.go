@@ -291,6 +291,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			RedirectURL:      pp.RedirectURL,
 			ClientID:         pp.ClientID,
 			ClientSecret:     pp.ClientSecret,
+			HostedDomain:     pp.HostedDomain,
 		}
 		provider, err := oidc.New(oidcCfg, er, cm)
 		if err != nil {
