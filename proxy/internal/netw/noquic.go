@@ -45,3 +45,26 @@ type QUICConn struct {
 func (*QUICConn) Streams() []*QUICStream {
 	return nil
 }
+
+func (*QUICConn) Annotation(key string, defaultValue any) any {
+	return nil
+}
+
+func (*QUICConn) SetAnnotation(key string, value any) {
+}
+
+func (*QUICConn) BytesSent() int64 {
+	return 0
+}
+
+func (*QUICConn) BytesReceived() int64 {
+	return 0
+}
+
+func (*QUICConn) ByteRateSent() float64 {
+	return 0
+}
+
+func (*QUICConn) ByteRateReceived() float64 {
+	return 0
+}
