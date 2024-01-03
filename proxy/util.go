@@ -45,33 +45,56 @@ func netwConn(c net.Conn) *netw.Conn {
 	}
 }
 
+type annotatedConnection interface {
+	net.Conn
+	Annotation(key string, defaultValue any) any
+	SetAnnotation(key string, value any)
+	BytesSent() int64
+	BytesReceived() int64
+	ByteRateSent() float64
+	ByteRateReceived() float64
+}
+
+func annotatedConn(c net.Conn) annotatedConnection {
+	switch c := c.(type) {
+	case *tls.Conn:
+		return netwConn(c.NetConn())
+	case *netw.Conn:
+		return c
+	case *netw.QUICConn:
+		return c
+	default:
+		panic(c)
+	}
+}
+
 func connServerNameIsSet(c net.Conn) bool {
-	return netwConn(c).Annotation(serverNameKey, nil) != nil
+	return annotatedConn(c).Annotation(serverNameKey, nil) != nil
 }
 
 func connServerName(c net.Conn) string {
-	if v, ok := netwConn(c).Annotation(serverNameKey, "").(string); ok {
+	if v, ok := annotatedConn(c).Annotation(serverNameKey, "").(string); ok {
 		return v
 	}
 	return ""
 }
 
 func connProto(c net.Conn) string {
-	if v, ok := netwConn(c).Annotation(protoKey, "").(string); ok {
+	if v, ok := annotatedConn(c).Annotation(protoKey, "").(string); ok {
 		return v
 	}
 	return ""
 }
 
 func connClientCert(c net.Conn) *x509.Certificate {
-	if v, ok := netwConn(c).Annotation(clientCertKey, (*x509.Certificate)(nil)).(*x509.Certificate); ok {
+	if v, ok := annotatedConn(c).Annotation(clientCertKey, (*x509.Certificate)(nil)).(*x509.Certificate); ok {
 		return v
 	}
 	return nil
 }
 
 func connBackend(c net.Conn) *Backend {
-	if v, ok := netwConn(c).Annotation(backendKey, (*Backend)(nil)).(*Backend); ok {
+	if v, ok := annotatedConn(c).Annotation(backendKey, (*Backend)(nil)).(*Backend); ok {
 		return v
 	}
 	return nil
@@ -85,7 +108,7 @@ func connMode(c net.Conn) string {
 }
 
 func connIntConn(c net.Conn) net.Conn {
-	if v, ok := netwConn(c).Annotation(internalConnKey, nil).(net.Conn); ok {
+	if v, ok := annotatedConn(c).Annotation(internalConnKey, nil).(net.Conn); ok {
 		return v
 	}
 	return nil

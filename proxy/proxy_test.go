@@ -49,7 +49,6 @@ import (
 	"github.com/pires/go-proxyproto"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
@@ -880,7 +879,7 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 	}
 	p := &Proxy{
 		certManager:  cm,
-		connections:  make(map[connKey]*netw.Conn),
+		connections:  make(map[connKey]annotatedConnection),
 		store:        store,
 		tokenManager: tm,
 		ocspCache:    ocspcache.New(store),

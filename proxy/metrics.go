@@ -28,7 +28,6 @@ import (
 	_ "embed"
 	"fmt"
 	"html/template"
-	"net"
 	"net/http"
 	"runtime"
 	"runtime/debug"
@@ -64,14 +63,24 @@ func (p *Proxy) recordEvent(msg string) {
 	p.events[msg]++
 }
 
-func (p *Proxy) addConn(c *netw.Conn) int {
+func (p *Proxy) addConn(c annotatedConnection) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.connections[connKey{c.LocalAddr(), c.RemoteAddr(), c.StreamID()}] = c
+	key := connKey{src: c.LocalAddr(), dst: c.RemoteAddr(), id: -1}
+	if s, ok := c.(interface {
+		StreamID() int64
+	}); ok {
+		key.id = s.StreamID()
+	}
+	p.connections[key] = c
 	return len(p.connections)
 }
 
-func (p *Proxy) setCounters(c *netw.Conn, serverName string) {
+type counterSetter interface {
+	SetCounters(*counter.Counter, *counter.Counter)
+}
+
+func (p *Proxy) setCounters(c counterSetter, serverName string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.metrics == nil {
@@ -90,10 +99,16 @@ func (p *Proxy) setCounters(c *netw.Conn, serverName string) {
 	c.SetCounters(m.numBytesSent, m.numBytesReceived)
 }
 
-func (p *Proxy) removeConn(c *netw.Conn) int {
+func (p *Proxy) removeConn(c annotatedConnection) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	delete(p.connections, connKey{c.LocalAddr(), c.RemoteAddr(), c.StreamID()})
+	key := connKey{src: c.LocalAddr(), dst: c.RemoteAddr(), id: -1}
+	if s, ok := c.(interface {
+		StreamID() int64
+	}); ok {
+		key.id = s.StreamID()
+	}
+	delete(p.connections, key)
 	return len(p.connections)
 }
 
@@ -272,8 +287,8 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		}
 		var streams []*netw.QUICStream
 
-		switch cc := c.Conn.(type) {
-		case *net.TCPConn:
+		switch cc := c.(type) {
+		case *netw.Conn:
 			connection.Type = "TLS"
 		case *netw.QUICConn:
 			connection.Type = "QUIC"
@@ -282,7 +297,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 				return streams[i].StreamID() < streams[j].StreamID()
 			})
 		default:
-			connection.Type = fmt.Sprintf(" %T", c.Conn)
+			connection.Type = fmt.Sprintf(" %T", c)
 		}
 
 		var intAddr string
