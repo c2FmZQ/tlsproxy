@@ -125,13 +125,11 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 	}()
 	ctx := context.WithValue(qc.Context(), connCtxKey, qc)
 	p.recordEvent("quic connection")
+	defer qc.Close()
 
-	wconn := qc.WrapStream(qc)
-	defer wconn.Close()
-
-	numOpen := p.addConn(wconn)
-	wconn.OnClose(func() {
-		p.removeConn(wconn)
+	numOpen := p.addConn(qc)
+	qc.OnClose(func() {
+		p.removeConn(qc)
 		startTime := qc.Annotation(startTimeKey, time.Time{}).(time.Time)
 		log.Printf("END %s; Dur:%s Recv:%d Sent:%d",
 			formatConnDesc(qc), time.Since(startTime).Truncate(time.Millisecond),
@@ -246,7 +244,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 					reportErr(err, "AcceptUniStream")
 					return
 				}
-				go be.handleQUICQUICStream(ctx, qc, qc.WrapStream(recvStream))
+				go be.handleQUICQUICStream(ctx, qc, qc.WrapConn(recvStream))
 			}
 		}()
 		wg.Add(1)
@@ -261,7 +259,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					be.handleQUICQUICStream(ctx, qc, qc.WrapStream(stream))
+					be.handleQUICQUICStream(ctx, qc, qc.WrapConn(stream))
 				}()
 			}
 		}()
@@ -277,7 +275,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					be.handleQUICQUICStream(ctx, beConn, qc.WrapStream(recvStream))
+					be.handleQUICQUICStream(ctx, beConn, qc.WrapConn(recvStream))
 				}()
 			}
 		}()
@@ -293,7 +291,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					be.handleQUICQUICStream(ctx, beConn, qc.WrapStream(stream))
+					be.handleQUICQUICStream(ctx, beConn, qc.WrapConn(stream))
 				}()
 			}
 		}()
@@ -311,7 +309,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 				reportErr(err, "AcceptUniStream")
 				return
 			}
-			cc := qc.WrapStream(recvStream)
+			cc := qc.WrapConn(recvStream)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -328,7 +326,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 				reportErr(err, "AcceptStream")
 				return
 			}
-			cc := qc.WrapStream(stream)
+			cc := qc.WrapConn(stream)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -411,7 +409,7 @@ func (be *Backend) handleQUICQUICStream(ctx context.Context, dest *netw.QUICConn
 			}
 			return
 		}
-		intConn = dest.WrapStream(sendStream)
+		intConn = dest.WrapConn(sendStream)
 	} else {
 		stream, err := dest.OpenStreamSync(ctx)
 		if err != nil {
@@ -423,7 +421,7 @@ func (be *Backend) handleQUICQUICStream(ctx context.Context, dest *netw.QUICConn
 			}
 			return
 		}
-		intConn = dest.WrapStream(stream)
+		intConn = dest.WrapConn(stream)
 	}
 	defer intConn.Close()
 
@@ -473,7 +471,7 @@ func (be *Backend) dialQUICStream(ctx context.Context, addr string, tc *tls.Conf
 	if err != nil {
 		return nil, err
 	}
-	return conn.WrapStream(s), nil
+	return conn.WrapConn(s), nil
 }
 
 func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUICConn, error) {

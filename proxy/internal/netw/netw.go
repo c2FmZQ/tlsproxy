@@ -163,6 +163,7 @@ func (c *Conn) SetCounters(sent, received *counter.Counter) {
 		SetCounters(sent, received *counter.Counter)
 	}); ok {
 		cc.SetCounters(sent, received)
+		return
 	}
 	c.upBytesSent = sent
 	c.upBytesReceived = received

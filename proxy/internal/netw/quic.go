@@ -243,6 +243,14 @@ func (c *QUICConn) TLSConnectionState() tls.ConnectionState {
 	return c.qc.ConnectionState().TLS
 }
 
+// OnClose sets a callback function that will be called when the connection
+// is closed.
+func (c *QUICConn) OnClose(f func()) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onClose = f
+}
+
 func (c *QUICConn) Close() error {
 	c.mu.Lock()
 	f := c.onClose
@@ -274,30 +282,18 @@ func (c *QUICConn) SetWriteDeadline(t time.Time) error {
 	return errors.New("setWriteDeadline on QUICConn")
 }
 
-func (c *QUICConn) WrapStream(s any) *Conn {
+func (c *QUICConn) WrapConn(s any) *Conn {
 	var stream quic.Stream
 	switch v := s.(type) {
 	case *Conn:
 		return v
-	case *QUICConn:
-		ctx, cancel := context.WithCancel(c.Context())
-		return &Conn{
-			Conn:          v,
-			ctx:           ctx,
-			cancel:        cancel,
-			annotations:   make(map[string]any),
-			bytesSent:     newCounter(),
-			bytesReceived: newCounter(),
-		}
 	case *QUICStream:
 		ctx, cancel := context.WithCancel(c.Context())
 		cc := &Conn{
-			Conn:          v,
-			ctx:           ctx,
-			cancel:        cancel,
-			annotations:   make(map[string]any),
-			bytesSent:     newCounter(),
-			bytesReceived: newCounter(),
+			Conn:        v,
+			ctx:         ctx,
+			cancel:      cancel,
+			annotations: make(map[string]any),
 		}
 		c.mu.Lock()
 		maps.Copy(cc.annotations, c.annotations)
@@ -310,7 +306,7 @@ func (c *QUICConn) WrapStream(s any) *Conn {
 	case quic.ReceiveStream:
 		stream = &ReceiveOnlyStream{v, c.Context()}
 	default:
-		log.Panicf("PANIC WrapStream called with %T", v)
+		log.Panicf("PANIC WrapConn called with %T", v)
 	}
 	ctx, cancel := context.WithCancel(c.Context())
 	cc := &Conn{
