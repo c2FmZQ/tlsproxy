@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+  * go: upgraded github.com/beevik/etree v1.2.0 => v1.3.0
+  * go: upgraded github.com/google/pprof v0.0.0-20231212022811-ec68065c825e => v0.0.0-20231229205709-960ae82b1e42
 * Return the proper TLS error when a QUIC client requests an unknown server name and/or alpn protocol.
 * Return the proper TLS error when a client certificate is revoked.
 
