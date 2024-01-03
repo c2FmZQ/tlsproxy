@@ -106,12 +106,6 @@ func (c *Conn) StreamID() int64 {
 
 // SetAnnotation sets an annotation. The value can be any go value.
 func (c *Conn) SetAnnotation(key string, value any) {
-	if cc, ok := c.Conn.(interface {
-		SetAnnotation(key string, value any)
-	}); ok {
-		cc.SetAnnotation(key, value)
-		return
-	}
 	SetAnnotation(c, key, value)
 }
 
@@ -132,11 +126,6 @@ func SetAnnotation(conn net.Conn, key string, value any) {
 // Annotation retrieves an annotation that was previously set on the connection.
 // The defaultValue is returned if the annotation was never set.
 func (c *Conn) Annotation(key string, defaultValue any) any {
-	if cc, ok := c.Conn.(interface {
-		Annotation(key string, defaultValue any) any
-	}); ok {
-		return cc.Annotation(key, defaultValue)
-	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if v, ok := c.annotations[key]; ok {
@@ -148,66 +137,34 @@ func (c *Conn) Annotation(key string, defaultValue any) any {
 // SetLimiter sets the rate limiters for this connection.
 // It must be called before the first Read() or Write(). Peek() is OK.
 func (c *Conn) SetLimiters(ingress, egress *rate.Limiter) {
-	if cc, ok := c.Conn.(interface {
-		SetLimiters(ingress, egress *rate.Limiter)
-	}); ok {
-		cc.SetLimiters(ingress, egress)
-		return
-	}
 	c.ingressLimiter = ingress
 	c.egressLimiter = egress
 }
 
 func (c *Conn) SetCounters(sent, received *counter.Counter) {
-	if cc, ok := c.Conn.(interface {
-		SetCounters(sent, received *counter.Counter)
-	}); ok {
-		cc.SetCounters(sent, received)
-		return
-	}
 	c.upBytesSent = sent
 	c.upBytesReceived = received
 }
 
 // BytesSent returns the number of bytes sent on this connection so far.
 func (c *Conn) BytesSent() int64 {
-	if cc, ok := c.Conn.(interface {
-		BytesSent() int64
-	}); ok {
-		return cc.BytesSent()
-	}
 	return c.bytesSent.Value()
 }
 
 // BytesReceived returns the number of bytes received on this connection so far.
 func (c *Conn) BytesReceived() int64 {
-	if cc, ok := c.Conn.(interface {
-		BytesReceived() int64
-	}); ok {
-		return cc.BytesReceived()
-	}
 	return c.bytesReceived.Value()
 }
 
 // ByteRateSent returns the rate of bytes sent on this connection in the last
 // minute.
 func (c *Conn) ByteRateSent() float64 {
-	if cc, ok := c.Conn.(interface {
-		ByteRateSent() float64
-	}); ok {
-		return cc.ByteRateSent()
-	}
 	return c.bytesSent.Rate(time.Minute)
 }
 
 // ByteRateReceived returns the rate of bytes received on this connection in the
 // last minute.
 func (c *Conn) ByteRateReceived() float64 {
-	if cc, ok := c.Conn.(interface {
-		ByteRateReceived() float64
-	}); ok {
-		return cc.ByteRateReceived()
-	}
 	return c.bytesReceived.Rate(time.Minute)
 }
 
