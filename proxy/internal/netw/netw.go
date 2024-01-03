@@ -63,7 +63,6 @@ func (l listener) Accept() (net.Conn, error) {
 		Conn:          c,
 		ctx:           ctx,
 		cancel:        cancel,
-		annotations:   make(map[string]any),
 		bytesSent:     newCounter(),
 		bytesReceived: newCounter(),
 	}, nil
@@ -71,10 +70,9 @@ func (l listener) Accept() (net.Conn, error) {
 
 func NewConnForTest(c net.Conn) *Conn {
 	return &Conn{
-		Conn:        c,
-		ctx:         context.Background(),
-		cancel:      func() {},
-		annotations: make(map[string]any),
+		Conn:   c,
+		ctx:    context.Background(),
+		cancel: func() {},
 	}
 }
 
@@ -109,6 +107,12 @@ func (c *Conn) StreamID() int64 {
 
 // SetAnnotation sets an annotation. The value can be any go value.
 func (c *Conn) SetAnnotation(key string, value any) {
+	if cc, ok := c.Conn.(interface {
+		SetAnnotation(key string, value any)
+	}); ok {
+		cc.SetAnnotation(key, value)
+		return
+	}
 	SetAnnotation(c, key, value)
 }
 
@@ -119,6 +123,9 @@ func SetAnnotation(conn net.Conn, key string, value any) {
 	case *Conn:
 		c.mu.Lock()
 		defer c.mu.Unlock()
+		if c.annotations == nil {
+			c.annotations = make(map[string]any)
+		}
 		c.annotations[key] = value
 	}
 }
@@ -126,6 +133,11 @@ func SetAnnotation(conn net.Conn, key string, value any) {
 // Annotation retrieves an annotation that was previously set on the connection.
 // The defaultValue is returned if the annotation was never set.
 func (c *Conn) Annotation(key string, defaultValue any) any {
+	if cc, ok := c.Conn.(interface {
+		Annotation(key string, defaultValue any) any
+	}); ok {
+		return cc.Annotation(key, defaultValue)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if v, ok := c.annotations[key]; ok {
