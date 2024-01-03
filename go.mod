@@ -2,7 +2,7 @@ module github.com/c2FmZQ/tlsproxy
 
 go 1.21
 
-replace github.com/quic-go/quic-go => ../quic-go/
+replace github.com/quic-go/quic-go => github.com/rthellend/quic-go v0.40.2-0.20240102221818-d7ba57540389
 
 require (
 	github.com/beevik/etree v1.2.0
@@ -28,7 +28,6 @@ require (
 	github.com/jonboulle/clockwork v0.4.0 // indirect
 	github.com/onsi/ginkgo/v2 v2.13.2 // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect
-	github.com/quic-go/qtls-go1-20 v0.4.1 // indirect
 	github.com/stretchr/testify v1.8.4 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/mock v0.4.0 // indirect
