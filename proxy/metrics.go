@@ -71,7 +71,11 @@ func (p *Proxy) addConn(c *netw.Conn) int {
 	return len(p.connections)
 }
 
-func (p *Proxy) setCounters(c *netw.Conn, serverName string) {
+type counterSetter interface {
+	SetCounters(*counter.Counter, *counter.Counter)
+}
+
+func (p *Proxy) setCounters(c counterSetter, serverName string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.metrics == nil {

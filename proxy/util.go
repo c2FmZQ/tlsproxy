@@ -56,6 +56,8 @@ func annotatedConn(c net.Conn) annotatedConnection {
 		return netwConn(c.NetConn())
 	case *netw.Conn:
 		return c
+	case *netw.QUICConn:
+		return c
 	default:
 		panic(c)
 	}

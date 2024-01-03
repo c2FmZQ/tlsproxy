@@ -123,34 +123,35 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 			qc.Close()
 		}
 	}()
-	conn := qc.WrapStream(qc)
-	defer conn.Close()
-	ctx := context.WithValue(qc.Context(), connCtxKey, conn)
-
+	ctx := context.WithValue(qc.Context(), connCtxKey, qc)
 	p.recordEvent("quic connection")
-	numOpen := p.addConn(conn)
-	conn.OnClose(func() {
-		p.removeConn(conn)
-		startTime := conn.Annotation(startTimeKey, time.Time{}).(time.Time)
+
+	wconn := qc.WrapStream(qc)
+	defer wconn.Close()
+
+	numOpen := p.addConn(wconn)
+	wconn.OnClose(func() {
+		p.removeConn(wconn)
+		startTime := qc.Annotation(startTimeKey, time.Time{}).(time.Time)
 		log.Printf("END %s; Dur:%s Recv:%d Sent:%d",
-			formatConnDesc(conn), time.Since(startTime).Truncate(time.Millisecond),
-			conn.BytesReceived(), conn.BytesSent())
-		if be := connBackend(conn); be != nil {
+			formatConnDesc(qc), time.Since(startTime).Truncate(time.Millisecond),
+			qc.BytesReceived(), qc.BytesSent())
+		if be := connBackend(qc); be != nil {
 			be.incInFlight(-1)
 		}
 		p.connClosed.Broadcast()
 	})
-	conn.SetAnnotation(startTimeKey, time.Now())
+	qc.SetAnnotation(startTimeKey, time.Now())
 
 	cs := qc.TLSConnectionState()
-	conn.SetAnnotation(serverNameKey, cs.ServerName)
-	conn.SetAnnotation(protoKey, cs.NegotiatedProtocol)
+	qc.SetAnnotation(serverNameKey, cs.ServerName)
+	qc.SetAnnotation(protoKey, cs.NegotiatedProtocol)
 
 	var clientCert *x509.Certificate
 	if len(cs.PeerCertificates) > 0 {
 		clientCert = cs.PeerCertificates[0]
 	}
-	conn.SetAnnotation(clientCertKey, clientCert)
+	qc.SetAnnotation(clientCertKey, clientCert)
 
 	sum := certSummary(clientCert)
 	if sum == "" {
@@ -160,36 +161,36 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 	be, err := p.backend(cs.ServerName, cs.NegotiatedProtocol)
 	if err != nil {
 		p.recordEvent(err.Error())
-		log.Printf("BAD [%s] %s:%s ➔ %q: %v", sum, conn.RemoteAddr().Network(), conn.RemoteAddr(), cs.ServerName, err)
+		log.Printf("BAD [%s] %s:%s ➔ %q: %v", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), cs.ServerName, err)
 		qc.CloseWithError(quicUnrecognizedName, "unrecognized name")
 		return
 	}
 	be.incInFlight(1)
-	conn.SetAnnotation(backendKey, be)
-	p.setCounters(conn, cs.ServerName)
+	qc.SetAnnotation(backendKey, be)
+	p.setCounters(qc, cs.ServerName)
 
 	if numOpen >= p.cfg.MaxOpen {
 		p.recordEvent("too many open connections")
-		log.Printf("ERR [%s] %s:%s: too many open connections: %d >= %d", sum, conn.RemoteAddr().Network(), conn.RemoteAddr(), numOpen, p.cfg.MaxOpen)
+		log.Printf("ERR [%s] %s:%s: too many open connections: %d >= %d", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), numOpen, p.cfg.MaxOpen)
 		return
 	}
 
 	if l := be.bwLimit; l != nil {
-		conn.SetLimiters(l.ingress, l.egress)
+		qc.SetLimiters(l.ingress, l.egress)
 	}
 
-	if err := be.checkIP(conn.RemoteAddr()); err != nil {
+	if err := be.checkIP(qc.RemoteAddr()); err != nil {
 		p.recordEvent(idnaToUnicode(cs.ServerName) + " CheckIP " + err.Error())
-		log.Printf("BAD [%s] %s:%s ➔ %q CheckIP: %v", sum, conn.RemoteAddr().Network(), conn.RemoteAddr(), idnaToUnicode(cs.ServerName), err)
+		log.Printf("BAD [%s] %s:%s ➔ %q CheckIP: %v", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), idnaToUnicode(cs.ServerName), err)
 		qc.CloseWithError(quicAccessDenied, "access denied")
 		return
 	}
 
-	log.Printf("QUC [%s] %s:%s ➔ %s|%s:%s", sum, conn.RemoteAddr().Network(), conn.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol)
+	log.Printf("QUC [%s] %s:%s ➔ %s|%s:%s", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol)
 	if err := be.connLimit.Wait(ctx); err != nil {
 		if !errors.Is(err, context.Canceled) {
 			p.recordEvent(err.Error())
-			log.Printf("ERR [%s] %s ➔  %q Wait: %v", sum, conn.RemoteAddr(), idnaToUnicode(cs.ServerName), err)
+			log.Printf("ERR [%s] %s ➔  %q Wait: %v", sum, qc.RemoteAddr(), idnaToUnicode(cs.ServerName), err)
 		}
 		return
 	}
@@ -206,7 +207,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		if errors.As(err, &idleTimeout) && idleTimeout.Timeout() {
 			return
 		}
-		log.Printf("ERR [%s] %s:%s ➔ %s|%s:%s %s: %v", sum, conn.RemoteAddr().Network(), conn.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol, tag, err)
+		log.Printf("ERR [%s] %s:%s ➔ %s|%s:%s %s: %v", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol, tag, err)
 	}
 
 	if be.http3Handler != nil && cs.NegotiatedProtocol == "h3" {
@@ -215,7 +216,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		// the request.
 		serv := &http3.Server{
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				req = req.WithContext(context.WithValue(req.Context(), connCtxKey, conn))
+				req = req.WithContext(context.WithValue(req.Context(), connCtxKey, qc))
 				be.http3Handler.ServeHTTP(w, req)
 			}),
 		}
@@ -229,11 +230,11 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		beConn, err := be.dialQUICBackend(ctx, cs.NegotiatedProtocol)
 		if err != nil {
 			qc.CloseWithError(quicBadGateway, "bad gateway")
-			log.Printf("ERR [%s] %s:%s ➔ %s|%s:%s dialQUICBackend: %v", sum, conn.RemoteAddr().Network(), conn.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol, err)
+			log.Printf("ERR [%s] %s:%s ➔ %s|%s:%s dialQUICBackend: %v", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol, err)
 			return
 		}
 		defer beConn.Close()
-		conn.SetAnnotation(internalConnKey, beConn)
+		qc.SetAnnotation(internalConnKey, beConn)
 
 		var wg sync.WaitGroup
 		wg.Add(1)
@@ -556,7 +557,7 @@ func (be *Backend) http3Transport() http.RoundTripper {
 			if err != nil {
 				return nil, err
 			}
-			if c, ok := ctx.Value(connCtxKey).(*netw.Conn); ok {
+			if c, ok := ctx.Value(connCtxKey).(annotatedConnection); ok {
 				c.SetAnnotation(internalConnKey, conn)
 			}
 			return conn, nil
