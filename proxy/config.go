@@ -405,6 +405,9 @@ type ConfigOIDC struct {
 	// "public_profile"}.
 	Scopes []string `yaml:"scopes,omitempty"`
 	// HostedDomain specifies that the HD param should be used.
+	// This parameter is used by Google is restrict the login process to
+	// one hosted domain, e.g. example.com. An empty or unspecified value
+	// means accounts from any domain will be accepted.
 	// https://developers.google.com/identity/openid-connect/openid-connect#hd-param
 	HostedDomain string `yaml:"hostedDomain,omitempty"`
 	// TokenEndpoint is the token endpoint. It must be set only if
