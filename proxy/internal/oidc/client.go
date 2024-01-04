@@ -312,10 +312,12 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 		http.Error(w, "email not verified", http.StatusForbidden)
 		return
 	}
-	if p.cfg.HostedDomain != "" && p.cfg.HostedDomain != "*" && claims.HostedDomain != p.cfg.HostedDomain {
-		p.er.Record("hosted domain not verified")
-		http.Error(w, "invalid domain", http.StatusForbidden)
-		return
+	if p.cfg.HostedDomain != "" {
+		if claims.HostedDomain == "" || (p.cfg.HostedDomain != "*" && claims.HostedDomain != p.cfg.HostedDomain) {
+			p.er.Record("hosted domain not verified")
+			http.Error(w, "invalid domain", http.StatusForbidden)
+			return
+		}
 	}
 	extraClaims := map[string]any{
 		"source": claims.Issuer,
