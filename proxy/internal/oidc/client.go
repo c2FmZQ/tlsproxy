@@ -65,6 +65,9 @@ type Config struct {
 	ClientID string
 	// ClientSecret is the Client Secret.
 	ClientSecret string
+	// HostedDomain specifies that the HD param should be used.
+	// https://developers.google.com/identity/openid-connect/openid-connect#hd-param
+	HostedDomain string
 }
 
 // CookieManager is the interface to set and clear the auth token.
@@ -172,7 +175,7 @@ func (p *ProviderClient) RequestLogin(w http.ResponseWriter, req *http.Request, 
 	if len(scopes) == 0 {
 		scopes = []string{"openid", "email"}
 	}
-	url := p.cfg.AuthEndpoint + "?" +
+	ep := p.cfg.AuthEndpoint + "?" +
 		"response_type=code" +
 		"&client_id=" + url.QueryEscape(p.cfg.ClientID) +
 		"&scope=" + url.QueryEscape(strings.Join(scopes, " ")) +
@@ -181,8 +184,11 @@ func (p *ProviderClient) RequestLogin(w http.ResponseWriter, req *http.Request, 
 		"&nonce=" + nonceStr +
 		"&code_challenge=" + base64.RawURLEncoding.EncodeToString(cvh[:]) +
 		"&code_challenge_method=S256"
+	if p.cfg.HostedDomain != "" {
+		ep += "&hd=" + url.QueryEscape(p.cfg.HostedDomain)
+	}
 	p.cm.SetNonce(w, nonceStr)
-	http.Redirect(w, req, url, http.StatusFound)
+	http.Redirect(w, req, ep, http.StatusFound)
 	p.er.Record("oidc auth request")
 }
 
@@ -252,6 +258,7 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 		Picture       string `json:"picture"`
 		AvatarURL     string `json:"avatar_url"` // github
 		Login         string `json:"login"`      // github
+		HostedDomain  string `json:"hd"`
 		jwt.RegisteredClaims
 	}
 	if data.IDToken != "" {
@@ -305,8 +312,16 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 		http.Error(w, "email not verified", http.StatusForbidden)
 		return
 	}
+	if p.cfg.HostedDomain != "" && p.cfg.HostedDomain != "*" && claims.HostedDomain != p.cfg.HostedDomain {
+		p.er.Record("hosted domain not verified")
+		http.Error(w, "invalid domain", http.StatusForbidden)
+		return
+	}
 	extraClaims := map[string]any{
 		"source": claims.Issuer,
+	}
+	if claims.HostedDomain != "" {
+		extraClaims["hd"] = claims.HostedDomain
 	}
 	if claims.Name != "" {
 		extraClaims["name"] = claims.Name
