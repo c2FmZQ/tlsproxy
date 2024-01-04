@@ -1,8 +1,11 @@
 # TLSPROXY Release Notes
 
+## v0.4.3
+
 * Add support for the OIDC `hd` param (https://developers.google.com/identity/openid-connect/openid-connect#hd-param).
 * Return the proper TLS error when a QUIC client requests an unknown server name and/or alpn protocol.
 * Return the proper TLS error when a client certificate is revoked.
+* Refactor / improve the handling of QUIC connections.
 
 ## v0.4.2
 
