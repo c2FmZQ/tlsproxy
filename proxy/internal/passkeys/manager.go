@@ -269,7 +269,21 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	}
 
 	mode := req.Form.Get("get")
-	redirectToken := req.Form.Get("redirect")
+
+	var originalURL *url.URL
+	if r := req.Form.Get("redirect"); r != "" {
+		origURL, err := m.cfg.TokenManager.ValidateURLToken(w, req, r)
+		if err != nil {
+			http.Error(w, "invalid or expired request", http.StatusBadRequest)
+			return
+		}
+		ou, err := url.Parse(origURL)
+		if err != nil {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		originalURL = ou
+	}
 
 	token, err := m.cfg.OtherCookieManager.ValidateAuthTokenCookie(req)
 	if err != nil {
@@ -296,7 +310,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			IsRegistered bool
 		}{
 			Self:  req.URL.Path,
-			Token: redirectToken,
+			Token: req.Form.Get("redirect"),
 			Mode:  mode,
 		}
 		if mode == "RegisterNewID" || mode == "RefreshID" {
@@ -386,17 +400,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 		m.cfg.EventRecorder.Record("passkey check request")
-		origURL, err := m.cfg.TokenManager.ValidateURLToken(w, req, redirectToken)
-		if err != nil {
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
-		ou, err := url.Parse(origURL)
-		if err != nil {
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
-		m.setAuthToken(w, ou, claims)
+		m.setAuthToken(w, originalURL, claims)
 
 	case "AddKey":
 		if req.Method != "POST" {
@@ -425,19 +429,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		m.cfg.EventRecorder.Record("passkey addkey request")
-		origURL, err := m.cfg.TokenManager.ValidateURLToken(w, req, redirectToken)
-		if err != nil {
-			log.Printf("ERR ValidateURLToken: %v", err)
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
-		ou, err := url.Parse(origURL)
-		if err != nil {
-			log.Printf("ERR url.Parse(%q): %v", origURL, err)
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
-		m.setAuthToken(w, ou, claims)
+		m.setAuthToken(w, originalURL, claims)
 
 	case "Switch":
 		if req.Method != "POST" {
@@ -450,15 +442,10 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		m.cfg.OtherCookieManager.ClearCookies(w)
-		origURL, err := m.cfg.TokenManager.ValidateURLToken(w, req, redirectToken)
-		if err != nil {
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
 		w.Header().Set("content-type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"result":   "ok",
-			"redirect": origURL,
+			"redirect": originalURL.String(),
 		})
 
 	case "JS":
