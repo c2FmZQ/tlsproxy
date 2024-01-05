@@ -280,6 +280,11 @@ func TestSSOEnforcePasskey(t *testing.T) {
 	}
 
 	get := func(urlToGet string, hdr http.Header, postBody []byte) (int, string, string) {
+		if postBody == nil {
+			t.Logf("GET(%q)", urlToGet)
+		} else {
+			t.Logf("POST(%q)", urlToGet)
+		}
 		transport := http.DefaultTransport.(*http.Transport).Clone()
 		transport.TLSClientConfig = &tls.Config{
 			RootCAs: ca.RootCACertPool(),
@@ -328,17 +333,19 @@ func TestSSOEnforcePasskey(t *testing.T) {
 	if got, want := code, 200; got != want {
 		t.Errorf("Code = %v, want %v", got, want)
 	}
-	m := regexp.MustCompile(`href="(/passkey[?]get=RegisterNewID&nonce=[^"]*)"`).FindStringSubmatch(body)
-	if len(m) != 2 {
+	m := regexp.MustCompile(`href="(/passkey[?]get=RegisterNewID&redirect=([^"]*))"`).FindStringSubmatch(body)
+	if len(m) != 3 {
 		t.Fatalf("FindStringSubmatch: %v", m)
 	}
+	token := m[2]
+	t.Logf("TOKEN: %s", token)
 
 	// Go to register new key page.
 	code, body, _ = get("https://"+host+m[1], nil, nil)
 	if got, want := code, 200; got != want {
 		t.Errorf("Code = %v, want %v", got, want)
 	}
-	if haystack, needle := body, "registerPasskey(&#34;https://https.example.com/blah&#34;"; !strings.Contains(haystack, needle) {
+	if haystack, needle := body, "registerPasskey(&#34;"+token+"&#34;"; !strings.Contains(haystack, needle) {
 		t.Errorf("Body = %v, want %v", haystack, needle)
 	}
 
@@ -377,21 +384,21 @@ func TestSSOEnforcePasskey(t *testing.T) {
 	postBody := "args=" + url.QueryEscape(string(dataJSON))
 
 	// Send the new passkey attestation.
-	code, body, _ = get("https://"+host+"/passkey?get=AddKey", hdr, []byte(postBody))
+	code, body, _ = get("https://"+host+"/passkey?get=AddKey&redirect="+token, hdr, []byte(postBody))
 	if got, want := code, 200; got != want {
-		t.Errorf("Code = %v, want %v", got, want)
+		t.Fatalf("Code = %v, want %v", got, want)
 	}
-	if got, want := body, "{\"result\":\"ok\"}\n"; got != want {
-		t.Errorf("Body = %v, want %v", got, want)
+	if got, want := strings.TrimSpace(body), `{"redirect":"https://https.example.com/blah","result":"ok"}`; got != want {
+		t.Fatalf("Body = %v, want %v", got, want)
 	}
 
 	// We should be logged in now.
 	code, body, host = get("https://https.example.com/blah", nil, nil)
 	if got, want := code, 200; got != want {
-		t.Errorf("Code = %v, want %v", got, want)
+		t.Fatalf("Code = %v, want %v", got, want)
 	}
 	if got, want := body, "[https-server] /blah\n"; got != want {
-		t.Errorf("Body = %v, want %v", got, want)
+		t.Fatalf("Body = %v, want %v", got, want)
 	}
 
 	if idp.count == 0 {
@@ -409,9 +416,12 @@ func TestSSOEnforcePasskey(t *testing.T) {
 	if got, want := code, 200; got != want {
 		t.Errorf("Code = %v, want %v", got, want)
 	}
-	if haystack, needle := body, "loginWithPasskey(&#34;https://https.example.com/blah&#34;"; !strings.Contains(haystack, needle) {
-		t.Errorf("Body = %v, want %v", haystack, needle)
+	m = regexp.MustCompile(`loginWithPasskey\(&#34;(.*)&#34;\)`).FindStringSubmatch(body)
+	if len(m) != 2 {
+		t.Fatalf("FindStringSubmatch: %v", m)
 	}
+	token = m[1]
+	t.Logf("TOKEN: %s", token)
 
 	// Get the assertion options.
 	code, body, _ = get("https://"+host+"/passkey?get=AssertionOptions", nil, []byte{})
@@ -446,11 +456,11 @@ func TestSSOEnforcePasskey(t *testing.T) {
 	postBody = "args=" + url.QueryEscape(string(dataJSON))
 
 	// Send the passkey assertion.
-	code, body, _ = get("https://"+host+"/passkey?get=Check", hdr, []byte(postBody))
+	code, body, _ = get("https://"+host+"/passkey?get=Check&redirect="+token, hdr, []byte(postBody))
 	if got, want := code, 200; got != want {
 		t.Errorf("Code = %v, want %v", got, want)
 	}
-	if got, want := body, "{\"result\":\"ok\"}\n"; got != want {
+	if got, want := strings.TrimSpace(body), `{"redirect":"https://https.example.com/blah","result":"ok"}`; got != want {
 		t.Errorf("Body = %v, want %v", got, want)
 	}
 

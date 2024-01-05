@@ -345,6 +345,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			EventRecorder:      er,
 			CookieManager:      cm,
 			OtherCookieManager: other.cm,
+			TokenManager:       p.tokenManager,
 			ClaimsFromCtx:      claimsFromCtx,
 		}
 		provider, err := passkeys.NewManager(cfg)

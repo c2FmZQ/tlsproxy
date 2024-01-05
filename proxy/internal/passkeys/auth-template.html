@@ -22,28 +22,28 @@
   <div id="sum">Access to this page is controlled using <a href="https://fidoalliance.org/passkeys/">Passkeys</a>.</div>
   <div id="buttons">
 {{- if eq .Mode "Login" }}
-    <a class="button" href="{{.Self}}?get=RegisterNewID&nonce={{.Nonce}}">Register New Identity</a>
+    <a class="button" href="{{.Self}}?get=RegisterNewID&redirect={{.Token}}">Register New Identity</a>
 {{- end }}
 {{- if ne .Mode "Login" }}
-    <a class="button" onclick="switchAccount({{.Self}}+'?get=Login&nonce={{.Nonce}}');">Switch Account</a>
+    <a class="button" onclick="switchAccount({{.Self}}+'?get=Login&redirect={{.Token}}');">Switch Account</a>
 {{- end }}
   </div>
   <div id="message">
 {{- if eq .Mode "Login" }}
-    <div><a class="button big" onclick="loginWithPasskey({{.RedirectURL}},{{.Nonce}});">Login</a></div>
+    <div><a class="button big" onclick="loginWithPasskey({{.Token}});">Login</a></div>
 {{- end }}
 {{- if eq .Mode "RefreshID" }}
     <div>{{.Email}}</div>
-    <div><a class="button" onclick="loginWithPasskey({{.RedirectURL}},{{.Nonce}});">Refresh ID</a></div>
+    <div><a class="button" onclick="loginWithPasskey({{.Token}});">Refresh ID</a></div>
 {{- end }}
 {{- if eq .Mode "RegisterNewID" }}
     <div>{{.Email}}</div>
   {{- if .IsAllowed }}
     {{- if .IsRegistered }}
     <div>Already Registered</div>
-    <div><a class="button" onclick="loginWithPasskey({{.RedirectURL}},{{.Nonce}});">Login</a></div>
+    <div><a class="button" onclick="loginWithPasskey({.Token}});">Login</a></div>
     {{- else }}
-    <div><a class="button" onclick="registerPasskey({{.RedirectURL}},{{.Nonce}});">Register This Identity</a></div>
+    <div><a class="button" onclick="registerPasskey({{.Token}});">Register This Identity</a></div>
     {{- end }}
   {{- else }}
     <div>Is Not Allowed</div>

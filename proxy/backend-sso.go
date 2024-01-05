@@ -25,14 +25,11 @@ package proxy
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"html/template"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -51,7 +48,6 @@ type ctxAuthKey struct{}
 
 const (
 	xTLSProxyUserIDHeader = "X-tlsproxy-user-id"
-	sessionIDCookieName   = "TLSPROXYSID"
 )
 
 var (
@@ -191,7 +187,9 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 		}
 		data.Claims = append(data.Claims, kv{k, fmt.Sprint(claims[k])})
 	}
-	token, _, err := be.makeTokenForURL(w, req)
+	req.URL.Scheme = "https"
+	req.URL.Host = req.Host
+	token, _, err := be.tm.URLToken(w, req, req.URL)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -207,7 +205,7 @@ func (be *Backend) serveLogin(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	url, err := be.validateTokenForURL(w, req, tok)
+	url, err := be.tm.ValidateURLToken(w, req, tok)
 	if err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
@@ -221,7 +219,7 @@ func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
 	}
 	req.ParseForm()
 	if tokenStr := req.Form.Get("u"); tokenStr != "" {
-		url, err := be.validateTokenForURL(w, req, tokenStr)
+		url, err := be.tm.ValidateURLToken(w, req, tokenStr)
 		if err != nil {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
@@ -237,7 +235,9 @@ func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Reques
 	if claims := claimsFromCtx(req.Context()); claims != nil {
 		email, _ = claims["email"].(string)
 	}
-	token, url, err := be.makeTokenForURL(w, req)
+	req.URL.Scheme = "https"
+	req.URL.Host = req.Host
+	token, url, err := be.tm.URLToken(w, req, req.URL)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -283,7 +283,9 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 			http.Error(w, "authentication required", http.StatusForbidden)
 			return false
 		}
-		token, url, err := be.makeTokenForURL(w, req)
+		req.URL.Scheme = "https"
+		req.URL.Host = req.Host
+		token, url, err := be.tm.URLToken(w, req, req.URL)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return false
@@ -324,7 +326,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 	be.recordEvent(fmt.Sprintf("allow SSO %s to %s", userID, idnaToUnicode(host)))
 
 	// Filter out the tlsproxy auth cookie.
-	cookiemanager.FilterOutAuthTokenCookie(req, sessionIDCookieName)
+	cookiemanager.FilterOutAuthTokenCookie(req, "TLSPROXYSID")
 	return true
 }
 
@@ -338,60 +340,4 @@ func pathMatches(prefixes []string, path string) bool {
 		}
 	}
 	return false
-}
-
-func (be *Backend) sessionID(w http.ResponseWriter, req *http.Request) string {
-	var sid string
-	if cookie, err := req.Cookie(sessionIDCookieName); err == nil {
-		sid = cookie.Value
-	} else {
-		var buf [16]byte
-		io.ReadFull(rand.Reader, buf[:])
-		sid = hex.EncodeToString(buf[:])
-	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionIDCookieName,
-		Value:    sid,
-		Path:     "/",
-		Expires:  time.Now().Add(30 * 24 * time.Hour),
-		SameSite: http.SameSiteStrictMode,
-		Secure:   true,
-		HttpOnly: true,
-	})
-	return sid
-}
-
-func (be *Backend) makeTokenForURL(w http.ResponseWriter, req *http.Request) (string, string, error) {
-	sid := be.sessionID(w, req)
-	u := req.URL
-	u.Scheme = ""
-	u.Host = ""
-	displayURL := "https://" + idnaToUnicode(req.Host) + u.String()
-	u.Scheme = "https"
-	u.Host = req.Host
-	token, err := be.tm.CreateToken(jwt.MapClaims{
-		"url": u.String(),
-		"sid": sid,
-	}, "EdDSA")
-	return token, displayURL, err
-}
-
-func (be *Backend) validateTokenForURL(w http.ResponseWriter, req *http.Request, token string) (string, error) {
-	tok, err := be.tm.ValidateToken(token)
-	if err != nil {
-		return "", err
-	}
-	c, ok := tok.Claims.(jwt.MapClaims)
-	if !ok {
-		return "", errors.New("invalid token")
-	}
-	if sid := be.sessionID(w, req); sid != c["sid"] {
-		log.Printf("ERR session ID mismatch %q != %q", sid, c["sid"])
-		return "", errors.New("invalid token")
-	}
-	url, ok := c["url"].(string)
-	if !ok {
-		return "", errors.New("invalid token")
-	}
-	return url, nil
 }
