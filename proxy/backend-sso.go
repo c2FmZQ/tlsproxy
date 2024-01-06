@@ -42,6 +42,7 @@ import (
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/passkeys"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
 type ctxAuthKey struct{}
@@ -326,7 +327,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 	be.recordEvent(fmt.Sprintf("allow SSO %s to %s", userID, idnaToUnicode(host)))
 
 	// Filter out the tlsproxy auth cookie.
-	cookiemanager.FilterOutAuthTokenCookie(req, "TLSPROXYSID")
+	cookiemanager.FilterOutAuthTokenCookie(req, tokenmanager.SessionIDCookieName)
 	return true
 }
 

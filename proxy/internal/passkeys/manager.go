@@ -432,7 +432,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		m.setAuthToken(w, originalURL, claims)
 
 	case "Switch":
-		if req.Method != "POST" {
+		if req.Method != "POST" || originalURL == nil {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -702,6 +702,10 @@ func (m *Manager) deleteKey(email string, id Bytes) (retErr error) {
 }
 
 func (m *Manager) setAuthToken(w http.ResponseWriter, u *url.URL, claims map[string]any) {
+	if u == nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	subject, ok := claims["sub"].(string)
 	if !ok {
 		http.Error(w, "internal error", http.StatusInternalServerError)

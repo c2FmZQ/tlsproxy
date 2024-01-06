@@ -38,12 +38,12 @@ import (
 )
 
 const (
-	sessionIDCookieName = "TLSPROXYSID"
+	SessionIDCookieName = "TLSPROXYSID"
 )
 
 func sessionID(w http.ResponseWriter, req *http.Request) string {
 	var sid string
-	if cookie, err := req.Cookie(sessionIDCookieName); err == nil {
+	if cookie, err := req.Cookie(SessionIDCookieName); err == nil {
 		sid = cookie.Value
 	} else {
 		var buf [16]byte
@@ -51,7 +51,7 @@ func sessionID(w http.ResponseWriter, req *http.Request) string {
 		sid = hex.EncodeToString(buf[:])
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     sessionIDCookieName,
+		Name:     SessionIDCookieName,
 		Value:    sid,
 		Path:     "/",
 		Expires:  time.Now().Add(30 * 24 * time.Hour),
