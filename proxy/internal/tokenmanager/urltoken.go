@@ -55,7 +55,7 @@ func sessionID(w http.ResponseWriter, req *http.Request) string {
 		Value:    sid,
 		Path:     "/",
 		Expires:  time.Now().Add(30 * 24 * time.Hour),
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 		Secure:   true,
 		HttpOnly: true,
 	})

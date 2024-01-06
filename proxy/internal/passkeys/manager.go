@@ -301,17 +301,28 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 
 	switch mode {
 	case "Login", "RegisterNewID", "RefreshID":
+		if originalURL == nil {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
 		data := struct {
 			Self         string
 			Token        string
 			Mode         string
 			Email        string
+			URL          string
+			DisplayURL   string
 			IsAllowed    bool
 			IsRegistered bool
 		}{
-			Self:  req.URL.Path,
-			Token: req.Form.Get("redirect"),
-			Mode:  mode,
+			Self:       req.URL.Path,
+			Token:      req.Form.Get("redirect"),
+			Mode:       mode,
+			URL:        originalURL.String(),
+			DisplayURL: originalURL.String(),
+		}
+		if len(data.DisplayURL) > 100 {
+			data.DisplayURL = data.DisplayURL[:97] + "..."
 		}
 		if mode == "RegisterNewID" || mode == "RefreshID" {
 			data.Email, _ = token.Claims.(jwt.MapClaims)["email"].(string)
