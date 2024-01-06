@@ -356,7 +356,7 @@ func TestSSOEnforcePasskey(t *testing.T) {
 	auth.SetOrigin("https://" + host)
 
 	// Get the attestation options.
-	code, body, _ = get("https://"+host+"/passkey?get=AttestationOptions", nil, []byte{})
+	code, body, _ = get("https://"+host+"/passkey?get=AttestationOptions&redirect="+token, nil, []byte{})
 	if got, want := code, 200; got != want {
 		t.Errorf("Code = %v, want %v", got, want)
 	}
@@ -424,7 +424,7 @@ func TestSSOEnforcePasskey(t *testing.T) {
 	t.Logf("TOKEN: %s", token)
 
 	// Get the assertion options.
-	code, body, _ = get("https://"+host+"/passkey?get=AssertionOptions", nil, []byte{})
+	code, body, _ = get("https://"+host+"/passkey?get=AssertionOptions&redirect="+token, nil, []byte{})
 	if got, want := code, 200; got != want {
 		t.Errorf("Code = %v, want %v", got, want)
 	}

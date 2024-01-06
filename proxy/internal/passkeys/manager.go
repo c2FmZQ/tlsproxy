@@ -269,20 +269,25 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	}
 
 	mode := req.Form.Get("get")
+	if mode == "JS" {
+		serveWebauthnJS(w, req)
+		return
+	}
 
-	var originalURL *url.URL
-	if r := req.Form.Get("redirect"); r != "" {
-		origURL, err := m.cfg.TokenManager.ValidateURLToken(w, req, r)
-		if err != nil {
-			http.Error(w, "invalid or expired request", http.StatusBadRequest)
-			return
-		}
-		ou, err := url.Parse(origURL)
-		if err != nil {
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
-		originalURL = ou
+	redirectToken := req.Form.Get("redirect")
+	if redirectToken == "" {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	origURL, err := m.cfg.TokenManager.ValidateURLToken(w, req, redirectToken)
+	if err != nil {
+		http.Error(w, "invalid or expired request", http.StatusBadRequest)
+		return
+	}
+	originalURL, err := url.Parse(origURL)
+	if err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
 	}
 
 	token, err := m.cfg.OtherCookieManager.ValidateAuthTokenCookie(req)
@@ -301,10 +306,6 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 
 	switch mode {
 	case "Login", "RegisterNewID", "RefreshID":
-		if originalURL == nil {
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
 		data := struct {
 			Self         string
 			Token        string
@@ -316,7 +317,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			IsRegistered bool
 		}{
 			Self:       req.URL.Path,
-			Token:      req.Form.Get("redirect"),
+			Token:      redirectToken,
 			Mode:       mode,
 			URL:        originalURL.String(),
 			DisplayURL: originalURL.String(),
@@ -443,7 +444,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		m.setAuthToken(w, originalURL, claims)
 
 	case "Switch":
-		if req.Method != "POST" || originalURL == nil {
+		if req.Method != "POST" {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -458,9 +459,6 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			"result":   "ok",
 			"redirect": originalURL.String(),
 		})
-
-	case "JS":
-		serveWebauthnJS(w, req)
 
 	default:
 		http.Error(w, "invalid request", http.StatusBadRequest)

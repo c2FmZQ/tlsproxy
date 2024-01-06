@@ -28,7 +28,7 @@ function registerPasskey(token) {
     throw new Error('Browser doesn\'t support WebAuthn');
   }
 
-  fetch('?get=AttestationOptions', {
+  fetch('?get=AttestationOptions'+(token?'&redirect='+token:''), {
     method: 'POST',
     headers: {
       'x-csrf-check': 1,
@@ -94,7 +94,7 @@ function loginWithPasskey(token) {
   if (!('PublicKeyCredential' in window)) {
     throw new Error('Browser doesn\'t support WebAuthn');
   }
-  fetch('?get=AssertionOptions', {
+  fetch('?get=AssertionOptions&redirect='+token, {
     method: 'POST',
     headers: {
       'x-csrf-check': 1,
