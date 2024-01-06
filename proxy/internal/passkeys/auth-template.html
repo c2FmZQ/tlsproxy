@@ -40,7 +40,7 @@ a.button.big {
     <div class="big">🛂</div>
     <div>Authentication required to access</div>
     <div id="target"><a href="{{.URL}}">{{.DisplayURL}}</a></div>
-    <div><a class="button big" onclick="loginWithPasskey({{.Token}});">Login</a></div>
+    <div><a class="button big" onclick="loginWithPasskey({{.Token}});">Continue</a></div>
 {{- end }}
 {{- if eq .Mode "RefreshID" }}
     <div>{{.Email}}</div>
@@ -51,7 +51,7 @@ a.button.big {
   {{- if .IsAllowed }}
     {{- if .IsRegistered }}
     <div>Already Registered</div>
-    <div><a class="button" onclick="loginWithPasskey({{.Token}});">Login</a></div>
+    <div><a class="button big" onclick="loginWithPasskey({{.Token}});">Continue</a></div>
     {{- else }}
     <div><a class="button" onclick="registerPasskey({{.Token}});">Register This Identity</a></div>
     {{- end }}

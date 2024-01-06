@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+* Improve user experience with the passkey login screen.
+
 ## v0.4.3
 
 * Add support for the OIDC `hd` param (https://developers.google.com/identity/openid-connect/openid-connect#hd-param).
