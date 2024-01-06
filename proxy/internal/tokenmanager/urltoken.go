@@ -62,6 +62,7 @@ func sessionID(w http.ResponseWriter, req *http.Request) string {
 	return sid
 }
 
+// URLToken returns a signed token for URL u in the context of request req.
 func (tm *TokenManager) URLToken(w http.ResponseWriter, req *http.Request, u *url.URL) (string, string, error) {
 	sid := sessionID(w, req)
 	realHost := u.Host
@@ -77,22 +78,24 @@ func (tm *TokenManager) URLToken(w http.ResponseWriter, req *http.Request, u *ur
 	return token, displayURL, err
 }
 
-func (tm *TokenManager) ValidateURLToken(w http.ResponseWriter, req *http.Request, token string) (string, error) {
+// ValidateURLToken validates a signed token and returns the URL. The request
+// must on the same host as the one where the token was created.
+func (tm *TokenManager) ValidateURLToken(w http.ResponseWriter, req *http.Request, token string) (*url.URL, error) {
 	tok, err := tm.ValidateToken(token)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	c, ok := tok.Claims.(jwt.MapClaims)
 	if !ok {
-		return "", errors.New("invalid token")
+		return nil, errors.New("invalid token")
 	}
 	if sid := sessionID(w, req); sid != c["sid"] {
 		log.Printf("ERR session ID mismatch %q != %q", sid, c["sid"])
-		return "", errors.New("invalid token")
+		return nil, errors.New("invalid token")
 	}
-	url, ok := c["url"].(string)
+	u, ok := c["url"].(string)
 	if !ok {
-		return "", errors.New("invalid token")
+		return nil, errors.New("invalid token")
 	}
-	return url, nil
+	return url.Parse(u)
 }

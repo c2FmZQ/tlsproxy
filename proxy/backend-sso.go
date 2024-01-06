@@ -211,7 +211,7 @@ func (be *Backend) serveLogin(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	be.SSO.p.RequestLogin(w, req, url)
+	be.SSO.p.RequestLogin(w, req, url.String())
 }
 
 func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
@@ -225,7 +225,7 @@ func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		be.SSO.p.RequestLogin(w, req, url)
+		be.SSO.p.RequestLogin(w, req, url.String())
 		return
 	}
 	logoutTemplate.Execute(w, nil)

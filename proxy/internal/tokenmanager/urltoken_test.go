@@ -64,7 +64,7 @@ func TestURLToken(t *testing.T) {
 	if err != nil {
 		t.Errorf("ValidateURLToken err = %v", err)
 	}
-	if got, want := u, "https://example.com/foo/bar"; got != want {
+	if got, want := u.String(), "https://example.com/foo/bar"; got != want {
 		t.Errorf("url = %q, want %q", got, want)
 	}
 }

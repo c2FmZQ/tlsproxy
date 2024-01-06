@@ -279,14 +279,9 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	origURL, err := m.cfg.TokenManager.ValidateURLToken(w, req, redirectToken)
+	originalURL, err := m.cfg.TokenManager.ValidateURLToken(w, req, redirectToken)
 	if err != nil {
 		http.Error(w, "invalid or expired request", http.StatusBadRequest)
-		return
-	}
-	originalURL, err := url.Parse(origURL)
-	if err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 
