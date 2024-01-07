@@ -2,6 +2,7 @@
 
 * Improve user experience with the passkey login screen.
 * Fix small accounting bug in ingress metrics.
+* Apply the forward rate limit to http requests. Before, the rate limit was only applied to incoming connections.
 
 ## v0.4.3
 
