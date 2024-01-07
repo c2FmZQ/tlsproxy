@@ -23,12 +23,12 @@
  * SOFTWARE.
  */
 
-function registerPasskey(redirectUrl, nonce) {
+function registerPasskey(token) {
   if (!('PublicKeyCredential' in window)) {
     throw new Error('Browser doesn\'t support WebAuthn');
   }
 
-  fetch('?get=AttestationOptions', {
+  fetch('?get=AttestationOptions'+(token?'&redirect='+token:''), {
     method: 'POST',
     headers: {
       'x-csrf-check': 1,
@@ -59,7 +59,7 @@ function registerPasskey(redirectUrl, nonce) {
       attestationObject: Array.from(new Uint8Array(pkc.response.attestationObject)),
       transports: pkc.response.getTransports(),
     });
-    return fetch('?get=AddKey'+(nonce?'&nonce='+nonce:''), {
+    return fetch('?get=AddKey'+(token?'&redirect='+token:''), {
       method: 'POST',
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
@@ -77,8 +77,8 @@ function registerPasskey(redirectUrl, nonce) {
   .then(r => {
     if (r.result === 'ok') {
       console.log('Success');
-      if (redirectUrl) {
-        window.location = redirectUrl;
+      if (r.redirect) {
+        window.location = r.redirect;
       } else {
         window.location.reload();
       }
@@ -90,11 +90,11 @@ function registerPasskey(redirectUrl, nonce) {
   });
 }
 
-function loginWithPasskey(redirectUrl, nonce) {
+function loginWithPasskey(token) {
   if (!('PublicKeyCredential' in window)) {
     throw new Error('Browser doesn\'t support WebAuthn');
   }
-  fetch('?get=AssertionOptions', {
+  fetch('?get=AssertionOptions&redirect='+token, {
     method: 'POST',
     headers: {
       'x-csrf-check': 1,
@@ -121,7 +121,7 @@ function loginWithPasskey(redirectUrl, nonce) {
         signature: Array.from(new Uint8Array(pkc.response.signature)),
         userHandle: Array.from(new Uint8Array(pkc.response.userHandle)),
     });
-    return fetch('?get=Check&nonce='+nonce, {
+    return fetch('?get=Check&redirect='+token, {
       method: 'POST',
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
@@ -140,8 +140,8 @@ function loginWithPasskey(redirectUrl, nonce) {
   .then(r => {
     if (r.result === 'ok') {
       console.log('Success');
-      if (redirectUrl) {
-        window.location = redirectUrl;
+      if (r.redirect) {
+        window.location = r.redirect;
       } else {
         window.location.reload();
       }
@@ -188,8 +188,8 @@ function deleteKey(id) {
 }
 
 
-function switchAccount(redirectUrl) {
-  fetch('?get=Switch', {
+function switchAccount(token) {
+  fetch('?get=Switch&redirect='+token, {
     method: 'POST',
     headers: {
       'x-csrf-check': 1,
@@ -204,8 +204,8 @@ function switchAccount(redirectUrl) {
   .then(r => {
     if (r.result === 'ok') {
       console.log('Success');
-      if (redirectUrl) {
-        window.location = redirectUrl;
+      if (r.redirect) {
+        window.location = r.redirect;
       } else {
         window.location.reload();
       }

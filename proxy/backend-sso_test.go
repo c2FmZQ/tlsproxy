@@ -199,35 +199,6 @@ func TestEnforceSSOPolicy(t *testing.T) {
 	}
 }
 
-func TestTokenForURL(t *testing.T) {
-	proxy := newBackendSSOTestProxy(t)
-
-	req := httptest.NewRequest("GET", "https://example.com/foo/bar", nil)
-	w := httptest.NewRecorder()
-	tok, displayURL, err := proxy.cfg.Backends[0].makeTokenForURL(w, req)
-	if err != nil {
-		t.Errorf("makeTokenForURL() err = %v", err)
-	}
-	if got, want := displayURL, "https://example.com/foo/bar"; got != want {
-		t.Errorf("displayURL = %q, want %q", got, want)
-	}
-
-	// Wrong session id
-	if _, err := proxy.cfg.Backends[0].validateTokenForURL(w, req, tok); err == nil {
-		t.Fatal("validateTokenForURL should fail")
-	}
-
-	// Correct session id
-	req.Header.Set("cookie", w.Header().Get("set-cookie"))
-	u, err := proxy.cfg.Backends[0].validateTokenForURL(w, req, tok)
-	if err != nil {
-		t.Errorf("validateTokenForURL err = %v", err)
-	}
-	if got, want := u, "https://example.com/foo/bar"; got != want {
-		t.Errorf("url = %q, want %q", got, want)
-	}
-}
-
 func newBackendSSOTestProxy(t *testing.T) *Proxy {
 	return newTestProxy(
 		&Config{
