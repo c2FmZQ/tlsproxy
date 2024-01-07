@@ -267,7 +267,8 @@ type Backend struct {
 	// TLS certificate. See https://pkg.go.dev/crypto/tls#Config
 	InsecureSkipVerify bool `yaml:"insecureSkipVerify,omitempty"`
 	// ForwardRateLimit specifies how fast requests can be forwarded to the
-	// backend servers. The default value is 5 requests per second.
+	// backend servers. It applies to forwarding connections, and to
+	// forwarding HTTP requests. The default value is 5 requests per second.
 	ForwardRateLimit int `yaml:"forwardRateLimit"`
 	// ForwardServerName is the ServerName to send in the TLS handshake with
 	// the backend server. It is also used to verify the server's identify.
