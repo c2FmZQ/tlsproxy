@@ -81,7 +81,7 @@ const (
 	internalConnKey  = "ic"
 	reportEndKey     = "re"
 	backendKey       = "be"
-	requestCountKey  = "rc"
+	requestFlagKey   = "rf"
 
 	tlsBadCertificate      = tls.AlertError(0x2a)
 	tlsCertificateRevoked  = tls.AlertError(0x2c)
