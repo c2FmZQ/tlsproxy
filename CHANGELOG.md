@@ -1,6 +1,7 @@
 # TLSPROXY Release Notes
 
 * Improve user experience with the passkey login screen.
+* Fix small accounting bug in ingress metrics.
 
 ## v0.4.3
 

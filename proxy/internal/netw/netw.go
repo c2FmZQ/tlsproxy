@@ -88,11 +88,11 @@ type Conn struct {
 	upBytesSent     *counter.Counter
 	upBytesReceived *counter.Counter
 
+	peekBuf []byte
+
 	mu          sync.Mutex
 	onClose     func()
 	annotations map[string]any
-
-	peekBuf []byte
 }
 
 func (c *Conn) StreamID() int64 {
@@ -177,8 +177,6 @@ func (c *Conn) OnClose(f func()) {
 }
 
 func (c *Conn) Peek(b []byte) (int, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	want := len(b)
 	have := len(c.peekBuf)
 	if want > have {
@@ -202,16 +200,14 @@ func (c *Conn) Read(b []byte) (int, error) {
 			return 0, err
 		}
 	}
-	c.mu.Lock()
+	var n int
+	var err error
 	if len(c.peekBuf) > 0 {
-		n := copy(b, c.peekBuf)
+		n = copy(b, c.peekBuf)
 		c.peekBuf = c.peekBuf[n:]
-		c.bytesReceived.Incr(int64(n))
-		c.mu.Unlock()
-		return n, nil
+	} else {
+		n, err = c.Conn.Read(b)
 	}
-	c.mu.Unlock()
-	n, err := c.Conn.Read(b)
 	c.bytesReceived.Incr(int64(n))
 	c.upBytesReceived.Incr(int64(n))
 	return n, err
