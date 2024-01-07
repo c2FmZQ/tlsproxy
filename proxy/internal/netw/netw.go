@@ -200,13 +200,14 @@ func (c *Conn) Read(b []byte) (int, error) {
 			return 0, err
 		}
 	}
+	var n int
+	var err error
 	if len(c.peekBuf) > 0 {
-		n := copy(b, c.peekBuf)
+		n = copy(b, c.peekBuf)
 		c.peekBuf = c.peekBuf[n:]
-		c.bytesReceived.Incr(int64(n))
-		return n, nil
+	} else {
+		n, err = c.Conn.Read(b)
 	}
-	n, err := c.Conn.Read(b)
 	c.bytesReceived.Incr(int64(n))
 	c.upBytesReceived.Incr(int64(n))
 	return n, err
