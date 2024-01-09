@@ -61,13 +61,21 @@ var (
 	commaRE = regexp.MustCompile(`, *`)
 )
 
+func handlePanic(req *http.Request, recovered any) {
+	if recovered == http.ErrAbortHandler {
+		log.Printf("ERR %s ➔ %s %s ➔ Aborted (%q)", formatReqDesc(req), req.Method, req.URL, userAgent(req))
+		return
+	}
+	log.Printf("PANIC: %#v\n%s", recovered, string(debug.Stack()))
+}
+
 // localHandler returns an HTTP handler for backends that are served entirely by
 // the proxy itself. The requests are never forwarded to a remote server.
 func (be *Backend) localHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("PANIC: %#v\n%s", r, string(debug.Stack()))
+				handlePanic(req, r)
 			}
 		}()
 		if !be.authenticateUser(w, &req) {
@@ -96,7 +104,7 @@ func (be *Backend) reverseProxy() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("PANIC: %#v\n%s", r, string(debug.Stack()))
+				handlePanic(req, r)
 			}
 		}()
 		if !be.authenticateUser(w, &req) {
