@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+* Log aborted ReverseProxy requests more gracefully.
+
 ## v0.4.4
 
 * Improve user experience with the passkey login screen.

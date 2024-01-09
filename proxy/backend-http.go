@@ -61,7 +61,7 @@ var (
 	commaRE = regexp.MustCompile(`, *`)
 )
 
-func handlePanic(req *http.Request, recovered any) {
+func logPanic(req *http.Request, recovered any) {
 	if recovered == http.ErrAbortHandler {
 		log.Printf("ERR %s ➔ %s %s ➔ Aborted (%q)", formatReqDesc(req), req.Method, req.URL, userAgent(req))
 		return
@@ -75,7 +75,7 @@ func (be *Backend) localHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		defer func() {
 			if r := recover(); r != nil {
-				handlePanic(req, r)
+				logPanic(req, r)
 			}
 		}()
 		if !be.authenticateUser(w, &req) {
@@ -104,7 +104,7 @@ func (be *Backend) reverseProxy() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		defer func() {
 			if r := recover(); r != nil {
-				handlePanic(req, r)
+				logPanic(req, r)
 			}
 		}()
 		if !be.authenticateUser(w, &req) {
