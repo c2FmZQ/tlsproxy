@@ -998,6 +998,8 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 }
 
 func (p *Proxy) acceptProxyHeader(addr net.Addr) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if len(p.cfg.acceptProxyHeaderFrom) == 0 {
 		return false
 	}
