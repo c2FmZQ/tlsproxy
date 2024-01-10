@@ -1,5 +1,14 @@
 # TLSPROXY Release Notes
 
+* Update go: 1.21.6
+* Update go dependencies:
+  * upgraded github.com/beevik/etree v1.2.0 => v1.3.0
+  * upgraded github.com/google/pprof v0.0.0-20231212022811-ec68065c825e => v0.0.0-20231229205709-960ae82b1e42
+  * upgraded golang.org/x/crypto v0.17.0 => v0.18.0
+  * upgraded golang.org/x/exp v0.0.0-20231226003508-02704c960a9b => v0.0.0-20240103183307-be819d1f06fc
+  * upgraded golang.org/x/net v0.19.0 => v0.20.0
+  * upgraded golang.org/x/sys v0.15.0 => v0.16.0
+
 ## v0.4.4
 
 * Improve user experience with the passkey login screen.
