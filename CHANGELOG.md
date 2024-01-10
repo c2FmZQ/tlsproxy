@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+* Add support for the PROXY protocol for incoming connections. See the `AcceptProxyHeaderFrom` config option.
+
 ## v0.4.4
 
 * Improve user experience with the passkey login screen.
