@@ -3,7 +3,7 @@ on:
   - pull_request
   - push
 env:
-  GOVERSION: '>=1.21.5'
+  GOVERSION: '>=1.21.6'
 jobs:
   build-and-run-tests:
     name: Build & run tests
