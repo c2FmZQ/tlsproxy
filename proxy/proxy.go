@@ -999,15 +999,13 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 
 func (p *Proxy) acceptProxyHeader(addr net.Addr) bool {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if len(p.cfg.acceptProxyHeaderFrom) == 0 {
-		return false
-	}
+	cidrs := p.cfg.acceptProxyHeaderFrom
+	p.mu.Unlock()
 	tcpAddr, ok := addr.(*net.TCPAddr)
 	if !ok {
 		return false
 	}
-	for _, n := range p.cfg.acceptProxyHeaderFrom {
+	for _, n := range cidrs {
 		if n.Contains(tcpAddr.IP) {
 			return true
 		}
