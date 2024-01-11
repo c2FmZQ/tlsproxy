@@ -817,7 +817,7 @@ func TestIncomingProxyProto(t *testing.T) {
 		t.Fatalf("proxy.Start: %v", err)
 	}
 
-	got, err := proxyProtoGet("example.com", proxy.listener.Addr().String(), "GET / HTTP/1.0\nHost: example.com\n\n", extCA)
+	got, err := proxyProtoGet("example.com", proxy.listener.Addr().String(), "Hello\n", extCA)
 	if err != nil {
 		t.Fatalf("proxyProtoGet() returned %v", err)
 	}
