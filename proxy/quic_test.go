@@ -123,7 +123,7 @@ func TestQUICConnections(t *testing.T) {
 		if tc.quic {
 			got, err = quicGet(tc.host, proxy.quicTransport.(*netw.QUICTransport).Addr().String(), "Hello!\n", extCA, tc.protos)
 		} else {
-			got, err = tlsGet(tc.host, proxy.listener.Addr().String(), "Hello!\n", extCA, nil, tc.protos)
+			got, _, err = tlsGet(tc.host, proxy.listener.Addr().String(), "Hello!\n", extCA, nil, tc.protos)
 		}
 		if tc.expError != (err != nil) {
 			t.Errorf("%s: Got error %v, want %v", tc.desc, (err != nil), tc.expError)
