@@ -1,6 +1,8 @@
 # TLSPROXY Release Notes
 
 * Add support for the PROXY protocol for incoming connections. See the `AcceptProxyHeaderFrom` config option.
+* Fix bug with the handling of the PROXY protocol header with TLS backends. The header was sent after the TLS handshake instead of before.
+
 * Update go: 1.21.6
 * Update go dependencies:
   * upgraded github.com/beevik/etree v1.2.0 => v1.3.0

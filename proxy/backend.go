@@ -144,14 +144,11 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 				Timeout:   timeout,
 				KeepAlive: 30 * time.Second,
 			}
-			if mode == ModeTLS || mode == ModeHTTPS {
-				tlsDialer := &tls.Dialer{
-					NetDialer: dialer,
-					Config:    tc,
+			c, err = dialer.DialContext(ctx, "tcp", addr)
+			if err == nil && proxyProtoVersion > 0 {
+				if err = sendProxyHeader(proxyProtoVersion, c, ctx.Value(connCtxKey).(net.Conn)); err != nil {
+					c.Close()
 				}
-				c, err = tlsDialer.DialContext(ctx, "tcp", addr)
-			} else {
-				c, err = dialer.DialContext(ctx, "tcp", addr)
 			}
 		}
 		if err != nil {
@@ -162,32 +159,36 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 			}
 			return nil, err
 		}
-		if proxyProtoVersion > 0 {
-			conn := ctx.Value(connCtxKey).(net.Conn)
-			header := proxyproto.HeaderProxyFromAddrs(proxyProtoVersion, conn.RemoteAddr(), conn.LocalAddr())
-			header.Command = proxyproto.PROXY
-			var tlvs []proxyproto.TLV
-			if sn := connServerName(conn); sn != "" {
-				tlvs = append(tlvs, proxyproto.TLV{
-					Type:  proxyproto.PP2_TYPE_AUTHORITY,
-					Value: []byte(sn),
-				})
-			}
-			if proto := connProto(conn); proto != "" {
-				tlvs = append(tlvs, proxyproto.TLV{
-					Type:  proxyproto.PP2_TYPE_ALPN,
-					Value: []byte(proto),
-				})
-			}
-			if err := header.SetTLVs(tlvs); err != nil {
-				return nil, err
-			}
-			if _, err := header.WriteTo(c); err != nil {
-				return nil, err
-			}
+		if mode == ModeTLS || mode == ModeHTTPS {
+			c = tls.Client(c, tc)
 		}
 		return c, nil
 	}
+}
+
+func sendProxyHeader(v byte, out, in net.Conn) error {
+	header := proxyproto.HeaderProxyFromAddrs(v, in.RemoteAddr(), in.LocalAddr())
+	header.Command = proxyproto.PROXY
+	var tlvs []proxyproto.TLV
+	if sn := connServerName(in); sn != "" {
+		tlvs = append(tlvs, proxyproto.TLV{
+			Type:  proxyproto.PP2_TYPE_AUTHORITY,
+			Value: []byte(sn),
+		})
+	}
+	if proto := connProto(in); proto != "" {
+		tlvs = append(tlvs, proxyproto.TLV{
+			Type:  proxyproto.PP2_TYPE_ALPN,
+			Value: []byte(proto),
+		})
+	}
+	if err := header.SetTLVs(tlvs); err != nil {
+		return err
+	}
+	if _, err := header.WriteTo(out); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (be *Backend) authorize(cert *x509.Certificate) error {
