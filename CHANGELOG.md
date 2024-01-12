@@ -1,5 +1,6 @@
 # TLSPROXY Release Notes
 
+* Log aborted ReverseProxy requests more gracefully.
 * Update go: 1.21.6
 * Update go dependencies:
   * upgraded github.com/beevik/etree v1.2.0 => v1.3.0
