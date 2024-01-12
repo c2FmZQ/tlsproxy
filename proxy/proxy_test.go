@@ -1004,6 +1004,7 @@ func proxyProtoGet(name, addr, msg string, rootCA *certmanager.CertManager) (str
 
 func httpGet(name, addr, path string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate) (string, string, error) {
 	var localAddr string
+	var mu sync.Mutex
 	name = idnaToASCII(name)
 	client := &http.Client{
 		Transport: &http.Transport{
@@ -1018,7 +1019,9 @@ func httpGet(name, addr, path string, rootCA *certmanager.CertManager, clientCer
 				if err != nil {
 					return nil, err
 				}
+				mu.Lock()
 				localAddr = c.LocalAddr().String()
+				mu.Unlock()
 				return c, nil
 			},
 			ForceAttemptHTTP2: true,
@@ -1043,6 +1046,8 @@ func httpGet(name, addr, path string, rootCA *certmanager.CertManager, clientCer
 	if err != nil {
 		return "", "", err
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	return resp.Proto + " " + resp.Status + "\n" + string(b), localAddr, nil
 }
 
