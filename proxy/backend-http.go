@@ -141,7 +141,7 @@ func (be *Backend) reverseProxy() http.Handler {
 		ctx = context.WithValue(ctx, ctxURLKey, req.URL.String())
 
 		// Detect forwarding loops using the via headers.
-		me := req.Context().Value(connCtxKey).(net.Conn).LocalAddr().String()
+		me := localNetConn(req.Context().Value(connCtxKey).(net.Conn)).LocalAddr().String()
 		hops := commaRE.Split(req.Header.Get(viaHeader), -1)
 		for _, via := range hops {
 			if _, via, _ = strings.Cut(via, " "); via == me {
