@@ -725,7 +725,7 @@ func (m *Manager) setAuthToken(w http.ResponseWriter, u *url.URL, claims map[str
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	if err := m.cfg.CookieManager.SetAuthTokenCookie(w, subject, email, sid, u.Hostname(), claims); err != nil {
+	if err := m.cfg.CookieManager.SetAuthTokenCookie(w, subject, email, sid, u.Host, claims); err != nil {
 		log.Printf("ERR SetAuthTokenCookie: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

@@ -2,6 +2,7 @@
 
 * Add support for the PROXY protocol for incoming connections. See the `AcceptProxyHeaderFrom` config option.
 * Fix bug with the handling of the PROXY protocol header with TLS backends. The header was sent after the TLS handshake instead of before.
+* Fix bug that prevented logins on non default ports when ForceReAuth is set.
 * Log aborted ReverseProxy requests more gracefully.
 * Update go: 1.21.6
 * Update go dependencies:

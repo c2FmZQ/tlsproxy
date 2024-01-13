@@ -37,6 +37,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pires/go-proxyproto"
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
@@ -290,6 +291,9 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		switch cc := c.(type) {
 		case *netw.Conn:
 			connection.Type = "TLS"
+			if _, ok := cc.Conn.(*proxyproto.Conn); ok {
+				connection.Type += "*"
+			}
 		case *netw.QUICConn:
 			connection.Type = "QUIC"
 			streams = cc.Streams()
