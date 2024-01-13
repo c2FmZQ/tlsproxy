@@ -141,6 +141,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	}
 	type connection struct {
 		SourceAddr   string
+		ViaAddr      string
 		Type         string
 		ServerName   string
 		Mode         string
@@ -280,15 +281,15 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		startTime := c.Annotation(startTimeKey, time.Time{}).(time.Time)
 		totalTime := time.Since(startTime)
 		remote := c.RemoteAddr().Network() + ":" + c.RemoteAddr().String()
-		if isProxyProtoConn(c) {
-			remote += "*"
-		}
 
 		connection := connection{
 			SourceAddr: remote,
 			ServerName: idnaToUnicode(connServerName(c)),
 			Mode:       connMode(c),
 			Proto:      connProto(c),
+		}
+		if isProxyProtoConn(c) {
+			connection.ViaAddr = c.LocalAddr().Network() + ":" + c.LocalAddr().String()
 		}
 		var streams []*netw.QUICStream
 

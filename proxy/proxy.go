@@ -1363,7 +1363,8 @@ func formatConnDesc(c net.Conn, ids ...string) string {
 	}
 	buf.WriteString(c.RemoteAddr().Network() + ":" + c.RemoteAddr().String())
 	if isProxyProtoConn(c) {
-		buf.WriteString("*")
+		buf.WriteString(" ➔ ")
+		buf.WriteString(c.LocalAddr().Network() + ":" + c.LocalAddr().String())
 	}
 	if serverName != "" {
 		buf.WriteString(" ➔ ")
