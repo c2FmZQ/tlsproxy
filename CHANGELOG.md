@@ -1,5 +1,6 @@
 # TLSPROXY Release Notes
 
+* Fix bug that prevented logins with passkeys on non default ports when ForceReAuth is set. (introduced in v0.4.4)
 * Log aborted ReverseProxy requests more gracefully.
 * Update go: 1.21.6
 * Update go dependencies:
