@@ -104,10 +104,11 @@ func TestProxyBackends(t *testing.T) {
 	be9 := newHTTPServer(t, ctx, "backend9", intCA)
 	// Backend with PKI cert.
 	be10 := newTCPServer(t, ctx, "backend10", pkiCert)
-	// Backend with HTTP and proxy protocol
+	// Backends with HTTP/HTTPS and proxy protocol
 	be11 := newHTTPServerProxyProtocol(t, ctx, "backend11", nil)
+	be12 := newHTTPServerProxyProtocol(t, ctx, "backend12", intCA)
 	// Backend with TCP and proxy protocol
-	be12 := newProxyProtocolServer(t, ctx, "backend12", nil)
+	be13 := newProxyProtocolServer(t, ctx, "backend12", nil)
 
 	cfg := &Config{
 		MaxOpen: 100,
@@ -255,13 +256,26 @@ func TestProxyBackends(t *testing.T) {
 				Mode:                 "HTTP",
 				ProxyProtocolVersion: "v1",
 			},
+			// HTTPS + PROXY Protocol
+			{
+				ServerNames: []string{
+					"https-proxy.example.com",
+				},
+				Addresses: []string{
+					be12.String(),
+				},
+				Mode:                 "HTTPS",
+				ProxyProtocolVersion: "v2",
+				ForwardRootCAs:       []string{intCA.RootCAPEM()},
+				ForwardServerName:    "https-proxy-internal.example.com",
+			},
 			// TCP + PROXY Protocol
 			{
 				ServerNames: []string{
 					"tcp-proxy.example.com",
 				},
 				Addresses: []string{
-					be12.listener.Addr().String(),
+					be13.listener.Addr().String(),
 				},
 				Mode:                 "TCP",
 				ProxyProtocolVersion: "v2",
@@ -284,7 +298,11 @@ func TestProxyBackends(t *testing.T) {
 		t.Fatalf("proxy.Reconfigure: %v", err)
 	}
 
-	get := func(host, certName string, protos []string, httpPath string) (string, error) {
+	if _, err := proxyProtoGet("example.com", proxy.listener.Addr().String(), "Hello!\n", extCA); err == nil {
+		t.Errorf("proxyProtoGet should have failed")
+	}
+
+	get := func(host, certName string, protos []string, httpPath string) (string, string, error) {
 		var certs []tls.Certificate
 		if certName != "" {
 			c, err := intCA.GetCert(certName)
@@ -294,16 +312,14 @@ func TestProxyBackends(t *testing.T) {
 			certs = append(certs, *c)
 		}
 		var body string
+		var localAddr string
 		var err error
 		if httpPath != "" {
-			body, err = httpGet(host, proxy.listener.Addr().String(), httpPath, extCA, certs)
+			body, localAddr, err = httpGet(host, proxy.listener.Addr().String(), httpPath, extCA, certs)
 		} else {
-			body, err = tlsGet(host, proxy.listener.Addr().String(), "Hello!\n", extCA, certs, protos)
+			body, localAddr, err = tlsGet(host, proxy.listener.Addr().String(), "Hello!\n", extCA, certs, protos)
 		}
-		if err != nil {
-			return "", err
-		}
-		return body, nil
+		return body, localAddr, err
 	}
 
 	for _, tc := range []struct {
@@ -334,12 +350,13 @@ func TestProxyBackends(t *testing.T) {
 		{desc: "Hit backend8 /foo", host: "http.example.com", want: "[backend9] /foo", http: "/foo"},
 		{desc: "Hit backend9", host: "https.example.com", want: "[backend9] /", http: "/", certName: "client.example.com"},
 		{desc: "Hit backend10", host: "tls-pki.example.com", want: "Hello from backend10\n", certName: "client.example.com"},
-		{desc: "Hit backend11", host: "http-proxy.example.com", want: "[backend11] /", http: "/"},
-		{desc: "Hit backend12", host: "tcp-proxy.example.com", want: "Hello from backend12\n"},
+		{desc: "Hit backend11", host: "http-proxy.example.com", want: "[backend11] LOCALADDR /", http: "/"},
+		{desc: "Hit backend12", host: "https-proxy.example.com", want: "[backend12] LOCALADDR /", http: "/"},
+		{desc: "Hit backend13", host: "tcp-proxy.example.com", want: "Hello LOCALADDR from backend12\n"},
 		{desc: "Hit loop", host: "loop.example.com", want: "508 Loop Detected", http: "/"},
 		{desc: "Hit default backend with IP address as host", host: "", want: "421 Misdirected Request", http: "/"},
 	} {
-		got, err := get(tc.host, tc.certName, tc.protos, tc.http)
+		got, localAddr, err := get(tc.host, tc.certName, tc.protos, tc.http)
 		if tc.expError != (err != nil) {
 			t.Fatalf("%s: Got error %v, want %v. Body: %q err: %v", tc.desc, (err != nil), tc.expError, got, err)
 			continue
@@ -347,12 +364,13 @@ func TestProxyBackends(t *testing.T) {
 		if err != nil {
 			continue
 		}
+		want := strings.Replace(tc.want, "LOCALADDR", localAddr, 1)
 		if tc.http != "" {
-			if !strings.Contains(got, tc.want) {
-				t.Errorf("%s: Got %q, want %q", tc.desc, got, tc.want)
+			if !strings.Contains(got, want) {
+				t.Errorf("%s: Got %q, want %q", tc.desc, got, want)
 			}
-		} else if got != tc.want {
-			t.Errorf("%s: Got %q, want %q", tc.desc, got, tc.want)
+		} else if got != want {
+			t.Errorf("%s: Got %q, want %q", tc.desc, got, want)
 		}
 	}
 
@@ -363,7 +381,7 @@ func TestProxyBackends(t *testing.T) {
 	if err := proxy.pkis["TEST CA"].RevokeCertificate(pc.SerialNumber, 0); err != nil {
 		t.Fatalf("RevokeCertificate: %v", err)
 	}
-	if got, err := get("tls-pki.example.com", "client.example.com", nil, ""); got != "" {
+	if got, _, err := get("tls-pki.example.com", "client.example.com", nil, ""); got != "" {
 		t.Errorf("get with revoked cert should return nothing: %q, %v", got, err)
 	}
 }
@@ -474,7 +492,7 @@ func TestAuthnAuthz(t *testing.T) {
 			}
 			certs = append(certs, *c)
 		}
-		body, err := httpGet(host, proxy.listener.Addr().String(), "/", extCA, certs)
+		body, _, err := httpGet(host, proxy.listener.Addr().String(), "/", extCA, certs)
 		if err != nil {
 			return "", err
 		}
@@ -776,6 +794,53 @@ func TestBandwidthLimit(t *testing.T) {
 	}
 }
 
+func TestIncomingProxyProto(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	be1 := newProxyProtocolServer(t, ctx, "backend1", nil)
+
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: "localhost:0",
+			TLSAddr:  "localhost:0",
+			CacheDir: t.TempDir(),
+			MaxOpen:  100,
+			AcceptProxyHeaderFrom: []string{
+				"127.0.0.1/32",
+				"::1/128",
+			},
+			Backends: []*Backend{
+				{
+					ServerNames: []string{
+						"example.com",
+					},
+					Addresses: []string{
+						be1.listener.Addr().String(),
+					},
+					ProxyProtocolVersion: "v2",
+				},
+			},
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+
+	got, err := proxyProtoGet("example.com", proxy.listener.Addr().String(), "Hello\n", extCA)
+	if err != nil {
+		t.Fatalf("proxyProtoGet() returned %v", err)
+	}
+	if want := "Hello 1.2.3.4:12345 from backend1\n"; got != want {
+		t.Errorf("Body = %q, want %q", got, want)
+	}
+}
+
 func TestCheckIP(t *testing.T) {
 	cfg := &Config{
 		HTTPAddr: "localhost:0",
@@ -889,7 +954,7 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 	return p
 }
 
-func tlsGet(name, addr, msg string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate, protos []string) (string, error) {
+func tlsGet(name, addr, msg string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate, protos []string) (string, string, error) {
 	name = idnaToASCII(name)
 	c, err := tls.Dial("tcp", addr, &tls.Config{
 		ServerName:         name,
@@ -899,31 +964,65 @@ func tlsGet(name, addr, msg string, rootCA *certmanager.CertManager, clientCerts
 		NextProtos:         protos,
 	})
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
+	localAddr := c.LocalAddr().String()
 	defer c.Close()
 	if _, err := c.Write([]byte(msg)); err != nil {
-		return "", err
+		return "", "", err
 	}
 	b, err := io.ReadAll(c)
+	return string(b), localAddr, err
+}
+
+func proxyProtoGet(name, addr, msg string, rootCA *certmanager.CertManager) (string, error) {
+	c, err := net.Dial("tcp", addr)
+	if err != nil {
+		return "", err
+	}
+	header := proxyproto.HeaderProxyFromAddrs(2, &net.TCPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 12345}, &net.TCPAddr{IP: net.IPv4(5, 6, 7, 8), Port: 23456})
+	header.Command = proxyproto.PROXY
+	if _, err := header.WriteTo(c); err != nil {
+		c.Close()
+		return "", err
+	}
+	tlsConn := tls.Client(c, &tls.Config{
+		ServerName:         idnaToASCII(name),
+		InsecureSkipVerify: name == "",
+		RootCAs:            rootCA.RootCACertPool(),
+	})
+	defer tlsConn.Close()
+	if _, err := tlsConn.Write([]byte(msg)); err != nil {
+		return "", err
+	}
+	b, err := io.ReadAll(tlsConn)
 	if err != nil {
 		return "", err
 	}
 	return string(b), nil
 }
 
-func httpGet(name, addr, path string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate) (string, error) {
+func httpGet(name, addr, path string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate) (string, string, error) {
+	var localAddr string
+	var mu sync.Mutex
 	name = idnaToASCII(name)
 	client := &http.Client{
 		Transport: &http.Transport{
 			DialTLSContext: func(context.Context, string, string) (net.Conn, error) {
-				return tls.Dial("tcp", addr, &tls.Config{
+				c, err := tls.Dial("tcp", addr, &tls.Config{
 					ServerName:         name,
 					InsecureSkipVerify: name == "",
 					RootCAs:            rootCA.RootCACertPool(),
 					Certificates:       clientCerts,
 					NextProtos:         []string{"h2", "http/1.1"},
 				})
+				if err != nil {
+					return nil, err
+				}
+				mu.Lock()
+				localAddr = c.LocalAddr().String()
+				mu.Unlock()
+				return c, nil
 			},
 			ForceAttemptHTTP2: true,
 		},
@@ -935,19 +1034,21 @@ func httpGet(name, addr, path string, rootCA *certmanager.CertManager, clientCer
 	}
 	req, err := http.NewRequest(http.MethodGet, "https://"+host+path, nil)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	req.Header.Set("Host", host)
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer resp.Body.Close()
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return resp.Proto + " " + resp.Status + "\n" + string(b), nil
+	mu.Lock()
+	defer mu.Unlock()
+	return resp.Proto + " " + resp.Status + "\n" + string(b), localAddr, nil
 }
 
 func newHTTPServer(t *testing.T, ctx context.Context, name string, ca *certmanager.CertManager) net.Addr {
@@ -981,35 +1082,40 @@ func newHTTPServer(t *testing.T, ctx context.Context, name string, ca *certmanag
 }
 
 func newHTTPServerProxyProtocol(t *testing.T, ctx context.Context, name string, ca *certmanager.CertManager) net.Addr {
-	var l net.Listener
-	var err error
-	if ca == nil {
-		l, err = net.Listen("tcp", "localhost:0")
-	} else {
-		tlsCfg := ca.TLSConfig()
-		tlsCfg.NextProtos = []string{"h2", "http/1.1"}
-		l, err = tls.Listen("tcp", "localhost:0", tlsCfg)
-	}
+	netListener, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
 		t.Fatalf("[%s] Listen: %v", name, err)
 	}
 	proxyListener := &proxyproto.Listener{
-		Listener:          l,
+		Listener:          netListener,
 		ReadHeaderTimeout: time.Second,
+	}
+	var l net.Listener = proxyListener
+	if ca != nil {
+		tlsCfg := ca.TLSConfig()
+		tlsCfg.NextProtos = []string{"h2", "http/1.1"}
+		l = tls.NewListener(l, tlsCfg)
 	}
 	s := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			conn := req.Context().Value(connCtxKey).(*proxyproto.Conn)
-			f, _ := conn.ProxyHeader().Format()
-			t.Logf("[%s] PROXY HEADER: %q", name, f)
-			fmt.Fprintf(w, "[%s] %s\n", name, req.RequestURI)
+			switch conn := req.Context().Value(connCtxKey).(type) {
+			case *proxyproto.Conn:
+				f, _ := conn.ProxyHeader().Format()
+				t.Logf("[%s] PROXY HEADER: %q", name, f)
+			case *tls.Conn:
+				f, _ := conn.NetConn().(*proxyproto.Conn).ProxyHeader().Format()
+				t.Logf("[%s] TLS PROXY HEADER: %q", name, f)
+			default:
+				t.Fatalf("Unexpected conn type: %T", conn)
+			}
+			fmt.Fprintf(w, "[%s] %s %s\n", name, req.RemoteAddr, req.RequestURI)
 		}),
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
 			return context.WithValue(ctx, connCtxKey, c)
 		},
 		ErrorLog: log.New(os.Stderr, "["+name+"] ", 0),
 	}
-	go s.Serve(proxyListener)
+	go s.Serve(l)
 	go func() {
 		<-ctx.Done()
 		s.Close()
@@ -1102,7 +1208,7 @@ func newProxyProtocolServer(t *testing.T, ctx context.Context, name string, ca t
 			f, _ := conn.(*proxyproto.Conn).ProxyHeader().Format()
 			t.Logf("[%s] PROXY HEADER: %q", name, f)
 			go func(c net.Conn) {
-				fmt.Fprintf(c, "Hello from %s\n", name)
+				fmt.Fprintf(c, "Hello %s from %s\n", c.RemoteAddr(), name)
 				c.Close()
 			}(conn)
 		}

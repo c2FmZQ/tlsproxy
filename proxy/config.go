@@ -109,6 +109,12 @@ type Config struct {
 	// EnableQUIC specifies whether the QUIC protocol should be enabled.
 	// The default is true if the binary is compiled with QUIC support.
 	EnableQUIC *bool `yaml:"enableQUIC,omitempty"`
+	// AcceptProxyHeaderFrom is a list of CIDRs. The PROXY protocol is
+	// enabled for incoming TCP connections originating from IP addresses
+	// within one of these CIDRs. By default, the proxy protocol is not
+	// enabled for incoming connections.
+	// See https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt
+	AcceptProxyHeaderFrom []string `yaml:"acceptProxyHeaderFrom,omitempty"`
 	// CacheDir is the directory where the proxy stores TLS certificates.
 	CacheDir string `yaml:"cacheDir,omitempty"`
 	// DefaultServerName is the server name to use when the TLS client
@@ -143,6 +149,8 @@ type Config struct {
 	// Each backend can be associated with one group. The group's limits
 	// are shared between all the backends associated with it.
 	BWLimits []*BWLimit `yaml:"bwLimits,omitempty"`
+
+	acceptProxyHeaderFrom []*net.IPNet
 }
 
 // BWLimit is a named bandwidth limit configuration.
@@ -626,6 +634,10 @@ type LocalOIDCRewriteRule struct {
 }
 
 func (cfg *Config) clone() *Config {
+	for _, be := range cfg.Backends {
+		be.mu.Lock()
+		defer be.mu.Unlock()
+	}
 	b, _ := yaml.Marshal(cfg)
 	var out Config
 	yaml.Unmarshal(b, &out)
@@ -660,6 +672,15 @@ func (cfg *Config) Check() error {
 	if *cfg.EnableQUIC && !quicIsEnabled {
 		return errors.New("EnableQUIC: QUIC is not supported in this binary")
 	}
+	cfg.acceptProxyHeaderFrom = make([]*net.IPNet, len(cfg.AcceptProxyHeaderFrom))
+	for i, c := range cfg.AcceptProxyHeaderFrom {
+		_, n, err := net.ParseCIDR(c)
+		if err != nil {
+			return fmt.Errorf("AcceptProxyHeaderFrom[%d]: %w", i, err)
+		}
+		cfg.acceptProxyHeaderFrom[i] = n
+	}
+
 	cfg.DefaultServerName = idnaToASCII(cfg.DefaultServerName)
 
 	identityProviders := make(map[string]bool)

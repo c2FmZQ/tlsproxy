@@ -53,6 +53,7 @@ import (
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/storage/autocertcache"
 	"github.com/c2FmZQ/storage/crypto"
+	"github.com/pires/go-proxyproto"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/crypto/ocsp"
@@ -996,6 +997,22 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 	return tc
 }
 
+func (p *Proxy) acceptProxyHeader(addr net.Addr) bool {
+	p.mu.Lock()
+	cidrs := p.cfg.acceptProxyHeaderFrom
+	p.mu.Unlock()
+	tcpAddr, ok := addr.(*net.TCPAddr)
+	if !ok {
+		return false
+	}
+	for _, n := range cidrs {
+		if n.Contains(tcpAddr.IP) {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *Proxy) handleConnection(conn *netw.Conn) {
 	p.recordEvent("tcp connection")
 	defer func() {
@@ -1012,6 +1029,10 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		}
 	}()
 	conn.SetAnnotation(startTimeKey, time.Now())
+	if p.acceptProxyHeader(conn.RemoteAddr()) {
+		cc := proxyproto.NewConn(conn.Conn)
+		conn.Conn = cc
+	}
 	numOpen := p.addConn(conn)
 	conn.OnClose(func() {
 		p.removeConn(conn)
