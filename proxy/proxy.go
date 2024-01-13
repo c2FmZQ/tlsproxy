@@ -1387,8 +1387,9 @@ func isProxyProtoConn(c net.Conn) bool {
 	case *tls.Conn:
 		return isProxyProtoConn(cc.NetConn())
 	case *netw.Conn:
-		_, ok := cc.Conn.(*proxyproto.Conn)
-		return ok
+		return isProxyProtoConn(cc.Conn)
+	case *proxyproto.Conn:
+		return true
 	default:
 		return false
 	}
