@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+## v0.5.0
+
 * Add support for the PROXY protocol for incoming connections. See the `AcceptProxyHeaderFrom` config option.
 * Fix bug with the handling of the PROXY protocol header with TLS backends. The header was sent after the TLS handshake instead of before.
 * Fix bug that prevented logins with passkeys on non default ports when ForceReAuth is set. (introduced in v0.4.4)
