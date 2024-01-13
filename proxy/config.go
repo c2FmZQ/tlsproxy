@@ -634,6 +634,10 @@ type LocalOIDCRewriteRule struct {
 }
 
 func (cfg *Config) clone() *Config {
+	for _, be := range cfg.Backends {
+		be.mu.Lock()
+		defer be.mu.Unlock()
+	}
 	b, _ := yaml.Marshal(cfg)
 	var out Config
 	yaml.Unmarshal(b, &out)
