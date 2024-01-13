@@ -1207,6 +1207,12 @@ func newProxyProtocolServer(t *testing.T, ctx context.Context, name string, ca t
 			t.Logf("[%s] Received connection from %s", name, conn.RemoteAddr())
 			f, _ := conn.(*proxyproto.Conn).ProxyHeader().Format()
 			t.Logf("[%s] PROXY HEADER: %q", name, f)
+			if got, want := isProxyProtoConn(conn), true; got != want {
+				t.Errorf("isProxyProtoConn() = %v, want %v", got, want)
+			}
+			if got, want := localNetConn(conn), conn.(*proxyproto.Conn).Raw(); got != want {
+				t.Errorf("localNetConn() = %v, want %v", got, want)
+			}
 			go func(c net.Conn) {
 				fmt.Fprintf(c, "Hello %s from %s\n", c.RemoteAddr(), name)
 				c.Close()

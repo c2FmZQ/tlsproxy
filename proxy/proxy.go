@@ -1362,6 +1362,10 @@ func formatConnDesc(c net.Conn, ids ...string) string {
 		buf.WriteString("[" + strings.Join(identities, "|") + "] ")
 	}
 	buf.WriteString(c.RemoteAddr().Network() + ":" + c.RemoteAddr().String())
+	if isProxyProtoConn(c) {
+		buf.WriteString(" ➔ ")
+		buf.WriteString(c.LocalAddr().Network() + ":" + c.LocalAddr().String())
+	}
 	if serverName != "" {
 		buf.WriteString(" ➔ ")
 		buf.WriteString(idnaToUnicode(serverName))
@@ -1376,6 +1380,32 @@ func formatConnDesc(c net.Conn, ids ...string) string {
 		}
 	}
 	return buf.String()
+}
+
+func isProxyProtoConn(c net.Conn) bool {
+	switch cc := c.(type) {
+	case *tls.Conn:
+		return isProxyProtoConn(cc.NetConn())
+	case *netw.Conn:
+		return isProxyProtoConn(cc.Conn)
+	case *proxyproto.Conn:
+		return true
+	default:
+		return false
+	}
+}
+
+func localNetConn(c net.Conn) net.Conn {
+	switch cc := c.(type) {
+	case *tls.Conn:
+		return localNetConn(cc.NetConn())
+	case *netw.Conn:
+		return localNetConn(cc.Conn)
+	case *proxyproto.Conn:
+		return cc.Raw()
+	default:
+		return cc
+	}
 }
 
 func setKeepAlive(conn net.Conn) {
