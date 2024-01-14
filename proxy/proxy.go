@@ -1237,9 +1237,7 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 	}
 	defer intConn.Close()
 	setKeepAlive(intConn)
-
 	netwConn(extConn).SetAnnotation(dialDoneKey, time.Now())
-	netwConn(extConn).SetAnnotation(internalConnKey, intConn)
 
 	desc := formatConnDesc(netwConn(extConn))
 	log.Printf("CON %s", desc)
@@ -1280,7 +1278,6 @@ func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
 	setKeepAlive(intConn)
 
 	netwConn(extConn).SetAnnotation(dialDoneKey, time.Now())
-	netwConn(extConn).SetAnnotation(internalConnKey, intConn)
 
 	desc := formatConnDesc(netwConn(extConn))
 	log.Printf("CON %s", desc)

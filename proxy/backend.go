@@ -162,6 +162,9 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 		if mode == ModeTLS || mode == ModeHTTPS {
 			c = tls.Client(c, tc)
 		}
+		if cc, ok := ctx.Value(connCtxKey).(net.Conn); ok {
+			annotatedConn(cc).SetAnnotation(internalConnKey, c)
+		}
 		return c, nil
 	}
 }

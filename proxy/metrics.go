@@ -321,9 +321,6 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 			if addr == "" {
 				addr = stream.BridgeAddr()
 			}
-			if addr == "" {
-				addr = "local"
-			}
 			streamID := stream.StreamID()
 			var dir string
 			// bit 0: 0 -> client initiated, 1 -> server initiated

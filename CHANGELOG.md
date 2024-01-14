@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+* Prevent backend connections from being re-used when PROXY proto is enabled.
+
 ## v0.5.0
 
 * Add support for the PROXY protocol for incoming connections. See the `AcceptProxyHeaderFrom` config option.
