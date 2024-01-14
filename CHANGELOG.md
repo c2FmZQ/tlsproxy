@@ -1,5 +1,9 @@
 # TLSPROXY Release Notes
 
+* Update go dependencies:
+  * upgraded github.com/onsi/ginkgo/v2 v2.13.2 => v2.14.0
+  * upgraded golang.org/x/exp v0.0.0-20240103183307-be819d1f06fc => v0.0.0-20240112132812-db7319d0e0e3
+  * upgraded golang.org/x/tools v0.16.1 => v0.17.0
 ## v0.5.0
 
 * Add support for the PROXY protocol for incoming connections. See the `AcceptProxyHeaderFrom` config option.
