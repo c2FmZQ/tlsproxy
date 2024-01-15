@@ -24,6 +24,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -160,20 +161,27 @@ func (be *Backend) reverseProxy() http.Handler {
 		// dial(), but we need to set req.URL.Host to a unique value
 		// so that the http client will not re-use connections with
 		// other addresses.
-		h := sha256.Sum256([]byte(hostname))
-		hh := hex.EncodeToString(h[:])
-		req.URL.Host = hh
+		override := ""
+		proxyProtoVersion := be.proxyProtocolVersion
 	L:
 		for i, po := range be.PathOverrides {
 			for _, prefix := range po.Paths {
 				if !strings.HasPrefix(req.URL.Path, prefix) {
 					continue
 				}
-				req.URL.Host = fmt.Sprintf("%s-%d", hh, i)
 				ctx = context.WithValue(ctx, ctxOverrideIDKey, i)
+				override = fmt.Sprintf("%d", i)
+				proxyProtoVersion = po.proxyProtocolVersion
 				break L
 			}
 		}
+		hostKey := bytes.NewBufferString(hostname + ";" + override)
+		if proxyProtoVersion > 0 {
+			hostKey.WriteByte(';')
+			writeProxyHeader(proxyProtoVersion, hostKey, req.Context().Value(connCtxKey).(net.Conn))
+		}
+		h := sha256.Sum256(hostKey.Bytes())
+		req.URL.Host = hex.EncodeToString(h[:])
 
 		// Apply the forward rate limit. The first request was already
 		// counted when the connection was established.
@@ -271,7 +279,7 @@ func (be *Backend) reverseProxyTransport() http.RoundTripper {
 			return be.dial(ctx)
 		},
 		MaxIdleConns:          100,
-		IdleConnTimeout:       30 * time.Second,
+		IdleConnTimeout:       10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 	h2 := &http2.Transport{
@@ -280,7 +288,7 @@ func (be *Backend) reverseProxyTransport() http.RoundTripper {
 		},
 		DisableCompression: true,
 		AllowHTTP:          true,
-		ReadIdleTimeout:    30 * time.Second,
+		ReadIdleTimeout:    10 * time.Second,
 		WriteByteTimeout:   30 * time.Second,
 		CountError: func(errType string) {
 			be.recordEvent("http2 client error: " + errType)

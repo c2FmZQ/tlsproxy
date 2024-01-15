@@ -146,7 +146,7 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 			}
 			c, err = dialer.DialContext(ctx, "tcp", addr)
 			if err == nil && proxyProtoVersion > 0 {
-				if err = sendProxyHeader(proxyProtoVersion, c, ctx.Value(connCtxKey).(net.Conn)); err != nil {
+				if err = writeProxyHeader(proxyProtoVersion, c, ctx.Value(connCtxKey).(net.Conn)); err != nil {
 					c.Close()
 				}
 			}
@@ -162,11 +162,14 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 		if mode == ModeTLS || mode == ModeHTTPS {
 			c = tls.Client(c, tc)
 		}
+		if cc, ok := ctx.Value(connCtxKey).(net.Conn); ok {
+			annotatedConn(cc).SetAnnotation(internalConnKey, c)
+		}
 		return c, nil
 	}
 }
 
-func sendProxyHeader(v byte, out, in net.Conn) error {
+func writeProxyHeader(v byte, out io.Writer, in net.Conn) error {
 	header := proxyproto.HeaderProxyFromAddrs(v, in.RemoteAddr(), in.LocalAddr())
 	header.Command = proxyproto.PROXY
 	var tlvs []proxyproto.TLV

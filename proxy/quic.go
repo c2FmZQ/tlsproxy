@@ -232,7 +232,6 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 			return
 		}
 		defer beConn.Close()
-		qc.SetAnnotation(internalConnKey, beConn)
 
 		var wg sync.WaitGroup
 		wg.Add(1)
@@ -365,7 +364,6 @@ func (p *Proxy) handleQUICTCPStream(ctx context.Context, be *Backend, conn *netw
 		setKeepAlive(intConn)
 
 		conn.SetAnnotation(dialDoneKey, time.Now())
-		conn.SetAnnotation(internalConnKey, intConn)
 		if cc, ok := conn.Conn.(interface {
 			SetBridgeAddr(string)
 		}); ok {
@@ -428,7 +426,6 @@ func (be *Backend) handleQUICQUICStream(ctx context.Context, dest *netw.QUICConn
 	now := time.Now()
 	conn.SetAnnotation(startTimeKey, now)
 	conn.SetAnnotation(dialDoneKey, now)
-	conn.SetAnnotation(internalConnKey, intConn)
 
 	desc := formatConnDesc(conn)
 	log.Printf("STR %s", desc)
@@ -543,6 +540,9 @@ func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUI
 			}
 			return nil, err
 		}
+		if cc, ok := ctx.Value(connCtxKey).(net.Conn); ok {
+			annotatedConn(cc).SetAnnotation(internalConnKey, conn)
+		}
 		return conn, nil
 	}
 }
@@ -554,9 +554,6 @@ func (be *Backend) http3Transport() http.RoundTripper {
 			conn, err := be.dialQUICBackend(ctx, "h3")
 			if err != nil {
 				return nil, err
-			}
-			if c, ok := ctx.Value(connCtxKey).(annotatedConnection); ok {
-				c.SetAnnotation(internalConnKey, conn)
 			}
 			return conn, nil
 		},
