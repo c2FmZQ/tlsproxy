@@ -841,6 +841,54 @@ func TestIncomingProxyProto(t *testing.T) {
 	}
 }
 
+func TestProxyProtoIsolation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+
+	be1 := newHTTPServerProxyProtocol(t, ctx, "backend1", nil)
+
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: "localhost:0",
+			TLSAddr:  "localhost:0",
+			CacheDir: t.TempDir(),
+			MaxOpen:  100,
+			Backends: []*Backend{
+				{
+					ServerNames: []string{
+						"www.example.com",
+					},
+					Addresses: []string{
+						be1.String(),
+					},
+					Mode:                 "HTTP",
+					ProxyProtocolVersion: "v1",
+				},
+			},
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+
+	for i := 0; i < 5; i++ {
+		p := fmt.Sprintf("/%d", i)
+		got, localAddr, err := httpGet("www.example.com", proxy.listener.Addr().String(), p, extCA, nil)
+		if err != nil {
+			t.Errorf("%s: %v", p, err)
+		}
+		if want := fmt.Sprintf("[backend1] %s %s", localAddr, p); !strings.Contains(got, want) {
+			t.Errorf("%s: Got %q, want %q", p, got, want)
+		}
+	}
+}
+
 func TestCheckIP(t *testing.T) {
 	cfg := &Config{
 		HTTPAddr: "localhost:0",
