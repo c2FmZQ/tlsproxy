@@ -169,7 +169,7 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 	}
 }
 
-func sendProxyHeader(v byte, out, in net.Conn) error {
+func sendProxyHeader(v byte, out io.Writer, in net.Conn) error {
 	header := proxyproto.HeaderProxyFromAddrs(v, in.RemoteAddr(), in.LocalAddr())
 	header.Command = proxyproto.PROXY
 	var tlvs []proxyproto.TLV

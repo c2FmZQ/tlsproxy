@@ -24,6 +24,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -169,17 +170,17 @@ func (be *Backend) reverseProxy() http.Handler {
 					continue
 				}
 				ctx = context.WithValue(ctx, ctxOverrideIDKey, i)
-				override = fmt.Sprintf(";%d", i)
+				override = fmt.Sprintf("%d", i)
 				proxyProtoVersion = po.proxyProtocolVersion
 				break L
 			}
 		}
-		hostKey := hostname + override
+		hostKey := bytes.NewBufferString(hostname + ";" + override)
 		if proxyProtoVersion > 0 {
-			cc := req.Context().Value(connCtxKey).(net.Conn)
-			hostKey += ";" + cc.RemoteAddr().String() + ";" + cc.LocalAddr().String()
+			hostKey.WriteByte(';')
+			sendProxyHeader(proxyProtoVersion, hostKey, req.Context().Value(connCtxKey).(net.Conn))
 		}
-		h := sha256.Sum256([]byte(hostKey))
+		h := sha256.Sum256(hostKey.Bytes())
 		req.URL.Host = hex.EncodeToString(h[:])
 
 		// Apply the forward rate limit. The first request was already
