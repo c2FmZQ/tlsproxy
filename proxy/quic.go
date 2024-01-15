@@ -540,6 +540,12 @@ func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUI
 			}
 			return nil, err
 		}
+		conn.OnClose(func() {
+			be.removeConn(conn)
+		})
+		be.addConn(conn)
+		conn.SetAnnotation(startTimeKey, time.Now())
+		conn.SetAnnotation(backendKey, be)
 		if cc, ok := ctx.Value(connCtxKey).(net.Conn); ok {
 			annotatedConn(cc).SetAnnotation(internalConnKey, conn)
 		}

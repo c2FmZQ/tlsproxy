@@ -199,7 +199,7 @@ function selectTab(target) {
 </div>
 
 <div id="panel-connections" class="group">
-<h2>Connections</h2>
+<h2>Inbound connections</h2>
 {{- range .Connections }}
   <div>
     <div style="margin-left: 2rem; padding-top: 0.5rem; display: grid; grid-template-columns: auto auto; justify-items: left; width: fit-content; column-gap: 1rem;">
@@ -216,7 +216,20 @@ function selectTab(target) {
     <div style="padding-left: 5rem;">Elapsed:{{.Time}} Egress:{{.EgressBytes}} ({{.EgressRate}}) Ingress:{{.IngressBytes}} ({{.IngressRate}})</div>
   </div>
 {{- end }}
+
+{{- if len .BackendConnections | ne 0 }}
+<h2>Outbound connections</h2>
+{{- range .BackendConnections }}
+  <h3>Backend: {{.ServerName}}</h3>
+{{- range .Connections }}
+  <div>
+    <div style="margin-left: 2rem;">{{.SourceAddr}} &lt;=&gt; {{.DestinationAddr}}</div>
+    <div style="padding-left: 5rem;">Elapsed:{{.Time}} Egress:{{.EgressBytes}} ({{.EgressRate}}) Ingress:{{.IngressBytes}} ({{.IngressRate}})</div>
+  </div>
+{{- end }}
+{{- end }}
 </div>
+{{- end }}
 
 <div id="panel-backends" class="group">
 {{- range $i, $be := .Backends }}

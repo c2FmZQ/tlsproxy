@@ -360,10 +360,11 @@ type Backend struct {
 	http3Handler  http.Handler
 	localHandlers []localHandler
 
-	mu       sync.Mutex
-	next     int
-	inFlight int
-	shutdown bool
+	mu          sync.Mutex
+	next        int
+	inFlight    int
+	shutdown    bool
+	connections map[connKey]annotatedConnection
 }
 
 type localHandler struct {
