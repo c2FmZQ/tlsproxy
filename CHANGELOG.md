@@ -1,6 +1,6 @@
 # TLSPROXY Release Notes
 
-* Prevent backend connections from being re-used when PROXY proto is enabled.
+* Prevent backend connections from being re-used by other clients when PROXY protocol is enabled.
 
 ## v0.5.0
 
