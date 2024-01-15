@@ -178,7 +178,7 @@ func (be *Backend) reverseProxy() http.Handler {
 		hostKey := bytes.NewBufferString(hostname + ";" + override)
 		if proxyProtoVersion > 0 {
 			hostKey.WriteByte(';')
-			sendProxyHeader(proxyProtoVersion, hostKey, req.Context().Value(connCtxKey).(net.Conn))
+			writeProxyHeader(proxyProtoVersion, hostKey, req.Context().Value(connCtxKey).(net.Conn))
 		}
 		h := sha256.Sum256(hostKey.Bytes())
 		req.URL.Host = hex.EncodeToString(h[:])
