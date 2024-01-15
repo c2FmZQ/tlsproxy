@@ -101,6 +101,9 @@ func connBackend(c net.Conn) *Backend {
 }
 
 func connMode(c net.Conn) string {
+	if v, ok := annotatedConn(c).Annotation(modeKey, "").(string); ok {
+		return v
+	}
 	if be := connBackend(c); be != nil {
 		return be.Mode
 	}

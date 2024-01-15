@@ -82,6 +82,7 @@ const (
 	internalConnKey  = "ic"
 	reportEndKey     = "re"
 	backendKey       = "be"
+	modeKey          = "m"
 	requestFlagKey   = "rf"
 
 	tlsBadCertificate      = tls.AlertError(0x2a)

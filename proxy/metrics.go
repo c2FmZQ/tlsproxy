@@ -157,6 +157,8 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	type beConnection struct {
 		SourceAddr      string
 		DestinationAddr string
+		Mode            string
+		Proto           string
 		Time            string
 		EgressBytes     string
 		EgressRate      string
@@ -164,7 +166,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		IngressRate     string
 	}
 	type beConnectionList struct {
-		ServerName  string
+		ServerNames string
 		Connections []beConnection
 	}
 	type handler struct {
@@ -368,37 +370,34 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		data.Connections = append(data.Connections, connection)
 	}
 
-	var lastServerName string
 	for _, be := range p.cfg.Backends {
-		var serverName string
-		if len(be.ServerNames) > 0 {
-			serverName = idnaToUnicode(be.ServerNames[0])
-			if len(be.ServerNames) > 1 {
-				serverName += ", ..."
-			}
-		}
 		be.mu.Lock()
+		if len(be.connections) == 0 {
+			be.mu.Unlock()
+			continue
+		}
+		serverNames := make([]string, len(be.ServerNames))
+		for i := range be.ServerNames {
+			serverNames[i] = idnaToUnicode(be.ServerNames[i])
+		}
+		data.BackendConnections = append(data.BackendConnections, beConnectionList{
+			ServerNames: strings.Join(serverNames, ", "),
+		})
+		off := len(data.BackendConnections) - 1
 		for _, c := range be.connections {
 			startTime := c.Annotation(startTimeKey, time.Time{}).(time.Time)
 			totalTime := time.Since(startTime)
-
 			connection := beConnection{
 				SourceAddr:      c.LocalAddr().Network() + ":" + c.LocalAddr().String(),
 				DestinationAddr: c.RemoteAddr().Network() + ":" + c.RemoteAddr().String(),
+				Mode:            be.Mode,
+				Proto:           connProto(c),
+				Time:            totalTime.Truncate(100 * time.Millisecond).String(),
+				EgressBytes:     formatSize10(c.BytesSent()),
+				EgressRate:      formatSize10(c.ByteRateSent()) + "/s",
+				IngressBytes:    formatSize10(c.BytesReceived()),
+				IngressRate:     formatSize10(c.ByteRateReceived()) + "/s",
 			}
-			connection.Time = totalTime.Truncate(100 * time.Millisecond).String()
-			connection.EgressBytes = formatSize10(c.BytesSent())
-			connection.EgressRate = formatSize10(c.ByteRateSent()) + "/s"
-			connection.IngressBytes = formatSize10(c.BytesReceived())
-			connection.IngressRate = formatSize10(c.ByteRateReceived()) + "/s"
-
-			if lastServerName != serverName {
-				data.BackendConnections = append(data.BackendConnections, beConnectionList{
-					ServerName: serverName,
-				})
-				lastServerName = serverName
-			}
-			off := len(data.BackendConnections) - 1
 			data.BackendConnections[off].Connections = append(data.BackendConnections[off].Connections, connection)
 		}
 		be.mu.Unlock()

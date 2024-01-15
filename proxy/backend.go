@@ -34,6 +34,7 @@ import (
 	"log"
 	"net"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/pires/go-proxyproto"
@@ -187,7 +188,8 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 		})
 		be.addConn(wc)
 		wc.SetAnnotation(startTimeKey, time.Now())
-		wc.SetAnnotation(backendKey, be)
+		wc.SetAnnotation(modeKey, mode)
+		wc.SetAnnotation(protoKey, strings.Join(protos, ","))
 		if cc, ok := ctx.Value(connCtxKey).(net.Conn); ok {
 			annotatedConn(cc).SetAnnotation(internalConnKey, wc)
 		}

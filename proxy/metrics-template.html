@@ -220,10 +220,10 @@ function selectTab(target) {
 {{- if len .BackendConnections | ne 0 }}
 <h2>Outbound connections</h2>
 {{- range .BackendConnections }}
-  <h3>Backend: {{.ServerName}}</h3>
+  <div>Backend: {{.ServerNames}}</div>
 {{- range .Connections }}
   <div>
-    <div style="margin-left: 2rem;">{{.SourceAddr}} &lt;=&gt; {{.DestinationAddr}}</div>
+    <div style="margin-left: 2rem;">{{.SourceAddr}} &lt;=&gt; {{.DestinationAddr}} {{.Mode}} {{.Proto}}</div>
     <div style="padding-left: 5rem;">Elapsed:{{.Time}} Egress:{{.EgressBytes}} ({{.EgressRate}}) Ingress:{{.IngressBytes}} ({{.IngressRate}})</div>
   </div>
 {{- end }}
