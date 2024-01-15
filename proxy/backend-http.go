@@ -278,7 +278,7 @@ func (be *Backend) reverseProxyTransport() http.RoundTripper {
 		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return be.dial(ctx)
 		},
-		MaxIdleConns:          10,
+		MaxIdleConns:          100,
 		IdleConnTimeout:       10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
