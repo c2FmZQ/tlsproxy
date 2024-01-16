@@ -127,9 +127,9 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 	p.recordEvent("quic connection")
 	defer qc.Close()
 
-	numOpen := p.addConn(qc)
+	numOpen := p.connTracker.addConn(qc)
 	qc.OnClose(func() {
-		p.removeConn(qc)
+		p.connTracker.removeConn(qc)
 		startTime := qc.Annotation(startTimeKey, time.Time{}).(time.Time)
 		log.Printf("END %s; Dur:%s Recv:%d Sent:%d",
 			formatConnDesc(qc), time.Since(startTime).Truncate(time.Millisecond),
@@ -541,12 +541,14 @@ func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUI
 			return nil, err
 		}
 		conn.OnClose(func() {
-			be.removeConn(conn)
+			be.connTracker.removeConn(conn)
 		})
-		be.addConn(conn)
+		be.connTracker.addConn(conn)
 		conn.SetAnnotation(startTimeKey, time.Now())
+		conn.SetAnnotation(modeKey, be.Mode)
 		conn.SetAnnotation(protoKey, proto)
 		if cc, ok := ctx.Value(connCtxKey).(net.Conn); ok {
+			conn.SetAnnotation(serverNameKey, connServerName(cc))
 			annotatedConn(cc).SetAnnotation(internalConnKey, conn)
 		}
 		return conn, nil

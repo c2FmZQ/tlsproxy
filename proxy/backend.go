@@ -73,25 +73,6 @@ func (be *Backend) close(ctx context.Context) {
 	}
 }
 
-func (be *Backend) addConn(c annotatedConnection) {
-	be.mu.Lock()
-	defer be.mu.Unlock()
-	cc := localNetConn(c)
-	key := connKey{src: cc.LocalAddr(), dst: cc.RemoteAddr(), id: -1}
-	if be.connections == nil {
-		be.connections = make(map[connKey]annotatedConnection)
-	}
-	be.connections[key] = c
-}
-
-func (be *Backend) removeConn(c annotatedConnection) {
-	be.mu.Lock()
-	defer be.mu.Unlock()
-	cc := localNetConn(c)
-	key := connKey{src: cc.LocalAddr(), dst: cc.RemoteAddr(), id: -1}
-	delete(be.connections, key)
-}
-
 func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error) {
 	var (
 		addresses          = be.Addresses
@@ -184,13 +165,14 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 		}
 		wc := netw.NewConn(c)
 		wc.OnClose(func() {
-			be.removeConn(wc)
+			be.connTracker.removeConn(wc)
 		})
-		be.addConn(wc)
+		be.connTracker.addConn(wc)
 		wc.SetAnnotation(startTimeKey, time.Now())
 		wc.SetAnnotation(modeKey, mode)
 		wc.SetAnnotation(protoKey, strings.Join(protos, ","))
 		if cc, ok := ctx.Value(connCtxKey).(net.Conn); ok {
+			wc.SetAnnotation(serverNameKey, connServerName(cc))
 			annotatedConn(cc).SetAnnotation(internalConnKey, wc)
 			if proxyProtoVersion > 0 {
 				wc.SetAnnotation(proxyProtoKey, cc.RemoteAddr().Network()+":"+cc.RemoteAddr().String())

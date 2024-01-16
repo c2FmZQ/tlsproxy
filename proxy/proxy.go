@@ -117,10 +117,11 @@ type Proxy struct {
 	connClosed    *sync.Cond
 	defServerName string
 	backends      map[beKey]*Backend
-	connections   map[connKey]annotatedConnection
 	pkis          map[string]*pki.PKIManager
 	ocspCache     *ocspcache.OCSPCache
 	bwLimits      map[string]*bwLimit
+	connTracker   *connTracker
+	beConnTracker *connTracker
 
 	metrics   map[string]*backendMetrics
 	startTime time.Time
@@ -132,12 +133,6 @@ type Proxy struct {
 type beKey struct {
 	serverName string
 	proto      string
-}
-
-type connKey struct {
-	dst net.Addr
-	src net.Addr
-	id  int64
 }
 
 type bwLimit struct {
@@ -195,12 +190,13 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 			Cache:  autocertcache.New("autocert", store),
 			Email:  cfg.Email,
 		},
-		store:        store,
-		tokenManager: tm,
-		connections:  make(map[connKey]annotatedConnection),
-		pkis:         make(map[string]*pki.PKIManager),
-		ocspCache:    ocspcache.New(store),
-		bwLimits:     make(map[string]*bwLimit),
+		store:         store,
+		tokenManager:  tm,
+		pkis:          make(map[string]*pki.PKIManager),
+		ocspCache:     ocspcache.New(store),
+		bwLimits:      make(map[string]*bwLimit),
+		connTracker:   newConnTracker(),
+		beConnTracker: newConnTracker(),
 	}
 	if err := p.Reconfigure(cfg); err != nil {
 		return nil, err
@@ -239,13 +235,14 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 		return nil, err
 	}
 	p := &Proxy{
-		certManager:  cm,
-		connections:  make(map[connKey]annotatedConnection),
-		store:        store,
-		tokenManager: tm,
-		pkis:         make(map[string]*pki.PKIManager),
-		ocspCache:    ocspcache.New(store),
-		bwLimits:     make(map[string]*bwLimit),
+		certManager:   cm,
+		store:         store,
+		tokenManager:  tm,
+		pkis:          make(map[string]*pki.PKIManager),
+		ocspCache:     ocspcache.New(store),
+		bwLimits:      make(map[string]*bwLimit),
+		connTracker:   newConnTracker(),
+		beConnTracker: newConnTracker(),
 	}
 	if err := p.Reconfigure(cfg); err != nil {
 		return nil, err
@@ -779,6 +776,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			return a < b
 
 		})
+		be.connTracker = p.beConnTracker
 	}
 	if p.cfg != nil {
 		for _, be := range p.cfg.Backends {
@@ -794,14 +792,8 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 }
 
 func (p *Proxy) reAuthorize() {
-	p.mu.Lock()
-	conns := make([]annotatedConnection, 0, len(p.connections))
-	for _, c := range p.connections {
-		conns = append(conns, c)
-	}
-	p.mu.Unlock()
 
-	for _, conn := range conns {
+	for _, conn := range p.connTracker.slice() {
 		if !connServerNameIsSet(conn) {
 			continue
 		}
@@ -912,10 +904,7 @@ func (p *Proxy) Stop() {
 	}
 	backends := p.cfg.Backends
 	p.cfg.Backends = nil
-	conns := make([]net.Conn, 0, len(p.connections))
-	for _, conn := range p.connections {
-		conns = append(conns, conn)
-	}
+	conns := p.connTracker.slice()
 	p.mu.Unlock()
 	for _, be := range backends {
 		be.close(nil)
@@ -941,7 +930,7 @@ func (p *Proxy) Shutdown(ctx context.Context) {
 	done := make(chan struct{})
 	go func() {
 		connLeft := func() bool {
-			for _, c := range p.connections {
+			for _, c := range p.connTracker.slice() {
 				if mode := connMode(c); mode != ModeTCP && mode != ModeTLS && mode != ModeTLSPassthrough {
 					return true
 				}
@@ -1035,9 +1024,9 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		cc := proxyproto.NewConn(conn.Conn)
 		conn.Conn = cc
 	}
-	numOpen := p.addConn(conn)
+	numOpen := p.connTracker.addConn(conn)
 	conn.OnClose(func() {
-		p.removeConn(conn)
+		p.connTracker.removeConn(conn)
 		if conn.Annotation(reportEndKey, false).(bool) {
 			startTime := conn.Annotation(startTimeKey, time.Time{}).(time.Time)
 			log.Printf("END %s; Dur:%s Recv:%d Sent:%d",

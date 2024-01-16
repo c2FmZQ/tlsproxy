@@ -223,7 +223,7 @@ function selectTab(target) {
   <h2>Outbound</h2>
   <div class="group">
 {{- range .BackendConnections }}
-    <div>Backend: {{.ServerNames}}</div>
+    <div>Backend: {{.ServerName}}</div>
 {{- range .Connections }}
     <div>
       <div style="margin-left: 2rem;">{{.SourceAddr}} &lt;=&gt; {{.DestinationAddr}} {{.Mode}} {{.Proto}}</div>

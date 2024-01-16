@@ -359,12 +359,12 @@ type Backend struct {
 	httpConnChan  chan net.Conn
 	http3Handler  http.Handler
 	localHandlers []localHandler
+	connTracker   *connTracker
 
-	mu          sync.Mutex
-	next        int
-	inFlight    int
-	shutdown    bool
-	connections map[connKey]annotatedConnection
+	mu       sync.Mutex
+	next     int
+	inFlight int
+	shutdown bool
 }
 
 type localHandler struct {
