@@ -101,7 +101,7 @@ func connBackend(c net.Conn) *Backend {
 }
 
 func connMode(c net.Conn) string {
-	if v, ok := annotatedConn(c).Annotation(modeKey, "").(string); ok {
+	if v, ok := annotatedConn(c).Annotation(modeKey, "").(string); ok && v != "" {
 		return v
 	}
 	if be := connBackend(c); be != nil {
@@ -115,6 +115,13 @@ func connIntConn(c net.Conn) net.Conn {
 		return v
 	}
 	return nil
+}
+
+func connProxyProto(c net.Conn) string {
+	if v, ok := annotatedConn(c).Annotation(proxyProtoKey, nil).(string); ok {
+		return v
+	}
+	return ""
 }
 
 func idnaToASCII(h string) string {

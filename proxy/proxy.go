@@ -84,6 +84,7 @@ const (
 	backendKey       = "be"
 	modeKey          = "m"
 	requestFlagKey   = "rf"
+	proxyProtoKey    = "pp"
 
 	tlsBadCertificate      = tls.AlertError(0x2a)
 	tlsCertificateRevoked  = tls.AlertError(0x2c)

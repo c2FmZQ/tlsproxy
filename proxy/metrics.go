@@ -159,6 +159,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		DestinationAddr string
 		Mode            string
 		Proto           string
+		ProxyProto      string
 		Time            string
 		EgressBytes     string
 		EgressRate      string
@@ -380,6 +381,9 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		for i := range be.ServerNames {
 			serverNames[i] = idnaToUnicode(be.ServerNames[i])
 		}
+		if len(serverNames) > 3 {
+			serverNames = append(serverNames[:3], "...")
+		}
 		data.BackendConnections = append(data.BackendConnections, beConnectionList{
 			ServerNames: strings.Join(serverNames, ", "),
 		})
@@ -392,6 +396,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 				DestinationAddr: c.RemoteAddr().Network() + ":" + c.RemoteAddr().String(),
 				Mode:            be.Mode,
 				Proto:           connProto(c),
+				ProxyProto:      connProxyProto(c),
 				Time:            totalTime.Truncate(100 * time.Millisecond).String(),
 				EgressBytes:     formatSize10(c.BytesSent()),
 				EgressRate:      formatSize10(c.ByteRateSent()) + "/s",

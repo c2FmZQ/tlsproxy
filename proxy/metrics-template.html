@@ -198,38 +198,45 @@ function selectTab(target) {
   </div>
 </div>
 
-<div id="panel-connections" class="group">
-<h2>Inbound connections</h2>
+<div id="panel-connections">
+  <h2>Inbound</h2>
+  <div class="group">
 {{- range .Connections }}
-  <div>
-    <div style="margin-left: 2rem; padding-top: 0.5rem; display: grid; grid-template-columns: auto auto; justify-items: left; width: fit-content; column-gap: 1rem;">
-      <div>{{.SourceAddr}}{{ if ne .ViaAddr "" }} &lt;=&gt; {{.ViaAddr}}{{ end }} {{.Type}}</div>
-      <div>&lt;=&gt; {{.ServerName}} {{.Mode}} {{.Proto}}</div>
+    <div>
+      <div style="margin-left: 2rem; padding-top: 0.5rem; display: grid; grid-template-columns: auto auto; justify-items: left; width: fit-content; column-gap: 1rem;">
+        <div>{{.SourceAddr}}{{ if ne .ViaAddr "" }} &lt;=&gt; {{.ViaAddr}}{{ end }} {{.Type}}</div>
+        <div>&lt;=&gt; {{.ServerName}} {{.Mode}} {{.Proto}}</div>
   {{- range .Destinations }}
-      <div>&nbsp;</div>
-      <div>{{.Direction}} {{.Address}} {{.Stream}}</div>
+        <div>&nbsp;</div>
+        <div>{{.Direction}} {{.Address}} {{.Stream}}</div>
   {{- end }}
-    </div>
+      </div>
   {{- if len .ClientID | ne 0}}
-    <div style="padding-left: 5rem;">X509 [{{.ClientID}}]</div>
+      <div style="padding-left: 5rem;">X509 [{{.ClientID}}]</div>
   {{- end }}
-    <div style="padding-left: 5rem;">Elapsed:{{.Time}} Egress:{{.EgressBytes}} ({{.EgressRate}}) Ingress:{{.IngressBytes}} ({{.IngressRate}})</div>
-  </div>
+      <div style="padding-left: 5rem;">Elapsed:{{.Time}} Egress:{{.EgressBytes}} ({{.EgressRate}}) Ingress:{{.IngressBytes}} ({{.IngressRate}})</div>
+    </div>
 {{- end }}
+  </div>
 
 {{- if len .BackendConnections | ne 0 }}
-<h2>Outbound connections</h2>
+  <h2>Outbound</h2>
+  <div class="group">
 {{- range .BackendConnections }}
-  <div>Backend: {{.ServerNames}}</div>
+    <div>Backend: {{.ServerNames}}</div>
 {{- range .Connections }}
-  <div>
-    <div style="margin-left: 2rem;">{{.SourceAddr}} &lt;=&gt; {{.DestinationAddr}} {{.Mode}} {{.Proto}}</div>
-    <div style="padding-left: 5rem;">Elapsed:{{.Time}} Egress:{{.EgressBytes}} ({{.EgressRate}}) Ingress:{{.IngressBytes}} ({{.IngressRate}})</div>
+    <div>
+      <div style="margin-left: 2rem;">{{.SourceAddr}} &lt;=&gt; {{.DestinationAddr}} {{.Mode}} {{.Proto}}</div>
+{{- if ne .ProxyProto "" }}
+      <div style="padding-left: 5rem;">PROXY RemoteAddr: {{.ProxyProto}}</div>
+{{- end }}
+      <div style="padding-left: 5rem;">Elapsed:{{.Time}} Egress:{{.EgressBytes}} ({{.EgressRate}}) Ingress:{{.IngressBytes}} ({{.IngressRate}})</div>
+    </div>
+{{- end }}
+{{- end }}
   </div>
 {{- end }}
-{{- end }}
 </div>
-{{- end }}
 
 <div id="panel-backends" class="group">
 {{- range $i, $be := .Backends }}

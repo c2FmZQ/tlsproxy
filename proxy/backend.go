@@ -192,6 +192,9 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 		wc.SetAnnotation(protoKey, strings.Join(protos, ","))
 		if cc, ok := ctx.Value(connCtxKey).(net.Conn); ok {
 			annotatedConn(cc).SetAnnotation(internalConnKey, wc)
+			if proxyProtoVersion > 0 {
+				wc.SetAnnotation(proxyProtoKey, cc.RemoteAddr().Network()+":"+cc.RemoteAddr().String())
+			}
 		}
 
 		return wc, nil
