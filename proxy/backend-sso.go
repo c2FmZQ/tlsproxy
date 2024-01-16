@@ -31,7 +31,6 @@ import (
 	"fmt"
 	"html/template"
 	"log"
-	"net"
 	"net/http"
 	"slices"
 	"sort"
@@ -316,7 +315,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 		return false
 	}
 	userID, _ := claims["email"].(string)
-	host := connServerName(req.Context().Value(connCtxKey).(net.Conn))
+	host := connServerName(req.Context().Value(connCtxKey).(anyConn))
 	_, userDomain, _ := strings.Cut(userID, "@")
 	if be.SSO.ACL != nil && !slices.Contains(*be.SSO.ACL, userID) && !slices.Contains(*be.SSO.ACL, "@"+userDomain) {
 		be.recordEvent(fmt.Sprintf("deny SSO %s to %s", userID, idnaToUnicode(host)))

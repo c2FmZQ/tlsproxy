@@ -53,11 +53,11 @@ func (t *connTracker) slice() []annotatedConnection {
 	return out
 }
 
-func (t *connTracker) addConn(c annotatedConnection) int {
+func (t *connTracker) add(c annotatedConnection) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	cc := localNetConn(c)
-	key := connKey{src: cc.LocalAddr(), dst: cc.RemoteAddr(), id: -1}
+	key := connKey{src: cc.LocalAddr(), dst: cc.RemoteAddr()}
 	if s, ok := c.(interface {
 		StreamID() int64
 	}); ok {
@@ -70,11 +70,11 @@ func (t *connTracker) addConn(c annotatedConnection) int {
 	return len(t.conns)
 }
 
-func (t *connTracker) removeConn(c annotatedConnection) int {
+func (t *connTracker) remove(c annotatedConnection) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	cc := localNetConn(c)
-	key := connKey{src: cc.LocalAddr(), dst: cc.RemoteAddr(), id: -1}
+	key := connKey{src: cc.LocalAddr(), dst: cc.RemoteAddr()}
 	if s, ok := c.(interface {
 		StreamID() int64
 	}); ok {

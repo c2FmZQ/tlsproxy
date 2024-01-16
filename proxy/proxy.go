@@ -609,7 +609,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		be.tlsConfig = tc
 
 		be.getClientCert = func(ctx context.Context) func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
-			serverName := connServerName(ctx.Value(connCtxKey).(net.Conn))
+			serverName := connServerName(ctx.Value(connCtxKey).(anyConn))
 			return func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 				// autocert wants a ClientHelloInfo. Create one with reasonable values.
 				hello := &tls.ClientHelloInfo{
@@ -1024,9 +1024,9 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		cc := proxyproto.NewConn(conn.Conn)
 		conn.Conn = cc
 	}
-	numOpen := p.connTracker.addConn(conn)
+	numOpen := p.connTracker.add(conn)
 	conn.OnClose(func() {
-		p.connTracker.removeConn(conn)
+		p.connTracker.remove(conn)
 		if conn.Annotation(reportEndKey, false).(bool) {
 			startTime := conn.Annotation(startTimeKey, time.Time{}).(time.Time)
 			log.Printf("END %s; Dur:%s Recv:%d Sent:%d",
@@ -1147,7 +1147,7 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 		log.Printf("BAD [-] %s ➔ %q Handshake: %v", conn.RemoteAddr(), idnaToUnicode(serverName), unwrapErr(err))
 		return false
 	}
-	netwConn(conn).SetAnnotation(handshakeDoneKey, time.Now())
+	annotatedConn(conn).SetAnnotation(handshakeDoneKey, time.Now())
 	cs := conn.ConnectionState()
 	if (cs.ServerName == "" && serverName != p.defaultServerName()) || (cs.ServerName != "" && cs.ServerName != serverName) {
 		p.recordEvent("mismatched server name")
@@ -1159,8 +1159,8 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 	if len(cs.PeerCertificates) > 0 {
 		clientCert = cs.PeerCertificates[0]
 	}
-	netwConn(conn).SetAnnotation(protoKey, proto)
-	netwConn(conn).SetAnnotation(clientCertKey, clientCert)
+	annotatedConn(conn).SetAnnotation(protoKey, proto)
+	annotatedConn(conn).SetAnnotation(clientCertKey, clientCert)
 
 	// The check below is also done in VerifyConnection.
 	if be.ClientAuth != nil && be.ClientAuth.ACL != nil {
@@ -1198,7 +1198,7 @@ func (p *Proxy) handleHTTPConnection(conn *tls.Conn) {
 		conn.Close()
 		return
 	}
-	netwConn(conn).SetAnnotation(reportEndKey, true)
+	annotatedConn(conn).SetAnnotation(reportEndKey, true)
 	log.Printf("CON %s", formatConnDesc(conn.NetConn().(*netw.Conn)))
 	be.httpConnChan <- conn
 }
@@ -1228,24 +1228,24 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 	}
 	defer intConn.Close()
 	setKeepAlive(intConn)
-	netwConn(extConn).SetAnnotation(dialDoneKey, time.Now())
+	annotatedConn(extConn).SetAnnotation(dialDoneKey, time.Now())
 
-	desc := formatConnDesc(netwConn(extConn))
+	desc := formatConnDesc(annotatedConn(extConn))
 	log.Printf("CON %s", desc)
 
 	if err := be.bridgeConns(extConn, intConn); err != nil {
 		log.Printf("DBG %s %v", desc, err)
 	}
 
-	startTime := netwConn(extConn).Annotation(startTimeKey, time.Time{}).(time.Time)
-	hsTime := netwConn(extConn).Annotation(handshakeDoneKey, time.Time{}).(time.Time)
-	dialTime := netwConn(extConn).Annotation(dialDoneKey, time.Time{}).(time.Time)
+	startTime := annotatedConn(extConn).Annotation(startTimeKey, time.Time{}).(time.Time)
+	hsTime := annotatedConn(extConn).Annotation(handshakeDoneKey, time.Time{}).(time.Time)
+	dialTime := annotatedConn(extConn).Annotation(dialDoneKey, time.Time{}).(time.Time)
 	totalTime := time.Since(startTime).Truncate(time.Millisecond)
 
 	log.Printf("END %s; HS:%s Dial:%s Dur:%s Recv:%d Sent:%d", desc,
 		hsTime.Sub(startTime).Truncate(time.Millisecond),
 		dialTime.Sub(hsTime).Truncate(time.Millisecond), totalTime,
-		netwConn(extConn).BytesReceived(), netwConn(extConn).BytesSent())
+		annotatedConn(extConn).BytesReceived(), annotatedConn(extConn).BytesSent())
 }
 
 func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
@@ -1268,22 +1268,22 @@ func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
 	defer intConn.Close()
 	setKeepAlive(intConn)
 
-	netwConn(extConn).SetAnnotation(dialDoneKey, time.Now())
+	annotatedConn(extConn).SetAnnotation(dialDoneKey, time.Now())
 
-	desc := formatConnDesc(netwConn(extConn))
+	desc := formatConnDesc(annotatedConn(extConn))
 	log.Printf("CON %s", desc)
 
 	if err := be.bridgeConns(extConn, intConn); err != nil {
 		log.Printf("DBG  %s %v", desc, err)
 	}
 
-	startTime := netwConn(extConn).Annotation(startTimeKey, time.Time{}).(time.Time)
-	dialTime := netwConn(extConn).Annotation(dialDoneKey, time.Time{}).(time.Time)
+	startTime := annotatedConn(extConn).Annotation(startTimeKey, time.Time{}).(time.Time)
+	dialTime := annotatedConn(extConn).Annotation(dialDoneKey, time.Time{}).(time.Time)
 	totalTime := time.Since(startTime).Truncate(time.Millisecond)
 
 	log.Printf("END %s; Dial:%s Dur:%s Recv:%d Sent:%d", desc,
 		dialTime.Sub(startTime).Truncate(time.Millisecond), totalTime,
-		netwConn(extConn).BytesReceived(), netwConn(extConn).BytesSent())
+		annotatedConn(extConn).BytesReceived(), annotatedConn(extConn).BytesSent())
 }
 
 func (p *Proxy) defaultServerName() string {
@@ -1322,7 +1322,7 @@ func formatReqDesc(req *http.Request) string {
 		email, _ := claims["email"].(string)
 		ids = append(ids, email)
 	}
-	conn, ok := req.Context().Value(connCtxKey).(net.Conn)
+	conn, ok := req.Context().Value(connCtxKey).(anyConn)
 	if !ok {
 		log.Printf("ERR Request without connCtxKey: %v", req.Context())
 		return ""
@@ -1330,7 +1330,7 @@ func formatReqDesc(req *http.Request) string {
 	return formatConnDesc(conn, ids...)
 }
 
-func formatConnDesc(c net.Conn, ids ...string) string {
+func formatConnDesc(c anyConn, ids ...string) string {
 	serverName := connServerName(c)
 	mode := connMode(c)
 	proto := connProto(c)
@@ -1368,32 +1368,6 @@ func formatConnDesc(c net.Conn, ids ...string) string {
 		}
 	}
 	return buf.String()
-}
-
-func isProxyProtoConn(c net.Conn) bool {
-	switch cc := c.(type) {
-	case *tls.Conn:
-		return isProxyProtoConn(cc.NetConn())
-	case *netw.Conn:
-		return isProxyProtoConn(cc.Conn)
-	case *proxyproto.Conn:
-		return true
-	default:
-		return false
-	}
-}
-
-func localNetConn(c net.Conn) net.Conn {
-	switch cc := c.(type) {
-	case *tls.Conn:
-		return localNetConn(cc.NetConn())
-	case *netw.Conn:
-		return localNetConn(cc.Conn)
-	case *proxyproto.Conn:
-		return cc.Raw()
-	default:
-		return cc
-	}
 }
 
 func setKeepAlive(conn net.Conn) {
