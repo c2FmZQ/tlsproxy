@@ -27,14 +27,16 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io"
 	"net"
 
+	"github.com/pires/go-proxyproto"
 	"golang.org/x/net/idna"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
 
-func netwConn(c net.Conn) *netw.Conn {
+func netwConn(c anyConn) *netw.Conn {
 	switch c := c.(type) {
 	case *tls.Conn:
 		return netwConn(c.NetConn())
@@ -45,8 +47,14 @@ func netwConn(c net.Conn) *netw.Conn {
 	}
 }
 
+type anyConn interface {
+	LocalAddr() net.Addr
+	RemoteAddr() net.Addr
+	io.Closer
+}
+
 type annotatedConnection interface {
-	net.Conn
+	anyConn
 	Annotation(key string, defaultValue any) any
 	SetAnnotation(key string, value any)
 	BytesSent() int64
@@ -55,7 +63,7 @@ type annotatedConnection interface {
 	ByteRateReceived() float64
 }
 
-func annotatedConn(c net.Conn) annotatedConnection {
+func annotatedConn(c anyConn) annotatedConnection {
 	switch c := c.(type) {
 	case *tls.Conn:
 		return netwConn(c.NetConn())
@@ -68,50 +76,60 @@ func annotatedConn(c net.Conn) annotatedConnection {
 	}
 }
 
-func connServerNameIsSet(c net.Conn) bool {
+func connServerNameIsSet(c anyConn) bool {
 	return annotatedConn(c).Annotation(serverNameKey, nil) != nil
 }
 
-func connServerName(c net.Conn) string {
+func connServerName(c anyConn) string {
 	if v, ok := annotatedConn(c).Annotation(serverNameKey, "").(string); ok {
 		return v
 	}
 	return ""
 }
 
-func connProto(c net.Conn) string {
+func connProto(c anyConn) string {
 	if v, ok := annotatedConn(c).Annotation(protoKey, "").(string); ok {
 		return v
 	}
 	return ""
 }
 
-func connClientCert(c net.Conn) *x509.Certificate {
+func connClientCert(c anyConn) *x509.Certificate {
 	if v, ok := annotatedConn(c).Annotation(clientCertKey, (*x509.Certificate)(nil)).(*x509.Certificate); ok {
 		return v
 	}
 	return nil
 }
 
-func connBackend(c net.Conn) *Backend {
+func connBackend(c anyConn) *Backend {
 	if v, ok := annotatedConn(c).Annotation(backendKey, (*Backend)(nil)).(*Backend); ok {
 		return v
 	}
 	return nil
 }
 
-func connMode(c net.Conn) string {
+func connMode(c anyConn) string {
+	if v, ok := annotatedConn(c).Annotation(modeKey, "").(string); ok && v != "" {
+		return v
+	}
 	if be := connBackend(c); be != nil {
 		return be.Mode
 	}
 	return ""
 }
 
-func connIntConn(c net.Conn) net.Conn {
+func connIntConn(c anyConn) net.Conn {
 	if v, ok := annotatedConn(c).Annotation(internalConnKey, nil).(net.Conn); ok {
 		return v
 	}
 	return nil
+}
+
+func connProxyProto(c anyConn) string {
+	if v, ok := annotatedConn(c).Annotation(proxyProtoKey, nil).(string); ok {
+		return v
+	}
+	return ""
 }
 
 func idnaToASCII(h string) string {
@@ -139,4 +157,32 @@ func formatSize10[T float64 | int64](n T) string {
 		return fmt.Sprintf("%.1f KB", float64(n)/1000)
 	}
 	return fmt.Sprintf("%d \u00A0B", int64(n)) // \u00A0 is &nbsp;
+}
+
+func isProxyProtoConn(c anyConn) bool {
+	switch cc := c.(type) {
+	case *tls.Conn:
+		return isProxyProtoConn(cc.NetConn())
+	case *netw.Conn:
+		return isProxyProtoConn(cc.Conn)
+	case *proxyproto.Conn:
+		return true
+	default:
+		return false
+	}
+}
+
+func localNetConn(c anyConn) net.Conn {
+	switch cc := c.(type) {
+	case *tls.Conn:
+		return localNetConn(cc.NetConn())
+	case *netw.Conn:
+		return localNetConn(cc.Conn)
+	case *proxyproto.Conn:
+		return cc.Raw()
+	case net.Conn:
+		return cc
+	default:
+		panic(cc)
+	}
 }

@@ -82,7 +82,9 @@ const (
 	internalConnKey  = "ic"
 	reportEndKey     = "re"
 	backendKey       = "be"
+	modeKey          = "m"
 	requestFlagKey   = "rf"
+	proxyProtoKey    = "pp"
 
 	tlsBadCertificate      = tls.AlertError(0x2a)
 	tlsCertificateRevoked  = tls.AlertError(0x2c)
@@ -115,10 +117,11 @@ type Proxy struct {
 	connClosed    *sync.Cond
 	defServerName string
 	backends      map[beKey]*Backend
-	connections   map[connKey]annotatedConnection
 	pkis          map[string]*pki.PKIManager
 	ocspCache     *ocspcache.OCSPCache
 	bwLimits      map[string]*bwLimit
+	inConns       *connTracker
+	outConns      *connTracker
 
 	metrics   map[string]*backendMetrics
 	startTime time.Time
@@ -130,12 +133,6 @@ type Proxy struct {
 type beKey struct {
 	serverName string
 	proto      string
-}
-
-type connKey struct {
-	dst net.Addr
-	src net.Addr
-	id  int64
 }
 
 type bwLimit struct {
@@ -195,10 +192,11 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 		},
 		store:        store,
 		tokenManager: tm,
-		connections:  make(map[connKey]annotatedConnection),
 		pkis:         make(map[string]*pki.PKIManager),
 		ocspCache:    ocspcache.New(store),
 		bwLimits:     make(map[string]*bwLimit),
+		inConns:      newConnTracker(),
+		outConns:     newConnTracker(),
 	}
 	if err := p.Reconfigure(cfg); err != nil {
 		return nil, err
@@ -238,12 +236,13 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 	}
 	p := &Proxy{
 		certManager:  cm,
-		connections:  make(map[connKey]annotatedConnection),
 		store:        store,
 		tokenManager: tm,
 		pkis:         make(map[string]*pki.PKIManager),
 		ocspCache:    ocspcache.New(store),
 		bwLimits:     make(map[string]*bwLimit),
+		inConns:      newConnTracker(),
+		outConns:     newConnTracker(),
 	}
 	if err := p.Reconfigure(cfg); err != nil {
 		return nil, err
@@ -610,7 +609,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		be.tlsConfig = tc
 
 		be.getClientCert = func(ctx context.Context) func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
-			serverName := connServerName(ctx.Value(connCtxKey).(net.Conn))
+			serverName := connServerName(ctx.Value(connCtxKey).(anyConn))
 			return func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 				// autocert wants a ClientHelloInfo. Create one with reasonable values.
 				hello := &tls.ClientHelloInfo{
@@ -777,6 +776,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			return a < b
 
 		})
+		be.outConns = p.outConns
 	}
 	if p.cfg != nil {
 		for _, be := range p.cfg.Backends {
@@ -792,14 +792,8 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 }
 
 func (p *Proxy) reAuthorize() {
-	p.mu.Lock()
-	conns := make([]annotatedConnection, 0, len(p.connections))
-	for _, c := range p.connections {
-		conns = append(conns, c)
-	}
-	p.mu.Unlock()
 
-	for _, conn := range conns {
+	for _, conn := range p.inConns.slice() {
 		if !connServerNameIsSet(conn) {
 			continue
 		}
@@ -910,10 +904,7 @@ func (p *Proxy) Stop() {
 	}
 	backends := p.cfg.Backends
 	p.cfg.Backends = nil
-	conns := make([]net.Conn, 0, len(p.connections))
-	for _, conn := range p.connections {
-		conns = append(conns, conn)
-	}
+	conns := p.inConns.slice()
 	p.mu.Unlock()
 	for _, be := range backends {
 		be.close(nil)
@@ -939,7 +930,7 @@ func (p *Proxy) Shutdown(ctx context.Context) {
 	done := make(chan struct{})
 	go func() {
 		connLeft := func() bool {
-			for _, c := range p.connections {
+			for _, c := range p.inConns.slice() {
 				if mode := connMode(c); mode != ModeTCP && mode != ModeTLS && mode != ModeTLSPassthrough {
 					return true
 				}
@@ -1033,9 +1024,9 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		cc := proxyproto.NewConn(conn.Conn)
 		conn.Conn = cc
 	}
-	numOpen := p.addConn(conn)
+	numOpen := p.inConns.add(conn)
 	conn.OnClose(func() {
-		p.removeConn(conn)
+		p.inConns.remove(conn)
 		if conn.Annotation(reportEndKey, false).(bool) {
 			startTime := conn.Annotation(startTimeKey, time.Time{}).(time.Time)
 			log.Printf("END %s; Dur:%s Recv:%d Sent:%d",
@@ -1156,7 +1147,7 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 		log.Printf("BAD [-] %s ➔ %q Handshake: %v", conn.RemoteAddr(), idnaToUnicode(serverName), unwrapErr(err))
 		return false
 	}
-	netwConn(conn).SetAnnotation(handshakeDoneKey, time.Now())
+	annotatedConn(conn).SetAnnotation(handshakeDoneKey, time.Now())
 	cs := conn.ConnectionState()
 	if (cs.ServerName == "" && serverName != p.defaultServerName()) || (cs.ServerName != "" && cs.ServerName != serverName) {
 		p.recordEvent("mismatched server name")
@@ -1168,8 +1159,8 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 	if len(cs.PeerCertificates) > 0 {
 		clientCert = cs.PeerCertificates[0]
 	}
-	netwConn(conn).SetAnnotation(protoKey, proto)
-	netwConn(conn).SetAnnotation(clientCertKey, clientCert)
+	annotatedConn(conn).SetAnnotation(protoKey, proto)
+	annotatedConn(conn).SetAnnotation(clientCertKey, clientCert)
 
 	// The check below is also done in VerifyConnection.
 	if be.ClientAuth != nil && be.ClientAuth.ACL != nil {
@@ -1207,7 +1198,7 @@ func (p *Proxy) handleHTTPConnection(conn *tls.Conn) {
 		conn.Close()
 		return
 	}
-	netwConn(conn).SetAnnotation(reportEndKey, true)
+	annotatedConn(conn).SetAnnotation(reportEndKey, true)
 	log.Printf("CON %s", formatConnDesc(conn.NetConn().(*netw.Conn)))
 	be.httpConnChan <- conn
 }
@@ -1237,24 +1228,24 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 	}
 	defer intConn.Close()
 	setKeepAlive(intConn)
-	netwConn(extConn).SetAnnotation(dialDoneKey, time.Now())
+	annotatedConn(extConn).SetAnnotation(dialDoneKey, time.Now())
 
-	desc := formatConnDesc(netwConn(extConn))
+	desc := formatConnDesc(annotatedConn(extConn))
 	log.Printf("CON %s", desc)
 
 	if err := be.bridgeConns(extConn, intConn); err != nil {
 		log.Printf("DBG %s %v", desc, err)
 	}
 
-	startTime := netwConn(extConn).Annotation(startTimeKey, time.Time{}).(time.Time)
-	hsTime := netwConn(extConn).Annotation(handshakeDoneKey, time.Time{}).(time.Time)
-	dialTime := netwConn(extConn).Annotation(dialDoneKey, time.Time{}).(time.Time)
+	startTime := annotatedConn(extConn).Annotation(startTimeKey, time.Time{}).(time.Time)
+	hsTime := annotatedConn(extConn).Annotation(handshakeDoneKey, time.Time{}).(time.Time)
+	dialTime := annotatedConn(extConn).Annotation(dialDoneKey, time.Time{}).(time.Time)
 	totalTime := time.Since(startTime).Truncate(time.Millisecond)
 
 	log.Printf("END %s; HS:%s Dial:%s Dur:%s Recv:%d Sent:%d", desc,
 		hsTime.Sub(startTime).Truncate(time.Millisecond),
 		dialTime.Sub(hsTime).Truncate(time.Millisecond), totalTime,
-		netwConn(extConn).BytesReceived(), netwConn(extConn).BytesSent())
+		annotatedConn(extConn).BytesReceived(), annotatedConn(extConn).BytesSent())
 }
 
 func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
@@ -1277,22 +1268,22 @@ func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
 	defer intConn.Close()
 	setKeepAlive(intConn)
 
-	netwConn(extConn).SetAnnotation(dialDoneKey, time.Now())
+	annotatedConn(extConn).SetAnnotation(dialDoneKey, time.Now())
 
-	desc := formatConnDesc(netwConn(extConn))
+	desc := formatConnDesc(annotatedConn(extConn))
 	log.Printf("CON %s", desc)
 
 	if err := be.bridgeConns(extConn, intConn); err != nil {
 		log.Printf("DBG  %s %v", desc, err)
 	}
 
-	startTime := netwConn(extConn).Annotation(startTimeKey, time.Time{}).(time.Time)
-	dialTime := netwConn(extConn).Annotation(dialDoneKey, time.Time{}).(time.Time)
+	startTime := annotatedConn(extConn).Annotation(startTimeKey, time.Time{}).(time.Time)
+	dialTime := annotatedConn(extConn).Annotation(dialDoneKey, time.Time{}).(time.Time)
 	totalTime := time.Since(startTime).Truncate(time.Millisecond)
 
 	log.Printf("END %s; Dial:%s Dur:%s Recv:%d Sent:%d", desc,
 		dialTime.Sub(startTime).Truncate(time.Millisecond), totalTime,
-		netwConn(extConn).BytesReceived(), netwConn(extConn).BytesSent())
+		annotatedConn(extConn).BytesReceived(), annotatedConn(extConn).BytesSent())
 }
 
 func (p *Proxy) defaultServerName() string {
@@ -1331,7 +1322,7 @@ func formatReqDesc(req *http.Request) string {
 		email, _ := claims["email"].(string)
 		ids = append(ids, email)
 	}
-	conn, ok := req.Context().Value(connCtxKey).(net.Conn)
+	conn, ok := req.Context().Value(connCtxKey).(anyConn)
 	if !ok {
 		log.Printf("ERR Request without connCtxKey: %v", req.Context())
 		return ""
@@ -1339,7 +1330,7 @@ func formatReqDesc(req *http.Request) string {
 	return formatConnDesc(conn, ids...)
 }
 
-func formatConnDesc(c net.Conn, ids ...string) string {
+func formatConnDesc(c anyConn, ids ...string) string {
 	serverName := connServerName(c)
 	mode := connMode(c)
 	proto := connProto(c)
@@ -1377,32 +1368,6 @@ func formatConnDesc(c net.Conn, ids ...string) string {
 		}
 	}
 	return buf.String()
-}
-
-func isProxyProtoConn(c net.Conn) bool {
-	switch cc := c.(type) {
-	case *tls.Conn:
-		return isProxyProtoConn(cc.NetConn())
-	case *netw.Conn:
-		return isProxyProtoConn(cc.Conn)
-	case *proxyproto.Conn:
-		return true
-	default:
-		return false
-	}
-}
-
-func localNetConn(c net.Conn) net.Conn {
-	switch cc := c.(type) {
-	case *tls.Conn:
-		return localNetConn(cc.NetConn())
-	case *netw.Conn:
-		return localNetConn(cc.Conn)
-	case *proxyproto.Conn:
-		return cc.Raw()
-	default:
-		return cc
-	}
 }
 
 func setKeepAlive(conn net.Conn) {

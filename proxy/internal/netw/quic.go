@@ -249,6 +249,10 @@ func (c *QUICConn) OnClose(f func()) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.onClose = f
+	go func() {
+		<-c.qc.Context().Done()
+		c.Close()
+	}()
 }
 
 func (c *QUICConn) Close() error {

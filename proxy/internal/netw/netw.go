@@ -57,6 +57,10 @@ func (l listener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+	return NewConn(c), nil
+}
+
+func NewConn(c net.Conn) *Conn {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Conn{
 		Conn:          c,
@@ -64,7 +68,7 @@ func (l listener) Accept() (net.Conn, error) {
 		cancel:        cancel,
 		bytesSent:     newCounter(),
 		bytesReceived: newCounter(),
-	}, nil
+	}
 }
 
 func NewConnForTest(c net.Conn) *Conn {

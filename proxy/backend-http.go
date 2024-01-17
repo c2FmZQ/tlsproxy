@@ -120,19 +120,20 @@ func (be *Backend) reverseProxy() http.Handler {
 		// from using one server name in the TLS handshake, and then
 		// a different server name in the request.
 		ctx := req.Context()
+		serverName := connServerName(ctx.Value(connCtxKey).(anyConn))
 		host := req.Host
 		if host == "" {
-			host = connServerName(ctx.Value(connCtxKey).(net.Conn))
+			host = serverName
 		}
+		req.URL.Host = host
+		req.Header.Set(hostHeader, host)
+
 		req.URL.Scheme = "https"
 		if be.Mode == ModeHTTP {
 			req.URL.Scheme = "http"
 		}
-		req.URL.Host = host
-		req.Header.Set(hostHeader, host)
-		hostname := req.URL.Hostname()
 
-		if !slices.Contains(be.ServerNames, hostname) {
+		if !slices.Contains(be.ServerNames, req.URL.Hostname()) {
 			if req.Body != nil {
 				req.Body.Close()
 			}
@@ -142,8 +143,11 @@ func (be *Backend) reverseProxy() http.Handler {
 		ctx = context.WithValue(ctx, ctxURLKey, req.URL.String())
 
 		// Detect forwarding loops using the via headers.
-		me := localNetConn(req.Context().Value(connCtxKey).(net.Conn)).LocalAddr().String()
-		hops := commaRE.Split(req.Header.Get(viaHeader), -1)
+		me := localNetConn(req.Context().Value(connCtxKey).(anyConn)).LocalAddr().String()
+		var hops []string
+		if h := req.Header.Get(viaHeader); h != "" {
+			hops = commaRE.Split(h, -1)
+		}
 		for _, via := range hops {
 			if _, via, _ = strings.Cut(via, " "); via == me {
 				if req.Body != nil {
@@ -175,10 +179,11 @@ func (be *Backend) reverseProxy() http.Handler {
 				break L
 			}
 		}
-		hostKey := bytes.NewBufferString(hostname + ";" + override)
+
+		hostKey := bytes.NewBufferString(serverName + ";" + override)
 		if proxyProtoVersion > 0 {
 			hostKey.WriteByte(';')
-			writeProxyHeader(proxyProtoVersion, hostKey, req.Context().Value(connCtxKey).(net.Conn))
+			writeProxyHeader(proxyProtoVersion, hostKey, req.Context().Value(connCtxKey).(anyConn))
 		}
 		h := sha256.Sum256(hostKey.Bytes())
 		req.URL.Host = hex.EncodeToString(h[:])

@@ -63,20 +63,6 @@ func (p *Proxy) recordEvent(msg string) {
 	p.events[msg]++
 }
 
-func (p *Proxy) addConn(c annotatedConnection) int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	cc := localNetConn(c)
-	key := connKey{src: cc.LocalAddr(), dst: cc.RemoteAddr(), id: -1}
-	if s, ok := c.(interface {
-		StreamID() int64
-	}); ok {
-		key.id = s.StreamID()
-	}
-	p.connections[key] = c
-	return len(p.connections)
-}
-
 type counterSetter interface {
 	SetCounters(*counter.Counter, *counter.Counter)
 }
@@ -98,20 +84,6 @@ func (p *Proxy) setCounters(c counterSetter, serverName string) {
 	}
 	m.numConnections.Incr(1)
 	c.SetCounters(m.numBytesSent, m.numBytesReceived)
-}
-
-func (p *Proxy) removeConn(c annotatedConnection) int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	cc := localNetConn(c)
-	key := connKey{src: cc.LocalAddr(), dst: cc.RemoteAddr(), id: -1}
-	if s, ok := c.(interface {
-		StreamID() int64
-	}); ok {
-		key.id = s.StreamID()
-	}
-	delete(p.connections, key)
-	return len(p.connections)
 }
 
 func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
@@ -154,6 +126,22 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		IngressRate  string
 		ClientID     string
 	}
+	type beConnection struct {
+		SourceAddr      string
+		DestinationAddr string
+		Mode            string
+		Proto           string
+		ProxyProto      string
+		Time            string
+		EgressBytes     string
+		EgressRate      string
+		IngressBytes    string
+		IngressRate     string
+	}
+	type beConnectionList struct {
+		ServerName  string
+		Connections []beConnection
+	}
 	type handler struct {
 		Bypass   bool
 		HostPath string
@@ -191,16 +179,17 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var data struct {
-		Version     string
-		Metrics     []backendMetric
-		Events      []proxyEvent
-		Connections []connection
-		Backends    []backend
-		Runtime     runtimeData
-		Memory      []memoryProf
-		Goroutines  []goroutine
-		BuildInfo   string
-		Config      string
+		Version            string
+		Metrics            []backendMetric
+		Events             []proxyEvent
+		Connections        []connection
+		BackendConnections []beConnectionList
+		Backends           []backend
+		Runtime            runtimeData
+		Memory             []memoryProf
+		Goroutines         []goroutine
+		BuildInfo          string
+		Config             string
 	}
 	if info, ok := debug.ReadBuildInfo(); ok {
 		data.BuildInfo = info.String()
@@ -261,23 +250,19 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	}
 	p.eventsmu.Unlock()
 
-	keys := make([]connKey, 0, len(p.connections))
-	for k := range p.connections {
-		keys = append(keys, k)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		sa := p.connections[keys[i]].Annotation(serverNameKey, "").(string)
-		sb := p.connections[keys[j]].Annotation(serverNameKey, "").(string)
+	conns := p.inConns.slice()
+	sort.Slice(conns, func(i, j int) bool {
+		sa := conns[i].Annotation(serverNameKey, "").(string)
+		sb := conns[j].Annotation(serverNameKey, "").(string)
 		if sa == sb {
-			a := keys[i].src.String() + " " + keys[i].dst.String()
-			b := keys[j].src.String() + " " + keys[j].dst.String()
+			a := conns[i].LocalAddr().String() + " " + conns[i].RemoteAddr().String()
+			b := conns[j].LocalAddr().String() + " " + conns[j].RemoteAddr().String()
 			return a < b
 		}
 		return sa < sb
 	})
 
-	for _, k := range keys {
-		c := p.connections[k]
+	for _, c := range conns {
 		startTime := c.Annotation(startTimeKey, time.Time{}).(time.Time)
 		totalTime := time.Since(startTime)
 		remote := c.RemoteAddr().Network() + ":" + c.RemoteAddr().String()
@@ -352,6 +337,38 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		connection.IngressRate = formatSize10(c.ByteRateReceived()) + "/s"
 
 		data.Connections = append(data.Connections, connection)
+	}
+
+	beConns := make(map[string][]beConnection)
+
+	for _, c := range p.outConns.slice() {
+		sn := connServerName(c)
+		startTime := c.Annotation(startTimeKey, time.Time{}).(time.Time)
+		totalTime := time.Since(startTime)
+		connection := beConnection{
+			SourceAddr:      c.LocalAddr().Network() + ":" + c.LocalAddr().String(),
+			DestinationAddr: c.RemoteAddr().Network() + ":" + c.RemoteAddr().String(),
+			Mode:            connMode(c),
+			Proto:           connProto(c),
+			ProxyProto:      connProxyProto(c),
+			Time:            totalTime.Truncate(100 * time.Millisecond).String(),
+			EgressBytes:     formatSize10(c.BytesSent()),
+			EgressRate:      formatSize10(c.ByteRateSent()) + "/s",
+			IngressBytes:    formatSize10(c.BytesReceived()),
+			IngressRate:     formatSize10(c.ByteRateReceived()) + "/s",
+		}
+		beConns[sn] = append(beConns[sn], connection)
+	}
+	var beConnServerNames []string
+	for k := range beConns {
+		beConnServerNames = append(beConnServerNames, k)
+	}
+	sort.Strings(beConnServerNames)
+	for _, sn := range beConnServerNames {
+		data.BackendConnections = append(data.BackendConnections, beConnectionList{
+			ServerName:  idnaToUnicode(sn),
+			Connections: beConns[sn],
+		})
 	}
 
 	for _, be := range p.cfg.Backends {
