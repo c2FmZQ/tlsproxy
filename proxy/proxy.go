@@ -120,8 +120,8 @@ type Proxy struct {
 	pkis          map[string]*pki.PKIManager
 	ocspCache     *ocspcache.OCSPCache
 	bwLimits      map[string]*bwLimit
-	connTracker   *connTracker
-	beConnTracker *connTracker
+	inConns       *connTracker
+	outConns      *connTracker
 
 	metrics   map[string]*backendMetrics
 	startTime time.Time
@@ -190,13 +190,13 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 			Cache:  autocertcache.New("autocert", store),
 			Email:  cfg.Email,
 		},
-		store:         store,
-		tokenManager:  tm,
-		pkis:          make(map[string]*pki.PKIManager),
-		ocspCache:     ocspcache.New(store),
-		bwLimits:      make(map[string]*bwLimit),
-		connTracker:   newConnTracker(),
-		beConnTracker: newConnTracker(),
+		store:        store,
+		tokenManager: tm,
+		pkis:         make(map[string]*pki.PKIManager),
+		ocspCache:    ocspcache.New(store),
+		bwLimits:     make(map[string]*bwLimit),
+		inConns:      newConnTracker(),
+		outConns:     newConnTracker(),
 	}
 	if err := p.Reconfigure(cfg); err != nil {
 		return nil, err
@@ -235,14 +235,14 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 		return nil, err
 	}
 	p := &Proxy{
-		certManager:   cm,
-		store:         store,
-		tokenManager:  tm,
-		pkis:          make(map[string]*pki.PKIManager),
-		ocspCache:     ocspcache.New(store),
-		bwLimits:      make(map[string]*bwLimit),
-		connTracker:   newConnTracker(),
-		beConnTracker: newConnTracker(),
+		certManager:  cm,
+		store:        store,
+		tokenManager: tm,
+		pkis:         make(map[string]*pki.PKIManager),
+		ocspCache:    ocspcache.New(store),
+		bwLimits:     make(map[string]*bwLimit),
+		inConns:      newConnTracker(),
+		outConns:     newConnTracker(),
 	}
 	if err := p.Reconfigure(cfg); err != nil {
 		return nil, err
@@ -776,7 +776,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			return a < b
 
 		})
-		be.connTracker = p.beConnTracker
+		be.outConns = p.outConns
 	}
 	if p.cfg != nil {
 		for _, be := range p.cfg.Backends {
@@ -793,7 +793,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 
 func (p *Proxy) reAuthorize() {
 
-	for _, conn := range p.connTracker.slice() {
+	for _, conn := range p.inConns.slice() {
 		if !connServerNameIsSet(conn) {
 			continue
 		}
@@ -904,7 +904,7 @@ func (p *Proxy) Stop() {
 	}
 	backends := p.cfg.Backends
 	p.cfg.Backends = nil
-	conns := p.connTracker.slice()
+	conns := p.inConns.slice()
 	p.mu.Unlock()
 	for _, be := range backends {
 		be.close(nil)
@@ -930,7 +930,7 @@ func (p *Proxy) Shutdown(ctx context.Context) {
 	done := make(chan struct{})
 	go func() {
 		connLeft := func() bool {
-			for _, c := range p.connTracker.slice() {
+			for _, c := range p.inConns.slice() {
 				if mode := connMode(c); mode != ModeTCP && mode != ModeTLS && mode != ModeTLSPassthrough {
 					return true
 				}
@@ -1024,9 +1024,9 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		cc := proxyproto.NewConn(conn.Conn)
 		conn.Conn = cc
 	}
-	numOpen := p.connTracker.add(conn)
+	numOpen := p.inConns.add(conn)
 	conn.OnClose(func() {
-		p.connTracker.remove(conn)
+		p.inConns.remove(conn)
 		if conn.Annotation(reportEndKey, false).(bool) {
 			startTime := conn.Annotation(startTimeKey, time.Time{}).(time.Time)
 			log.Printf("END %s; Dur:%s Recv:%d Sent:%d",

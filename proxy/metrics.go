@@ -250,7 +250,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	}
 	p.eventsmu.Unlock()
 
-	conns := p.connTracker.slice()
+	conns := p.inConns.slice()
 	sort.Slice(conns, func(i, j int) bool {
 		sa := conns[i].Annotation(serverNameKey, "").(string)
 		sb := conns[j].Annotation(serverNameKey, "").(string)
@@ -341,7 +341,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 
 	beConns := make(map[string][]beConnection)
 
-	for _, c := range p.beConnTracker.slice() {
+	for _, c := range p.outConns.slice() {
 		sn := connServerName(c)
 		startTime := c.Annotation(startTimeKey, time.Time{}).(time.Time)
 		totalTime := time.Since(startTime)

@@ -165,9 +165,9 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 		}
 		wc := netw.NewConn(c)
 		wc.OnClose(func() {
-			be.connTracker.remove(wc)
+			be.outConns.remove(wc)
 		})
-		be.connTracker.add(wc)
+		be.outConns.add(wc)
 		wc.SetAnnotation(startTimeKey, time.Now())
 		wc.SetAnnotation(modeKey, mode)
 		wc.SetAnnotation(protoKey, strings.Join(protos, ","))
