@@ -1,7 +1,36 @@
 # TLSPROXY Release Notes
 
+## v0.5.1
+
+* Prevent backend connections from being re-used by other clients when PROXY protocol is enabled.
+
+## v0.5.0
+
+* Add support for the PROXY protocol for incoming connections. See the `AcceptProxyHeaderFrom` config option.
+* Fix bug with the handling of the PROXY protocol header with TLS backends. The header was sent after the TLS handshake instead of before.
+* Fix bug that prevented logins with passkeys on non default ports when ForceReAuth is set. (introduced in v0.4.4)
+* Log aborted ReverseProxy requests more gracefully.
+* Update go: 1.21.6
+* Update go dependencies:
+  * upgraded github.com/beevik/etree v1.2.0 => v1.3.0
+  * upgraded github.com/google/pprof v0.0.0-20231212022811-ec68065c825e => v0.0.0-20231229205709-960ae82b1e42
+  * upgraded golang.org/x/crypto v0.17.0 => v0.18.0
+  * upgraded golang.org/x/exp v0.0.0-20231226003508-02704c960a9b => v0.0.0-20240103183307-be819d1f06fc
+  * upgraded golang.org/x/net v0.19.0 => v0.20.0
+  * upgraded golang.org/x/sys v0.15.0 => v0.16.0
+
+## v0.4.4
+
+* Improve user experience with the passkey login screen.
+* Fix small accounting bug in ingress metrics.
+* Apply the forward rate limit to http requests. Before, the rate limit was only applied to incoming connections.
+
+## v0.4.3
+
+* Add support for the OIDC `hd` param (https://developers.google.com/identity/openid-connect/openid-connect#hd-param).
 * Return the proper TLS error when a QUIC client requests an unknown server name and/or alpn protocol.
 * Return the proper TLS error when a client certificate is revoked.
+* Refactor / improve the handling of QUIC connections.
 
 ## v0.4.2
 

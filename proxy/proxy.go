@@ -53,6 +53,7 @@ import (
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/storage/autocertcache"
 	"github.com/c2FmZQ/storage/crypto"
+	"github.com/pires/go-proxyproto"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/crypto/ocsp"
@@ -81,6 +82,7 @@ const (
 	internalConnKey  = "ic"
 	reportEndKey     = "re"
 	backendKey       = "be"
+	requestFlagKey   = "rf"
 
 	tlsBadCertificate      = tls.AlertError(0x2a)
 	tlsCertificateRevoked  = tls.AlertError(0x2c)
@@ -291,6 +293,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			RedirectURL:      pp.RedirectURL,
 			ClientID:         pp.ClientID,
 			ClientSecret:     pp.ClientSecret,
+			HostedDomain:     pp.HostedDomain,
 		}
 		provider, err := oidc.New(oidcCfg, er, cm)
 		if err != nil {
@@ -344,6 +347,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			EventRecorder:      er,
 			CookieManager:      cm,
 			OtherCookieManager: other.cm,
+			TokenManager:       p.tokenManager,
 			ClaimsFromCtx:      claimsFromCtx,
 		}
 		provider, err := passkeys.NewManager(cfg)
@@ -993,6 +997,22 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 	return tc
 }
 
+func (p *Proxy) acceptProxyHeader(addr net.Addr) bool {
+	p.mu.Lock()
+	cidrs := p.cfg.acceptProxyHeaderFrom
+	p.mu.Unlock()
+	tcpAddr, ok := addr.(*net.TCPAddr)
+	if !ok {
+		return false
+	}
+	for _, n := range cidrs {
+		if n.Contains(tcpAddr.IP) {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *Proxy) handleConnection(conn *netw.Conn) {
 	p.recordEvent("tcp connection")
 	defer func() {
@@ -1009,6 +1029,10 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		}
 	}()
 	conn.SetAnnotation(startTimeKey, time.Now())
+	if p.acceptProxyHeader(conn.RemoteAddr()) {
+		cc := proxyproto.NewConn(conn.Conn)
+		conn.Conn = cc
+	}
 	numOpen := p.addConn(conn)
 	conn.OnClose(func() {
 		p.removeConn(conn)
@@ -1213,9 +1237,7 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 	}
 	defer intConn.Close()
 	setKeepAlive(intConn)
-
 	netwConn(extConn).SetAnnotation(dialDoneKey, time.Now())
-	netwConn(extConn).SetAnnotation(internalConnKey, intConn)
 
 	desc := formatConnDesc(netwConn(extConn))
 	log.Printf("CON %s", desc)
@@ -1256,7 +1278,6 @@ func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
 	setKeepAlive(intConn)
 
 	netwConn(extConn).SetAnnotation(dialDoneKey, time.Now())
-	netwConn(extConn).SetAnnotation(internalConnKey, intConn)
 
 	desc := formatConnDesc(netwConn(extConn))
 	log.Printf("CON %s", desc)
@@ -1338,6 +1359,10 @@ func formatConnDesc(c net.Conn, ids ...string) string {
 		buf.WriteString("[" + strings.Join(identities, "|") + "] ")
 	}
 	buf.WriteString(c.RemoteAddr().Network() + ":" + c.RemoteAddr().String())
+	if isProxyProtoConn(c) {
+		buf.WriteString(" ➔ ")
+		buf.WriteString(c.LocalAddr().Network() + ":" + c.LocalAddr().String())
+	}
 	if serverName != "" {
 		buf.WriteString(" ➔ ")
 		buf.WriteString(idnaToUnicode(serverName))
@@ -1352,6 +1377,32 @@ func formatConnDesc(c net.Conn, ids ...string) string {
 		}
 	}
 	return buf.String()
+}
+
+func isProxyProtoConn(c net.Conn) bool {
+	switch cc := c.(type) {
+	case *tls.Conn:
+		return isProxyProtoConn(cc.NetConn())
+	case *netw.Conn:
+		return isProxyProtoConn(cc.Conn)
+	case *proxyproto.Conn:
+		return true
+	default:
+		return false
+	}
+}
+
+func localNetConn(c net.Conn) net.Conn {
+	switch cc := c.(type) {
+	case *tls.Conn:
+		return localNetConn(cc.NetConn())
+	case *netw.Conn:
+		return localNetConn(cc.Conn)
+	case *proxyproto.Conn:
+		return cc.Raw()
+	default:
+		return cc
+	}
 }
 
 func setKeepAlive(conn net.Conn) {

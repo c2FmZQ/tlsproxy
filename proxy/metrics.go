@@ -66,7 +66,8 @@ func (p *Proxy) recordEvent(msg string) {
 func (p *Proxy) addConn(c annotatedConnection) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	key := connKey{src: c.LocalAddr(), dst: c.RemoteAddr(), id: -1}
+	cc := localNetConn(c)
+	key := connKey{src: cc.LocalAddr(), dst: cc.RemoteAddr(), id: -1}
 	if s, ok := c.(interface {
 		StreamID() int64
 	}); ok {
@@ -102,7 +103,8 @@ func (p *Proxy) setCounters(c counterSetter, serverName string) {
 func (p *Proxy) removeConn(c annotatedConnection) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	key := connKey{src: c.LocalAddr(), dst: c.RemoteAddr(), id: -1}
+	cc := localNetConn(c)
+	key := connKey{src: cc.LocalAddr(), dst: cc.RemoteAddr(), id: -1}
 	if s, ok := c.(interface {
 		StreamID() int64
 	}); ok {
@@ -139,6 +141,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	}
 	type connection struct {
 		SourceAddr   string
+		ViaAddr      string
 		Type         string
 		ServerName   string
 		Mode         string
@@ -285,6 +288,9 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 			Mode:       connMode(c),
 			Proto:      connProto(c),
 		}
+		if isProxyProtoConn(c) {
+			connection.ViaAddr = c.LocalAddr().Network() + ":" + c.LocalAddr().String()
+		}
 		var streams []*netw.QUICStream
 
 		switch cc := c.(type) {
@@ -314,9 +320,6 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 			addr := intAddr
 			if addr == "" {
 				addr = stream.BridgeAddr()
-			}
-			if addr == "" {
-				addr = "local"
 			}
 			streamID := stream.StreamID()
 			var dir string

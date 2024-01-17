@@ -24,6 +24,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -61,13 +62,21 @@ var (
 	commaRE = regexp.MustCompile(`, *`)
 )
 
+func logPanic(req *http.Request, recovered any) {
+	if recovered == http.ErrAbortHandler {
+		log.Printf("ERR %s ➔ %s %s ➔ Aborted (%q)", formatReqDesc(req), req.Method, req.URL, userAgent(req))
+		return
+	}
+	log.Printf("PANIC: %#v\n%s", recovered, string(debug.Stack()))
+}
+
 // localHandler returns an HTTP handler for backends that are served entirely by
 // the proxy itself. The requests are never forwarded to a remote server.
 func (be *Backend) localHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("PANIC: %#v\n%s", r, string(debug.Stack()))
+				logPanic(req, r)
 			}
 		}()
 		if !be.authenticateUser(w, &req) {
@@ -96,7 +105,7 @@ func (be *Backend) reverseProxy() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("PANIC: %#v\n%s", r, string(debug.Stack()))
+				logPanic(req, r)
 			}
 		}()
 		if !be.authenticateUser(w, &req) {
@@ -133,7 +142,7 @@ func (be *Backend) reverseProxy() http.Handler {
 		ctx = context.WithValue(ctx, ctxURLKey, req.URL.String())
 
 		// Detect forwarding loops using the via headers.
-		me := req.Context().Value(connCtxKey).(net.Conn).LocalAddr().String()
+		me := localNetConn(req.Context().Value(connCtxKey).(net.Conn)).LocalAddr().String()
 		hops := commaRE.Split(req.Header.Get(viaHeader), -1)
 		for _, via := range hops {
 			if _, via, _ = strings.Cut(via, " "); via == me {
@@ -152,21 +161,38 @@ func (be *Backend) reverseProxy() http.Handler {
 		// dial(), but we need to set req.URL.Host to a unique value
 		// so that the http client will not re-use connections with
 		// other addresses.
-		h := sha256.Sum256([]byte(hostname))
-		hh := hex.EncodeToString(h[:])
-		req.URL.Host = hh
+		override := ""
+		proxyProtoVersion := be.proxyProtocolVersion
 	L:
 		for i, po := range be.PathOverrides {
 			for _, prefix := range po.Paths {
 				if !strings.HasPrefix(req.URL.Path, prefix) {
 					continue
 				}
-				req.URL.Host = fmt.Sprintf("%s-%d", hh, i)
 				ctx = context.WithValue(ctx, ctxOverrideIDKey, i)
+				override = fmt.Sprintf("%d", i)
+				proxyProtoVersion = po.proxyProtocolVersion
 				break L
 			}
 		}
+		hostKey := bytes.NewBufferString(hostname + ";" + override)
+		if proxyProtoVersion > 0 {
+			hostKey.WriteByte(';')
+			writeProxyHeader(proxyProtoVersion, hostKey, req.Context().Value(connCtxKey).(net.Conn))
+		}
+		h := sha256.Sum256(hostKey.Bytes())
+		req.URL.Host = hex.EncodeToString(h[:])
 
+		// Apply the forward rate limit. The first request was already
+		// counted when the connection was established.
+		if conn, ok := ctx.Value(connCtxKey).(annotatedConnection); ok {
+			if !conn.Annotation(requestFlagKey, false).(bool) {
+				conn.SetAnnotation(requestFlagKey, true)
+			} else if err := be.connLimit.Wait(ctx); err != nil {
+				http.Error(w, "ctx", http.StatusInternalServerError)
+				return
+			}
+		}
 		reverseProxy.ServeHTTP(w, req.WithContext(ctx))
 	})
 }
@@ -253,7 +279,7 @@ func (be *Backend) reverseProxyTransport() http.RoundTripper {
 			return be.dial(ctx)
 		},
 		MaxIdleConns:          100,
-		IdleConnTimeout:       30 * time.Second,
+		IdleConnTimeout:       10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 	h2 := &http2.Transport{
@@ -262,7 +288,7 @@ func (be *Backend) reverseProxyTransport() http.RoundTripper {
 		},
 		DisableCompression: true,
 		AllowHTTP:          true,
-		ReadIdleTimeout:    30 * time.Second,
+		ReadIdleTimeout:    10 * time.Second,
 		WriteByteTimeout:   30 * time.Second,
 		CountError: func(errType string) {
 			be.recordEvent("http2 client error: " + errType)

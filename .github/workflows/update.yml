@@ -5,15 +5,12 @@ on:
     - cron: '0 12 * * WED'
 
 env:
-  GOVERSION: '>=1.21.5'
+  GOVERSION: '>=1.21.6'
 
 jobs:
   build-and-run-tests:
     name: Check for updates
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
     - name: Checkout
       # https://github.com/actions/checkout/tree/v4.1.1
@@ -30,6 +27,7 @@ jobs:
       # https://github.com/peter-evans/create-pull-request/releases/tag/v5.0.2
       uses: peter-evans/create-pull-request@153407881ec5c347639a548ade7d8ad1d6740e38
       with:
+        token: ${{ secrets.UPDATE_TOKEN }}
         title: GO update
         body-path: /tmp/go-update.log
         commit-message: Automated go update

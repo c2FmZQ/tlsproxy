@@ -52,6 +52,7 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
 const passkeyFile = "passkeys"
@@ -103,6 +104,7 @@ type Config struct {
 	EventRecorder      EventRecorder
 	CookieManager      *cookiemanager.CookieManager
 	OtherCookieManager *cookiemanager.CookieManager
+	TokenManager       *tokenmanager.TokenManager
 	ClaimsFromCtx      func(context.Context) jwt.MapClaims
 }
 
@@ -110,7 +112,7 @@ func NewManager(cfg Config) (*Manager, error) {
 	m := &Manager{
 		cfg:        cfg,
 		challenges: make(map[string]*challenge),
-		nonces:     make(map[string]*passkeyData),
+		nonces:     make(map[string]*nonceData),
 	}
 	m.db.Handles = make(map[string]*user)
 	m.db.Subjects = make(map[string]string)
@@ -133,7 +135,7 @@ type Manager struct {
 	challenges map[string]*challenge
 
 	noncesMu sync.Mutex
-	nonces   map[string]*passkeyData
+	nonces   map[string]*nonceData
 }
 
 type challenge struct {
@@ -142,10 +144,9 @@ type challenge struct {
 	uid     []byte
 }
 
-type passkeyData struct {
+type nonceData struct {
 	created time.Time
-	origURL string
-	host    string
+	origURL *url.URL
 }
 
 func (m *Manager) SetACL(acl *[]string) {
@@ -194,6 +195,7 @@ func (m *Manager) ServeWellKnown(w http.ResponseWriter, req *http.Request) {
 
 func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL string) {
 	m.cfg.EventRecorder.Record("passkey auth request")
+
 	m.noncesMu.Lock()
 	defer m.noncesMu.Unlock()
 
@@ -202,17 +204,16 @@ func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	nonce := hex.EncodeToString(n)
 	ou, err := url.Parse(origURL)
 	if err != nil {
 		log.Printf("ERR %q: %v", origURL, err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	nonce := hex.EncodeToString(n)
-	m.nonces[nonce] = &passkeyData{
+	m.nonces[nonce] = &nonceData{
 		created: time.Now().UTC(),
-		origURL: origURL,
-		host:    ou.Host,
+		origURL: ou,
 	}
 
 	u, err := url.Parse(m.cfg.Endpoint)
@@ -244,13 +245,45 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	defer m.noncesMu.Unlock()
 	now := time.Now().UTC()
 	for k, v := range m.nonces {
-		if v.created.Add(time.Hour).Before(now) {
+		if v.created.Add(5 * time.Minute).Before(now) {
 			delete(m.nonces, k)
 		}
 	}
 	req.ParseForm()
 
+	nonce := req.Form.Get("nonce")
+	if nData, ok := m.nonces[nonce]; ok {
+		delete(m.nonces, nonce)
+		token, _, err := m.cfg.TokenManager.URLToken(w, req, nData.origURL)
+		if err != nil {
+			log.Printf("ERR %q: %v", nData.origURL, err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		args := req.URL.Query()
+		args.Del("nonce")
+		args.Set("redirect", token)
+		req.URL.RawQuery = args.Encode()
+		http.Redirect(w, req, req.URL.String(), http.StatusFound)
+		return
+	}
+
 	mode := req.Form.Get("get")
+	if mode == "JS" {
+		serveWebauthnJS(w, req)
+		return
+	}
+
+	redirectToken := req.Form.Get("redirect")
+	if redirectToken == "" {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	originalURL, err := m.cfg.TokenManager.ValidateURLToken(w, req, redirectToken)
+	if err != nil {
+		http.Error(w, "invalid or expired request", http.StatusBadRequest)
+		return
+	}
 
 	token, err := m.cfg.OtherCookieManager.ValidateAuthTokenCookie(req)
 	if err != nil {
@@ -268,26 +301,24 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 
 	switch mode {
 	case "Login", "RegisterNewID", "RefreshID":
-		nonce := req.Form.Get("nonce")
-		d, ok := m.nonces[nonce]
-		if !ok {
-			http.Redirect(w, req, "/", http.StatusFound)
-			return
-		}
-
 		data := struct {
 			Self         string
-			RedirectURL  string
+			Token        string
 			Mode         string
-			Nonce        string
 			Email        string
+			URL          string
+			DisplayURL   string
 			IsAllowed    bool
 			IsRegistered bool
 		}{
-			Self:        req.URL.Path,
-			RedirectURL: d.origURL,
-			Mode:        mode,
-			Nonce:       nonce,
+			Self:       req.URL.Path,
+			Token:      redirectToken,
+			Mode:       mode,
+			URL:        originalURL.String(),
+			DisplayURL: originalURL.String(),
+		}
+		if len(data.DisplayURL) > 100 {
+			data.DisplayURL = data.DisplayURL[:97] + "..."
 		}
 		if mode == "RegisterNewID" || mode == "RefreshID" {
 			data.Email, _ = token.Claims.(jwt.MapClaims)["email"].(string)
@@ -376,11 +407,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 		m.cfg.EventRecorder.Record("passkey check request")
-		var host string
-		if d, ok := m.nonces[req.Form.Get("nonce")]; ok {
-			host = d.host
-		}
-		m.setAuthToken(w, host, claims)
+		m.setAuthToken(w, originalURL, claims)
 
 	case "AddKey":
 		if req.Method != "POST" {
@@ -409,11 +436,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		m.cfg.EventRecorder.Record("passkey addkey request")
-		var host string
-		if d, ok := m.nonces[req.Form.Get("nonce")]; ok {
-			host = d.host
-		}
-		m.setAuthToken(w, host, claims)
+		m.setAuthToken(w, originalURL, claims)
 
 	case "Switch":
 		if req.Method != "POST" {
@@ -428,11 +451,9 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		m.cfg.OtherCookieManager.ClearCookies(w)
 		w.Header().Set("content-type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
-			"result": "ok",
+			"result":   "ok",
+			"redirect": originalURL.String(),
 		})
-
-	case "JS":
-		serveWebauthnJS(w, req)
 
 	default:
 		http.Error(w, "invalid request", http.StatusBadRequest)
@@ -684,7 +705,11 @@ func (m *Manager) deleteKey(email string, id Bytes) (retErr error) {
 	return commit(true, nil)
 }
 
-func (m *Manager) setAuthToken(w http.ResponseWriter, host string, claims map[string]any) {
+func (m *Manager) setAuthToken(w http.ResponseWriter, u *url.URL, claims map[string]any) {
+	if u == nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	subject, ok := claims["sub"].(string)
 	if !ok {
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -700,14 +725,15 @@ func (m *Manager) setAuthToken(w http.ResponseWriter, host string, claims map[st
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	if err := m.cfg.CookieManager.SetAuthTokenCookie(w, subject, email, sid, host, claims); err != nil {
+	if err := m.cfg.CookieManager.SetAuthTokenCookie(w, subject, email, sid, u.Host, claims); err != nil {
 		log.Printf("ERR SetAuthTokenCookie: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("content-type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
-		"result": "ok",
+		"result":   "ok",
+		"redirect": u.String(),
 	})
 }
 

@@ -203,7 +203,7 @@ function selectTab(target) {
 {{- range .Connections }}
   <div>
     <div style="margin-left: 2rem; padding-top: 0.5rem; display: grid; grid-template-columns: auto auto; justify-items: left; width: fit-content; column-gap: 1rem;">
-      <div>{{.SourceAddr}} {{.Type}}</div>
+      <div>{{.SourceAddr}}{{ if ne .ViaAddr "" }} &lt;=&gt; {{.ViaAddr}}{{ end }} {{.Type}}</div>
       <div>&lt;=&gt; {{.ServerName}} {{.Mode}} {{.Proto}}</div>
   {{- range .Destinations }}
       <div>&nbsp;</div>
