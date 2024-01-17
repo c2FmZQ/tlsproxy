@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+* Report outbound connections on the metrics page.
+
 ## v0.5.1
 
 * Prevent backend connections from being re-used by other clients when PROXY protocol is enabled.

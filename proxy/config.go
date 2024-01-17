@@ -359,6 +359,7 @@ type Backend struct {
 	httpConnChan  chan net.Conn
 	http3Server   io.Closer
 	localHandlers []localHandler
+	outConns      *connTracker
 
 	mu       sync.Mutex
 	next     int

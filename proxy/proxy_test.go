@@ -992,11 +992,12 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 	}
 	p := &Proxy{
 		certManager:  cm,
-		connections:  make(map[connKey]annotatedConnection),
 		store:        store,
 		tokenManager: tm,
 		ocspCache:    ocspcache.New(store),
 		bwLimits:     make(map[string]*bwLimit),
+		inConns:      newConnTracker(),
+		outConns:     newConnTracker(),
 	}
 	p.Reconfigure(cfg)
 	return p
