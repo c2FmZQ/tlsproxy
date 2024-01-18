@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+* Update go dependencies:
+  * upgraded github.com/onsi/ginkgo/v2 v2.14.0 => v2.15.0
 ## v0.5.2
 
 * Report outbound connections on the metrics page.
