@@ -35,7 +35,6 @@ func newConnTracker() *connTracker {
 type connKey struct {
 	dst net.Addr
 	src net.Addr
-	id  int64
 }
 
 type connTracker struct {
@@ -56,17 +55,11 @@ func (t *connTracker) slice() []annotatedConnection {
 func (t *connTracker) add(c annotatedConnection) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	cc := localNetConn(c)
-	key := connKey{src: cc.LocalAddr(), dst: cc.RemoteAddr()}
-	if s, ok := c.(interface {
-		StreamID() int64
-	}); ok {
-		key.id = s.StreamID()
-	}
 	if t.conns == nil {
 		t.conns = make(map[connKey]annotatedConnection)
 	}
-	t.conns[key] = c
+	cc := localNetConn(c)
+	t.conns[connKey{src: cc.LocalAddr(), dst: cc.RemoteAddr()}] = c
 	return len(t.conns)
 }
 
@@ -74,12 +67,6 @@ func (t *connTracker) remove(c annotatedConnection) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	cc := localNetConn(c)
-	key := connKey{src: cc.LocalAddr(), dst: cc.RemoteAddr()}
-	if s, ok := c.(interface {
-		StreamID() int64
-	}); ok {
-		key.id = s.StreamID()
-	}
-	delete(t.conns, key)
+	delete(t.conns, connKey{src: cc.LocalAddr(), dst: cc.RemoteAddr()})
 	return len(t.conns)
 }
