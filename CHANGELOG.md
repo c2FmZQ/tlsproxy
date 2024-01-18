@@ -1,12 +1,13 @@
 # TLSPROXY Release Notes
 
+* Report outbound connections on the metrics page.
+* Improve how http3 connections are handled.
 * Update go dependencies:
   * upgraded github.com/google/pprof v0.0.0-20231229205709-960ae82b1e42 => v0.0.0-20240117000934-35fc243c5815
   * upgraded github.com/onsi/ginkgo/v2 v2.13.2 => v2.14.0
   * upgraded github.com/quic-go/quic-go v0.40.1 => v0.41.0
   * upgraded golang.org/x/exp v0.0.0-20240103183307-be819d1f06fc => v0.0.0-20240112132812-db7319d0e0e3
   * upgraded golang.org/x/tools v0.16.1 => v0.17.0
-* Report outbound connections on the metrics page.
 
 ## v0.5.1
 

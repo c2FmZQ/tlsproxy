@@ -203,7 +203,7 @@ func (be *Backend) reverseProxy() http.Handler {
 }
 
 func (be *Backend) setAltSvc(header http.Header, req *http.Request) {
-	if be.http3Handler == nil {
+	if be.http3Server == nil {
 		return
 	}
 	if req.TLS != nil && req.TLS.NegotiatedProtocol == "h3" {

@@ -684,22 +684,22 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			be.httpConnChan = make(chan net.Conn)
 			be.httpServer = startInternalHTTPServer(be.localHandler(), be.httpConnChan)
 			if *cfg.EnableQUIC && be.ALPNProtos != nil && slices.Contains(*be.ALPNProtos, "h3") {
-				be.http3Handler = be.localHandler()
+				be.http3Server = http3Server(be.localHandler())
 			}
 
 		case ModeLocal:
 			be.httpConnChan = make(chan net.Conn)
 			be.httpServer = startInternalHTTPServer(be.localHandler(), be.httpConnChan)
 			if *cfg.EnableQUIC && be.ALPNProtos != nil && slices.Contains(*be.ALPNProtos, "h3") {
-				be.http3Handler = be.localHandler()
+				be.http3Server = http3Server(be.localHandler())
 			}
 
 		case ModeHTTPS, ModeHTTP:
-			if *cfg.EnableQUIC && be.ALPNProtos != nil && slices.Contains(*be.ALPNProtos, "h3") {
-				be.http3Handler = be.reverseProxy()
-			}
 			be.httpConnChan = make(chan net.Conn)
 			be.httpServer = startInternalHTTPServer(be.reverseProxy(), be.httpConnChan)
+			if *cfg.EnableQUIC && be.ALPNProtos != nil && slices.Contains(*be.ALPNProtos, "h3") {
+				be.http3Server = http3Server(be.reverseProxy())
+			}
 		}
 	}
 

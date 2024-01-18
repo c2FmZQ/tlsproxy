@@ -208,16 +208,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		log.Printf("ERR [%s] %s:%s ➔ %s|%s:%s %s: %v", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol, tag, err)
 	}
 
-	if be.http3Handler != nil && cs.NegotiatedProtocol == "h3" {
-		// Creating a new http3 server for every request isn't great,
-		// but it seems to be the only way to pass a context value to
-		// the request.
-		serv := &http3.Server{
-			Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				req = req.WithContext(context.WithValue(req.Context(), connCtxKey, qc))
-				be.http3Handler.ServeHTTP(w, req)
-			}),
-		}
+	if serv, ok := be.http3Server.(*http3.Server); ok && cs.NegotiatedProtocol == "h3" {
 		if err := serv.ServeQUICConn(qc); err != nil {
 			reportErr(err, "ServeQUICConn")
 		}
@@ -564,6 +555,15 @@ func (be *Backend) http3Transport() http.RoundTripper {
 				return nil, err
 			}
 			return conn, nil
+		},
+	}
+}
+
+func http3Server(handler http.Handler) *http3.Server {
+	return &http3.Server{
+		Handler: handler,
+		ConnContext: func(ctx context.Context, c quic.Connection) context.Context {
+			return context.WithValue(ctx, connCtxKey, c)
 		},
 	}
 }
