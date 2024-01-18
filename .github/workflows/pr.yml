@@ -1,7 +1,19 @@
 name: Tests
 on: 
-  - pull_request
-  - push
+  pull_request:
+    paths:
+      - '.github/workflows/*'
+      - 'Dockerfile'
+      - 'go.*'
+      - '**.go'
+      - '**.sh'
+      - '**.js'
+      - '**.html'
+      - 'examples/example-config.yaml'
+  push:
+    branches:
+      - main
+
 env:
   GOVERSION: '>=1.21.6'
 jobs:
