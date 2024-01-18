@@ -42,8 +42,6 @@ jobs:
     name: Create release
     needs: build-and-run-tests
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
     - name: Checkout
       # https://github.com/actions/checkout/tree/v4.1.1
@@ -66,6 +64,7 @@ jobs:
       # https://github.com/softprops/action-gh-release/tree/v0.1.15
       uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844
       with:
+        token: ${{ secrets.UPDATE_TOKEN }}
         draft: false
         prerelease: ${{ contains(github.ref, '-') }}
         body_path: release-notes.md
