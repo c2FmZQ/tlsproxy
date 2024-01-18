@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+## v0.5.2
+
 * Report outbound connections on the metrics page.
 * Improve how http3 connections are handled.
 * Update go dependencies:
