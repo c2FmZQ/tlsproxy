@@ -26,6 +26,7 @@ require (
 	github.com/jonboulle/clockwork v0.4.0 // indirect
 	github.com/onsi/ginkgo/v2 v2.14.0 // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect
+	github.com/quic-go/qtls-go1-20 v0.4.1 // indirect
 	github.com/stretchr/testify v1.8.4 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/mock v0.4.0 // indirect
