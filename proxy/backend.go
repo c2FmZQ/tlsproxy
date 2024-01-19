@@ -43,19 +43,19 @@ import (
 )
 
 func (be *Backend) incInFlight(delta int) int {
-	be.mu.Lock()
-	defer be.mu.Unlock()
-	be.inFlight += delta
-	if be.inFlight == 0 && be.shutdown && be.httpServer != nil {
+	be.state.mu.Lock()
+	defer be.state.mu.Unlock()
+	be.state.inFlight += delta
+	if be.state.inFlight == 0 && be.state.shutdown && be.httpServer != nil {
 		close(be.httpConnChan)
 		be.httpServer = nil
 	}
-	return be.inFlight
+	return be.state.inFlight
 }
 
 func (be *Backend) close(ctx context.Context) {
-	be.mu.Lock()
-	defer be.mu.Unlock()
+	be.state.mu.Lock()
+	defer be.state.mu.Unlock()
 	if be.httpServer == nil {
 		return
 	}
@@ -70,8 +70,8 @@ func (be *Backend) close(ctx context.Context) {
 		return
 	}
 	go be.httpServer.Shutdown(ctx)
-	be.shutdown = true
-	if be.inFlight == 0 {
+	be.state.shutdown = true
+	if be.state.inFlight == 0 {
 		close(be.httpConnChan)
 		be.httpServer = nil
 		if h3 := be.http3Server; h3 != nil {
@@ -90,7 +90,7 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 		serverName         = be.ForwardServerName
 		rootCAs            = be.forwardRootCAs
 		proxyProtoVersion  = be.proxyProtocolVersion
-		next               = &be.next
+		next               = &be.state.next
 	)
 	if id, ok := ctx.Value(ctxOverrideIDKey).(int); ok && id >= 0 && id < len(be.PathOverrides) {
 		po := be.PathOverrides[id]
@@ -101,7 +101,7 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 		serverName = po.ForwardServerName
 		rootCAs = po.forwardRootCAs
 		proxyProtoVersion = po.proxyProtocolVersion
-		next = &po.next
+		next = &be.state.oNext[id]
 	}
 
 	if len(addresses) == 0 {
@@ -133,14 +133,14 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 	}
 	var max int
 	for {
-		be.mu.Lock()
+		be.state.mu.Lock()
 		sz := len(addresses)
 		if max == 0 {
 			max = sz
 		}
 		addr := addresses[*next]
 		*next = (*next + 1) % sz
-		be.mu.Unlock()
+		be.state.mu.Unlock()
 
 		var c net.Conn
 		var err error

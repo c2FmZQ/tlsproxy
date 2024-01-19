@@ -469,7 +469,7 @@ func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUI
 		insecureSkipVerify = be.InsecureSkipVerify
 		serverName         = be.ForwardServerName
 		rootCAs            = be.forwardRootCAs
-		next               = &be.next
+		next               = &be.state.next
 	)
 	if id, ok := ctx.Value(ctxOverrideIDKey).(int); ok && id >= 0 && id < len(be.PathOverrides) {
 		po := be.PathOverrides[id]
@@ -478,7 +478,7 @@ func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUI
 		insecureSkipVerify = po.InsecureSkipVerify
 		serverName = po.ForwardServerName
 		rootCAs = po.forwardRootCAs
-		next = &po.next
+		next = &be.state.oNext[id]
 	}
 
 	if len(addresses) == 0 {
@@ -512,14 +512,14 @@ func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUI
 
 	var max int
 	for {
-		be.mu.Lock()
+		be.state.mu.Lock()
 		sz := len(addresses)
 		if max == 0 {
 			max = sz
 		}
 		addr := addresses[*next]
 		*next = (*next + 1) % sz
-		be.mu.Unlock()
+		be.state.mu.Unlock()
 
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		conn, err := be.dialQUIC(ctx, addr, tc)

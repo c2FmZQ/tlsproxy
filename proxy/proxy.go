@@ -58,7 +58,6 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/crypto/ocsp"
 	"golang.org/x/time/rate"
-	yaml "gopkg.in/yaml.v3"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
@@ -255,9 +254,7 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 func (p *Proxy) Reconfigure(cfg *Config) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	a, _ := yaml.Marshal(p.cfg)
-	b, _ := yaml.Marshal(cfg)
-	if bytes.Equal(a, b) {
+	if cfg.equal(p.cfg) {
 		return nil
 	}
 	cfg = cfg.clone()
@@ -792,7 +789,6 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 }
 
 func (p *Proxy) reAuthorize() {
-
 	for _, conn := range p.inConns.slice() {
 		if !connServerNameIsSet(conn) {
 			continue
@@ -1308,9 +1304,9 @@ func (p *Proxy) backend(serverName string, protos ...string) (*Backend, error) {
 	if !ok {
 		return nil, errors.New("unexpected SNI")
 	}
-	be.mu.Lock()
-	defer be.mu.Unlock()
-	if be.shutdown {
+	be.state.mu.Lock()
+	defer be.state.mu.Unlock()
+	if be.state.shutdown {
 		return nil, errors.New("backend shutdown")
 	}
 	return be, nil
