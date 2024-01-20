@@ -285,6 +285,34 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 				}()
 			}
 		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				b, err := qc.ReceiveDatagram(ctx)
+				if err != nil {
+					reportErr(err, "ReceiveDatagram->")
+					return
+				}
+				if err := beConn.SendDatagram(b); err != nil {
+					reportErr(err, "SendDatagram->")
+				}
+			}
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				b, err := beConn.ReceiveDatagram(ctx)
+				if err != nil {
+					reportErr(err, "ReceiveDatagram<-")
+					return
+				}
+				if err := qc.SendDatagram(b); err != nil {
+					reportErr(err, "SendDatagram<-")
+				}
+			}
+		}()
 		wg.Wait()
 		return
 	}
@@ -565,5 +593,6 @@ func http3Server(handler http.Handler) *http3.Server {
 		ConnContext: func(ctx context.Context, c quic.Connection) context.Context {
 			return context.WithValue(ctx, connCtxKey, c)
 		},
+		EnableDatagrams: true,
 	}
 }

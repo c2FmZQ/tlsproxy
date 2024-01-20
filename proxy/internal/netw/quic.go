@@ -44,7 +44,8 @@ import (
 )
 
 var quicConfig = &quic.Config{
-	MaxIdleTimeout: 30 * time.Second,
+	MaxIdleTimeout:  30 * time.Second,
+	EnableDatagrams: true,
 }
 
 // NewQUIC returns a wrapper around a quic.Transport to keep track of metrics

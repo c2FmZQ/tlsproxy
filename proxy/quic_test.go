@@ -35,6 +35,7 @@ import (
 	"sort"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/quic-go/quic-go"
 
@@ -108,6 +109,7 @@ func TestQUICConnections(t *testing.T) {
 		protos           []string
 		expError         bool
 		quic             bool
+		datagram         bool
 	}{
 		{desc: "Hit TCP backend with TLS", host: "tcp.example.com", want: "Hello from TCP Backend\n", protos: []string{"http/1.1"}},
 		{desc: "Hit TCP backend with QUIC", host: "tcp.example.com", want: "Hello from TCP Backend\n", protos: []string{"http/1.1"}, quic: true},
@@ -117,10 +119,13 @@ func TestQUICConnections(t *testing.T) {
 		{desc: "Hit QUIC backend with TLS imap", host: "quic.example.com", want: "Hello from QUIC Backend\n", protos: []string{"imap"}},
 		{desc: "Hit QUIC backend with QUIC h3", host: "quic.example.com", want: "Hello from QUIC Backend\n", protos: []string{"h3"}, quic: true},
 		{desc: "Hit QUIC backend with QUIC imap", host: "quic.example.com", want: "Hello from QUIC Backend\n", protos: []string{"imap"}, quic: true},
+		{desc: "Hit QUIC backend with QUIC datagram", host: "quic.example.com", want: "Received 7-byte datagram", protos: []string{"h3"}, datagram: true},
 	} {
 		var got string
 		var err error
-		if tc.quic {
+		if tc.datagram {
+			got, err = quicDatagram(tc.host, proxy.quicTransport.(*netw.QUICTransport).Addr().String(), "Hello!\n", extCA, tc.protos)
+		} else if tc.quic {
 			got, err = quicGet(tc.host, proxy.quicTransport.(*netw.QUICTransport).Addr().String(), "Hello!\n", extCA, tc.protos)
 		} else {
 			got, _, err = tlsGet(tc.host, proxy.listener.Addr().String(), "Hello!\n", extCA, nil, tc.protos)
@@ -264,6 +269,40 @@ func quicGet(name, addr, msg string, rootCA *certmanager.CertManager, protos []s
 	return string(b), nil
 }
 
+func quicDatagram(name, addr, msg string, rootCA *certmanager.CertManager, protos []string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	tc := &tls.Config{
+		ServerName: name,
+		RootCAs:    rootCA.RootCACertPool(),
+		NextProtos: protos,
+	}
+
+	conn, err := quic.DialAddr(ctx, addr, tc, &quic.Config{EnableDatagrams: true})
+	if err != nil {
+		return "", err
+	}
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		for {
+			conn.SendDatagram([]byte(msg))
+			select {
+			case <-ctx.Done():
+				return
+			case <-done:
+				return
+			case <-time.After(50 * time.Millisecond):
+			}
+		}
+	}()
+	b, err := conn.ReceiveDatagram(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
 type quicServer struct {
 	t        *testing.T
 	listener *quic.Listener
@@ -272,7 +311,7 @@ type quicServer struct {
 func newQUICServer(t *testing.T, ctx context.Context, name string, protos []string, ca tcProvider) *quicServer {
 	tc := ca.TLSConfig()
 	tc.NextProtos = protos
-	ln, err := quic.ListenAddr("localhost:0", tc, &quic.Config{})
+	ln, err := quic.ListenAddr("localhost:0", tc, &quic.Config{EnableDatagrams: true})
 	if err != nil {
 		t.Fatalf("[%s] ListenAddr: %v", name, err)
 	}
@@ -314,6 +353,18 @@ func newQUICServer(t *testing.T, ctx context.Context, name string, protos []stri
 						}
 						s.CancelRead(0)
 					}(stream)
+				}
+			}()
+			go func() {
+				for {
+					b, err := conn.ReceiveDatagram(ctx)
+					if err != nil {
+						conn.CloseWithError(0x11, err.Error())
+						break
+					}
+					if err := conn.SendDatagram([]byte(fmt.Sprintf("Received %d-byte datagram", len(b)))); err != nil {
+						t.Logf("[%s] SendDatagram: %v", name, err)
+					}
 				}
 			}()
 		}
