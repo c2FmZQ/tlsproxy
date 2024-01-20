@@ -24,6 +24,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -361,10 +362,15 @@ type Backend struct {
 	localHandlers []localHandler
 	outConns      *connTracker
 
+	state *backendState
+}
+
+type backendState struct {
 	mu       sync.Mutex
-	next     int
 	inFlight int
 	shutdown bool
+	next     int
+	oNext    []int
 }
 
 type localHandler struct {
@@ -579,7 +585,6 @@ type PathOverride struct {
 
 	forwardRootCAs       *x509.CertPool
 	proxyProtocolVersion byte
-	next                 int
 }
 
 // LocalOIDCServer is used to configure a local OpenID Provider to
@@ -634,12 +639,22 @@ type LocalOIDCRewriteRule struct {
 	Value       string `yaml:"value"`
 }
 
-func (cfg *Config) clone() *Config {
-	for _, be := range cfg.Backends {
-		be.mu.Lock()
-		defer be.mu.Unlock()
+func (cfg *Config) serialize() []byte {
+	if cfg == nil {
+		return nil
 	}
 	b, _ := yaml.Marshal(cfg)
+	return b
+}
+
+func (cfg *Config) equal(other *Config) bool {
+	a := cfg.serialize()
+	b := other.serialize()
+	return bytes.Equal(a, b)
+}
+
+func (cfg *Config) clone() *Config {
+	b := cfg.serialize()
 	var out Config
 	yaml.Unmarshal(b, &out)
 	return &out
@@ -787,6 +802,8 @@ func (cfg *Config) Check() error {
 	}
 
 	for i, be := range cfg.Backends {
+		be.state = new(backendState)
+		be.state.oNext = make([]int, len(be.PathOverrides))
 		be.Mode = strings.ToUpper(be.Mode)
 		if be.Mode == "" || be.Mode == ModePlaintext {
 			be.Mode = ModeTCP
