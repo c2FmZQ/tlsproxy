@@ -285,34 +285,36 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 				}()
 			}
 		}()
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				b, err := qc.ReceiveDatagram(ctx)
-				if err != nil {
-					reportErr(err, "->ReceiveDatagram")
-					return
+		if qc.ConnectionState().SupportsDatagrams && beConn.ConnectionState().SupportsDatagrams {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					b, err := qc.ReceiveDatagram(ctx)
+					if err != nil {
+						reportErr(err, "->ReceiveDatagram")
+						return
+					}
+					if err := beConn.SendDatagram(b); err != nil {
+						reportErr(err, "SendDatagram->")
+					}
 				}
-				if err := beConn.SendDatagram(b); err != nil {
-					reportErr(err, "SendDatagram->")
+			}()
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					b, err := beConn.ReceiveDatagram(ctx)
+					if err != nil {
+						reportErr(err, "ReceiveDatagram<-")
+						return
+					}
+					if err := qc.SendDatagram(b); err != nil {
+						reportErr(err, "<-SendDatagram")
+					}
 				}
-			}
-		}()
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				b, err := beConn.ReceiveDatagram(ctx)
-				if err != nil {
-					reportErr(err, "ReceiveDatagram<-")
-					return
-				}
-				if err := qc.SendDatagram(b); err != nil {
-					reportErr(err, "<-SendDatagram")
-				}
-			}
-		}()
+			}()
+		}
 		wg.Wait()
 		return
 	}
@@ -471,7 +473,11 @@ func (be *Backend) dialQUIC(ctx context.Context, addr string, tc *tls.Config) (*
 	if err != nil {
 		return nil, err
 	}
-	conn, err := qt.DialEarly(ctx, udpAddr, tc)
+	var enableDatagrams bool
+	if cc, ok := ctx.Value(connCtxKey).(*netw.QUICConn); ok {
+		enableDatagrams = cc.ConnectionState().SupportsDatagrams
+	}
+	conn, err := qt.DialEarly(ctx, udpAddr, tc, enableDatagrams)
 	if err != nil {
 		return nil, err
 	}

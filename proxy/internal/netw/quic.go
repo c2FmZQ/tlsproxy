@@ -96,8 +96,10 @@ func (t *QUICTransport) Dial(ctx context.Context, addr net.Addr, tc *tls.Config)
 	return newQUICConn(conn), nil
 }
 
-func (t *QUICTransport) DialEarly(ctx context.Context, addr net.Addr, tc *tls.Config) (*QUICConn, error) {
-	conn, err := t.qt.Dial(ctx, addr, tc, quicConfig)
+func (t *QUICTransport) DialEarly(ctx context.Context, addr net.Addr, tc *tls.Config, enableDatagrams bool) (*QUICConn, error) {
+	cfg := quicConfig.Clone()
+	cfg.EnableDatagrams = enableDatagrams
+	conn, err := t.qt.Dial(ctx, addr, tc, cfg)
 	if err != nil {
 		return nil, err
 	}
