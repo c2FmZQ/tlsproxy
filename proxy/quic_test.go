@@ -282,15 +282,11 @@ func quicDatagram(name, addr, msg string, rootCA *certmanager.CertManager, proto
 	if err != nil {
 		return "", err
 	}
-	done := make(chan struct{})
-	defer close(done)
 	go func() {
 		for {
 			conn.SendDatagram([]byte(msg))
 			select {
 			case <-ctx.Done():
-				return
-			case <-done:
 				return
 			case <-time.After(50 * time.Millisecond):
 			}
