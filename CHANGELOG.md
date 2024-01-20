@@ -1,6 +1,6 @@
 # TLSPROXY Release Notes
 
-* Starting with v0.6.0, tlsproxy is built with QUIC support by default. Binaries without QUIC can still be built with `-tags noquic`.
+* Starting with v0.6.0, tlsproxy is built with QUIC & HTTP/3 support by default. Binaries without QUIC can still be built with `-tags noquic`.
 * Add support for QUIC datagrams.
 
 ## v0.5.2
