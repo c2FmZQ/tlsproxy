@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+* Add support for QUIC datagrams.
+
 ## v0.5.2
 
 * Report outbound connections on the metrics page.
