@@ -1,27 +1,14 @@
 # QUIC
 
-TLSPROXY has experimental support for the [QUIC](https://en.wikipedia.org/wiki/QUIC)
-protocol and [HTTP/3](https://en.wikipedia.org/wiki/HTTP/3), backed by the
+TLSPROXY supports the [QUIC](https://en.wikipedia.org/wiki/QUIC) protocol
+and [HTTP/3](https://en.wikipedia.org/wiki/HTTP/3), both backed by the
 [quic-go package](https://pkg.go.dev/github.com/quic-go/quic-go).
 
-## Prerequisite
-
-QUIC isn't included in the TLSPROXY binary by default. The binary has to be
-built with `-tags quic`, i.e.
-
-```bash
-git clone https://github.com/c2FmZQ/tlsproxy.git
-cd tlsproxy
-go build -tags quic -o tlsproxy
-```
-
-Pre-built binaries with quic support are available from _+quic_
-[releases](https://github.com/c2FmZQ/tlsproxy/releases). Likewise, docker images
-with quic support are available from [docker hub](https://hub.docker.com/r/c2fmzq/tlsproxy/tags).
+QUIC is enabled by default in released binaries since v0.6.0.
 
 ## Enable QUIC connections
 
-Set `enableQUIC: true` in the top level configuration. TLSPROXY will listen to
+Set `enableQUIC: true` (default) in the top level configuration. TLSPROXY will listen to
 the same address as `TLSAddr`, but on UDP instead of TCP.
 
 QUIC uses the same TLS credentials as usual.
