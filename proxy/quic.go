@@ -291,7 +291,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 			for {
 				b, err := qc.ReceiveDatagram(ctx)
 				if err != nil {
-					reportErr(err, "ReceiveDatagram->")
+					reportErr(err, "->ReceiveDatagram")
 					return
 				}
 				if err := beConn.SendDatagram(b); err != nil {
@@ -309,7 +309,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 					return
 				}
 				if err := qc.SendDatagram(b); err != nil {
-					reportErr(err, "SendDatagram<-")
+					reportErr(err, "<-SendDatagram")
 				}
 			}
 		}()
