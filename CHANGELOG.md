@@ -1,5 +1,8 @@
 # TLSPROXY Release Notes
 
+* Update go dependencies:
+  * upgraded github.com/onsi/ginkgo/v2 v2.14.0 => v2.15.0
+  * upgraded golang.org/x/exp v0.0.0-20240112132812-db7319d0e0e3 => v0.0.0-20240119083558-1b970713d09a
 * Add support for QUIC datagrams.
 
 ## v0.5.2
