@@ -208,7 +208,7 @@ type Backend struct {
 	// The negotiated protocol is forwarded to the backends that use TLS.
 	//
 	// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-	ALPNProtos *[]string `yaml:"alpnProtos,omitempty"`
+	ALPNProtos *[]string `yaml:"alpnProtos,flow,omitempty"`
 	// BackendProto specifies which protocol to use when forwarding an HTTPS
 	// request to the backend. This field is only valid in modes HTTP and
 	// HTTPS.
@@ -419,7 +419,7 @@ type ConfigOIDC struct {
 	// google, or the "public_profile" scope with facebook, i.e.
 	// {"openid", "email", "profile"} or {"openid", "email",
 	// "public_profile"}.
-	Scopes []string `yaml:"scopes,omitempty"`
+	Scopes []string `yaml:"scopes,flow,omitempty"`
 	// HostedDomain specifies that the HD param should be used.
 	// This parameter is used by Google is restrict the login process to
 	// one hosted domain, e.g. example.com. An empty or unspecified value
