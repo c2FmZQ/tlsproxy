@@ -6,7 +6,7 @@ require (
 	github.com/blend/go-sdk v1.20220411.3
 	github.com/c2FmZQ/tlsproxy v0.3.4
 	github.com/golang-jwt/jwt/v5 v5.2.0
-	github.com/lestrrat-go/jwx v1.2.27
+	github.com/lestrrat-go/jwx v1.2.28
 	github.com/quic-go/quic-go v0.40.1
 )
 
