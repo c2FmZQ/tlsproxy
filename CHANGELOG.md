@@ -1,5 +1,20 @@
 # TLSPROXY Release Notes
 
+* Update go dependencies:
+  * upgraded github.com/google/pprof v0.0.0-20240117000934-35fc243c5815 => v0.0.0-20240125082051-42cd04596328
+  * upgraded github.com/onsi/ginkgo/v2 v2.14.0 => v2.15.0
+  * upgraded golang.org/x/exp v0.0.0-20240112132812-db7319d0e0e3 => v0.0.0-20240119083558-1b970713d09a
+* Update go dependencies in examples/backend:
+  * upgraded github.com/c2FmZQ/tlsproxy v0.3.4 => v0.6.0
+  * upgraded github.com/google/pprof v0.0.0-20231212022811-ec68065c825e => v0.0.0-20240125082051-42cd04596328
+  * upgraded github.com/onsi/ginkgo/v2 v2.13.2 => v2.15.0
+  * upgraded github.com/quic-go/quic-go v0.40.1 => v0.41.0
+  * upgraded go.uber.org/mock v0.3.0 => v0.4.0
+  * upgraded golang.org/x/crypto v0.17.0 => v0.18.0
+  * upgraded golang.org/x/exp v0.0.0-20231219180239-dc181d75b848 => v0.0.0-20240119083558-1b970713d09a
+  * upgraded golang.org/x/net v0.19.0 => v0.20.0
+  * upgraded golang.org/x/sys v0.15.0 => v0.16.0
+  * upgraded golang.org/x/tools v0.16.1 => v0.17.0
 ## v0.6.0
 
 * Starting with v0.6.0, tlsproxy is built with QUIC & HTTP/3 support by default. Binaries without QUIC can still be built with `-tags noquic`.
