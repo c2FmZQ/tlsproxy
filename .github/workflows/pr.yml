@@ -50,6 +50,8 @@ jobs:
       run: go test -failfast -tags noquic ./...
     - name: Run go tests (-race)
       run: go test -race -timeout=5m -failfast ./...
+    - name: Build example
+      run: cd examples/backend && go build -o /tmp/backend .
     - name: Build test docker image
       run: |
         touch version.sh
