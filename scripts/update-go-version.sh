@@ -11,7 +11,8 @@ if [[ "${latest}" =~ ^go ]]; then
   done
 fi
 
-deps=$(go get -u ./... 2>&1 | grep upgrade | sed -re 's/go: //g')
+deps=$((go get -u ./... 2>&1 && go mod tidy) | grep upgrade | sed -re 's/go: //g')
+exdeps=$((cd examples/backend && go get -u ./... 2>&1 && go mod tidy) | grep upgrade | sed -re 's/go: //g')
 
 sed -n '1,2p' < CHANGELOG.md > CHANGELOG.md-new
 if [[ -n $(git status -s Dockerfile) ]]; then
@@ -20,6 +21,10 @@ fi
 if [[ -n "${deps}" ]]; then
   echo "* Update go dependencies:" | tee -a CHANGELOG.md-new
   echo "${deps}" | sed -re 's/^/  * /g' | tee -a CHANGELOG.md-new
+fi
+if [[ -n "${exdeps}" ]]; then
+  echo "* Update go dependencies in examples/backend:" | tee -a CHANGELOG.md-new
+  echo "${exdeps}" | sed -re 's/^/  * /g' | tee -a CHANGELOG.md-new
 fi
 sed -n '3,$p' < CHANGELOG.md >> CHANGELOG.md-new
 mv CHANGELOG.md-new CHANGELOG.md
