@@ -311,6 +311,14 @@ func (be *Backend) reverseProxyTransport() http.RoundTripper {
 		if proto == "" && req.TLS != nil && req.TLS.NegotiatedProtocol != "" {
 			proto = req.TLS.NegotiatedProtocol
 		}
+		if req.ProtoMajor == 1 {
+			for _, hdr := range strings.Split(req.Header.Get("connection"), ",") {
+				// Connection upgrades, e.g. websocket, must use http/1.1.
+				if strings.ToLower(strings.TrimSpace(hdr)) == "upgrade" {
+					proto = "http/1.1"
+				}
+			}
+		}
 		if proto == "h3" && h3 != nil {
 			return h3.RoundTrip(req)
 		}
