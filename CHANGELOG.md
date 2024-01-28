@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+## v0.6.1
+
 * Fix WebSocket connections when `backendProto` is set to something other than `http/1.1`.
 
 ## v0.6.0
