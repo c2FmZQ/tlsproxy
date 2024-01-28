@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+* Fix WebSocket connections when `backendProto` is set to something other than `http/1.1`.
+
 ## v0.6.0
 
 * Starting with v0.6.0, tlsproxy is built with QUIC & HTTP/3 support by default. Binaries without QUIC can still be built with `-tags noquic`.
