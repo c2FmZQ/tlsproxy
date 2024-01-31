@@ -4,7 +4,7 @@ go 1.21.0
 
 require (
 	github.com/blend/go-sdk v1.20220411.3
-	github.com/c2FmZQ/tlsproxy v0.6.0
+	github.com/c2FmZQ/tlsproxy v0.6.1
 	github.com/golang-jwt/jwt/v5 v5.2.0
 	github.com/lestrrat-go/jwx v1.2.28
 	github.com/quic-go/quic-go v0.41.0
@@ -15,7 +15,7 @@ require (
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
-	github.com/google/pprof v0.0.0-20240125082051-42cd04596328 // indirect
+	github.com/google/pprof v0.0.0-20240130152714-0ed6a68c8d9e // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/lestrrat-go/backoff/v2 v2.0.8 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.2 // indirect

@@ -1,5 +1,10 @@
 # TLSPROXY Release Notes
 
+* Update go dependencies:
+  * upgraded github.com/google/pprof v0.0.0-20240125082051-42cd04596328 => v0.0.0-20240130152714-0ed6a68c8d9e
+* Update go dependencies in examples/backend:
+  * upgraded github.com/c2FmZQ/tlsproxy v0.6.0 => v0.6.1
+  * upgraded github.com/google/pprof v0.0.0-20240125082051-42cd04596328 => v0.0.0-20240130152714-0ed6a68c8d9e
 ## v0.6.1
 
 * Fix WebSocket connections when `backendProto` is set to something other than `http/1.1`.

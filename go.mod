@@ -22,7 +22,7 @@ require (
 
 require (
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
-	github.com/google/pprof v0.0.0-20240125082051-42cd04596328 // indirect
+	github.com/google/pprof v0.0.0-20240130152714-0ed6a68c8d9e // indirect
 	github.com/jonboulle/clockwork v0.4.0 // indirect
 	github.com/onsi/ginkgo/v2 v2.15.0 // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect

@@ -1,7 +1,7 @@
 github.com/blend/go-sdk v1.20220411.3 h1:GFV4/FQX5UzXLPwWV03gP811pj7B8J2sbuq+GJQofXc=
 github.com/blend/go-sdk v1.20220411.3/go.mod h1:7lnH8fTi6U4i1fArEXRyOIY2E1X4MALg09qsQqY1+ak=
-github.com/c2FmZQ/tlsproxy v0.6.0 h1:2paLje5GLlc60iYaJXLjuVXED+BNBiIRQmcbb85sAhI=
-github.com/c2FmZQ/tlsproxy v0.6.0/go.mod h1:tivzU1zn5t133N65HFy8WAelh51w1X0YaowRGPZypio=
+github.com/c2FmZQ/tlsproxy v0.6.1 h1:2FVsGuhx1UEERqZ3NDN8MpHik0jLNPsk3eWxhmm2fo0=
+github.com/c2FmZQ/tlsproxy v0.6.1/go.mod h1:Ge+AShQHqE2AksWmnoAG8v39/lZzYOHWxIrpOOr0rIM=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
@@ -23,8 +23,8 @@ github.com/golang/protobuf v1.5.3 h1:KhyjKVUg7Usr/dYsdSqoFveMYd5ko72D+zANwlG1mmg
 github.com/golang/protobuf v1.5.3/go.mod h1:XVQd3VNwM+JqD3oG2Ue2ip4fOMUkwXdXDdiuN0vRsmY=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
-github.com/google/pprof v0.0.0-20240125082051-42cd04596328 h1:oI+lCI2DY1BsRrdzMJBhIMxBBdlZJl31YNQC11EiyvA=
-github.com/google/pprof v0.0.0-20240125082051-42cd04596328/go.mod h1:czg5+yv1E0ZGTi6S6vVK1mke0fV+FaUhNGcd6VRS9Ik=
+github.com/google/pprof v0.0.0-20240130152714-0ed6a68c8d9e h1:E+3PBMCXn0ma79O7iCrne0iUpKtZ7rIcZvoz+jNtNtw=
+github.com/google/pprof v0.0.0-20240130152714-0ed6a68c8d9e/go.mod h1:czg5+yv1E0ZGTi6S6vVK1mke0fV+FaUhNGcd6VRS9Ik=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
 github.com/kr/pretty v0.3.1/go.mod h1:hoEshYVHaxMs3cyo3Yncou5ZscifuDolrwPKZanG3xk=
 github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
