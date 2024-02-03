@@ -132,6 +132,13 @@ func connProxyProto(c anyConn) string {
 	return ""
 }
 
+func connHTTPUpgrade(c anyConn) string {
+	if v, ok := annotatedConn(c).Annotation(httpUpgradeKey, nil).(string); ok {
+		return v
+	}
+	return ""
+}
+
 func idnaToASCII(h string) string {
 	if n, err := idna.Lookup.ToASCII(h); err == nil {
 		return n
