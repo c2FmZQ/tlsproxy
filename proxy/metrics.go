@@ -276,6 +276,9 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		if isProxyProtoConn(c) {
 			connection.ViaAddr = c.LocalAddr().Network() + ":" + c.LocalAddr().String()
 		}
+		if up := connHTTPUpgrade(c); up != "" {
+			connection.Proto += "+" + up
+		}
 		var streams []*netw.QUICStream
 
 		switch cc := c.(type) {

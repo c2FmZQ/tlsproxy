@@ -84,6 +84,7 @@ const (
 	modeKey          = "m"
 	requestFlagKey   = "rf"
 	proxyProtoKey    = "pp"
+	httpUpgradeKey   = "hu"
 
 	tlsBadCertificate      = tls.AlertError(0x2a)
 	tlsCertificateRevoked  = tls.AlertError(0x2c)
@@ -1356,6 +1357,9 @@ func formatConnDesc(c anyConn, ids ...string) string {
 		buf.WriteString("|" + mode)
 		if proto != "" {
 			buf.WriteString(":" + proto)
+		}
+		if httpUpgrade := connHTTPUpgrade(c); httpUpgrade != "" {
+			buf.WriteString("+" + httpUpgrade)
 		}
 		if intConn != nil {
 			buf.WriteString("|" + intConn.LocalAddr().Network() + ":" + intConn.LocalAddr().String())

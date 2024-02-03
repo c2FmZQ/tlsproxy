@@ -302,6 +302,11 @@ func (be *Backend) reverseProxyTransport() http.RoundTripper {
 	h3 := be.http3Transport()
 
 	return funcRoundTripper(func(req *http.Request) (*http.Response, error) {
+		// Connection upgrades, e.g. websocket, must use http/1.
+		if req.ProtoMajor == 1 && strings.ToLower(req.Header.Get("connection")) == "upgrade" {
+			return h1.RoundTrip(req)
+		}
+
 		proto := "http/1.1"
 		if id, ok := req.Context().Value(ctxOverrideIDKey).(int); ok && id >= 0 && id < len(be.PathOverrides) && be.PathOverrides[id].BackendProto != nil {
 			proto = *be.PathOverrides[id].BackendProto
@@ -310,14 +315,6 @@ func (be *Backend) reverseProxyTransport() http.RoundTripper {
 		}
 		if proto == "" && req.TLS != nil && req.TLS.NegotiatedProtocol != "" {
 			proto = req.TLS.NegotiatedProtocol
-		}
-		if req.ProtoMajor == 1 {
-			for _, hdr := range strings.Split(req.Header.Get("connection"), ",") {
-				// Connection upgrades, e.g. websocket, must use http/1.1.
-				if strings.ToLower(strings.TrimSpace(hdr)) == "upgrade" {
-					proto = "http/1.1"
-				}
-			}
 		}
 		if proto == "h3" && h3 != nil {
 			return h3.RoundTrip(req)
@@ -331,6 +328,11 @@ func (be *Backend) reverseProxyTransport() http.RoundTripper {
 
 func (be *Backend) reverseProxyModifyResponse(resp *http.Response) error {
 	req := resp.Request
+	if resp.StatusCode == http.StatusSwitchingProtocols {
+		if c, ok := req.Context().Value(connCtxKey).(anyConn); ok {
+			annotatedConn(c).SetAnnotation(httpUpgradeKey, resp.Header.Get("upgrade"))
+		}
+	}
 	var cl string
 	if resp.ContentLength != -1 {
 		cl = fmt.Sprintf(" content-length:%d", resp.ContentLength)
