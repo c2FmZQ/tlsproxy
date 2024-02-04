@@ -115,6 +115,7 @@ let tabs = [
 ];
 function init() {
   let hash = window.location.hash.replace(/^#/, '');
+  if (!hash) hash = window.localStorage.getItem('lastTab');
   if (!hash) hash = tabs[0].id;
   const tabse = document.querySelector('div#tabs');
   for (let tab of tabs) {
@@ -143,6 +144,7 @@ function selectTab(target) {
   for (let tab of tabs) {
     if (tab.e === target) {
       window.location.hash = tab.id;
+      window.localStorage.setItem('lastTab', tab.id);
     } else if (tab.e) {
       tab.e.classList.remove('selected');
     }
