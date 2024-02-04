@@ -1,8 +1,9 @@
 # TLSPROXY Release Notes
 
 * Update go: 1.22.0
-* Log HTTP protocol upgrades
-* Add mutex profile to metrics page
+* Log HTTP protocol upgrades.
+* Add mutex profile to metrics page.
+* Fix bug that prevented PKI admins from revoking certificates.
 
 ## v0.6.1
 
