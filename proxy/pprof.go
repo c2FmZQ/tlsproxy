@@ -31,5 +31,11 @@ import (
 )
 
 func addPProfHandlers(h *[]localHandler) {
-	*h = append(*h, localHandler{path: "/debug/pprof/", matchPrefix: true, handler: http.HandlerFunc(pprof.Index)})
+	*h = append(*h,
+		localHandler{path: "/debug/pprof", matchPrefix: true, handler: http.HandlerFunc(pprof.Index)},
+		localHandler{path: "/debug/pprof/cmdline", handler: http.HandlerFunc(pprof.Cmdline)},
+		localHandler{path: "/debug/pprof/profile", handler: http.HandlerFunc(pprof.Profile)},
+		localHandler{path: "/debug/pprof/symbol", handler: http.HandlerFunc(pprof.Symbol)},
+		localHandler{path: "/debug/pprof/trace", handler: http.HandlerFunc(pprof.Trace)},
+	)
 }
