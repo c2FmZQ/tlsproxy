@@ -1,5 +1,15 @@
 # TLSPROXY Release Notes
 
+* Update go: 1.22.0
+* Update go dependencies:
+  * upgraded github.com/google/pprof v0.0.0-20240125082051-42cd04596328 => v0.0.0-20240130152714-0ed6a68c8d9e
+  * upgraded golang.org/x/exp v0.0.0-20240119083558-1b970713d09a => v0.0.0-20240205201215-2c58cdc269a3
+  * upgraded golang.org/x/mod v0.14.0 => v0.15.0
+* Update go dependencies in examples/backend:
+  * upgraded github.com/c2FmZQ/tlsproxy v0.6.0 => v0.6.1
+  * upgraded github.com/google/pprof v0.0.0-20240125082051-42cd04596328 => v0.0.0-20240130152714-0ed6a68c8d9e
+  * upgraded golang.org/x/exp v0.0.0-20240119083558-1b970713d09a => v0.0.0-20240205201215-2c58cdc269a3
+  * upgraded golang.org/x/mod v0.14.0 => v0.15.0
 * Log HTTP protocol upgrades
 * Add mutex profile to metrics page
 

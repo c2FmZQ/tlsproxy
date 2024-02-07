@@ -15,7 +15,7 @@ on:
       - main
 
 env:
-  GOVERSION: '>=1.21.6'
+  GOVERSION: '>=1.22.0'
 jobs:
   build-and-run-tests:
     name: Build & run tests
