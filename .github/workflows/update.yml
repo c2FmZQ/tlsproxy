@@ -5,7 +5,7 @@ on:
     - cron: '0 12 * * WED'
 
 env:
-  GOVERSION: '>=1.21.6'
+  GOVERSION: '>=1.22.0'
 
 jobs:
   build-and-run-tests:

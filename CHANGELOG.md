@@ -1,5 +1,6 @@
 # TLSPROXY Release Notes
 
+* Update go: 1.22.0
 * Log HTTP protocol upgrades
 * Add mutex profile to metrics page
 
