@@ -108,7 +108,7 @@ h1 {
 let tabs = [
   { id: 'metrics', name: 'Metrics', show: ['panel-backend-metrics', 'panel-events'] },
   { id: 'connections', name: 'Connections', show: ['panel-connections'] },
-  { id: 'runtime', name: 'Runtime', show: ['panel-runtime', 'panel-memory', 'panel-goroutines'] },
+  { id: 'runtime', name: 'Runtime', show: ['panel-runtime', 'panel-memory', 'panel-mutex', 'panel-goroutines'] },
   { id: 'backends', name: 'Backends', show: ['panel-backends'] },
   { id: 'config', name: 'Config', show: ['panel-config'] },
   { id: 'buildinfo', name: 'Build Info', show: ['panel-buildinfo'] },
@@ -294,6 +294,24 @@ Backend[{{$i}}]: {{.Mode}} {{.ALPNProtos}} {{.BackendProto}} {{.SSO}}
 {{- range .Memory }}
     <div class="row">
       <div>{{.Size}}</div>
+      <div>{{.Count}}</div>
+      <div style="text-align: left">{{.Func}}</div>
+    </div>
+{{- end }}
+  </div>
+</div>
+
+<div id="panel-mutex">
+<h2>Mutex profile</h2>
+  <div class="table col3">
+    <div class="hdr">
+      <div>Cycles</div>
+      <div>Count</div>
+      <div style="text-align: left">Function</div>
+    </div>
+{{- range .Mutex }}
+    <div class="row">
+      <div>{{.Cycles}}</div>
       <div>{{.Count}}</div>
       <div style="text-align: left">{{.Func}}</div>
     </div>
