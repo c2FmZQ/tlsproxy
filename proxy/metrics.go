@@ -28,6 +28,7 @@ import (
 	_ "embed"
 	"fmt"
 	"html/template"
+	"log"
 	"net/http"
 	"runtime"
 	"runtime/debug"
@@ -52,6 +53,7 @@ var metricsTemplate *template.Template
 
 func init() {
 	metricsTemplate = template.Must(template.New("metrics").Parse(metricsEmbed))
+	runtime.SetMutexProfileFraction(1)
 }
 
 func (p *Proxy) recordEvent(msg string) {
@@ -173,6 +175,11 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		Count int64
 		Func  string
 	}
+	type mutexProf struct {
+		Count  int64
+		Cycles int64
+		Func   string
+	}
 	type goroutine struct {
 		Count int
 		Func  string
@@ -187,6 +194,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		Backends           []backend
 		Runtime            runtimeData
 		Memory             []memoryProf
+		Mutex              []mutexProf
 		Goroutines         []goroutine
 		BuildInfo          string
 		Config             string
@@ -421,6 +429,18 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	data.Runtime.NextGC = memStats.NextGC
 	data.Runtime.NumGC = memStats.NumGC
 
+	getFunc := func(stack [32]uintptr, n int) string {
+		var out []string
+		for i := 0; i < n && stack[i] != 0; i++ {
+			fn := runtime.FuncForPC(stack[i]).Name()
+			out = append(out, fn)
+			if !strings.HasPrefix(fn, "runtime.") && !strings.HasPrefix(fn, "sync.") {
+				break
+			}
+		}
+		slices.Reverse(out)
+		return strings.Join(out, " -> ")
+	}
 	memProf := make([]runtime.MemProfileRecord, 200)
 	if n, ok := runtime.MemProfile(memProf, false); ok {
 		type item struct {
@@ -430,8 +450,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		}
 		items := make([]item, 0, n)
 		for _, p := range memProf[:n] {
-			fn := runtime.FuncForPC(p.Stack0[0])
-			items = append(items, item{p.InUseBytes(), p.InUseObjects(), fn.Name()})
+			items = append(items, item{p.InUseBytes(), p.InUseObjects(), getFunc(p.Stack0, 1)})
 		}
 		sort.Slice(items, func(i, j int) bool {
 			if items[i].b == items[j].b {
@@ -446,6 +465,36 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 				Func:  item.f,
 			})
 		}
+	} else {
+		log.Printf("ERR MemoryProfile n=%d", n)
+	}
+
+	mutexProfile := make([]runtime.BlockProfileRecord, 200)
+	if n, ok := runtime.MutexProfile(mutexProfile); ok {
+		type item struct {
+			n int64
+			c int64
+			f string
+		}
+		items := make([]item, 0, n)
+		for _, p := range mutexProfile[:n] {
+			items = append(items, item{p.Count, p.Cycles, getFunc(p.Stack0, 5)})
+		}
+		sort.Slice(items, func(i, j int) bool {
+			if items[i].c == items[j].c {
+				return items[i].n > items[j].n
+			}
+			return items[i].c > items[j].c
+		})
+		for _, item := range items {
+			data.Mutex = append(data.Mutex, mutexProf{
+				Count:  item.n,
+				Cycles: item.c,
+				Func:   item.f,
+			})
+		}
+	} else {
+		log.Printf("ERR MutexProfile n=%d", n)
 	}
 
 	goProf := make([]runtime.StackRecord, runtime.NumGoroutine()+10)
@@ -485,6 +534,8 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 				Func:  item.f,
 			})
 		}
+	} else {
+		log.Printf("ERR GoroutineProfile n=%d", n)
 	}
 
 	cfg := p.cfg.clone()

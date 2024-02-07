@@ -1,6 +1,7 @@
 # TLSPROXY Release Notes
 
 * Log HTTP protocol upgrades
+* Add mutex profile to metrics page
 
 ## v0.6.1
 
