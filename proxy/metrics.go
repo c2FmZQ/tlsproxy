@@ -54,6 +54,7 @@ var metricsTemplate *template.Template
 func init() {
 	metricsTemplate = template.Must(template.New("metrics").Parse(metricsEmbed))
 	runtime.SetMutexProfileFraction(1)
+	runtime.MemProfileRate = 1
 }
 
 func (p *Proxy) recordEvent(msg string) {
@@ -432,25 +433,41 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	getFunc := func(stack [32]uintptr, n int) string {
 		var out []string
 		for i := 0; i < n && stack[i] != 0; i++ {
-			fn := runtime.FuncForPC(stack[i]).Name()
-			out = append(out, fn)
-			if !strings.HasPrefix(fn, "runtime.") && !strings.HasPrefix(fn, "sync.") {
+			fn := runtime.FuncForPC(stack[i])
+			fnName := fn.Name()
+			out = append(out, fmt.Sprintf("%s+0x%x", fnName, stack[i]-fn.Entry()))
+			if !strings.HasPrefix(fnName, "runtime.") && !strings.HasPrefix(fnName, "sync.") {
 				break
 			}
 		}
 		slices.Reverse(out)
 		return strings.Join(out, " -> ")
 	}
-	memProf := make([]runtime.MemProfileRecord, 200)
+	memProfSize, _ := runtime.MemProfile(nil, false)
+	memProf := make([]runtime.MemProfileRecord, memProfSize+100)
 	if n, ok := runtime.MemProfile(memProf, false); ok {
 		type item struct {
 			b int64
 			n int64
 			f string
 		}
-		items := make([]item, 0, n)
+		itemMap := make(map[uintptr]item)
 		for _, p := range memProf[:n] {
-			items = append(items, item{p.InUseBytes(), p.InUseObjects(), getFunc(p.Stack0, 1)})
+			key := p.Stack0[0]
+			it, ok := itemMap[key]
+			if !ok {
+				it = item{f: getFunc(p.Stack0, 1)}
+			}
+			it.b += p.InUseBytes()
+			it.n += p.InUseObjects()
+			itemMap[key] = it
+		}
+		var items []item
+		for _, it := range itemMap {
+			if it.b < 102400 {
+				continue
+			}
+			items = append(items, it)
 		}
 		sort.Slice(items, func(i, j int) bool {
 			if items[i].b == items[j].b {
