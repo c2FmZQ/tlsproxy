@@ -439,7 +439,7 @@ func (m *PKIManager) handleRevokeCert(w http.ResponseWriter, req *http.Request, 
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	if isAdmin || !slices.Contains(c.EmailAddresses, email) {
+	if !isAdmin && !slices.Contains(c.EmailAddresses, email) {
 		w.Header().Set("content-type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"result": "permission denied",
