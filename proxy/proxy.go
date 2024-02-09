@@ -113,7 +113,7 @@ type Proxy struct {
 	store         *storage.Storage
 	tokenManager  *tokenmanager.TokenManager
 
-	mu            sync.Mutex
+	mu            sync.RWMutex
 	connClosed    *sync.Cond
 	defServerName string
 	backends      map[beKey]*Backend
@@ -253,11 +253,14 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 // Reconfigure updates the proxy's configuration. Some parameters cannot be
 // changed after Start has been called, e.g. HTTPAddr, TLSAddr, CacheDir.
 func (p *Proxy) Reconfigure(cfg *Config) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if cfg.equal(p.cfg) {
+	p.mu.RLock()
+	curCfg := p.cfg
+	p.mu.RUnlock()
+	if cfg.equal(curCfg) {
 		return nil
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	cfg = cfg.clone()
 	if err := cfg.Check(); err != nil {
 		return err
@@ -986,14 +989,13 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 }
 
 func (p *Proxy) acceptProxyHeader(addr net.Addr) bool {
-	p.mu.Lock()
-	cidrs := p.cfg.acceptProxyHeaderFrom
-	p.mu.Unlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	tcpAddr, ok := addr.(*net.TCPAddr)
 	if !ok {
 		return false
 	}
-	for _, n := range cidrs {
+	for _, n := range p.cfg.acceptProxyHeaderFrom {
 		if n.Contains(tcpAddr.IP) {
 			return true
 		}
@@ -1284,14 +1286,14 @@ func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
 }
 
 func (p *Proxy) defaultServerName() string {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	return p.defServerName
 }
 
 func (p *Proxy) backend(serverName string, protos ...string) (*Backend, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	var be *Backend
 	var ok bool
 	for _, proto := range protos {

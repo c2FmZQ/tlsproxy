@@ -73,8 +73,8 @@ func (p *Proxy) startQUIC(ctx context.Context) error {
 	tc := p.baseTLSConfig()
 	tc.MinVersion = tls.VersionTLS13
 	tc.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
-		p.mu.Lock()
-		defer p.mu.Unlock()
+		p.mu.RLock()
+		defer p.mu.RUnlock()
 		for _, proto := range hello.SupportedProtos {
 			if be, ok := p.backends[beKey{serverName: hello.ServerName, proto: proto}]; ok && be.Mode != ModeTLSPassthrough {
 				return be.tlsConfigQUIC, nil

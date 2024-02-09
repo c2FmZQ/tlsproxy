@@ -71,6 +71,17 @@ type counterSetter interface {
 }
 
 func (p *Proxy) setCounters(c counterSetter, serverName string) {
+	p.mu.RLock()
+	if p.metrics != nil {
+		if m := p.metrics[serverName]; m != nil {
+			m.numConnections.Incr(1)
+			c.SetCounters(m.numBytesSent, m.numBytesReceived)
+			p.mu.RUnlock()
+			return
+		}
+	}
+	p.mu.RUnlock()
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.metrics == nil {
@@ -213,8 +224,8 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	var buf bytes.Buffer
 	defer buf.WriteTo(w)
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 
 	totals := make(map[string]*backendMetrics)
 	for k, v := range p.metrics {
@@ -441,75 +452,67 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 		slices.Reverse(out)
-		return strings.Join(out, " -> ")
+		if len(out) <= 2 {
+			return strings.Join(out, " -> ")
+		}
+		return out[0] + " -> ... -> " + out[len(out)-1]
 	}
 	memProfSize, _ := runtime.MemProfile(nil, false)
 	memProf := make([]runtime.MemProfileRecord, memProfSize+100)
 	if n, ok := runtime.MemProfile(memProf, false); ok {
-		type item struct {
-			b int64
-			n int64
-			f string
-		}
-		itemMap := make(map[uintptr]item)
+		itemMap := make(map[uintptr]memoryProf)
 		for _, p := range memProf[:n] {
 			key := p.Stack0[0]
 			it, ok := itemMap[key]
 			if !ok {
-				it = item{f: getFunc(p.Stack0, 1)}
+				it = memoryProf{Func: getFunc(p.Stack0, 1)}
 			}
-			it.b += p.InUseBytes()
-			it.n += p.InUseObjects()
+			it.Size += p.InUseBytes()
+			it.Count += p.InUseObjects()
 			itemMap[key] = it
 		}
-		var items []item
+		var items []memoryProf
 		for _, it := range itemMap {
-			if it.b < 102400 {
+			if it.Size < 102400 {
 				continue
 			}
 			items = append(items, it)
 		}
 		sort.Slice(items, func(i, j int) bool {
-			if items[i].b == items[j].b {
-				return items[i].f < items[j].f
+			if items[i].Size == items[j].Size {
+				return items[i].Func < items[j].Func
 			}
-			return items[i].b > items[j].b
+			return items[i].Size > items[j].Size
 		})
-		for _, item := range items {
-			data.Memory = append(data.Memory, memoryProf{
-				Size:  item.b,
-				Count: item.n,
-				Func:  item.f,
-			})
-		}
+		data.Memory = items
 	} else {
 		log.Printf("ERR MemoryProfile n=%d", n)
 	}
 
 	mutexProfile := make([]runtime.BlockProfileRecord, 200)
 	if n, ok := runtime.MutexProfile(mutexProfile); ok {
-		type item struct {
-			n int64
-			c int64
-			f string
-		}
-		items := make([]item, 0, n)
+		itemMap := make(map[string]mutexProf)
 		for _, p := range mutexProfile[:n] {
-			items = append(items, item{p.Count, p.Cycles, getFunc(p.Stack0, 5)})
+			key := getFunc(p.Stack0, 5)
+			it, ok := itemMap[key]
+			if !ok {
+				it = mutexProf{Func: key}
+			}
+			it.Count += p.Count
+			it.Cycles += p.Cycles
+			itemMap[key] = it
+		}
+		items := make([]mutexProf, 0, len(itemMap))
+		for _, item := range itemMap {
+			items = append(items, item)
 		}
 		sort.Slice(items, func(i, j int) bool {
-			if items[i].c == items[j].c {
-				return items[i].n > items[j].n
+			if items[i].Cycles == items[j].Cycles {
+				return items[i].Func < items[j].Func
 			}
-			return items[i].c > items[j].c
+			return items[i].Cycles > items[j].Cycles
 		})
-		for _, item := range items {
-			data.Mutex = append(data.Mutex, mutexProf{
-				Count:  item.n,
-				Cycles: item.c,
-				Func:   item.f,
-			})
-		}
+		data.Mutex = items
 	} else {
 		log.Printf("ERR MutexProfile n=%d", n)
 	}
