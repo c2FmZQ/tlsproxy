@@ -286,7 +286,7 @@ Backend[{{$i}}]: {{.Mode}} {{.ALPNProtos}} {{.BackendProto}} {{.SSO}}
 </div>
 
 <div id="panel-memory">
-<h2>Memory profile</h2>
+<h2>Heap allocations (> 100 KiB)</h2>
   <div class="table col3">
     <div class="hdr">
       <div>Size</div>
@@ -304,7 +304,7 @@ Backend[{{$i}}]: {{.Mode}} {{.ALPNProtos}} {{.BackendProto}} {{.SSO}}
 </div>
 
 <div id="panel-mutex">
-<h2>Mutex profile</h2>
+<h2>Lock contention (> 1M Cycles)</h2>
   <div class="table col3">
     <div class="hdr">
       <div>Cycles</div>

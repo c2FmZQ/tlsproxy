@@ -54,6 +54,7 @@ var metricsTemplate *template.Template
 func init() {
 	metricsTemplate = template.Must(template.New("metrics").Parse(metricsEmbed))
 	runtime.SetMutexProfileFraction(1)
+	runtime.MemProfileRate = 1
 }
 
 func (p *Proxy) recordEvent(msg string) {
@@ -70,6 +71,17 @@ type counterSetter interface {
 }
 
 func (p *Proxy) setCounters(c counterSetter, serverName string) {
+	p.mu.RLock()
+	if p.metrics != nil {
+		if m := p.metrics[serverName]; m != nil {
+			m.numConnections.Incr(1)
+			c.SetCounters(m.numBytesSent, m.numBytesReceived)
+			p.mu.RUnlock()
+			return
+		}
+	}
+	p.mu.RUnlock()
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.metrics == nil {
@@ -212,8 +224,8 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	var buf bytes.Buffer
 	defer buf.WriteTo(w)
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 
 	totals := make(map[string]*backendMetrics)
 	for k, v := range p.metrics {
@@ -432,67 +444,84 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	getFunc := func(stack [32]uintptr, n int) string {
 		var out []string
 		for i := 0; i < n && stack[i] != 0; i++ {
-			fn := runtime.FuncForPC(stack[i]).Name()
-			out = append(out, fn)
-			if !strings.HasPrefix(fn, "runtime.") && !strings.HasPrefix(fn, "sync.") {
+			fn := runtime.FuncForPC(stack[i])
+			fnName := fn.Name()
+			out = append(out, fmt.Sprintf("%s+0x%x", fnName, stack[i]-fn.Entry()))
+			if !strings.HasPrefix(fnName, "runtime.") && !strings.HasPrefix(fnName, "sync.") {
 				break
 			}
 		}
 		slices.Reverse(out)
-		return strings.Join(out, " -> ")
-	}
-	memProf := make([]runtime.MemProfileRecord, 200)
-	if n, ok := runtime.MemProfile(memProf, false); ok {
-		type item struct {
-			b int64
-			n int64
-			f string
+		if len(out) <= 2 {
+			return strings.Join(out, " -> ")
 		}
-		items := make([]item, 0, n)
+		return out[0] + " -> ... -> " + out[len(out)-1]
+	}
+	memProfSize, _ := runtime.MemProfile(nil, false)
+	memProf := make([]runtime.MemProfileRecord, memProfSize+100)
+	if n, ok := runtime.MemProfile(memProf, false); ok {
+		itemMap := make(map[uintptr]memoryProf)
 		for _, p := range memProf[:n] {
-			items = append(items, item{p.InUseBytes(), p.InUseObjects(), getFunc(p.Stack0, 1)})
+			key := p.Stack0[0]
+			it, ok := itemMap[key]
+			if !ok {
+				it = memoryProf{Func: getFunc(p.Stack0, 1)}
+			}
+			it.Size += p.InUseBytes()
+			it.Count += p.InUseObjects()
+			itemMap[key] = it
+		}
+		var items []memoryProf
+		for _, it := range itemMap {
+			if it.Size < 102400 {
+				continue
+			}
+			items = append(items, it)
 		}
 		sort.Slice(items, func(i, j int) bool {
-			if items[i].b == items[j].b {
-				return items[i].f < items[j].f
+			if items[i].Size == items[j].Size {
+				return items[i].Func < items[j].Func
 			}
-			return items[i].b > items[j].b
+			return items[i].Size > items[j].Size
 		})
-		for _, item := range items {
-			data.Memory = append(data.Memory, memoryProf{
-				Size:  item.b,
-				Count: item.n,
-				Func:  item.f,
-			})
+		if len(items) > 25 {
+			items = items[:25]
 		}
+		data.Memory = items
 	} else {
 		log.Printf("ERR MemoryProfile n=%d", n)
 	}
 
 	mutexProfile := make([]runtime.BlockProfileRecord, 200)
 	if n, ok := runtime.MutexProfile(mutexProfile); ok {
-		type item struct {
-			n int64
-			c int64
-			f string
-		}
-		items := make([]item, 0, n)
+		itemMap := make(map[string]mutexProf)
 		for _, p := range mutexProfile[:n] {
-			items = append(items, item{p.Count, p.Cycles, getFunc(p.Stack0, 5)})
-		}
-		sort.Slice(items, func(i, j int) bool {
-			if items[i].c == items[j].c {
-				return items[i].n > items[j].n
+			key := getFunc(p.Stack0, 5)
+			it, ok := itemMap[key]
+			if !ok {
+				it = mutexProf{Func: key}
 			}
-			return items[i].c > items[j].c
-		})
-		for _, item := range items {
-			data.Mutex = append(data.Mutex, mutexProf{
-				Count:  item.n,
-				Cycles: item.c,
-				Func:   item.f,
-			})
+			it.Count += p.Count
+			it.Cycles += p.Cycles
+			itemMap[key] = it
 		}
+		items := make([]mutexProf, 0, len(itemMap))
+		for _, item := range itemMap {
+			items = append(items, item)
+		}
+		items = slices.DeleteFunc(items, func(e mutexProf) bool {
+			return e.Cycles < 1000000
+		})
+		sort.Slice(items, func(i, j int) bool {
+			if items[i].Cycles == items[j].Cycles {
+				return items[i].Func < items[j].Func
+			}
+			return items[i].Cycles > items[j].Cycles
+		})
+		if len(items) > 25 {
+			items = items[:25]
+		}
+		data.Mutex = items
 	} else {
 		log.Printf("ERR MutexProfile n=%d", n)
 	}
