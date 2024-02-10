@@ -484,6 +484,9 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 			}
 			return items[i].Size > items[j].Size
 		})
+		if len(items) > 25 {
+			items = items[:25]
+		}
 		data.Memory = items
 	} else {
 		log.Printf("ERR MemoryProfile n=%d", n)
@@ -506,12 +509,18 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		for _, item := range itemMap {
 			items = append(items, item)
 		}
+		items = slices.DeleteFunc(items, func(e mutexProf) bool {
+			return e.Cycles < 1000000
+		})
 		sort.Slice(items, func(i, j int) bool {
 			if items[i].Cycles == items[j].Cycles {
 				return items[i].Func < items[j].Func
 			}
 			return items[i].Cycles > items[j].Cycles
 		})
+		if len(items) > 25 {
+			items = items[:25]
+		}
 		data.Mutex = items
 	} else {
 		log.Printf("ERR MutexProfile n=%d", n)
