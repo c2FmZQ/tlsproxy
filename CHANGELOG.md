@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+## v0.6.2
+
 * Update go: 1.22.0
 * Log HTTP protocol upgrades.
 * Fix bug that prevented PKI admins from revoking certificates.
