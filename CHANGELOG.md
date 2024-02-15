@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+* Reduce lock contention in passkey manager.
+
 ## v0.6.2
 
 * Update go: 1.22.0

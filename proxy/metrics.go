@@ -473,9 +473,6 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		}
 		var items []memoryProf
 		for _, it := range itemMap {
-			if it.Size < 102400 {
-				continue
-			}
 			items = append(items, it)
 		}
 		sort.Slice(items, func(i, j int) bool {
@@ -509,9 +506,6 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		for _, item := range itemMap {
 			items = append(items, item)
 		}
-		items = slices.DeleteFunc(items, func(e mutexProf) bool {
-			return e.Cycles < 1000000
-		})
 		sort.Slice(items, func(i, j int) bool {
 			if items[i].Cycles == items[j].Cycles {
 				return items[i].Func < items[j].Func

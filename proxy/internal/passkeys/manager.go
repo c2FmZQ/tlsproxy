@@ -196,9 +196,6 @@ func (m *Manager) ServeWellKnown(w http.ResponseWriter, req *http.Request) {
 func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL string) {
 	m.cfg.EventRecorder.Record("passkey auth request")
 
-	m.noncesMu.Lock()
-	defer m.noncesMu.Unlock()
-
 	n := make([]byte, 16)
 	if _, err := io.ReadFull(rand.Reader, n); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -211,10 +208,13 @@ func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+
+	m.noncesMu.Lock()
 	m.nonces[nonce] = &nonceData{
 		created: time.Now().UTC(),
 		origURL: ou,
 	}
+	m.noncesMu.Unlock()
 
 	u, err := url.Parse(m.cfg.Endpoint)
 	if err != nil {
@@ -241,19 +241,21 @@ func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL
 }
 
 func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
+	req.ParseForm()
+	nonce := req.Form.Get("nonce")
+
 	m.noncesMu.Lock()
-	defer m.noncesMu.Unlock()
 	now := time.Now().UTC()
 	for k, v := range m.nonces {
 		if v.created.Add(5 * time.Minute).Before(now) {
 			delete(m.nonces, k)
 		}
 	}
-	req.ParseForm()
+	nData, ok := m.nonces[nonce]
+	delete(m.nonces, nonce)
+	m.noncesMu.Unlock()
 
-	nonce := req.Form.Get("nonce")
-	if nData, ok := m.nonces[nonce]; ok {
-		delete(m.nonces, nonce)
+	if ok {
 		token, _, err := m.cfg.TokenManager.URLToken(w, req, nData.origURL)
 		if err != nil {
 			log.Printf("ERR %q: %v", nData.origURL, err)
