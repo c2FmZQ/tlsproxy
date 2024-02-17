@@ -6,9 +6,7 @@ latest=$(curl -s 'https://go.dev/dl/?mode=json' | jq -r '.[].stable = true | .[]
 version="${latest#go}"
 if [[ "${latest}" =~ ^go ]]; then
   sed -i -re "s/^FROM golang:.*/FROM golang:${version}-alpine3.19 AS build/" Dockerfile
-  for f in .github/workflows/*.yml; do
-    sed -i -re "s/GOVERSION: .*/GOVERSION: '>=${version}'/" $f
-  done
+  echo "${version}" > .goversion
 fi
 
 deps=$((go get -u ./... 2>&1 && go mod tidy) | grep upgrade | sed -re 's/go: //g')

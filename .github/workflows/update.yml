@@ -4,9 +4,6 @@ on:
   schedule:
     - cron: '0 12 * * WED'
 
-env:
-  GOVERSION: '>=1.22.0'
-
 jobs:
   build-and-run-tests:
     name: Check for updates
@@ -15,11 +12,14 @@ jobs:
     - name: Checkout
       # https://github.com/actions/checkout/tree/v4.1.1
       uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+    - name: Get GO version
+      id: goversion
+      run: echo "goversion=$(<.goversion)" > "${GITHUB_OUTPUT}"
     - name: Set up Go
       # https://github.com/actions/setup-go/tree/v5.0.0
       uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491
       with:
-        go-version: ${{ env.GOVERSION }}
+        go-version: ${{steps.goversion.outputs.goversion}}
     - name: Update go
       run: ./scripts/update-go-version.sh > /tmp/go-update.log
     - name: Create pull request
