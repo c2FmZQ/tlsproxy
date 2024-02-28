@@ -1,5 +1,15 @@
 # TLSPROXY Release Notes
 
+* Update go dependencies:
+  * upgraded github.com/fxamacker/cbor/v2 v2.5.0 => v2.6.0
+  * upgraded github.com/google/pprof v0.0.0-20240207164012-fb44976bdcd5 => v0.0.0-20240227163752-401108e1b7e7
+  * upgraded golang.org/x/crypto v0.19.0 => v0.20.0
+  * upgraded golang.org/x/exp v0.0.0-20240213143201-ec583247a57a => v0.0.0-20240222234643-814bf88cf225
+* Update go dependencies in examples/backend:
+  * upgraded github.com/c2FmZQ/tlsproxy v0.6.2 => v0.6.3
+  * upgraded github.com/google/pprof v0.0.0-20240207164012-fb44976bdcd5 => v0.0.0-20240227163752-401108e1b7e7
+  * upgraded golang.org/x/crypto v0.19.0 => v0.20.0
+  * upgraded golang.org/x/exp v0.0.0-20240213143201-ec583247a57a => v0.0.0-20240222234643-814bf88cf225
 ## v0.6.3
 
 * Reduce lock contention in passkey manager.
