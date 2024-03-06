@@ -489,7 +489,8 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		log.Printf("ERR MemoryProfile n=%d", n)
 	}
 
-	mutexProfile := make([]runtime.BlockProfileRecord, 200)
+	mutexProfSize, _ := runtime.MutexProfile(nil)
+	mutexProfile := make([]runtime.BlockProfileRecord, mutexProfSize+10)
 	if n, ok := runtime.MutexProfile(mutexProfile); ok {
 		itemMap := make(map[string]mutexProf)
 		for _, p := range mutexProfile[:n] {
