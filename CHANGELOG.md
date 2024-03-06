@@ -1,28 +1,10 @@
 # TLSPROXY Release Notes
 
+## v0.6.4
+
 * Update go: 1.22.1
-* Update go dependencies:
-  * upgraded github.com/fxamacker/cbor/v2 v2.5.0 => v2.6.0
-  * upgraded github.com/golang-jwt/jwt/v5 v5.2.0 => v5.2.1
-  * upgraded github.com/google/pprof v0.0.0-20240207164012-fb44976bdcd5 => v0.0.0-20240227163752-401108e1b7e7
-  * upgraded github.com/onsi/ginkgo/v2 v2.15.0 => v2.16.0
-  * upgraded golang.org/x/crypto v0.19.0 => v0.21.0
-  * upgraded golang.org/x/exp v0.0.0-20240213143201-ec583247a57a => v0.0.0-20240222234643-814bf88cf225
-  * upgraded golang.org/x/mod v0.15.0 => v0.16.0
-  * upgraded golang.org/x/net v0.21.0 => v0.22.0
-  * upgraded golang.org/x/sys v0.17.0 => v0.18.0
-  * upgraded golang.org/x/tools v0.18.0 => v0.19.0
-* Update go dependencies in examples/backend:
-  * upgraded github.com/c2FmZQ/tlsproxy v0.6.2 => v0.6.3
-  * upgraded github.com/golang-jwt/jwt/v5 v5.2.0 => v5.2.1
-  * upgraded github.com/google/pprof v0.0.0-20240207164012-fb44976bdcd5 => v0.0.0-20240227163752-401108e1b7e7
-  * upgraded github.com/onsi/ginkgo/v2 v2.15.0 => v2.16.0
-  * upgraded golang.org/x/crypto v0.19.0 => v0.21.0
-  * upgraded golang.org/x/exp v0.0.0-20240213143201-ec583247a57a => v0.0.0-20240222234643-814bf88cf225
-  * upgraded golang.org/x/mod v0.15.0 => v0.16.0
-  * upgraded golang.org/x/net v0.21.0 => v0.22.0
-  * upgraded golang.org/x/sys v0.17.0 => v0.18.0
-  * upgraded golang.org/x/tools v0.18.0 => v0.19.0
+* Update go dependencies
+
 ## v0.6.3
 
 * Reduce lock contention in passkey manager.
