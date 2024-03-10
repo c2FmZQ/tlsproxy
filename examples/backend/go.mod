@@ -1,6 +1,6 @@
 module github.com/c2FmZQ/tlsproxy/examples/backend
 
-go 1.22
+go 1.22.1
 
 require (
 	github.com/blend/go-sdk v1.20220411.3
