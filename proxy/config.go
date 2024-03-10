@@ -116,6 +116,10 @@ type Config struct {
 	// enabled for incoming connections.
 	// See https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt
 	AcceptProxyHeaderFrom []string `yaml:"acceptProxyHeaderFrom,omitempty"`
+	// UseTPM indicates that local data should be encrypted using the
+	// Trusted Platform Module (TPM). When this option is true, the data in
+	// CacheDir cannot be used or recovered on a different device.
+	UseTPM bool `yaml:"useTPM,omitempty"`
 	// CacheDir is the directory where the proxy stores TLS certificates.
 	CacheDir string `yaml:"cacheDir,omitempty"`
 	// DefaultServerName is the server name to use when the TLS client

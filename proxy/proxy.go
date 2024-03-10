@@ -53,6 +53,7 @@ import (
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/storage/autocertcache"
 	"github.com/c2FmZQ/storage/crypto"
+	"github.com/c2FmZQ/tpm"
 	"github.com/pires/go-proxyproto"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
@@ -162,8 +163,16 @@ type identityProvider interface {
 // New returns a new initialized Proxy.
 func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 	opts := []crypto.Option{
-		crypto.WithAlgo(crypto.PickFastest),
 		crypto.WithLogger(logger{}),
+	}
+	if cfg.UseTPM {
+		t, err := tpm.New(tpm.WithObjectAuth(passphrase))
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, crypto.WithTPM(t))
+	} else {
+		opts = append(opts, crypto.WithAlgo(crypto.PickFastest))
 	}
 	mkFile := filepath.Join(cfg.CacheDir, "masterkey")
 	mk, err := crypto.ReadMasterKey(passphrase, mkFile, opts...)
