@@ -1,6 +1,6 @@
 module github.com/c2FmZQ/tlsproxy
 
-go 1.22
+go 1.22.1
 
 require (
 	github.com/beevik/etree v1.3.0
