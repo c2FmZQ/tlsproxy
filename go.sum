@@ -1,8 +1,10 @@
 github.com/beevik/etree v1.1.0/go.mod h1:r8Aw8JqVegEf0w2fDnATrX9VpkMcyFeM0FhwO62wh+A=
 github.com/beevik/etree v1.3.0 h1:hQTc+pylzIKDb23yYprodCWWTt+ojFfUZyzU09a/hmU=
 github.com/beevik/etree v1.3.0/go.mod h1:aiPf89g/1k3AShMVAzriilpcE4R/Vuor90y83zVZWFc=
-github.com/c2FmZQ/storage v0.1.2 h1:wRh8WCxM2B8+ifizLGk/LVFJObCdHHkIOKFQFSYwTEY=
-github.com/c2FmZQ/storage v0.1.2/go.mod h1:wW+IBxpk1WtLhd7MKHoc2M4NRjnh3BvULolUMH49YG0=
+github.com/c2FmZQ/storage v0.2.0 h1:OQSOG6UGd/VQFcMfj/9jexwAsaj+C7tHE6w22bLFzOI=
+github.com/c2FmZQ/storage v0.2.0/go.mod h1:IN0uxuyTDa6hfjO64fcgBK51HnnmXzuSHTZftmnTRG4=
+github.com/c2FmZQ/tpm v0.2.0 h1:set4KDqwnUX+t83s0Q/MheAfDFzONht0maxyYd7sko8=
+github.com/c2FmZQ/tpm v0.2.0/go.mod h1:H6QwcIJ26PVFOZ3c5xSvLTpBnsSi6gYgk1t+Q2u4obU=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
@@ -21,6 +23,10 @@ github.com/golang/protobuf v1.5.3 h1:KhyjKVUg7Usr/dYsdSqoFveMYd5ko72D+zANwlG1mmg
 github.com/golang/protobuf v1.5.3/go.mod h1:XVQd3VNwM+JqD3oG2Ue2ip4fOMUkwXdXDdiuN0vRsmY=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
+github.com/google/go-tpm v0.9.0 h1:sQF6YqWMi+SCXpsmS3fd21oPy/vSddwZry4JnmltHVk=
+github.com/google/go-tpm v0.9.0/go.mod h1:FkNVkc6C+IsvDI9Jw1OveJmxGZUUaKxtrpOS47QWKfU=
+github.com/google/go-tpm-tools v0.4.3 h1:L5dc34fttMIREoKRmnIJfv2NSZDSZ+RfBD+izN0EZoA=
+github.com/google/go-tpm-tools v0.4.3/go.mod h1:T8jXkp2s+eltnCDIsXR84/MTcVU9Ja7bh3Mit0pa4AY=
 github.com/google/pprof v0.0.0-20240227163752-401108e1b7e7 h1:y3N7Bm7Y9/CtpiVkw/ZWj6lSlDF3F74SfKwfTCer72Q=
 github.com/google/pprof v0.0.0-20240227163752-401108e1b7e7/go.mod h1:czg5+yv1E0ZGTi6S6vVK1mke0fV+FaUhNGcd6VRS9Ik=
 github.com/hashicorp/golang-lru/v2 v2.0.7 h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs4luLUK2k=

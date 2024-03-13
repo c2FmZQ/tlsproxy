@@ -1,5 +1,10 @@
 # TLSPROXY Release Notes
 
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/storage v0.1.2 => v0.2.0
+* Update go dependencies in examples/backend:
+  * upgraded github.com/c2FmZQ/tlsproxy v0.6.3 => v0.6.4
+  * upgraded github.com/lestrrat-go/jwx v1.2.28 => v1.2.29
 ## v0.6.4
 
 * Update go: 1.22.1

@@ -4,7 +4,7 @@ go 1.22.1
 
 require (
 	github.com/beevik/etree v1.3.0
-	github.com/c2FmZQ/storage v0.1.2
+	github.com/c2FmZQ/storage v0.2.0
 	github.com/fxamacker/cbor/v2 v2.6.0
 	github.com/go-test/deep v1.1.0
 	github.com/golang-jwt/jwt/v5 v5.2.1
@@ -21,7 +21,9 @@ require (
 )
 
 require (
+	github.com/c2FmZQ/tpm v0.2.0 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
+	github.com/google/go-tpm v0.9.0 // indirect
 	github.com/google/pprof v0.0.0-20240227163752-401108e1b7e7 // indirect
 	github.com/jonboulle/clockwork v0.4.0 // indirect
 	github.com/onsi/ginkgo/v2 v2.16.0 // indirect
