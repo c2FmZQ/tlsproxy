@@ -31,6 +31,7 @@ package main
 import (
 	"context"
 	"flag"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -55,6 +56,7 @@ func main() {
 	shutdownGraceFlag := flag.Duration("shutdown-grace-period", time.Minute, "The shutdown grace period.")
 	testFlag := flag.Bool("use-ephemeral-certificate-manager", false, "Use an ephemeral certificate manager. This is for testing purposes only.")
 	stdoutFlag := flag.Bool("stdout", false, "Log to STDOUT.")
+	quietFlag := flag.Bool("quiet", os.Getenv("TLSPROXY_QUIET") == "true", "Turn off logging after start-up.")
 	flag.Parse()
 
 	if *versionFlag {
@@ -96,6 +98,9 @@ func main() {
 	}
 	if err := p.Start(ctx); err != nil {
 		log.Fatal(err)
+	}
+	if *quietFlag {
+		log.SetOutput(io.Discard)
 	}
 	go configLoop(ctx, p, *configFile)
 
