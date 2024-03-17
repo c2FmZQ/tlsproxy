@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+* Add `--quiet` flag. When set (or the `TLSPROXY_QUIET` env variable is `true`), logging is turned off after tlsproxy starts.
+
 ## v0.6.4
 
 * Update go: 1.22.1
