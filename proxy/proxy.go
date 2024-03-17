@@ -184,7 +184,7 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 		err = mk.Save(passphrase, mkFile)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("masterkey: %w", err)
+		return nil, fmt.Errorf("%s: %w", mkFile, err)
 	}
 	store := storage.New(cfg.CacheDir, mk)
 	if !cfg.AcceptTOS {
