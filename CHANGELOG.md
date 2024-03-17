@@ -1,5 +1,6 @@
 # TLSPROXY Release Notes
 
+* Hardware-backed encryption. When the `hwBacked` option is true, local data is encrypted using a hardware-backed key, which means that the data cannot be used or recovered on a different device.
 * Add `--quiet` flag. When set (or the `TLSPROXY_QUIET` env variable is `true`), logging is turned off after tlsproxy starts.
 
 ## v0.6.4
