@@ -1487,7 +1487,7 @@ func (logger) Debug(args ...any) {}
 func (logger) Debugf(f string, args ...any) {}
 
 func (logger) Info(args ...any) {
-	log.Print(append([]any{"INF "}, args)...)
+	log.Print(append([]any{"INF "}, args...)...)
 }
 
 func (logger) Infof(f string, args ...any) {
@@ -1495,7 +1495,7 @@ func (logger) Infof(f string, args ...any) {
 }
 
 func (logger) Error(args ...any) {
-	log.Print(append([]any{"ERR "}, args)...)
+	log.Print(append([]any{"ERR "}, args...)...)
 }
 
 func (logger) Errorf(f string, args ...any) {
@@ -1503,7 +1503,7 @@ func (logger) Errorf(f string, args ...any) {
 }
 
 func (logger) Fatal(args ...any) {
-	log.Fatal(append([]any{"FATAL "}, args)...)
+	log.Fatal(append([]any{"FATAL "}, args...)...)
 }
 
 func (logger) Fatalf(f string, args ...any) {
