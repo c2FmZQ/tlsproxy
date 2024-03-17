@@ -46,6 +46,8 @@ import (
 
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/storage/crypto"
+	"github.com/c2FmZQ/tpm"
+	"github.com/google/go-tpm-tools/simulator"
 	"github.com/pires/go-proxyproto"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
@@ -889,6 +891,52 @@ func TestProxyProtoIsolation(t *testing.T) {
 	}
 }
 
+func TestProxyTPM(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+
+	be1 := newHTTPServer(t, ctx, "backend1", nil)
+	dir := t.TempDir()
+	cfg := &Config{
+		HTTPAddr: "localhost:0",
+		TLSAddr:  "localhost:0",
+		CacheDir: dir,
+		HWBacked: true,
+		MaxOpen:  100,
+		Backends: []*Backend{
+			{
+				ServerNames: []string{
+					"www.example.com",
+				},
+				Addresses: []string{
+					be1.String(),
+				},
+				Mode: "HTTP",
+			},
+		},
+	}
+	proxy := newTestProxy(cfg, extCA)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	if _, _, err := httpGet("www.example.com", proxy.listener.Addr().String(), "/", extCA, nil); err != nil {
+		t.Fatalf("httpGet: %v", err)
+	}
+
+	mkFile := filepath.Join(dir, "mk")
+	if err := proxy.mk.Save([]byte("foo"), mkFile); err != nil {
+		t.Fatalf("mk.Save: %v", err)
+	}
+	if _, err := crypto.ReadMasterKey([]byte("foo"), mkFile); err == nil {
+		t.Fatal("crypto.ReadMasterKey without TPM should fail")
+	}
+}
+
 func TestCheckIP(t *testing.T) {
 	cfg := &Config{
 		HTTPAddr: "localhost:0",
@@ -981,7 +1029,22 @@ func TestCheckIP(t *testing.T) {
 }
 
 func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
-	mk, err := crypto.CreateAESMasterKeyForTest()
+	mkOpts := []crypto.Option{
+		crypto.WithLogger(logger{}),
+		crypto.WithStrictWipe(false),
+	}
+	if cfg.HWBacked {
+		rwc, err := simulator.Get()
+		if err != nil {
+			panic(err)
+		}
+		tpm, err := tpm.New(tpm.WithTPM(rwc))
+		if err != nil {
+			panic(err)
+		}
+		mkOpts = append(mkOpts, crypto.WithTPM(tpm))
+	}
+	mk, err := crypto.CreateMasterKey(mkOpts...)
 	if err != nil {
 		panic(err)
 	}
@@ -992,6 +1055,7 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 	}
 	p := &Proxy{
 		certManager:  cm,
+		mk:           mk,
 		store:        store,
 		tokenManager: tm,
 		ocspCache:    ocspcache.New(store),

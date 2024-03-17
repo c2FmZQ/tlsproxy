@@ -53,6 +53,7 @@ import (
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/storage/autocertcache"
 	"github.com/c2FmZQ/storage/crypto"
+	"github.com/c2FmZQ/tpm"
 	"github.com/pires/go-proxyproto"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
@@ -110,6 +111,7 @@ type Proxy struct {
 	cancel        func()
 	listener      net.Listener
 	quicTransport io.Closer
+	mk            crypto.MasterKey
 	store         *storage.Storage
 	tokenManager  *tokenmanager.TokenManager
 
@@ -162,8 +164,16 @@ type identityProvider interface {
 // New returns a new initialized Proxy.
 func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 	opts := []crypto.Option{
-		crypto.WithAlgo(crypto.PickFastest),
 		crypto.WithLogger(logger{}),
+	}
+	if cfg.HWBacked {
+		t, err := tpm.New(tpm.WithObjectAuth(passphrase))
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, crypto.WithTPM(t))
+	} else {
+		opts = append(opts, crypto.WithAlgo(crypto.PickFastest))
 	}
 	mkFile := filepath.Join(cfg.CacheDir, "masterkey")
 	mk, err := crypto.ReadMasterKey(passphrase, mkFile, opts...)
@@ -174,7 +184,7 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 		err = mk.Save(passphrase, mkFile)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("masterkey: %w", err)
+		return nil, fmt.Errorf("%s: %w", mkFile, err)
 	}
 	store := storage.New(cfg.CacheDir, mk)
 	if !cfg.AcceptTOS {
@@ -190,6 +200,7 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 			Cache:  autocertcache.New("autocert", store),
 			Email:  cfg.Email,
 		},
+		mk:           mk,
 		store:        store,
 		tokenManager: tm,
 		pkis:         make(map[string]*pki.PKIManager),
@@ -236,6 +247,7 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 	}
 	p := &Proxy{
 		certManager:  cm,
+		mk:           mk,
 		store:        store,
 		tokenManager: tm,
 		pkis:         make(map[string]*pki.PKIManager),
@@ -912,6 +924,9 @@ func (p *Proxy) Stop() {
 	for _, conn := range conns {
 		conn.Close()
 	}
+	if p.mk != nil {
+		p.mk.Wipe()
+	}
 }
 
 // Shutdown gracefully shuts down the proxy, waiting for all existing
@@ -1472,7 +1487,7 @@ func (logger) Debug(args ...any) {}
 func (logger) Debugf(f string, args ...any) {}
 
 func (logger) Info(args ...any) {
-	log.Print(append([]any{"INF "}, args)...)
+	log.Print(append([]any{"INF "}, args...)...)
 }
 
 func (logger) Infof(f string, args ...any) {
@@ -1480,7 +1495,7 @@ func (logger) Infof(f string, args ...any) {
 }
 
 func (logger) Error(args ...any) {
-	log.Print(append([]any{"ERR "}, args)...)
+	log.Print(append([]any{"ERR "}, args...)...)
 }
 
 func (logger) Errorf(f string, args ...any) {
@@ -1488,7 +1503,7 @@ func (logger) Errorf(f string, args ...any) {
 }
 
 func (logger) Fatal(args ...any) {
-	log.Fatal(append([]any{"FATAL "}, args)...)
+	log.Fatal(append([]any{"FATAL "}, args...)...)
 }
 
 func (logger) Fatalf(f string, args ...any) {
