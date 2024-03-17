@@ -117,11 +117,15 @@ type Config struct {
 	// See https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt
 	AcceptProxyHeaderFrom []string `yaml:"acceptProxyHeaderFrom,omitempty"`
 	// HWBacked indicates that local data should be encrypted using
-	// hardware-backed encryption keys, e.g. a Trusted Platform Module
-	// (TPM). When this option is true, the data in CacheDir cannot be used
-	// or recovered on a different device.
+	// hardware-backed encryption keys, e.g. with a Trusted Platform Module
+	// (TPM). When this option is true, the local data cannot be used or
+	// recovered on a different device.
+	//
+	// This option cannot be changed without manually deleting the cache
+	// directory.
 	HWBacked bool `yaml:"hwBacked,omitempty"`
-	// CacheDir is the directory where the proxy stores TLS certificates.
+	// CacheDir is the directory where the proxy stores its data, e.g. TLS
+	// certificates, OCSP responses, etc.
 	CacheDir string `yaml:"cacheDir,omitempty"`
 	// DefaultServerName is the server name to use when the TLS client
 	// doesn't use the Server Name Indication (SNI) extension.
