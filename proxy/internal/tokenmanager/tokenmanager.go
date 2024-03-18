@@ -171,7 +171,6 @@ func (tm *TokenManager) rotateKeys() (retErr error) {
 }
 
 func (tm *TokenManager) createNewTokenKeys() ([]*tokenKey, error) {
-	var out []*tokenKey
 	if tm.tpm != nil {
 		ecKey, err := tm.createNewTPMECDSATokenKey()
 		if err != nil {
@@ -181,23 +180,21 @@ func (tm *TokenManager) createNewTokenKeys() ([]*tokenKey, error) {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, ecKey, rsaKey)
-	} else {
-		ecKey, err := createNewECDSATokenKey()
-		if err != nil {
-			return nil, err
-		}
-		rsaKey, err := createNewRSATokenKey()
-		if err != nil {
-			return nil, err
-		}
-		edKey, err := createNewED25519TokenKey()
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, ecKey, rsaKey, edKey)
+		return []*tokenKey{ecKey, rsaKey}, nil
 	}
-	return out, nil
+	ecKey, err := createNewECDSATokenKey()
+	if err != nil {
+		return nil, err
+	}
+	rsaKey, err := createNewRSATokenKey()
+	if err != nil {
+		return nil, err
+	}
+	edKey, err := createNewED25519TokenKey()
+	if err != nil {
+		return nil, err
+	}
+	return []*tokenKey{ecKey, rsaKey, edKey}, nil
 }
 
 func createNewECDSATokenKey() (*tokenKey, error) {
