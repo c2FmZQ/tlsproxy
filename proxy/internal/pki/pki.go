@@ -29,6 +29,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	_ "crypto/sha512"
@@ -46,6 +47,7 @@ import (
 	"time"
 
 	"github.com/c2FmZQ/storage"
+	"github.com/c2FmZQ/tpm"
 	jwt "github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/ocsp"
 
@@ -99,6 +101,8 @@ type Options struct {
 	// Admins is the of users who are allowed to perform administrative
 	// tasks.
 	Admins []string
+	// TPM is used for hardware-backed keys.
+	TPM *tpm.TPM
 	// Store is used to store the PKI manager's data.
 	Store *storage.Storage
 	// EventRecorder is used to record events.
@@ -227,13 +231,9 @@ func (m *PKIManager) initCA() (retErr error) {
 	}
 
 	if len(m.db.PrivateKey) == 0 {
-		privKey, err := keys.GenerateKey(m.opts.KeyType)
+		_, keyBytes, err := m.generateKey(m.opts.KeyType)
 		if err != nil {
 			return err
-		}
-		keyBytes, err := x509.MarshalPKCS8PrivateKey(privKey)
-		if err != nil {
-			return fmt.Errorf("x509.MarshalPKCS8PrivateKey: %v", err)
 		}
 		m.db.PrivateKey = keyBytes
 		changed = true
@@ -242,7 +242,7 @@ func (m *PKIManager) initCA() (retErr error) {
 	type privateKey interface {
 		Public() crypto.PublicKey
 	}
-	pk, err := x509.ParsePKCS8PrivateKey(m.db.PrivateKey)
+	pk, err := m.parseKeyBytes(m.db.PrivateKey)
 	if err != nil {
 		return err
 	}
@@ -302,6 +302,75 @@ func (m *PKIManager) initCA() (retErr error) {
 	return commit(changed, nil)
 }
 
+func (m *PKIManager) generateKey(keyType string) (any, []byte, error) {
+	if m.opts.TPM != nil {
+		switch kt := strings.ToLower(keyType); kt {
+		case "ecdsa-p224", "ecdsa-p256", "ecdsa-p384", "ecdsa-p521":
+			var crv elliptic.Curve
+			switch kt {
+			case "ecdsa-p224":
+				crv = elliptic.P224()
+			case "ecdsa-p256":
+				crv = elliptic.P256()
+			case "ecdsa-p384":
+				crv = elliptic.P384()
+			case "ecdsa-p521":
+				crv = elliptic.P521()
+			}
+			key, err := m.opts.TPM.CreateKey(tpm.WithECC(crv))
+			if err != nil {
+				return nil, nil, err
+			}
+			keyBytes, err := key.Marshal()
+			if err != nil {
+				return nil, nil, err
+			}
+			return key, keyBytes, nil
+
+		case "rsa-2048", "rsa-3072", "rsa-4096", "rsa-8192":
+			var bits int
+			switch kt {
+			case "rsa-2048":
+				bits = 2048
+			case "rsa-3072":
+				bits = 3072
+			case "rsa-4096":
+				bits = 4096
+			case "rsa-8192":
+				bits = 8192
+			}
+			key, err := m.opts.TPM.CreateKey(tpm.WithRSA(bits))
+			if err != nil {
+				return nil, nil, err
+			}
+			keyBytes, err := key.Marshal()
+			if err != nil {
+				return nil, nil, err
+			}
+			return key, keyBytes, nil
+
+		default:
+			return nil, nil, fmt.Errorf("unexpected key type: %q", keyType)
+		}
+	}
+	key, err := keys.GenerateKey(keyType)
+	if err != nil {
+		return nil, nil, err
+	}
+	keyBytes, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return nil, nil, fmt.Errorf("x509.MarshalPKCS8PrivateKey: %v", err)
+	}
+	return key, keyBytes, nil
+}
+
+func (m *PKIManager) parseKeyBytes(b []byte) (any, error) {
+	if m.opts.TPM != nil {
+		return m.opts.TPM.UnmarshalKey(b)
+	}
+	return x509.ParsePKCS8PrivateKey(b)
+}
+
 func (m *PKIManager) maybeRotateDelegateCert() error {
 	if m.db == nil {
 		return errors.New("no ca")
@@ -326,13 +395,9 @@ func (m *PKIManager) maybeRotateDelegateCert() error {
 		return err
 	}
 
-	delegateKey, err := keys.GenerateKey(m.opts.KeyType)
+	delegateKey, keyBytes, err := m.generateKey(m.opts.KeyType)
 	if err != nil {
 		return err
-	}
-	keyBytes, err := x509.MarshalPKCS8PrivateKey(delegateKey)
-	if err != nil {
-		return fmt.Errorf("x509.MarshalPKCS8PrivateKey: %v", err)
 	}
 
 	sn, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 160))
@@ -460,7 +525,7 @@ func (m *PKIManager) RevocationList() (cert, crl []byte, retErr error) {
 		})
 	}
 
-	key, err := x509.ParsePKCS8PrivateKey(m.db.DelegateKey)
+	key, err := m.parseKeyBytes(m.db.DelegateKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -525,7 +590,7 @@ func (m *PKIManager) OCSPResponse(req *ocsp.Request) ([]byte, error) {
 		return nil, err
 	}
 
-	key, err := x509.ParsePKCS8PrivateKey(m.db.DelegateKey)
+	key, err := m.parseKeyBytes(m.db.DelegateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -708,7 +773,7 @@ func (m *PKIManager) signCertificate(cert *x509.Certificate, next func(*certific
 	if err != nil {
 		return nil, err
 	}
-	key, err := x509.ParsePKCS8PrivateKey(m.db.PrivateKey)
+	key, err := m.parseKeyBytes(m.db.PrivateKey)
 	if err != nil {
 		return nil, err
 	}

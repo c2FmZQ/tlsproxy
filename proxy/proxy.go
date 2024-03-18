@@ -111,6 +111,7 @@ type Proxy struct {
 	cancel        func()
 	listener      net.Listener
 	quicTransport io.Closer
+	tpm           *tpm.TPM
 	mk            crypto.MasterKey
 	store         *storage.Storage
 	tokenManager  *tokenmanager.TokenManager
@@ -166,12 +167,14 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 	opts := []crypto.Option{
 		crypto.WithLogger(logger{}),
 	}
+	var pTPM *tpm.TPM
 	if cfg.HWBacked {
 		t, err := tpm.New(tpm.WithObjectAuth(passphrase))
 		if err != nil {
 			return nil, err
 		}
 		opts = append(opts, crypto.WithTPM(t))
+		pTPM = t
 	} else {
 		opts = append(opts, crypto.WithAlgo(crypto.PickFastest))
 	}
@@ -200,6 +203,7 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 			Cache:  autocertcache.New("autocert", store),
 			Email:  cfg.Email,
 		},
+		tpm:          pTPM,
 		mk:           mk,
 		store:        store,
 		tokenManager: tm,
@@ -385,6 +389,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			CRLDistributionPoints: pp.CRLDistributionPoints,
 			OCSPServer:            pp.OCSPServer,
 			Admins:                pp.Admins,
+			TPM:                   p.tpm,
 			Store:                 p.store,
 			EventRecorder:         er,
 			ClaimsFromCtx:         claimsFromCtx,
