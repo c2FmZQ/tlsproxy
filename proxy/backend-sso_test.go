@@ -250,7 +250,7 @@ func setAuthCookie(req *http.Request, email, host, issuer string, tm *tokenmanag
 		"hhash":     hex.EncodeToString(hh[:]),
 		"sid":       "abc123",
 	}
-	token, err := tm.CreateToken(claims, "EdDSA")
+	token, err := tm.CreateToken(claims, "" /* default */)
 	if err != nil {
 		return err
 	}

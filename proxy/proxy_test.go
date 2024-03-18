@@ -1049,7 +1049,7 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 		panic(err)
 	}
 	store := storage.New(filepath.Join(cfg.CacheDir, "test"), mk)
-	tm, err := tokenmanager.New(store)
+	tm, err := tokenmanager.New(store, nil)
 	if err != nil {
 		panic(err)
 	}

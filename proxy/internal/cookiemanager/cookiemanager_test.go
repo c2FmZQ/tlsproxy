@@ -42,7 +42,7 @@ func TestCookies(t *testing.T) {
 		t.Fatalf("crypto.CreateMasterKey: %v", err)
 	}
 	store := storage.New(dir, mk)
-	tm, err := tokenmanager.New(store)
+	tm, err := tokenmanager.New(store, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
