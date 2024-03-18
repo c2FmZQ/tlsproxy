@@ -111,6 +111,7 @@ type Proxy struct {
 	cancel        func()
 	listener      net.Listener
 	quicTransport io.Closer
+	tpm           *tpm.TPM
 	mk            crypto.MasterKey
 	store         *storage.Storage
 	tokenManager  *tokenmanager.TokenManager
@@ -166,12 +167,14 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 	opts := []crypto.Option{
 		crypto.WithLogger(logger{}),
 	}
+	var pTPM *tpm.TPM
 	if cfg.HWBacked {
 		t, err := tpm.New(tpm.WithObjectAuth(passphrase))
 		if err != nil {
 			return nil, err
 		}
 		opts = append(opts, crypto.WithTPM(t))
+		pTPM = t
 	} else {
 		opts = append(opts, crypto.WithAlgo(crypto.PickFastest))
 	}
@@ -190,7 +193,7 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 	if !cfg.AcceptTOS {
 		return nil, errors.New("AcceptTOS must be set to true")
 	}
-	tm, err := tokenmanager.New(store, nil)
+	tm, err := tokenmanager.New(store, pTPM)
 	if err != nil {
 		return nil, err
 	}
@@ -200,6 +203,7 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 			Cache:  autocertcache.New("autocert", store),
 			Email:  cfg.Email,
 		},
+		tpm:          pTPM,
 		mk:           mk,
 		store:        store,
 		tokenManager: tm,
