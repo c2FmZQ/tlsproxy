@@ -45,6 +45,7 @@ import (
 	"log"
 	"math/big"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -149,21 +150,25 @@ func (tm *TokenManager) rotateKeys() (retErr error) {
 	}
 
 	for _, k := range keys.Keys {
+		if tm.tpm != nil {
+			privKey, err := tm.tpm.UnmarshalKey(k.Key)
+			if err != nil {
+				log.Printf("ERR tpm.UnmarshalKey: %v", err)
+				continue
+			}
+			k.privKey = privKey
+			continue
+		}
 		privKey, err := x509.ParsePKCS8PrivateKey(k.Key)
 		if err != nil {
-			privKey, err = x509.ParseECPrivateKey(k.Key)
-		}
-		if err != nil {
-			privKey, err = x509.ParsePKCS1PrivateKey(k.Key)
-		}
-		if err != nil && tm.tpm != nil {
-			privKey, err = tm.tpm.UnmarshalKey(k.Key)
-		}
-		if err != nil {
-			return err
+			log.Printf("ERR x509.ParsePKCS8PrivateKey: %v", err)
+			continue
 		}
 		k.privKey = privKey.(privateKey)
 	}
+	slices.DeleteFunc(keys.Keys, func(k *tokenKey) bool {
+		return k.privKey == nil
+	})
 	tm.mu.Lock()
 	tm.keys = keys
 	tm.mu.Unlock()
@@ -434,9 +439,8 @@ func (tm *TokenManager) ServeJWKS(w http.ResponseWriter, req *http.Request) {
 	tm.mu.Lock()
 	var out jwks
 	for _, key := range tm.keys.Keys {
-		switch pk := key.privKey.(type) {
-		case *ecdsa.PrivateKey:
-			pub := pk.PublicKey
+		switch pub := key.privKey.Public().(type) {
+		case *ecdsa.PublicKey:
 			out.Keys = append(out.Keys, jwk{
 				Type:  "EC",
 				Use:   "sig",
@@ -446,8 +450,7 @@ func (tm *TokenManager) ServeJWKS(w http.ResponseWriter, req *http.Request) {
 				X:     base64.RawURLEncoding.EncodeToString(pub.X.Bytes()),
 				Y:     base64.RawURLEncoding.EncodeToString(pub.Y.Bytes()),
 			})
-		case ed25519.PrivateKey:
-			pub := pk.Public().(ed25519.PublicKey)
+		case ed25519.PublicKey:
 			out.Keys = append(out.Keys, jwk{
 				Type:  "OKP",
 				Use:   "sig",
@@ -456,8 +459,7 @@ func (tm *TokenManager) ServeJWKS(w http.ResponseWriter, req *http.Request) {
 				Curve: "Ed25519",
 				X:     base64.RawURLEncoding.EncodeToString(pub),
 			})
-		case *rsa.PrivateKey:
-			pub := pk.PublicKey
+		case *rsa.PublicKey:
 			out.Keys = append(out.Keys, jwk{
 				Type: "RSA",
 				Use:  "sig",
