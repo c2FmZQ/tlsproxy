@@ -918,6 +918,10 @@ func (p *Proxy) Stop() {
 	if p.quicTransport != nil {
 		p.quicTransport.Close()
 	}
+	if p.mk != nil {
+		p.mk.Wipe()
+		p.mk = nil
+	}
 	backends := p.cfg.Backends
 	p.cfg.Backends = nil
 	conns := p.inConns.slice()
@@ -928,9 +932,6 @@ func (p *Proxy) Stop() {
 	}
 	for _, conn := range conns {
 		conn.Close()
-	}
-	if p.mk != nil {
-		p.mk.Wipe()
 	}
 	if p.tpm != nil {
 		p.tpm.Close()
