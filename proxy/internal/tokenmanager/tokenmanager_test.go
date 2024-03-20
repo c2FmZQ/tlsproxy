@@ -43,6 +43,7 @@ func TestTokenManager(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+	defer tpmSim.Close()
 
 	for _, tc := range []struct {
 		name string

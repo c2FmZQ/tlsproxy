@@ -1033,6 +1033,7 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 		crypto.WithLogger(logger{}),
 		crypto.WithStrictWipe(false),
 	}
+	var tpmSim *tpm.TPM
 	if cfg.HWBacked {
 		rwc, err := simulator.Get()
 		if err != nil {
@@ -1042,20 +1043,22 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 		if err != nil {
 			panic(err)
 		}
-		mkOpts = append(mkOpts, crypto.WithTPM(tpm))
+		tpmSim = tpm
+		mkOpts = append(mkOpts, crypto.WithTPM(tpmSim))
 	}
 	mk, err := crypto.CreateMasterKey(mkOpts...)
 	if err != nil {
 		panic(err)
 	}
 	store := storage.New(filepath.Join(cfg.CacheDir, "test"), mk)
-	tm, err := tokenmanager.New(store, nil)
+	tm, err := tokenmanager.New(store, tpmSim)
 	if err != nil {
 		panic(err)
 	}
 	p := &Proxy{
 		certManager:  cm,
 		mk:           mk,
+		tpm:          tpmSim,
 		store:        store,
 		tokenManager: tm,
 		ocspCache:    ocspcache.New(store),

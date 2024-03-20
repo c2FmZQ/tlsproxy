@@ -922,6 +922,7 @@ func (p *Proxy) Stop() {
 	p.cfg.Backends = nil
 	conns := p.inConns.slice()
 	p.mu.Unlock()
+
 	for _, be := range backends {
 		be.close(nil)
 	}
@@ -930,6 +931,9 @@ func (p *Proxy) Stop() {
 	}
 	if p.mk != nil {
 		p.mk.Wipe()
+	}
+	if p.tpm != nil {
+		p.tpm.Close()
 	}
 }
 

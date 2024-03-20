@@ -60,12 +60,12 @@ func (be *Backend) close(ctx context.Context) {
 		return
 	}
 	if ctx == nil {
-		be.httpServer.Close()
 		close(be.httpConnChan)
+		go be.httpServer.Close()
 		be.httpServer = nil
 		if h3 := be.http3Server; h3 != nil {
 			be.http3Server = nil
-			h3.Close()
+			go h3.Close()
 		}
 		return
 	}
@@ -76,7 +76,7 @@ func (be *Backend) close(ctx context.Context) {
 		be.httpServer = nil
 		if h3 := be.http3Server; h3 != nil {
 			be.http3Server = nil
-			h3.Close()
+			go h3.Close()
 		}
 	}
 }
