@@ -4,7 +4,7 @@
 
 # TLS Termination Proxy
 
-TLSPROXY is primarily a [TLS termination proxy](https://en.wikipedia.org/wiki/TLS_termination_proxy) that uses letsencrypt to provide TLS encryption for any number of TCP or HTTP servers, and any number of server names concurrently on the same port.
+TLSPROXY is primarily a [TLS termination proxy](https://en.wikipedia.org/wiki/TLS_termination_proxy) that uses Let's Encrypt to provide TLS encryption for any number of TCP or HTTP servers, and any number of server names concurrently on the same port.
 
 Its functionality is similar to an [stunnel](https://www.stunnel.org/) server, but without the need to configure and run [certbot](https://certbot.eff.org/) separately.
 
@@ -58,9 +58,9 @@ flowchart LR
 ## Example config:
 
 ```yaml
-# Indicate acceptance of the Let's Encrypt Terms of Service.
+# (Required) Indicate acceptance of the Let's Encrypt Terms of Service.
 acceptTOS: true
-# The email address is used by Let's Encrypt to send important notifications.
+# (Optional) The email address is used by Let's Encrypt to send important notifications.
 email: <your email address>
 
 # The HTTP address must be reachable from the internet via port 80 for the
