@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+## v0.7.0-beta1
+
 * Add `hwBacked` option. When enabled, hardware-backed cryptographic keys are used to:
   * encrypt local data (the data cannot be used or recovered on a different device),
   * sign authentication tokens,
