@@ -1,7 +1,11 @@
 # TLSPROXY Release Notes
 
-* Hardware-backed encryption. When the `hwBacked` option is true, local data is encrypted using a hardware-backed key, which means that the data cannot be used or recovered on a different device.
+* Hardware-backed encryption. When the `hwBacked` option is true:
+  * Local data is encrypted using a hardware-backed key, which means that the data cannot be used or recovered on a different device.
+  * RSA and ECDSA token keys are hardware-backed.
 * Add `--quiet` flag. When set (or the `TLSPROXY_QUIET` env variable is `true`), logging is turned off after tlsproxy starts.
+* Update go dependencies:
+  * upgraded github.com/quic-go/quic-go v0.41.0 => v0.42.0
 
 ## v0.6.4
 

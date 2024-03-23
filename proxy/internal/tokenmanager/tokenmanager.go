@@ -36,6 +36,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -44,10 +45,12 @@ import (
 	"log"
 	"math/big"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/c2FmZQ/storage"
+	"github.com/c2FmZQ/tpm"
 	jwt "github.com/golang-jwt/jwt/v5"
 )
 
@@ -76,15 +79,17 @@ type tokenKey struct {
 // validation.
 type TokenManager struct {
 	store *storage.Storage
+	tpm   *tpm.TPM
 
 	mu   sync.Mutex
 	keys tokenKeys
 }
 
 // New returns a new TokenManager.
-func New(store *storage.Storage) (*TokenManager, error) {
+func New(store *storage.Storage, tpm *tpm.TPM) (*TokenManager, error) {
 	tm := TokenManager{
 		store: store,
+		tpm:   tpm,
 	}
 	store.CreateEmptyFile(tokenKeyFile, &tm.keys)
 	if err := tm.rotateKeys(); err != nil {
@@ -117,7 +122,7 @@ func (tm *TokenManager) rotateKeys() (retErr error) {
 	var changed bool
 
 	if len(keys.Keys) == 0 {
-		tk, err := createNewTokenKeys()
+		tk, err := tm.createNewTokenKeys()
 		if err != nil {
 			return err
 		}
@@ -129,7 +134,7 @@ func (tm *TokenManager) rotateKeys() (retErr error) {
 	now := time.Now().UTC()
 
 	if newest.CreationTime.Add(24 * time.Hour).Before(now) {
-		tk, err := createNewTokenKeys()
+		tk, err := tm.createNewTokenKeys()
 		if err != nil {
 			return err
 		}
@@ -145,30 +150,44 @@ func (tm *TokenManager) rotateKeys() (retErr error) {
 	}
 
 	for _, k := range keys.Keys {
+		if tm.tpm != nil {
+			privKey, err := tm.tpm.UnmarshalKey(k.Key)
+			if err != nil {
+				log.Printf("ERR tpm.UnmarshalKey: %v", err)
+				continue
+			}
+			k.privKey = privKey
+			continue
+		}
 		privKey, err := x509.ParsePKCS8PrivateKey(k.Key)
 		if err != nil {
-			privKey, err = x509.ParseECPrivateKey(k.Key)
-		}
-		if err != nil {
-			privKey, err = x509.ParsePKCS1PrivateKey(k.Key)
-		}
-		if err != nil {
-			return err
+			log.Printf("ERR x509.ParsePKCS8PrivateKey: %v", err)
+			continue
 		}
 		k.privKey = privKey.(privateKey)
 	}
+	slices.DeleteFunc(keys.Keys, func(k *tokenKey) bool {
+		return k.privKey == nil
+	})
 	tm.mu.Lock()
 	tm.keys = keys
 	tm.mu.Unlock()
 	return commit(true, nil)
 }
 
-func createNewTokenKeys() ([]*tokenKey, error) {
-	ecKey, err := createNewECDSATokenKey()
-	if err != nil {
-		return nil, err
+func (tm *TokenManager) createNewTokenKeys() ([]*tokenKey, error) {
+	if tm.tpm != nil {
+		ecKey, err := tm.createNewTPMECDSATokenKey()
+		if err != nil {
+			return nil, err
+		}
+		rsaKey, err := tm.createNewTPMRSATokenKey()
+		if err != nil {
+			return nil, err
+		}
+		return []*tokenKey{ecKey, rsaKey}, nil
 	}
-	edKey, err := createNewED25519TokenKey()
+	ecKey, err := createNewECDSATokenKey()
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +195,11 @@ func createNewTokenKeys() ([]*tokenKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []*tokenKey{ecKey, edKey, rsaKey}, nil
+	edKey, err := createNewED25519TokenKey()
+	if err != nil {
+		return nil, err
+	}
+	return []*tokenKey{ecKey, rsaKey, edKey}, nil
 }
 
 func createNewECDSATokenKey() (*tokenKey, error) {
@@ -201,6 +224,28 @@ func createNewECDSATokenKey() (*tokenKey, error) {
 	return tk, nil
 }
 
+func (tm *TokenManager) createNewTPMECDSATokenKey() (*tokenKey, error) {
+	var id [16]byte
+	if _, err := io.ReadFull(rand.Reader, id[:]); err != nil {
+		return nil, err
+	}
+	privKey, err := tm.tpm.CreateKey(tpm.WithECC(elliptic.P256()))
+	if err != nil {
+		return nil, err
+	}
+	b, err := privKey.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	tk := &tokenKey{
+		ID:           hex.EncodeToString(id[:]),
+		Key:          b,
+		privKey:      privKey,
+		CreationTime: time.Now(),
+	}
+	return tk, nil
+}
+
 func createNewRSATokenKey() (*tokenKey, error) {
 	var id [16]byte
 	if _, err := io.ReadFull(rand.Reader, id[:]); err != nil {
@@ -211,6 +256,28 @@ func createNewRSATokenKey() (*tokenKey, error) {
 		return nil, err
 	}
 	b, err := x509.MarshalPKCS8PrivateKey(privKey)
+	if err != nil {
+		return nil, err
+	}
+	tk := &tokenKey{
+		ID:           hex.EncodeToString(id[:]),
+		Key:          b,
+		privKey:      privKey,
+		CreationTime: time.Now(),
+	}
+	return tk, nil
+}
+
+func (tm *TokenManager) createNewTPMRSATokenKey() (*tokenKey, error) {
+	var id [16]byte
+	if _, err := io.ReadFull(rand.Reader, id[:]); err != nil {
+		return nil, err
+	}
+	privKey, err := tm.tpm.CreateKey(tpm.WithRSA(2048))
+	if err != nil {
+		return nil, err
+	}
+	b, err := privKey.Marshal()
 	if err != nil {
 		return nil, err
 	}
@@ -249,6 +316,13 @@ func createNewED25519TokenKey() (*tokenKey, error) {
 func (tm *TokenManager) CreateToken(claims jwt.Claims, alg string) (string, error) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
+	if alg == "" {
+		if tm.tpm != nil {
+			alg = "ES256"
+		} else {
+			alg = "EdDSA"
+		}
+	}
 
 	method := jwt.GetSigningMethod(alg)
 	if method == nil {
@@ -258,15 +332,15 @@ func (tm *TokenManager) CreateToken(claims jwt.Claims, alg string) (string, erro
 	for _, k := range tm.keys.Keys {
 		switch method.(type) {
 		case *jwt.SigningMethodECDSA:
-			if _, ok := k.privKey.(*ecdsa.PrivateKey); !ok {
+			if _, ok := k.privKey.Public().(*ecdsa.PublicKey); !ok {
 				continue
 			}
 		case *jwt.SigningMethodEd25519:
-			if _, ok := k.privKey.(ed25519.PrivateKey); !ok {
+			if _, ok := k.privKey.Public().(ed25519.PublicKey); !ok {
 				continue
 			}
 		case *jwt.SigningMethodRSA:
-			if _, ok := k.privKey.(*rsa.PrivateKey); !ok {
+			if _, ok := k.privKey.Public().(*rsa.PublicKey); !ok {
 				continue
 			}
 		default:
@@ -277,9 +351,52 @@ func (tm *TokenManager) CreateToken(claims jwt.Claims, alg string) (string, erro
 			tk = k
 		}
 	}
-	tok := jwt.NewWithClaims(method, claims)
+	tok := jwt.NewWithClaims(&tpmSigningMethod{method}, claims)
 	tok.Header["kid"] = tk.ID
 	return tok.SignedString(tk.privKey)
+}
+
+type tpmSigningMethod struct {
+	jwt.SigningMethod
+}
+
+func (m *tpmSigningMethod) Sign(signingString string, key interface{}) ([]byte, error) {
+	k, ok := key.(*tpm.Key)
+	if !ok {
+		return m.SigningMethod.Sign(signingString, key)
+	}
+	switch sm := m.SigningMethod.(type) {
+	case *jwt.SigningMethodECDSA:
+		if sm.CurveBits != k.Curve().Params().BitSize {
+			return nil, jwt.ErrInvalidKey
+		}
+		hasher := sm.Hash.New()
+		hasher.Write([]byte(signingString))
+		sig, err := k.Sign(nil, hasher.Sum(nil), sm.Hash)
+		if err != nil {
+			return nil, err
+		}
+		var ss []*big.Int
+		if _, err := asn1.Unmarshal(sig, &ss); err != nil {
+			return nil, err
+		}
+		if len(ss) != 2 {
+			return nil, errors.New("invalid ecdsa signature")
+		}
+		sz := sm.CurveBits / 8
+		out := make([]byte, 2*sz)
+		ss[0].FillBytes(out[:sz])
+		ss[1].FillBytes(out[sz:])
+		return out, nil
+
+	case *jwt.SigningMethodRSA:
+		hasher := sm.Hash.New()
+		hasher.Write([]byte(signingString))
+		return k.Sign(nil, hasher.Sum(nil), sm.Hash)
+
+	default:
+		return m.SigningMethod.Sign(signingString, key)
+	}
 }
 
 func (tm *TokenManager) getKey(tok *jwt.Token) (interface{}, error) {
@@ -322,9 +439,8 @@ func (tm *TokenManager) ServeJWKS(w http.ResponseWriter, req *http.Request) {
 	tm.mu.Lock()
 	var out jwks
 	for _, key := range tm.keys.Keys {
-		switch pk := key.privKey.(type) {
-		case *ecdsa.PrivateKey:
-			pub := pk.PublicKey
+		switch pub := key.privKey.Public().(type) {
+		case *ecdsa.PublicKey:
 			out.Keys = append(out.Keys, jwk{
 				Type:  "EC",
 				Use:   "sig",
@@ -334,8 +450,7 @@ func (tm *TokenManager) ServeJWKS(w http.ResponseWriter, req *http.Request) {
 				X:     base64.RawURLEncoding.EncodeToString(pub.X.Bytes()),
 				Y:     base64.RawURLEncoding.EncodeToString(pub.Y.Bytes()),
 			})
-		case ed25519.PrivateKey:
-			pub := pk.Public().(ed25519.PublicKey)
+		case ed25519.PublicKey:
 			out.Keys = append(out.Keys, jwk{
 				Type:  "OKP",
 				Use:   "sig",
@@ -344,8 +459,7 @@ func (tm *TokenManager) ServeJWKS(w http.ResponseWriter, req *http.Request) {
 				Curve: "Ed25519",
 				X:     base64.RawURLEncoding.EncodeToString(pub),
 			})
-		case *rsa.PrivateKey:
-			pub := pk.PublicKey
+		case *rsa.PublicKey:
 			out.Keys = append(out.Keys, jwk{
 				Type: "RSA",
 				Use:  "sig",

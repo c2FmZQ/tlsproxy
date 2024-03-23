@@ -74,7 +74,7 @@ func (tm *TokenManager) URLToken(w http.ResponseWriter, req *http.Request, u *ur
 	token, err := tm.CreateToken(jwt.MapClaims{
 		"url": u.String(),
 		"sid": sid,
-	}, "EdDSA")
+	}, "")
 	return token, displayURL, err
 }
 

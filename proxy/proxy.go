@@ -193,7 +193,7 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 	if !cfg.AcceptTOS {
 		return nil, errors.New("AcceptTOS must be set to true")
 	}
-	tm, err := tokenmanager.New(store)
+	tm, err := tokenmanager.New(store, pTPM)
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +245,7 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 		return nil, fmt.Errorf("masterkey: %w", err)
 	}
 	store := storage.New(filepath.Join(cfg.CacheDir, "test"), mk)
-	tm, err := tokenmanager.New(store)
+	tm, err := tokenmanager.New(store, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -919,18 +919,23 @@ func (p *Proxy) Stop() {
 	if p.quicTransport != nil {
 		p.quicTransport.Close()
 	}
+	if p.mk != nil {
+		p.mk.Wipe()
+		p.mk = nil
+	}
 	backends := p.cfg.Backends
 	p.cfg.Backends = nil
 	conns := p.inConns.slice()
 	p.mu.Unlock()
+
 	for _, be := range backends {
 		be.close(nil)
 	}
 	for _, conn := range conns {
 		conn.Close()
 	}
-	if p.mk != nil {
-		p.mk.Wipe()
+	if p.tpm != nil {
+		p.tpm.Close()
 	}
 }
 
