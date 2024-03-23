@@ -389,6 +389,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			CRLDistributionPoints: pp.CRLDistributionPoints,
 			OCSPServer:            pp.OCSPServer,
 			Admins:                pp.Admins,
+			TPM:                   p.tpm,
 			Store:                 p.store,
 			EventRecorder:         er,
 			ClaimsFromCtx:         claimsFromCtx,
