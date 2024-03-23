@@ -87,7 +87,7 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, email
 			claims[k] = v
 		}
 	}
-	token, err := cm.tm.CreateToken(claims, "EdDSA")
+	token, err := cm.tm.CreateToken(claims, "")
 	if err != nil {
 		return err
 	}
