@@ -1,5 +1,13 @@
 # TLSPROXY Release Notes
 
+* Update go dependencies:
+  * upgraded github.com/google/pprof v0.0.0-20240319011627-a57c5dfe54fd => v0.0.0-20240320155624-b11c3daa6f07
+  * upgraded github.com/onsi/ginkgo/v2 v2.17.0 => v2.17.1
+  * upgraded golang.org/x/exp v0.0.0-20240318143956-a85f2c67cd81 => v0.0.0-20240325151524-a685a6edb6d8
+* Update go dependencies in examples/backend:
+  * upgraded github.com/google/pprof v0.0.0-20240319011627-a57c5dfe54fd => v0.0.0-20240320155624-b11c3daa6f07
+  * upgraded github.com/onsi/ginkgo/v2 v2.17.0 => v2.17.1
+  * upgraded golang.org/x/exp v0.0.0-20240318143956-a85f2c67cd81 => v0.0.0-20240325151524-a685a6edb6d8
 ## v0.7.0-beta1
 
 * Add `hwBacked` option. When enabled, hardware-backed cryptographic keys are used to:
