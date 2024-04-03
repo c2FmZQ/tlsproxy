@@ -105,6 +105,9 @@ jobs:
       - build-and-run-tests
       - create-release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
     - name: Check out the repo
@@ -165,7 +168,10 @@ jobs:
           images+="${tag}@${DIGEST} "
         done
         # Sign with key
-        cosign sign --yes --key env://COSIGN_PRIVATE_KEY ${images}
+        cosign sign --yes --recursive --key env://COSIGN_PRIVATE_KEY ${images}
+        # Sign with oidc
+        unset COSIGN_PRIVATE_KEY COSIGN_PASSWORD
+        cosign sign --yes --recursive ${images}
       env:
         TAGS: ${{ steps.meta.outputs.tags }}
         COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
