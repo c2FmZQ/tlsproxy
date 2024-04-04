@@ -1,12 +1,19 @@
 # TLSPROXY Release Notes
 
-## v0.7.0-beta3
+## v0.7.0-beta4
+
+### :star2: New features
 
 * Add `hwBacked` option. When enabled, hardware-backed cryptographic keys are used to:
   * encrypt local data (the data cannot be used or recovered on a different device),
   * sign authentication tokens,
   * sign the PKI certificates, OCSP responses, and CRLs.
 * Add `--quiet` flag. When set (or the `TLSPROXY_QUIET` env variable is `true`), logging is turned off after tlsproxy starts.
+
+### :wrench: Misc
+
+* Release binaries and container images are now signed.
+* Update go: 1.22.2
 * Update go dependencies:
   * upgraded github.com/quic-go/quic-go v0.41.0 => v0.42.0
 
