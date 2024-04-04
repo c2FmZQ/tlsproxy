@@ -193,3 +193,38 @@ The proxy reads the config from `${CONFIGDIR}/config.yaml`.
 
 Download a precompiled binary from the [release page](https://github.com/c2FmZQ/tlsproxy/releases).
 
+## Verify signatures
+
+The release binaries and the container images are signed when they are published.
+
+### Container image
+
+To verify the authenticity of a container image, use:
+
+```console
+cosign verify \
+  --certificate-identity-regexp='^https://github[.]com/c2FmZQ/tlsproxy/[.]github/workflows/release[.]yml' \
+  --certificate-oidc-issuer=https://token.actions.githubusercontent.com                           \
+  c2fmzq/tlsproxy:latest
+```
+
+and/or:
+
+```console
+cosign verify --key keys/cosign.pub c2fmzq/tlsproxy:latest
+```
+
+### Release binary
+
+To verify the authenticity of a release binary, first import `c2FmZQ-bot.pub` and `rthellend@gmail.com.pub`:
+
+```console
+curl https://raw.githubusercontent.com/c2FmZQ/tlsproxy/main/keys/c2FmZQ-bot.pub | gpg --import
+curl https://raw.githubusercontent.com/c2FmZQ/tlsproxy/main/keys/rthellend@gmail.com.pub | gpg --import
+```
+
+Then, verify the signature, e.g.
+
+```console
+gpg --verify tlsproxy-linux-amd64.sig tlsproxy-linux-amd64
+```
