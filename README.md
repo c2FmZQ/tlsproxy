@@ -216,11 +216,10 @@ cosign verify --key keys/cosign.pub c2fmzq/tlsproxy:latest
 
 ### Release binary
 
-To verify the authenticity of a release binary, first import `c2FmZQ-bot.pub` and `rthellend@gmail.com.pub`:
+To verify the authenticity of a release binary, first import `c2FmZQ-bot.pub`:
 
 ```console
 curl https://raw.githubusercontent.com/c2FmZQ/tlsproxy/main/keys/c2FmZQ-bot.pub | gpg --import
-curl https://raw.githubusercontent.com/c2FmZQ/tlsproxy/main/keys/rthellend@gmail.com.pub | gpg --import
 ```
 
 Then, verify the signature, e.g.
