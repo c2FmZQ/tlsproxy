@@ -1,6 +1,6 @@
 # TLSPROXY Release Notes
 
-## v0.7.0-beta4
+## v0.7.0
 
 ### :star2: New features
 
