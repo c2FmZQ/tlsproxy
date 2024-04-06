@@ -204,7 +204,7 @@ To verify the authenticity of a container image, use:
 ```console
 cosign verify \
   --certificate-identity-regexp='^https://github[.]com/c2FmZQ/tlsproxy/[.]github/workflows/release[.]yml' \
-  --certificate-oidc-issuer=https://token.actions.githubusercontent.com                           \
+  --certificate-oidc-issuer=https://token.actions.githubusercontent.com                                   \
   c2fmzq/tlsproxy:latest
 ```
 
