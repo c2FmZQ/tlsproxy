@@ -1,5 +1,21 @@
 # TLSPROXY Release Notes
 
+* Update go dependencies:
+  * upgraded github.com/google/pprof v0.0.0-20240402174815-29b9bb013b0f => v0.0.0-20240416155748-26353dc0451f
+  * upgraded golang.org/x/crypto v0.21.0 => v0.22.0
+  * upgraded golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8 => v0.0.0-20240416160154-fe59bbe5cc7f
+  * upgraded golang.org/x/mod v0.16.0 => v0.17.0
+  * upgraded golang.org/x/net v0.23.0 => v0.24.0
+  * upgraded golang.org/x/sys v0.18.0 => v0.19.0
+  * upgraded golang.org/x/tools v0.19.0 => v0.20.0
+* Update go dependencies in examples/backend:
+  * upgraded github.com/google/pprof v0.0.0-20240402174815-29b9bb013b0f => v0.0.0-20240416155748-26353dc0451f
+  * upgraded golang.org/x/crypto v0.21.0 => v0.22.0
+  * upgraded golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8 => v0.0.0-20240416160154-fe59bbe5cc7f
+  * upgraded golang.org/x/mod v0.16.0 => v0.17.0
+  * upgraded golang.org/x/net v0.23.0 => v0.24.0
+  * upgraded golang.org/x/sys v0.18.0 => v0.19.0
+  * upgraded golang.org/x/tools v0.19.0 => v0.20.0
 ## v0.7.0
 
 ### :star2: New features
