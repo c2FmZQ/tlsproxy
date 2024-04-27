@@ -599,6 +599,6 @@ func http3Server(handler http.Handler) *http3.Server {
 		ConnContext: func(ctx context.Context, c quic.Connection) context.Context {
 			return context.WithValue(ctx, connCtxKey, c)
 		},
-		EnableDatagrams: true,
+		EnableDatagrams: false,
 	}
 }
