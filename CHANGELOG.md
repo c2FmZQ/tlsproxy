@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## v0.7.2
+
+### :wrench: Misc
+
+* Update the tpm library to pick up a bug fix. The saved TPM keys would become invalid after a reboot. This only affected configurations with `hwBacked: true`.
+
 ## v0.7.1
 
 ### :wrench: Misc

@@ -4,8 +4,8 @@ go 1.22.1
 
 require (
 	github.com/beevik/etree v1.3.0
-	github.com/c2FmZQ/storage v0.2.1
-	github.com/c2FmZQ/tpm v0.2.0
+	github.com/c2FmZQ/storage v0.2.2
+	github.com/c2FmZQ/tpm v0.3.0
 	github.com/fxamacker/cbor/v2 v2.6.0
 	github.com/go-test/deep v1.1.0
 	github.com/golang-jwt/jwt/v5 v5.2.1
