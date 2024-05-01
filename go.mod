@@ -23,13 +23,12 @@ require (
 )
 
 require (
-	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
+	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/google/go-tpm v0.9.0 // indirect
-	github.com/google/pprof v0.0.0-20240422182052-72c8669ad3e7 // indirect
+	github.com/google/pprof v0.0.0-20240430035430-e4905b036c4e // indirect
 	github.com/jonboulle/clockwork v0.4.0 // indirect
-	github.com/onsi/ginkgo/v2 v2.17.1 // indirect
+	github.com/onsi/ginkgo/v2 v2.17.2 // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect
-	github.com/stretchr/testify v1.8.4 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/mock v0.4.0 // indirect
 	golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f // indirect
