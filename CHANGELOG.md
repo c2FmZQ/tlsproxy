@@ -2,10 +2,6 @@
 
 ## next
 
-### :wrench: Misc
-
-* Upgrade github.com/quic-go/quic-go v0.42.0 => v0.43.0, and disable http3 datagram.
-
 ## v0.7.2
 
 ### :wrench: Misc
