@@ -6,9 +6,7 @@
 
 TLSPROXY is primarily a [TLS termination proxy](https://en.wikipedia.org/wiki/TLS_termination_proxy) that uses Let's Encrypt to provide TLS encryption for any number of TCP or HTTP servers, and any number of server names concurrently on the same port.
 
-Its functionality is similar to an [stunnel](https://www.stunnel.org/) server, but without the need to configure and run [certbot](https://certbot.eff.org/) separately.
-
-TLSPROXY can also be used as a [Reverse Proxy](https://en.wikipedia.org/wiki/Reverse_proxy) for HTTP(S) services, and optionally control access to these services with user authentication and authorization.
+TLSPROXY can also be used as a simple [Web server](https://en.wikipedia.org/wiki/Web_server), or a [Reverse Proxy](https://en.wikipedia.org/wiki/Reverse_proxy) for HTTP(S) services, and optionally control access to these services with user authentication and authorization.
 
 Overview of features:
 
@@ -18,6 +16,7 @@ Overview of features:
 * [x] Terminate _TCP_ connections, and forward the TLS connection to any TLS server (passthrough). The proxy doesn't see the plaintext.
 * [x] Terminate [QUIC](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/QUIC.md) connections, and forward the data to any QUIC or TLS/TCP server.
 * [x] Terminate HTTPS connections, and forward the requests to HTTP or HTTPS servers (http/1.1, http/2, http/3).
+* [x] Serve static files from a local filesystem.
 * [x] Support for the [PROXY protocol](https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt) defined by HAProxy. (not on QUIC or HTTP/3 backends)
 * [x] TLS client authentication & authorization (when the proxy terminates the TLS connections).
 * [x] Built-in Certificate Authority for managing client and backend server TLS certificates.
@@ -147,6 +146,14 @@ backends:
   mode: tlspassthrough
   addresses:
   - 192.168.5.66:8443
+
+# When documentRoot is set, static content is served from that directory.
+# (The addresses field must be empty)
+backends:
+- serverNames: 
+  - static.example.com
+  mode: local
+  documentRoot: /var/www/htdocs
 ```
 
 See the [godoc](https://pkg.go.dev/github.com/c2FmZQ/tlsproxy/proxy#section-documentation) and the [examples](https://github.com/c2FmZQ/tlsproxy/blob/main/examples) directory for more details.

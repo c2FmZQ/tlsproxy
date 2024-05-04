@@ -2,6 +2,10 @@
 
 ## next
 
+### :star2: New features
+
+* Serve static files from a local filesystem when `documentRoot:` is set.
+
 ## v0.7.2
 
 ### :wrench: Misc

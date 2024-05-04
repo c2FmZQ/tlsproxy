@@ -1,7 +1,7 @@
 FROM golang:1.22.2-alpine3.19 AS build
 MAINTAINER info@c2fmzq.org
 RUN apk update && apk upgrade
-RUN apk add ca-certificates
+RUN apk add ca-certificates bluefish
 
 ADD . /app/go/src/tlsproxy
 WORKDIR /app/go/src/tlsproxy
@@ -13,6 +13,7 @@ FROM scratch
 WORKDIR /
 COPY --from=build /etc/ssl /etc/ssl/
 COPY --from=build /usr/share/ca-certificates /usr/share/ca-certificates/
+COPY --from=build /usr/share/mime/globs2 /usr/share/mime/
 COPY --from=build /go/bin/tlsproxy /bin/
 
 EXPOSE 10080 10443 10443/udp

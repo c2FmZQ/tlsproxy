@@ -205,7 +205,7 @@ func TestProxyBackends(t *testing.T) {
 				PathOverrides: []*PathOverride{
 					{
 						Paths: []string{
-							"/foo",
+							"/foo/",
 						},
 						Addresses: []string{
 							be9.String(),
@@ -349,7 +349,7 @@ func TestProxyBackends(t *testing.T) {
 		{desc: "Unknown server name", host: "foo.example.com", expError: true},
 		{desc: "Hit backend7", host: "passthrough.example.com", want: "Hello from backend7\n"},
 		{desc: "Hit backend8", host: "http.example.com", want: "[backend8] /", http: "/"},
-		{desc: "Hit backend8 /foo", host: "http.example.com", want: "[backend9] /foo", http: "/foo"},
+		{desc: "Hit backend8 /foo", host: "http.example.com", want: "[backend9] /foo/", http: "/foo"},
 		{desc: "Hit backend9", host: "https.example.com", want: "[backend9] /", http: "/", certName: "client.example.com"},
 		{desc: "Hit backend10", host: "tls-pki.example.com", want: "Hello from backend10\n", certName: "client.example.com"},
 		{desc: "Hit backend11", host: "http-proxy.example.com", want: "[backend11] LOCALADDR /", http: "/"},

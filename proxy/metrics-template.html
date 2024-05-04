@@ -244,6 +244,9 @@ function selectTab(target) {
 {{- range $i, $be := .Backends }}
   <div style="margin-top: 1rem;">
 Backend[{{$i}}]: {{.Mode}} {{.ALPNProtos}} {{.BackendProto}} {{.SSO}}
+  {{- if len .DocumentRoot | ne 0 }}
+    <div style="margin-left: 1rem;">DocumentRoot: {{ .DocumentRoot }}</div>
+  {{- end }}
   {{- if len .ServerNames | ne 0 }}
     <div style="margin-left: 1rem;">ServerNames:</div>
     {{- range .ServerNames }}
