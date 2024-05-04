@@ -93,6 +93,9 @@ func (be *Backend) localHandler() http.Handler {
 }
 
 func pathClean(p string) string {
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
 	pp := path.Clean(p)
 	if pp == "." {
 		pp = "/"

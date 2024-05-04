@@ -208,3 +208,38 @@ func TestStaticFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestPathClean(t *testing.T) {
+	for _, tc := range []struct {
+		in, out string
+	}{
+		{"", "/"},
+		{"/", "/"},
+		{"//", "/"},
+		{"///", "/"},
+		{"foo", "/foo"},
+		{"foo/", "/foo/"},
+		{"/foo", "/foo"},
+		{"//foo", "/foo"},
+		{"///foo", "/foo"},
+		{".", "/"},
+		{"./", "/"},
+		{".//", "/"},
+		{"..", "/"},
+		{"/.", "/"},
+		{"/..", "/"},
+		{"/foo/.", "/foo"},
+		{"/foo/..", "/"},
+		{"/foo/../../../../bar", "/bar"},
+		{"/foo/./bar", "/foo/bar"},
+		{"/foo/./bar/", "/foo/bar/"},
+		{"/foo/./../bar", "/bar"},
+		{"/../../bar", "/bar"},
+		{"///..//../bar", "/bar"},
+		{"/././bar", "/bar"},
+	} {
+		if got, want := pathClean(tc.in), tc.out; got != want {
+			t.Errorf("pathClean(%q) = %q, want %q", tc.in, got, want)
+		}
+	}
+}
