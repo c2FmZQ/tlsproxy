@@ -597,6 +597,9 @@ func http3Server(handler http.Handler) *http3.Server {
 	return &http3.Server{
 		Handler: handler,
 		ConnContext: func(ctx context.Context, c quic.Connection) context.Context {
+			if _, ok := c.(*netw.QUICConn); !ok {
+				panic(fmt.Sprintf("http3.Server.ConnContext called with: %#v", c))
+			}
 			return context.WithValue(ctx, connCtxKey, c)
 		},
 		EnableDatagrams: false,
