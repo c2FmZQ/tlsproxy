@@ -31,13 +31,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
@@ -97,6 +101,17 @@ func TestQUICConnections(t *testing.T) {
 				ForwardServerName: "quic-internal.example.com",
 				ForwardRateLimit:  1000,
 			},
+			// Local backend
+			{
+				ServerNames: []string{
+					"local.example.com",
+				},
+				Mode: "LOCAL",
+				ALPNProtos: &[]string{
+					"h3",
+				},
+				DocumentRoot: ".",
+			},
 		},
 	}
 	proxy := newTestProxy(cfg, extCA)
@@ -110,6 +125,7 @@ func TestQUICConnections(t *testing.T) {
 		expError         bool
 		quic             bool
 		datagram         bool
+		http             bool
 	}{
 		{desc: "Hit TCP backend with TLS", host: "tcp.example.com", want: "Hello from TCP Backend\n", protos: []string{"http/1.1"}},
 		{desc: "Hit TCP backend with QUIC", host: "tcp.example.com", want: "Hello from TCP Backend\n", protos: []string{"http/1.1"}, quic: true},
@@ -120,11 +136,14 @@ func TestQUICConnections(t *testing.T) {
 		{desc: "Hit QUIC backend with QUIC h3", host: "quic.example.com", want: "Hello from QUIC Backend\n", protos: []string{"h3"}, quic: true},
 		{desc: "Hit QUIC backend with QUIC imap", host: "quic.example.com", want: "Hello from QUIC Backend\n", protos: []string{"imap"}, quic: true},
 		{desc: "Hit QUIC backend with QUIC datagram", host: "quic.example.com", want: "Received 7-byte datagram", protos: []string{"h3"}, datagram: true},
+		{desc: "Hit LOCAL backend with QUIC h3", host: "local.example.com", want: "HTTP/3.0 200 OK", protos: []string{"h3"}, http: true},
 	} {
 		var got string
 		var err error
 		if tc.datagram {
 			got, err = quicDatagram(tc.host, proxy.quicTransport.(*netw.QUICTransport).Addr().String(), "Hello!\n", extCA, tc.protos)
+		} else if tc.http {
+			got, err = h3Get(tc.host, proxy.quicTransport.(*netw.QUICTransport).Addr().String(), "/proxy.go", extCA)
 		} else if tc.quic {
 			got, err = quicGet(tc.host, proxy.quicTransport.(*netw.QUICTransport).Addr().String(), "Hello!\n", extCA, tc.protos)
 		} else {
@@ -138,7 +157,11 @@ func TestQUICConnections(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		if got != tc.want {
+		if tc.http {
+			if !strings.HasPrefix(got, tc.want) {
+				t.Errorf("%s: Got %q, want %q", tc.desc, got, tc.want)
+			}
+		} else if got != tc.want {
 			t.Errorf("%s: Got %q, want %q", tc.desc, got, tc.want)
 		}
 	}
@@ -267,6 +290,53 @@ func quicGet(name, addr, msg string, rootCA *certmanager.CertManager, protos []s
 		return "", err
 	}
 	return string(b), nil
+}
+
+func h3Get(name, addr, path string, rootCA *certmanager.CertManager) (string, error) {
+	name = idnaToASCII(name)
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{Port: 0})
+	if err != nil {
+		return "", err
+	}
+	tr := &quic.Transport{
+		Conn: conn,
+	}
+	roundTripper := &http3.RoundTripper{
+		TLSClientConfig: &tls.Config{
+			ServerName:         name,
+			InsecureSkipVerify: name == "",
+			RootCAs:            rootCA.RootCACertPool(),
+			NextProtos:         []string{"h3"},
+		},
+		Dial: func(ctx context.Context, _ string, tc *tls.Config, qc *quic.Config) (quic.EarlyConnection, error) {
+			a, err := net.ResolveUDPAddr("udp", addr)
+			if err != nil {
+				return nil, err
+			}
+			return tr.DialEarly(ctx, a, tc, qc)
+		},
+	}
+	defer roundTripper.Close()
+	client := &http.Client{Transport: roundTripper}
+	host := name
+	if host == "" {
+		host = addr
+	}
+	req, err := http.NewRequest(http.MethodGet, "https://"+host+path, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Host", host)
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return resp.Proto + " " + resp.Status + "\n" + string(b), nil
 }
 
 func quicDatagram(name, addr, msg string, rootCA *certmanager.CertManager, protos []string) (string, error) {
