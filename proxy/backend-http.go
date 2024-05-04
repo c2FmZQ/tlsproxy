@@ -160,6 +160,11 @@ func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, do
 		notFound()
 		return
 	}
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusForbidden, userAgent(req))
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
 	defer f.Close()
 	log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusOK, userAgent(req))
 	be.setAltSvc(w.Header(), req)
