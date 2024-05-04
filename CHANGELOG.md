@@ -6,6 +6,10 @@
 
 * Serve static files from a local filesystem when `documentRoot:` is set.
 
+### :wrench: Misc
+
+* Upgrade github.com/quic-go/quic-go v0.42.0 => v0.43.1
+
 ## v0.7.2
 
 ### :wrench: Misc
