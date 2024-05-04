@@ -167,6 +167,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		BackendProto string
 		ClientAuth   string
 		SSO          string
+		DocumentRoot string
 		ServerNames  []string
 		Addresses    []string
 		Handlers     []handler
@@ -411,6 +412,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 			}
 			backend.ALPNProtos = protos
 		}
+		backend.DocumentRoot = be.DocumentRoot
 		for _, sn := range be.ServerNames {
 			backend.ServerNames = append(backend.ServerNames, idnaToUnicode(sn))
 		}

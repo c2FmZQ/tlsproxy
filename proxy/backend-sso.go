@@ -334,8 +334,9 @@ func pathMatches(prefixes []string, path string) bool {
 	if len(prefixes) == 0 {
 		return true
 	}
+	cleanPath := pathClean(path)
 	for _, p := range prefixes {
-		if strings.HasPrefix(path, p) {
+		if strings.HasPrefix(path, p) || strings.HasPrefix(cleanPath, p) {
 			return true
 		}
 	}

@@ -34,6 +34,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"os"
+	"path"
+	"path/filepath"
 	"regexp"
 	"runtime/debug"
 	"slices"
@@ -85,17 +88,92 @@ func (be *Backend) localHandler() http.Handler {
 		if !be.handleLocalEndpointsAndAuthorize(w, req) {
 			return
 		}
-		log.Printf("PRX %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL, http.StatusNotFound, userAgent(req))
-		http.NotFound(w, req)
+		be.serveStaticFiles(w, req, be.DocumentRoot, "")
 	})
+}
+
+func pathClean(p string) string {
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	pp := path.Clean(p)
+	if pp == "." {
+		pp = "/"
+	}
+	if pp != "/" && strings.HasSuffix(p, "/") {
+		pp += "/"
+	}
+	return pp
+}
+
+func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, docRoot, prefix string) {
+	notFound := func() {
+		log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL, http.StatusNotFound, userAgent(req))
+		http.NotFound(w, req)
+	}
+	redirect := func(u string) {
+		log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusMovedPermanently, userAgent(req))
+		http.Redirect(w, req, u, http.StatusMovedPermanently)
+	}
+
+	if docRoot == "" {
+		notFound()
+		return
+	}
+
+	cleanPath := pathClean(req.URL.Path)
+	if cleanPath != req.URL.Path {
+		redirect(cleanPath)
+		return
+	}
+	p := strings.TrimPrefix(cleanPath, prefix)
+	p = strings.TrimPrefix(p, "/")
+	for _, pp := range strings.Split(p, "/") {
+		if strings.HasPrefix(pp, ".") || strings.Contains(pp, `\`) {
+			notFound()
+			return
+		}
+	}
+	p = filepath.Join(docRoot, filepath.FromSlash(p))
+	fi, err := os.Stat(p)
+	if err != nil {
+		notFound()
+		return
+	}
+	if fi.IsDir() {
+		if !strings.HasSuffix(cleanPath, "/") {
+			redirect(cleanPath + "/")
+			return
+		}
+		p = filepath.Join(p, "index.html")
+		if s, err := os.Stat(p); err != nil || s.IsDir() {
+			log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusForbidden, userAgent(req))
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+	} else if strings.HasSuffix(cleanPath, "/") {
+		redirect(strings.TrimSuffix(cleanPath, "/"))
+		return
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		notFound()
+		return
+	}
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusForbidden, userAgent(req))
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	defer f.Close()
+	log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusOK, userAgent(req))
+	be.setAltSvc(w.Header(), req)
+	http.ServeContent(w, req, p, fi.ModTime(), f)
 }
 
 // reverseProxy returns an HTTP handler for backends that act as a reverse
 // proxy for remote servers. This handler can also serve local endpoints.
 func (be *Backend) reverseProxy() http.Handler {
-	if len(be.Addresses) == 0 {
-		return be.localHandler()
-	}
 	reverseProxy := &httputil.ReverseProxy{
 		Director:       be.reverseProxyDirector,
 		Transport:      be.reverseProxyTransport(),
@@ -142,6 +220,59 @@ func (be *Backend) reverseProxy() http.Handler {
 		}
 		ctx = context.WithValue(ctx, ctxURLKey, req.URL.String())
 
+		// Apply the forward rate limit. The first request was already
+		// counted when the connection was established.
+		if conn, ok := ctx.Value(connCtxKey).(annotatedConnection); ok {
+			if !conn.Annotation(requestFlagKey, false).(bool) {
+				conn.SetAnnotation(requestFlagKey, true)
+			} else if err := be.connLimit.Wait(ctx); err != nil {
+				http.Error(w, "ctx", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		// Apply path overrides that may direct the request to a
+		// different address. The actual override will be applied in
+		// dial(), but we need to set req.URL.Host to a unique value
+		// so that the http client will not re-use connections with
+		// other addresses.
+		override := ""
+		proxyProtoVersion := be.proxyProtocolVersion
+		cleanPath := pathClean(req.URL.Path)
+	L:
+		for i, po := range be.PathOverrides {
+			for _, prefix := range po.Paths {
+				if cleanPath+"/" == prefix {
+					log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusMovedPermanently, userAgent(req))
+					http.Redirect(w, req, cleanPath+"/", http.StatusMovedPermanently)
+					return
+				}
+				if !strings.HasPrefix(cleanPath, prefix) {
+					continue
+				}
+				if len(po.Addresses) == 0 {
+					be.serveStaticFiles(w, req, po.DocumentRoot, prefix)
+					return
+				}
+				ctx = context.WithValue(ctx, ctxOverrideIDKey, i)
+				override = fmt.Sprintf("%d", i)
+				proxyProtoVersion = po.proxyProtocolVersion
+				break L
+			}
+		}
+		if len(be.Addresses) == 0 {
+			be.serveStaticFiles(w, req, be.DocumentRoot, "")
+			return
+		}
+
+		hostKey := bytes.NewBufferString(serverName + ";" + override)
+		if proxyProtoVersion > 0 {
+			hostKey.WriteByte(';')
+			writeProxyHeader(proxyProtoVersion, hostKey, req.Context().Value(connCtxKey).(anyConn))
+		}
+		h := sha256.Sum256(hostKey.Bytes())
+		req.URL.Host = hex.EncodeToString(h[:])
+
 		// Detect forwarding loops using the via headers.
 		me := localNetConn(req.Context().Value(connCtxKey).(anyConn)).LocalAddr().String()
 		var hops []string
@@ -160,44 +291,6 @@ func (be *Backend) reverseProxy() http.Handler {
 		hops = append(hops, req.Proto+" "+me)
 		req.Header.Set(viaHeader, strings.Join(hops, ", "))
 
-		// Apply path overrides that may direct the request to a
-		// different address. The actual override will be applied in
-		// dial(), but we need to set req.URL.Host to a unique value
-		// so that the http client will not re-use connections with
-		// other addresses.
-		override := ""
-		proxyProtoVersion := be.proxyProtocolVersion
-	L:
-		for i, po := range be.PathOverrides {
-			for _, prefix := range po.Paths {
-				if !strings.HasPrefix(req.URL.Path, prefix) {
-					continue
-				}
-				ctx = context.WithValue(ctx, ctxOverrideIDKey, i)
-				override = fmt.Sprintf("%d", i)
-				proxyProtoVersion = po.proxyProtocolVersion
-				break L
-			}
-		}
-
-		hostKey := bytes.NewBufferString(serverName + ";" + override)
-		if proxyProtoVersion > 0 {
-			hostKey.WriteByte(';')
-			writeProxyHeader(proxyProtoVersion, hostKey, req.Context().Value(connCtxKey).(anyConn))
-		}
-		h := sha256.Sum256(hostKey.Bytes())
-		req.URL.Host = hex.EncodeToString(h[:])
-
-		// Apply the forward rate limit. The first request was already
-		// counted when the connection was established.
-		if conn, ok := ctx.Value(connCtxKey).(annotatedConnection); ok {
-			if !conn.Annotation(requestFlagKey, false).(bool) {
-				conn.SetAnnotation(requestFlagKey, true)
-			} else if err := be.connLimit.Wait(ctx); err != nil {
-				http.Error(w, "ctx", http.StatusInternalServerError)
-				return
-			}
-		}
 		reverseProxy.ServeHTTP(w, req.WithContext(ctx))
 	})
 }

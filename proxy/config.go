@@ -273,6 +273,9 @@ type Backend struct {
 	// If Mode is QUIC, all streams are forwards to the backend server.
 	//        CLIENT --QUIC--> PROXY --QUIC--> BACKEND SERVER
 	Mode string `yaml:"mode"`
+	// DocumentRoot indicates local files should be served from this
+	// directory. This option is only valid when Addresses is empty.
+	DocumentRoot string `yaml:"documentRoot"`
 	// BWLimit is the name of the bandwidth limit policy to apply to this
 	// backend. All backends using the same policy are subject to common
 	// limits.
@@ -561,6 +564,9 @@ type PathOverride struct {
 	Addresses []string `yaml:"addresses,omitempty"`
 	// Mode is either HTTP or HTTPS.
 	Mode string `yaml:"mode"`
+	// DocumentRoot indicates local files should be served from this
+	// directory. This option is only valid when Addresses is empty.
+	DocumentRoot string `yaml:"documentRoot"`
 	// BackendProto specifies which protocol to use when forwarding an HTTPS
 	// request to the backend. This field is only valid in modes HTTP and
 	// HTTPS.
@@ -902,6 +908,9 @@ func (cfg *Config) Check() error {
 		if len(be.Addresses) > 0 && (be.Mode == ModeConsole || be.Mode == ModeLocal) {
 			return fmt.Errorf("backend[%d].Addresses: Addresses should be empty when Mode is CONSOLE or LOCAL", i)
 		}
+		if be.DocumentRoot != "" && len(be.Addresses) != 0 {
+			return fmt.Errorf("backend[%d].DocumentRoot: only valid when Addresses is empty", i)
+		}
 		if n := be.BWLimit; n != "" && !bwLimits[n] {
 			return fmt.Errorf("backend[%d].BWLimit: undefined name %q", i, n)
 		}
@@ -1007,8 +1016,8 @@ func (cfg *Config) Check() error {
 				return fmt.Errorf("backend[%d].PathOverrides[%d].Paths: cannot be empty", i, j)
 			}
 			for k, n := range po.Paths {
-				if !strings.HasPrefix(n, "/") {
-					return fmt.Errorf("backend[%d].PathOverrides[%d].Paths[%d]: must start with /", i, j, k)
+				if !strings.HasPrefix(n, "/") || !strings.HasSuffix(n, "/") {
+					return fmt.Errorf("backend[%d].PathOverrides[%d].Paths[%d]: must start and end with /", i, j, k)
 				}
 			}
 			if po.Mode == "" {
