@@ -243,8 +243,12 @@ func (be *Backend) reverseProxy() http.Handler {
 		for i, po := range be.PathOverrides {
 			for _, prefix := range po.Paths {
 				if cleanPath+"/" == prefix {
-					log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusMovedPermanently, userAgent(req))
-					http.Redirect(w, req, cleanPath+"/", http.StatusMovedPermanently)
+					code := http.StatusMovedPermanently
+					if req.Method == http.MethodPost {
+						code = http.StatusSeeOther
+					}
+					log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, code, userAgent(req))
+					http.Redirect(w, req, cleanPath+"/", code)
 					return
 				}
 				if !strings.HasPrefix(cleanPath, prefix) {
