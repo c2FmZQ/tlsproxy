@@ -275,7 +275,7 @@ type Backend struct {
 	Mode string `yaml:"mode"`
 	// DocumentRoot indicates local files should be served from this
 	// directory. This option is only valid when Addresses is empty.
-	DocumentRoot string `yaml:"documentRoot"`
+	DocumentRoot string `yaml:"documentRoot,omitempty"`
 	// BWLimit is the name of the bandwidth limit policy to apply to this
 	// backend. All backends using the same policy are subject to common
 	// limits.
@@ -566,7 +566,7 @@ type PathOverride struct {
 	Mode string `yaml:"mode"`
 	// DocumentRoot indicates local files should be served from this
 	// directory. This option is only valid when Addresses is empty.
-	DocumentRoot string `yaml:"documentRoot"`
+	DocumentRoot string `yaml:"documentRoot,omitempty"`
 	// BackendProto specifies which protocol to use when forwarding an HTTPS
 	// request to the backend. This field is only valid in modes HTTP and
 	// HTTPS.

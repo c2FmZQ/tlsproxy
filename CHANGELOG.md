@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Only allow GET and HEAD methods for static files.
+
 ## v0.8.0
 
 ### :star2: New features
