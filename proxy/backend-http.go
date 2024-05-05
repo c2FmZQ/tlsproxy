@@ -244,7 +244,7 @@ func (be *Backend) reverseProxy() http.Handler {
 			for _, prefix := range po.Paths {
 				if cleanPath+"/" == prefix {
 					code := http.StatusMovedPermanently
-					if req.Method == http.MethodPost {
+					if req.Method != http.MethodGet && req.Method != http.MethodHead {
 						code = http.StatusSeeOther
 					}
 					log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, code, userAgent(req))
