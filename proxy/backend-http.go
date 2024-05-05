@@ -126,6 +126,15 @@ func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, do
 		return
 	}
 
+	switch req.Method {
+	case http.MethodGet, http.MethodHead:
+	default:
+		log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusMethodNotAllowed, userAgent(req))
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	cleanPath := pathClean(req.URL.Path)
 	if cleanPath != req.URL.Path {
 		redirectPermanently(w, req, cleanPath)
