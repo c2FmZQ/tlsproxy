@@ -92,6 +92,15 @@ func (be *Backend) localHandler() http.Handler {
 	})
 }
 
+func redirectPermanently(w http.ResponseWriter, req *http.Request, url string) {
+	code := http.StatusMovedPermanently
+	if req.Method != http.MethodGet && req.Method != http.MethodHead {
+		code = http.StatusSeeOther
+	}
+	log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, code, userAgent(req))
+	http.Redirect(w, req, url, code)
+}
+
 func pathClean(p string) string {
 	if !strings.HasPrefix(p, "/") {
 		p = "/" + p
@@ -111,10 +120,6 @@ func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, do
 		log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL, http.StatusNotFound, userAgent(req))
 		http.NotFound(w, req)
 	}
-	redirect := func(u string) {
-		log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusMovedPermanently, userAgent(req))
-		http.Redirect(w, req, u, http.StatusMovedPermanently)
-	}
 
 	if docRoot == "" {
 		notFound()
@@ -123,7 +128,7 @@ func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, do
 
 	cleanPath := pathClean(req.URL.Path)
 	if cleanPath != req.URL.Path {
-		redirect(cleanPath)
+		redirectPermanently(w, req, cleanPath)
 		return
 	}
 	p := strings.TrimPrefix(cleanPath, prefix)
@@ -142,7 +147,7 @@ func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, do
 	}
 	if fi.IsDir() {
 		if !strings.HasSuffix(cleanPath, "/") {
-			redirect(cleanPath + "/")
+			redirectPermanently(w, req, cleanPath+"/")
 			return
 		}
 		p = filepath.Join(p, "index.html")
@@ -152,7 +157,7 @@ func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, do
 			return
 		}
 	} else if strings.HasSuffix(cleanPath, "/") {
-		redirect(strings.TrimSuffix(cleanPath, "/"))
+		redirectPermanently(w, req, strings.TrimSuffix(cleanPath, "/"))
 		return
 	}
 	f, err := os.Open(p)
@@ -243,12 +248,7 @@ func (be *Backend) reverseProxy() http.Handler {
 		for i, po := range be.PathOverrides {
 			for _, prefix := range po.Paths {
 				if cleanPath+"/" == prefix {
-					code := http.StatusMovedPermanently
-					if req.Method != http.MethodGet && req.Method != http.MethodHead {
-						code = http.StatusSeeOther
-					}
-					log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, code, userAgent(req))
-					http.Redirect(w, req, cleanPath+"/", code)
+					redirectPermanently(w, req, cleanPath+"/")
 					return
 				}
 				if !strings.HasPrefix(cleanPath, prefix) {
@@ -351,7 +351,7 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 			}
 			return pathSlash == h.path
 		}); hi >= 0 {
-			http.Redirect(w, req, pathSlash, http.StatusMovedPermanently)
+			redirectPermanently(w, req, pathSlash)
 			return false
 		}
 	}
