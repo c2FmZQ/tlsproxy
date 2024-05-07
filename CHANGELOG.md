@@ -5,6 +5,7 @@
 ### :wrench: Misc
 
 * Only allow GET and HEAD methods for static files.
+* Sanitize the request path before comparing to local endpoints, e.g. `//.sso` redirects to `/.sso`
 
 ## v0.8.0
 

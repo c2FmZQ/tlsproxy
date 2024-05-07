@@ -34,6 +34,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -92,13 +93,17 @@ func (be *Backend) localHandler() http.Handler {
 	})
 }
 
-func redirectPermanently(w http.ResponseWriter, req *http.Request, url string) {
+func redirectPermanently(w http.ResponseWriter, req *http.Request, path string) {
 	code := http.StatusMovedPermanently
 	if req.Method != http.MethodGet && req.Method != http.MethodHead {
 		code = http.StatusSeeOther
 	}
+	u := url.URL{
+		Path:     path,
+		RawQuery: req.URL.RawQuery,
+	}
 	log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, code, userAgent(req))
-	http.Redirect(w, req, url, code)
+	http.Redirect(w, req, u.String(), code)
 }
 
 func pathClean(p string) string {
@@ -332,14 +337,21 @@ func (be *Backend) setAltSvc(header http.Header, req *http.Request) {
 // continue.
 func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *http.Request) bool {
 	reqHost := hostFromReq(req)
-	reqPath := req.URL.Path
+	cleanPath := pathClean(req.URL.Path)
 	hi := slices.IndexFunc(be.localHandlers, func(h localHandler) bool {
 		if h.host != "" && h.host != reqHost {
 			return false
 		}
-		return h.path == reqPath || (h.matchPrefix && strings.HasPrefix(reqPath, h.path+"/"))
+		return h.path == cleanPath || (h.matchPrefix && strings.HasPrefix(cleanPath, h.path+"/"))
 	})
-	if hi >= 0 && be.localHandlers[hi].ssoBypass {
+	if hi >= 0 {
+		if !be.localHandlers[hi].ssoBypass && !be.enforceSSOPolicy(w, req) {
+			return false
+		}
+		if cleanPath != req.URL.Path {
+			redirectPermanently(w, req, cleanPath)
+			return false
+		}
 		be.setAltSvc(w.Header(), req)
 		be.localHandlers[hi].handler.ServeHTTP(w, req)
 		return false
@@ -347,13 +359,8 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 	if !be.enforceSSOPolicy(w, req) {
 		return false
 	}
-	if hi >= 0 && !be.localHandlers[hi].ssoBypass {
-		be.setAltSvc(w.Header(), req)
-		be.localHandlers[hi].handler.ServeHTTP(w, req)
-		return false
-	}
 	if hi < 0 {
-		pathSlash := reqPath + "/"
+		pathSlash := cleanPath + "/"
 		if hi := slices.IndexFunc(be.localHandlers, func(h localHandler) bool {
 			if h.host != "" && h.host != reqHost {
 				return false
