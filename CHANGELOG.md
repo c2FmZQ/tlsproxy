@@ -1,5 +1,15 @@
 # TLSPROXY Release Notes
 
+
+## next
+
+### :star2: Feature improvements
+
+* Only allow GET and HEAD methods for static files.
+* Sanitize the request path before comparing to local endpoints, e.g. `//.sso` redirects to `/.sso`
+
+### :wrench: Misc
+
 * Update go: 1.22.3
 * Update go dependencies:
   * upgraded github.com/google/pprof v0.0.0-20240422182052-72c8669ad3e7 => v0.0.0-20240507183855-6f11f98ebb1c
@@ -10,23 +20,6 @@
   * upgraded golang.org/x/sys v0.19.0 => v0.20.0
   * upgraded golang.org/x/text v0.14.0 => v0.15.0
   * upgraded golang.org/x/tools v0.20.0 => v0.21.0
-* Update go dependencies in examples/backend:
-  * upgraded github.com/c2FmZQ/tlsproxy v0.6.4 => v0.8.0
-  * upgraded github.com/google/pprof v0.0.0-20240422182052-72c8669ad3e7 => v0.0.0-20240507183855-6f11f98ebb1c
-  * upgraded github.com/onsi/ginkgo/v2 v2.17.1 => v2.17.3
-  * upgraded github.com/quic-go/quic-go v0.42.0 => v0.43.1
-  * upgraded golang.org/x/crypto v0.22.0 => v0.23.0
-  * upgraded golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f => v0.0.0-20240506185415-9bf2ced13842
-  * upgraded golang.org/x/net v0.24.0 => v0.25.0
-  * upgraded golang.org/x/sys v0.19.0 => v0.20.0
-  * upgraded golang.org/x/text v0.14.0 => v0.15.0
-  * upgraded golang.org/x/tools v0.20.0 => v0.21.0
-## next
-
-### :wrench: Misc
-
-* Only allow GET and HEAD methods for static files.
-* Sanitize the request path before comparing to local endpoints, e.g. `//.sso` redirects to `/.sso`
 
 ## v0.8.0
 
