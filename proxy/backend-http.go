@@ -258,6 +258,7 @@ func (be *Backend) reverseProxy() http.Handler {
 		override := ""
 		proxyProtoVersion := be.proxyProtocolVersion
 		cleanPath := pathClean(req.URL.Path)
+		sanitizePath := be.SanitizePath == nil || *be.SanitizePath
 	L:
 		for i, po := range be.PathOverrides {
 			for _, prefix := range po.Paths {
@@ -271,6 +272,9 @@ func (be *Backend) reverseProxy() http.Handler {
 				if len(po.Addresses) == 0 {
 					be.serveStaticFiles(w, req, po.DocumentRoot, prefix)
 					return
+				}
+				if po.SanitizePath != nil {
+					sanitizePath = *po.SanitizePath
 				}
 				ctx = context.WithValue(ctx, ctxOverrideIDKey, i)
 				override = fmt.Sprintf("%d", i)
@@ -309,6 +313,9 @@ func (be *Backend) reverseProxy() http.Handler {
 		hops = append(hops, req.Proto+" "+me)
 		req.Header.Set(viaHeader, strings.Join(hops, ", "))
 
+		if sanitizePath {
+			req.URL.Path = cleanPath
+		}
 		reverseProxy.ServeHTTP(w, req.WithContext(ctx))
 	})
 }

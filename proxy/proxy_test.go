@@ -112,6 +112,8 @@ func TestProxyBackends(t *testing.T) {
 	// Backend with TCP and proxy protocol
 	be13 := newProxyProtocolServer(t, ctx, "backend12", nil)
 
+	trueValue := true
+
 	cfg := &Config{
 		MaxOpen: 100,
 		PKI: []*ConfigPKI{
@@ -214,7 +216,20 @@ func TestProxyBackends(t *testing.T) {
 						ForwardRootCAs:    []string{intCA.RootCAPEM()},
 						ForwardServerName: "https-internal.example.com",
 					},
+					{
+						Paths: []string{
+							"/bar/",
+						},
+						Addresses: []string{
+							be9.String(),
+						},
+						Mode:              "HTTPS",
+						ForwardRootCAs:    []string{intCA.RootCAPEM()},
+						ForwardServerName: "https-internal.example.com",
+						SanitizePath:      &trueValue,
+					},
 				},
+				SanitizePath: new(bool), // false
 			},
 			// HTTPS
 			{
@@ -349,8 +364,12 @@ func TestProxyBackends(t *testing.T) {
 		{desc: "Unknown server name", host: "foo.example.com", expError: true},
 		{desc: "Hit backend7", host: "passthrough.example.com", want: "Hello from backend7\n"},
 		{desc: "Hit backend8", host: "http.example.com", want: "[backend8] /", http: "/"},
+		{desc: "Hit backend8 /abc/.../xyz/", host: "http.example.com", want: "[backend8] /abc/.../xyz/", http: "/abc/.../xyz/"},
 		{desc: "Hit backend8 /foo", host: "http.example.com", want: "[backend9] /foo/", http: "/foo"},
+		{desc: "Hit backend8 /foo//", host: "http.example.com", want: "[backend9] /foo//", http: "/foo//"},
+		{desc: "Hit backend8 /bar//", host: "http.example.com", want: "[backend9] /bar/", http: "/bar//"},
 		{desc: "Hit backend9", host: "https.example.com", want: "[backend9] /", http: "/", certName: "client.example.com"},
+		{desc: "Hit backend9 /abc/../xyz/", host: "https.example.com", want: "[backend9] /xyz/", http: "/abc/../xyz/", certName: "client.example.com"},
 		{desc: "Hit backend10", host: "tls-pki.example.com", want: "Hello from backend10\n", certName: "client.example.com"},
 		{desc: "Hit backend11", host: "http-proxy.example.com", want: "[backend11] LOCALADDR /", http: "/"},
 		{desc: "Hit backend12", host: "https-proxy.example.com", want: "[backend12] LOCALADDR /", http: "/"},

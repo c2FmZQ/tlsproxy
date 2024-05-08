@@ -315,6 +315,17 @@ type Backend struct {
 	// By default, the proxy protocol is not enabled.
 	// See https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt
 	ProxyProtocolVersion string `yaml:"proxyProtocolVersion,omitempty"`
+	// SanitizePath indicates that the request's path should be sanitized
+	// before forwarding the request to the backend. The default is true.
+	// The only reason to set this field is if the backend service somehow
+	// depends on the unsanitized version of the path.
+	//
+	// Examples:
+	//   // -> /
+	//   /. -> /
+	//   /foo/../bar -> /bar
+	//   /../../ -> /
+	SanitizePath *bool `yaml:"sanitizePath,omitempty"`
 
 	// TCP connections consist of two streams of data:
 	//
@@ -597,6 +608,9 @@ type PathOverride struct {
 	// By default, the proxy protocol is not enabled.
 	// See https://www.haproxy.org/download/2.3/doc/proxy-protocol.txt
 	ProxyProtocolVersion string `yaml:"proxyProtocolVersion,omitempty"`
+	// SanitizePath indicates that the request's path should be sanitized
+	// before forwarding the request to the backend.
+	SanitizePath *bool `yaml:"sanitizePath,omitempty"`
 
 	forwardRootCAs       *x509.CertPool
 	proxyProtocolVersion byte

@@ -7,6 +7,7 @@
 
 * Only allow GET and HEAD methods for static files.
 * Sanitize the request path before comparing to local endpoints, e.g. `//.sso` redirects to `/.sso`
+* Add a `sanitizePath` option to backends. When true (default), request paths are sanitized before they are sent to the backends.
 
 ### :wrench: Misc
 
