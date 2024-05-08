@@ -1,9 +1,9 @@
 # TLSPROXY Release Notes
 
 
-## next
+## v0.8.1
 
-### :star2: Feature improvements
+### :star: Feature improvements
 
 * Only allow GET and HEAD methods for static files.
 * Sanitize the request path before comparing to local endpoints, e.g. `//.sso` redirects to `/.sso`
