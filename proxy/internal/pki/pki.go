@@ -382,7 +382,7 @@ func (m *PKIManager) maybeRotateDelegateCert() error {
 		needUpdate = true
 	} else {
 		c, err := m.db.DelegateCerts[0].parse()
-		if err != nil || c.NotBefore.Add(c.NotAfter.Sub(c.NotBefore)/2).Before(now) {
+		if err != nil || c.NotBefore.Add(c.NotAfter.Sub(c.NotBefore)/2).Before(now) || c.PublicKeyAlgorithm == x509.Ed25519 {
 			needUpdate = true
 		}
 	}
@@ -395,7 +395,12 @@ func (m *PKIManager) maybeRotateDelegateCert() error {
 		return err
 	}
 
-	delegateKey, keyBytes, err := m.generateKey(m.opts.KeyType)
+	kt := m.opts.KeyType
+	if kt == "ed25519" {
+		// The OCSP code only supports RSA and ECDSA.
+		kt = "ecdsa-p256"
+	}
+	delegateKey, keyBytes, err := m.generateKey(kt)
 	if err != nil {
 		return err
 	}

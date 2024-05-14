@@ -1,5 +1,10 @@
 # TLSPROXY Release Notes
 
+## Next
+
+### :wrench: Bug fix
+
+* Sign OCSP responses with RSA or ECDSA keys.
 
 ## v0.8.1
 
