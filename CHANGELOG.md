@@ -5,6 +5,10 @@
 ### :wrench: Bug fix
 
 * Sign OCSP responses with RSA or ECDSA keys.
+* Update go dependencies:
+  * upgraded github.com/beevik/etree v1.3.0 => v1.4.0
+  * upgraded github.com/google/pprof v0.0.0-20240507183855-6f11f98ebb1c => v0.0.0-20240509144519-723abb6459b7
+  * upgraded github.com/quic-go/quic-go v0.43.1 => v0.44.0
 
 ## v0.8.1
 

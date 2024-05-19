@@ -3,7 +3,7 @@ module github.com/c2FmZQ/tlsproxy
 go 1.22.1
 
 require (
-	github.com/beevik/etree v1.3.0
+	github.com/beevik/etree v1.4.0
 	github.com/c2FmZQ/storage v0.2.2
 	github.com/c2FmZQ/tpm v0.3.0
 	github.com/fxamacker/cbor/v2 v2.6.0
@@ -12,7 +12,7 @@ require (
 	github.com/google/go-tpm-tools v0.4.3
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/pires/go-proxyproto v0.7.0
-	github.com/quic-go/quic-go v0.43.1
+	github.com/quic-go/quic-go v0.44.0
 	github.com/russellhaering/goxmldsig v1.4.0
 	golang.org/x/crypto v0.23.0
 	golang.org/x/net v0.25.0
@@ -25,7 +25,7 @@ require (
 require (
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/google/go-tpm v0.9.0 // indirect
-	github.com/google/pprof v0.0.0-20240507183855-6f11f98ebb1c // indirect
+	github.com/google/pprof v0.0.0-20240509144519-723abb6459b7 // indirect
 	github.com/jonboulle/clockwork v0.4.0 // indirect
 	github.com/onsi/ginkgo/v2 v2.17.3 // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect
