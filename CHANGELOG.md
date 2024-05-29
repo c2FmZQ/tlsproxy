@@ -1,5 +1,15 @@
 # TLSPROXY Release Notes
 
+* Update go dependencies:
+  * upgraded github.com/google/pprof v0.0.0-20240509144519-723abb6459b7 => v0.0.0-20240528025155-186aa0362fba
+  * upgraded github.com/onsi/ginkgo/v2 v2.17.3 => v2.19.0
+  * upgraded golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842 => v0.0.0-20240529005216-23cca8864a10
+* Update go dependencies in examples/backend:
+  * upgraded github.com/c2FmZQ/tlsproxy v0.8.1 => v0.8.2
+  * upgraded github.com/goccy/go-json v0.10.2 => v0.10.3
+  * upgraded github.com/google/pprof v0.0.0-20240509144519-723abb6459b7 => v0.0.0-20240528025155-186aa0362fba
+  * upgraded github.com/onsi/ginkgo/v2 v2.17.3 => v2.19.0
+  * upgraded golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842 => v0.0.0-20240529005216-23cca8864a10
 ## v0.8.2
 
 ### :wrench: Bug fix
