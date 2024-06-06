@@ -1,5 +1,12 @@
 # TLSPROXY Release Notes
 
+## Next
+
+### :wrench: Misc
+
+* Update go dependencies:
+  * upgraded github.com/quic-go/quic-go v0.44.0 => v0.45.0
+
 ## v0.8.3
 
 ### :wrench: Misc
