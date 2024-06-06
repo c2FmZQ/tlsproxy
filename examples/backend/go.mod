@@ -7,7 +7,7 @@ require (
 	github.com/c2FmZQ/tlsproxy v0.8.2
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/lestrrat-go/jwx v1.2.29
-	github.com/quic-go/quic-go v0.44.0
+	github.com/quic-go/quic-go v0.45.0
 )
 
 require (
@@ -16,7 +16,6 @@ require (
 	github.com/goccy/go-json v0.10.3 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/google/pprof v0.0.0-20240528025155-186aa0362fba // indirect
-	github.com/kr/pretty v0.3.1 // indirect
 	github.com/lestrrat-go/backoff/v2 v2.0.8 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.2 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect

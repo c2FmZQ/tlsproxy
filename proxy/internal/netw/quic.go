@@ -235,11 +235,11 @@ func (c *QUICConn) HandshakeComplete() <-chan struct{} {
 	return ch
 }
 
-func (c *QUICConn) NextConnection() quic.Connection {
+func (c *QUICConn) NextConnection(ctx context.Context) (quic.Connection, error) {
 	if cc, ok := c.qc.(quic.EarlyConnection); ok {
-		return cc.NextConnection()
+		return cc.NextConnection(ctx)
 	}
-	return c.qc
+	return c.qc, nil
 }
 
 func (c *QUICConn) TLSConnectionState() tls.ConnectionState {
