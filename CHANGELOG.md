@@ -5,6 +5,10 @@
 ### :wrench: Misc
 
 * Update go dependencies:
+  * upgraded github.com/c2FmZQ/storage v0.2.2 => v0.2.3
+  * upgraded github.com/c2FmZQ/tpm v0.3.0 => v0.3.1
+  * upgraded github.com/google/go-tpm-tools v0.4.3 => v0.4.4
+  * upgraded github.com/google/go-tpm v0.9.0 => v0.9.1
   * upgraded github.com/quic-go/quic-go v0.44.0 => v0.45.0
 
 ## v0.8.3
