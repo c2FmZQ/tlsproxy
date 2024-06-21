@@ -204,6 +204,9 @@ func TestProxyBackends(t *testing.T) {
 					be8.String(),
 				},
 				Mode: "HTTP",
+				ForwardHTTPHeaders: map[string]string{
+					"x-test": "foo",
+				},
 				PathOverrides: []*PathOverride{
 					{
 						Paths: []string{
@@ -215,6 +218,9 @@ func TestProxyBackends(t *testing.T) {
 						Mode:              "HTTPS",
 						ForwardRootCAs:    []string{intCA.RootCAPEM()},
 						ForwardServerName: "https-internal.example.com",
+						ForwardHTTPHeaders: &map[string]string{
+							"x-test": "bar",
+						},
 					},
 					{
 						Paths: []string{
@@ -368,6 +374,9 @@ func TestProxyBackends(t *testing.T) {
 		{desc: "Hit backend8 /foo", host: "http.example.com", want: "[backend9] /foo/", http: "/foo"},
 		{desc: "Hit backend8 /foo//", host: "http.example.com", want: "[backend9] /foo//", http: "/foo//"},
 		{desc: "Hit backend8 /bar//", host: "http.example.com", want: "[backend9] /bar/", http: "/bar//"},
+		{desc: "Hit backend8 header", host: "http.example.com", want: "[backend8] /?header=x-test\nx-test=foo\n", http: "/?header=x-test"},
+		{desc: "Hit backend8 header /foo", host: "http.example.com", want: "[backend9] /foo/?header=x-test\nx-test=bar\n", http: "/foo/?header=x-test"},
+		{desc: "Hit backend8 header /bar", host: "http.example.com", want: "[backend9] /bar/?header=x-test\nx-test=foo\n", http: "/bar/?header=x-test"},
 		{desc: "Hit backend9", host: "https.example.com", want: "[backend9] /", http: "/", certName: "client.example.com"},
 		{desc: "Hit backend9 /abc/../xyz/", host: "https.example.com", want: "[backend9] /xyz/", http: "/abc/../xyz/", certName: "client.example.com"},
 		{desc: "Hit backend10", host: "tls-pki.example.com", want: "Hello from backend10\n", certName: "client.example.com"},
@@ -1205,6 +1214,10 @@ func newHTTPServer(t *testing.T, ctx context.Context, name string, ca *certmanag
 				t.Logf("[%s] %s: %s", name, xFCCHeader, v)
 			}
 			fmt.Fprintf(w, "[%s] %s\n", name, r.RequestURI)
+			r.ParseForm()
+			if h := r.Form.Get("header"); h != "" {
+				fmt.Fprintf(w, "%s=%s\n", h, r.Header.Get(h))
+			}
 		}),
 		ErrorLog: log.New(os.Stderr, "["+name+"] ", 0),
 	}

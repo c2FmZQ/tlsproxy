@@ -2,6 +2,10 @@
 
 ## Next
 
+### :star: Feature improvements
+
+* Add `forwardHttpHeaders` to set HTTP headers in the forwarded HTTP requests. Headers that already exist are overwritten.
+
 ### :wrench: Misc
 
 * Update go dependencies:
