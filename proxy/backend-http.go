@@ -257,6 +257,7 @@ func (be *Backend) reverseProxy() http.Handler {
 		// other addresses.
 		override := ""
 		proxyProtoVersion := be.proxyProtocolVersion
+		httpHeaders := be.ForwardHTTPHeaders
 		cleanPath := pathClean(req.URL.Path)
 		sanitizePath := be.SanitizePath == nil || *be.SanitizePath
 	L:
@@ -275,6 +276,9 @@ func (be *Backend) reverseProxy() http.Handler {
 				}
 				if po.SanitizePath != nil {
 					sanitizePath = *po.SanitizePath
+				}
+				if po.ForwardHTTPHeaders != nil {
+					httpHeaders = *po.ForwardHTTPHeaders
 				}
 				ctx = context.WithValue(ctx, ctxOverrideIDKey, i)
 				override = fmt.Sprintf("%d", i)
@@ -315,6 +319,16 @@ func (be *Backend) reverseProxy() http.Handler {
 
 		if sanitizePath {
 			req.URL.Path = cleanPath
+		}
+		for k, v := range httpHeaders {
+			if v != "" {
+				req.Header.Set(k, v)
+				if strings.ToLower(k) == strings.ToLower(hostHeader) {
+					req.Host = v
+				}
+			} else {
+				req.Header.Del(k)
+			}
 		}
 		reverseProxy.ServeHTTP(w, req.WithContext(ctx))
 	})
