@@ -306,6 +306,10 @@ type Backend struct {
 	// long to wait before trying the next address in the list. The default
 	// value is 30 seconds.
 	ForwardTimeout time.Duration `yaml:"forwardTimeout"`
+	// ForwardHTTPHeaders is a list of HTTP headers to add to the forwarded
+	// request. Headers that already exist are overwritten.
+	ForwardHTTPHeaders map[string]string `yaml:"forwardHttpHeaders,omitempty"`
+
 	// PathOverrides specifies different backend parameters for some path
 	// prefixes.
 	// Paths are matched by prefix in the order that they are listed here.
@@ -608,6 +612,9 @@ type PathOverride struct {
 	// By default, the proxy protocol is not enabled.
 	// See https://www.haproxy.org/download/2.3/doc/proxy-protocol.txt
 	ProxyProtocolVersion string `yaml:"proxyProtocolVersion,omitempty"`
+	// ForwardHTTPHeaders is a list of HTTP headers to add to the forwarded
+	// request. Headers that already exist are overwritten.
+	ForwardHTTPHeaders *map[string]string `yaml:"forwardHttpHeaders,omitempty"`
 	// SanitizePath indicates that the request's path should be sanitized
 	// before forwarding the request to the backend.
 	SanitizePath *bool `yaml:"sanitizePath,omitempty"`
