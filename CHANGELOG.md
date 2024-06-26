@@ -1,5 +1,14 @@
 # TLSPROXY Release Notes
 
+* Update go dependencies:
+  * upgraded github.com/fxamacker/cbor/v2 v2.6.0 => v2.7.0
+  * upgraded github.com/google/pprof v0.0.0-20240528025155-186aa0362fba => v0.0.0-20240625030939-27f56978b8b0
+  * upgraded golang.org/x/exp v0.0.0-20240604190554-fc45aab8b7f8 => v0.0.0-20240613232115-7f521ea00fb8
+* Update go dependencies in examples/backend:
+  * upgraded github.com/c2FmZQ/tlsproxy v0.8.2 => v0.9.1
+  * upgraded github.com/google/pprof v0.0.0-20240528025155-186aa0362fba => v0.0.0-20240625030939-27f56978b8b0
+  * upgraded github.com/quic-go/quic-go v0.45.0 => v0.45.1
+  * upgraded golang.org/x/exp v0.0.0-20240604190554-fc45aab8b7f8 => v0.0.0-20240613232115-7f521ea00fb8
 ## v0.9.1
 
 ### :wrench: Misc
