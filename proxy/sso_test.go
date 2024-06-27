@@ -106,6 +106,9 @@ func TestSSOEnforceOIDC(t *testing.T) {
 								Provider:         "test-idp",
 								GenerateIDTokens: true,
 							},
+							ForwardHTTPHeaders: map[string]string{
+								"x-test": "FOO ${SERVER_NAME} ${NETWORK} // ${JWT:email}",
+							},
 						},
 						{
 							ServerNames: []string{
@@ -208,6 +211,16 @@ func TestSSOEnforceOIDC(t *testing.T) {
 			}
 			if got, want := len(cookies), 0; got != want {
 				t.Errorf("len(cookies) = %v, want %v", got, want)
+			}
+
+			hdr = http.Header{}
+			hdr.Set("Authorization", "Bearer "+cookies["TLSPROXYIDTOKEN"])
+			code, body, cookies = get("https://https.example.com/?header=x-test", hdr)
+			if got, want := code, 200; got != want {
+				t.Errorf("Code = %v, want %v", got, want)
+			}
+			if got, want := body, "[https-server] /?header=x-test\nx-test=FOO https.example.com tcp // bob@example.com\n"; got != want {
+				t.Errorf("Body = %v, want %v", got, want)
 			}
 		})
 	}

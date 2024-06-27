@@ -719,6 +719,59 @@ func TestConcurrency(t *testing.T) {
 	}
 }
 
+func TestBackendHTTPHeaders(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+
+	be := newHTTPServer(t, ctx, "backend", nil)
+
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: "localhost:0",
+			TLSAddr:  "localhost:0",
+			CacheDir: t.TempDir(),
+			MaxOpen:  100,
+			Backends: []*Backend{
+				// HTTP
+				{
+					ServerNames: []string{
+						"www.example.com",
+					},
+					Addresses: []string{
+						be.String(),
+					},
+					Mode: "HTTP",
+					ForwardHTTPHeaders: map[string]string{
+						"x-test": "FOO ${REMOTE_ADDR} ${SERVER_NAME} ${NETWORK} // ${JWT:email}",
+					},
+				},
+			},
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+
+	get := func(httpPath string) (string, string, error) {
+		return httpGet("www.example.com", proxy.listener.Addr().String(), httpPath, extCA, nil)
+	}
+
+	got, localAddr, err := get("/?header=x-test")
+	if err != nil {
+		t.Fatalf("Got err: %v, body: %q", err, got)
+	}
+	want := "HTTP/2.0 200 OK\n[backend] /?header=x-test\nx-test=FOO " + localAddr + " www.example.com tcp //\n"
+	if got != want {
+		t.Errorf("Body = %q, want %q", got, want)
+	}
+}
+
 func TestBandwidthLimit(t *testing.T) {
 	t.Skip()
 	ctx, cancel := context.WithCancel(context.Background())
