@@ -1,5 +1,18 @@
 # TLSPROXY Release Notes
 
+## Next
+
+### :star: Feature improvements
+
+* When `forwardHttpHeaders` is used, special keywords are automatically expanded from the header values:
+  * `${NETWORK}` is either tcp or udp.
+  * `${LOCAL_ADDR}` is the local address of the network connection.
+  * `${REMOTE_ADDR}` is the remote address of the network connection.
+  * `${LOCAL_IP}` is the local IP address of the network connection.
+  * `${REMOTE_IP}` is the remote IP address of the network connection.
+  * `${SERVER_NAME}` is the server name requested by the client.
+  * `${JWT:xxxx}` expands to the value of claim `xxxx` from the ID token.
+
 ## v0.9.1
 
 ### :wrench: Misc
