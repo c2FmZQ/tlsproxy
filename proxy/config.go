@@ -556,6 +556,11 @@ type BackendSSO struct {
 	Paths []string `yaml:"paths,omitempty"`
 	// SetUserIDHeader indicates that the x-tlsproxy-user-id header should
 	// be set with the email address of the user.
+	//
+	// This is equivalent to:
+	//   ForwardHTTPHeaders: map[string]string{
+	//       "x-tlsproxy-user-id": "${JWT:email}",
+	//   }
 	SetUserIDHeader bool `yaml:"setUserIdHeader,omitempty"`
 	// GenerateIDTokens indicates that the proxy should generate ID tokens
 	// for authenticated users.
@@ -614,6 +619,15 @@ type PathOverride struct {
 	ProxyProtocolVersion string `yaml:"proxyProtocolVersion,omitempty"`
 	// ForwardHTTPHeaders is a list of HTTP headers to add to the forwarded
 	// request. Headers that already exist are overwritten.
+	//
+	// Special keywords are automatically expanded from the header values:
+	//   ${NETWORK} is either tcp or udp.
+	//   ${LOCAL_ADDR} is the local address of the network connection.
+	//   ${REMOTE_ADDR} is the remote address of the network connection.
+	//   ${LOCAL_IP} is the local IP address of the network connection.
+	//   ${REMOTE_IP} is the remote IP address of the network connection.
+	//   ${SERVER_NAME} is the server name requested by the client.
+	//   ${JWT:xxxx} expands to the value of claim xxxx from the ID token.
 	ForwardHTTPHeaders *map[string]string `yaml:"forwardHttpHeaders,omitempty"`
 	// SanitizePath indicates that the request's path should be sanitized
 	// before forwarding the request to the backend.

@@ -321,6 +321,7 @@ func (be *Backend) reverseProxy() http.Handler {
 			req.URL.Path = cleanPath
 		}
 		for k, v := range httpHeaders {
+			v = be.expandVars(v, req)
 			if v != "" {
 				req.Header.Set(k, v)
 				if strings.ToLower(k) == strings.ToLower(hostHeader) {
@@ -331,6 +332,46 @@ func (be *Backend) reverseProxy() http.Handler {
 			}
 		}
 		reverseProxy.ServeHTTP(w, req.WithContext(ctx))
+	})
+}
+
+func addr2ip(addr net.Addr) string {
+	switch a := addr.(type) {
+	case *net.TCPAddr:
+		return a.IP.String()
+	case *net.UDPAddr:
+		return a.IP.String()
+	default:
+		return ""
+	}
+}
+
+func (be *Backend) expandVars(s string, req *http.Request) string {
+	ctx := req.Context()
+	claims := claimsFromCtx(ctx)
+	conn := ctx.Value(connCtxKey).(anyConn)
+	return os.Expand(s, func(n string) string {
+		switch n {
+		case "NETWORK":
+			return conn.LocalAddr().Network()
+		case "LOCAL_ADDR":
+			return conn.LocalAddr().String()
+		case "REMOTE_ADDR":
+			return conn.RemoteAddr().String()
+		case "LOCAL_IP":
+			return addr2ip(conn.LocalAddr())
+		case "REMOTE_IP":
+			return addr2ip(conn.RemoteAddr())
+		case "SERVER_NAME":
+			return idnaToUnicode(connServerName(conn))
+		default:
+			if strings.HasPrefix(n, "JWT:") {
+				if v, exists := claims[n[4:]]; exists {
+					return fmt.Sprint(v)
+				}
+			}
+			return ""
+		}
 	})
 }
 
