@@ -321,7 +321,7 @@ func (be *Backend) reverseProxy() http.Handler {
 			req.URL.Path = cleanPath
 		}
 		for k, v := range httpHeaders {
-			v = be.expandVars(v, req)
+			v = expandVars(v, req)
 			if v != "" {
 				req.Header.Set(k, v)
 				if strings.ToLower(k) == strings.ToLower(hostHeader) {
@@ -346,7 +346,7 @@ func addr2ip(addr net.Addr) string {
 	}
 }
 
-func (be *Backend) expandVars(s string, req *http.Request) string {
+func expandVars(s string, req *http.Request) string {
 	ctx := req.Context()
 	claims := claimsFromCtx(ctx)
 	conn := ctx.Value(connCtxKey).(anyConn)

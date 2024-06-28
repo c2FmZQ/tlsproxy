@@ -67,9 +67,7 @@ func annotatedConn(c anyConn) annotatedConnection {
 	switch c := c.(type) {
 	case *tls.Conn:
 		return netwConn(c.NetConn())
-	case *netw.Conn:
-		return c
-	case *netw.QUICConn:
+	case annotatedConnection:
 		return c
 	default:
 		panic(c)
