@@ -13,6 +13,14 @@
   * `${SERVER_NAME}` is the server name requested by the client.
   * `${JWT:xxxx}` expands to the value of claim `xxxx` from the ID token.
 
+### :wrench: Misc
+
+* Update go: 1.22.5
+* Update go dependencies:
+  * upgraded github.com/fxamacker/cbor/v2 v2.6.0 => v2.7.0
+  * upgraded github.com/google/pprof v0.0.0-20240528025155-186aa0362fba => v0.0.0-20240625030939-27f56978b8b0
+  * upgraded golang.org/x/exp v0.0.0-20240604190554-fc45aab8b7f8 => v0.0.0-20240613232115-7f521ea00fb8
+
 ## v0.9.1
 
 ### :wrench: Misc
