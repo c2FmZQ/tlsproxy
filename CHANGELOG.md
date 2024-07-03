@@ -1,10 +1,16 @@
 # TLSPROXY Release Notes
 
+## v0.10.2
+
+### :wrench: Misc
+
+* Same as v0.10.0. The v0.10.0 docker image was created before the golang linux/amd64 was ready. So, it used linux/386 instead. v0.10.2 should be OK.
+
 ## v0.10.1
 
 ### :wrench: Misc
 
-* Same as v0.10.0. The v0.10.0 docker image was create before the golang linux/amd64 was ready. So, it used linux/386 instead. v0.10.1 should be OK.
+* Same as v0.10.0. ~The v0.10.0 docker image was created before the golang linux/amd64 was ready. So, it used linux/386 instead. v0.10.1 should be OK.~
 
 ## v0.10.0
 
