@@ -1,5 +1,7 @@
 # TLSPROXY Release Notes
 
+* Update go dependencies in examples/backend:
+  * upgraded github.com/c2FmZQ/tlsproxy v0.9.1 => v0.10.2
 ## v0.10.2
 
 ### :wrench: Misc
