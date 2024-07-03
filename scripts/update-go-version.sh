@@ -5,7 +5,7 @@
 latest=$(curl -s 'https://go.dev/dl/?mode=json' | jq -r '.[].stable = true | .[].version' | head -n 1)
 version="${latest#go}"
 if [[ "${latest}" =~ ^go ]]; then
-  sed -i -re "s/^FROM golang:.*/FROM golang:${version}-alpine3.19 AS build/" Dockerfile
+  sed -i -re "s/^FROM golang:.*/FROM golang:${version}-alpine3.20 AS build/" Dockerfile
   echo "${version}" > .goversion
 fi
 
