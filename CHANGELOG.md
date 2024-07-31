@@ -1,5 +1,16 @@
 # TLSPROXY Release Notes
 
+* Update go dependencies:
+  * upgraded github.com/beevik/etree v1.4.0 => v1.4.1
+  * upgraded github.com/google/pprof v0.0.0-20240625030939-27f56978b8b0 => v0.0.0-20240727154555-813a5fbdbec8
+  * upgraded github.com/onsi/ginkgo/v2 v2.19.0 => v2.19.1
+  * upgraded golang.org/x/exp v0.0.0-20240707233637-46b078467d37 => v0.0.0-20240719175910-8a7402abbf56
+* Update go dependencies in examples/backend:
+  * upgraded github.com/blend/go-sdk v1.20220411.3 => v1.20240719.1
+  * upgraded github.com/google/pprof v0.0.0-20240625030939-27f56978b8b0 => v0.0.0-20240727154555-813a5fbdbec8
+  * upgraded github.com/lestrrat-go/jwx v1.2.29 => v1.2.30
+  * upgraded github.com/onsi/ginkgo/v2 v2.19.0 => v2.19.1
+  * upgraded golang.org/x/exp v0.0.0-20240707233637-46b078467d37 => v0.0.0-20240719175910-8a7402abbf56
 ## Next
 
 ### :wrench: Misc
