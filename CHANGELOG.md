@@ -4,7 +4,9 @@
 
 ### :wrench: Misc
 
+* Pick up bug fixes in the quic-go package.
 * Update go dependencies:
+  * upgraded github.com/quic-go/quic-go v0.45.1 => v0.45.2
   * upgraded golang.org/x/crypto v0.24.0 => v0.25.0
   * upgraded golang.org/x/exp v0.0.0-20240613232115-7f521ea00fb8 => v0.0.0-20240707233637-46b078467d37
   * upgraded golang.org/x/mod v0.18.0 => v0.19.0
