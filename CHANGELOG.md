@@ -1,5 +1,9 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
 * Update go: 1.22.6
 * Update go dependencies:
   * upgraded github.com/beevik/etree v1.4.0 => v1.4.1
@@ -15,21 +19,7 @@
   * upgraded golang.org/x/text v0.16.0 => v0.17.0
   * upgraded golang.org/x/time v0.5.0 => v0.6.0
   * upgraded golang.org/x/tools v0.23.0 => v0.24.0
-* Update go dependencies in examples/backend:
-  * upgraded github.com/blend/go-sdk v1.20220411.3 => v1.20240719.1
-  * upgraded github.com/c2FmZQ/tlsproxy v0.10.2 => v0.10.3
-  * upgraded github.com/google/pprof v0.0.0-20240625030939-27f56978b8b0 => v0.0.0-20240727154555-813a5fbdbec8
-  * upgraded github.com/lestrrat-go/jwx v1.2.29 => v1.2.30
-  * upgraded github.com/onsi/ginkgo/v2 v2.19.0 => v2.19.1
-  * upgraded github.com/quic-go/quic-go v0.45.1 => v0.46.0
-  * upgraded golang.org/x/crypto v0.25.0 => v0.26.0
-  * upgraded golang.org/x/exp v0.0.0-20240707233637-46b078467d37 => v0.0.0-20240719175910-8a7402abbf56
-  * upgraded golang.org/x/mod v0.19.0 => v0.20.0
-  * upgraded golang.org/x/net v0.27.0 => v0.28.0
-  * upgraded golang.org/x/sync v0.7.0 => v0.8.0
-  * upgraded golang.org/x/sys v0.22.0 => v0.23.0
-  * upgraded golang.org/x/text v0.16.0 => v0.17.0
-  * upgraded golang.org/x/tools v0.23.0 => v0.24.0
+
 ## v0.10.3
 
 ### :wrench: Misc
