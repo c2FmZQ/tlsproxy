@@ -166,7 +166,7 @@ func (tm *TokenManager) rotateKeys() (retErr error) {
 		}
 		k.privKey = privKey.(privateKey)
 	}
-	slices.DeleteFunc(keys.Keys, func(k *tokenKey) bool {
+	keys.Keys = slices.DeleteFunc(keys.Keys, func(k *tokenKey) bool {
 		return k.privKey == nil
 	})
 	tm.mu.Lock()
