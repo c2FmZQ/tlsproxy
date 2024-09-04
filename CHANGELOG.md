@@ -1,5 +1,16 @@
 # TLSPROXY Release Notes
 
+* Update go dependencies:
+  * upgraded github.com/google/pprof v0.0.0-20240727154555-813a5fbdbec8 => v0.0.0-20240903155634-a8630aee4ab9
+  * upgraded github.com/onsi/ginkgo/v2 v2.20.0 => v2.20.2
+  * upgraded github.com/quic-go/qpack v0.4.0 => v0.5.0
+  * upgraded golang.org/x/exp v0.0.0-20240808152545-0cdaa3abc0fa => v0.0.0-20240823005443-9b4947da3948
+  * upgraded software.sslmate.com/src/go-pkcs12 v0.4.0 => v0.5.0
+* Update go dependencies in examples/backend:
+  * upgraded github.com/google/pprof v0.0.0-20240727154555-813a5fbdbec8 => v0.0.0-20240903155634-a8630aee4ab9
+  * upgraded github.com/onsi/ginkgo/v2 v2.20.0 => v2.20.2
+  * upgraded github.com/quic-go/qpack v0.4.0 => v0.5.0
+  * upgraded golang.org/x/exp v0.0.0-20240808152545-0cdaa3abc0fa => v0.0.0-20240823005443-9b4947da3948
 ## unreleased
 
 ### :wrench: Misc
