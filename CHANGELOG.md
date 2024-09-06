@@ -1,36 +1,21 @@
 # TLSPROXY Release Notes
 
-* Update go: 1.23.1
-* Update go dependencies:
-  * upgraded github.com/google/pprof v0.0.0-20240727154555-813a5fbdbec8 => v0.0.0-20240903155634-a8630aee4ab9
-  * upgraded github.com/onsi/ginkgo/v2 v2.20.0 => v2.20.2
-  * upgraded github.com/quic-go/qpack v0.4.0 => v0.5.0
-  * upgraded golang.org/x/crypto v0.26.0 => v0.27.0
-  * upgraded golang.org/x/exp v0.0.0-20240808152545-0cdaa3abc0fa => v0.0.0-20240904232852-e7e105dedf7e
-  * upgraded golang.org/x/mod v0.20.0 => v0.21.0
-  * upgraded golang.org/x/net v0.28.0 => v0.29.0
-  * upgraded golang.org/x/sys v0.24.0 => v0.25.0
-  * upgraded golang.org/x/text v0.17.0 => v0.18.0
-  * upgraded software.sslmate.com/src/go-pkcs12 v0.4.0 => v0.5.0
-* Update go dependencies in examples/backend:
-  * upgraded github.com/google/pprof v0.0.0-20240727154555-813a5fbdbec8 => v0.0.0-20240903155634-a8630aee4ab9
-  * upgraded github.com/onsi/ginkgo/v2 v2.20.0 => v2.20.2
-  * upgraded github.com/quic-go/qpack v0.4.0 => v0.5.0
-  * upgraded golang.org/x/crypto v0.26.0 => v0.27.0
-  * upgraded golang.org/x/exp v0.0.0-20240808152545-0cdaa3abc0fa => v0.0.0-20240904232852-e7e105dedf7e
-  * upgraded golang.org/x/mod v0.20.0 => v0.21.0
-  * upgraded golang.org/x/net v0.28.0 => v0.29.0
-  * upgraded golang.org/x/sys v0.24.0 => v0.25.0
-  * upgraded golang.org/x/text v0.17.0 => v0.18.0
 ## unreleased
 
 ### :wrench: Misc
 
-* Update go: 1.23.0
+* Update go: 1.23.1
 * Update go dependencies:
-  * upgraded github.com/onsi/ginkgo/v2 v2.19.1 => v2.20.0
-  * upgraded golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 => v0.0.0-20240808152545-0cdaa3abc0fa
-  * upgraded golang.org/x/sys v0.23.0 => v0.24.0
+  * upgraded github.com/google/pprof v0.0.0-20240727154555-813a5fbdbec8 => v0.0.0-20240903155634-a8630aee4ab9
+  * upgraded github.com/onsi/ginkgo/v2 v2.19.1 => v2.20.2
+  * upgraded github.com/quic-go/qpack v0.4.0 => v0.5.0
+  * upgraded golang.org/x/crypto v0.26.0 => v0.27.0
+  * upgraded golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 => v0.0.0-20240904232852-e7e105dedf7e
+  * upgraded golang.org/x/mod v0.20.0 => v0.21.0
+  * upgraded golang.org/x/net v0.28.0 => v0.29.0
+  * upgraded golang.org/x/sys v0.23.0 => v0.25.0
+  * upgraded golang.org/x/text v0.17.0 => v0.18.0
+  * upgraded software.sslmate.com/src/go-pkcs12 v0.4.0 => v0.5.0
 
 ## v0.10.4
 
