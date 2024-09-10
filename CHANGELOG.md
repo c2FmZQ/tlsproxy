@@ -1,19 +1,17 @@
 # TLSPROXY Release Notes
 
+## unreleased
+
+### :wrench: Misc
+
+* Update to quic-go [v0.47.0](https://github.com/quic-go/quic-go/releases/tag/v0.47.0). The release notes point out that a bug in go 1.23 is causing problems with quic. So, we're also setting go version in `go.mod` back to `1.22.0` for now.
 * Update go dependencies:
   * upgraded github.com/google/pprof v0.0.0-20240903155634-a8630aee4ab9 => v0.0.0-20240910150728-a0b0bb1d4134
   * upgraded github.com/quic-go/qpack v0.5.0 => v0.5.1
   * upgraded github.com/quic-go/quic-go v0.46.0 => v0.47.0
   * upgraded golang.org/x/exp v0.0.0-20240904232852-e7e105dedf7e => v0.0.0-20240909161429-701f63a606c0
   * upgraded golang.org/x/tools v0.24.0 => v0.25.0
-* Update go dependencies in examples/backend:
-  * upgraded go 1.22.1 => 1.23.0
-  * upgraded github.com/c2FmZQ/tlsproxy v0.10.4 => v0.10.5
-  * upgraded github.com/google/pprof v0.0.0-20240903155634-a8630aee4ab9 => v0.0.0-20240910150728-a0b0bb1d4134
-  * upgraded github.com/quic-go/qpack v0.5.0 => v0.5.1
-  * upgraded github.com/quic-go/quic-go v0.46.0 => v0.47.0
-  * upgraded golang.org/x/exp v0.0.0-20240904232852-e7e105dedf7e => v0.0.0-20240909161429-701f63a606c0
-  * upgraded golang.org/x/tools v0.24.0 => v0.25.0
+
 ## v0.10.5
 
 ### :wrench: Misc
