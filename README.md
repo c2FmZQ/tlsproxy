@@ -32,9 +32,9 @@ Overview of features:
 ```mermaid
 flowchart LR
   subgraph Incoming TLS or QUIC Connections
-    h1(www.example.com)
-    h2(foo.example.com)
-    h3(bar.example.com)
+    h1("web.example.com")
+    h2("foo.example.com")
+    h3("bar.example.com")
     h4(...)
   end
   prx(((TLSPROXY)))
