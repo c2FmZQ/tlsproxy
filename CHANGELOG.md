@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## unreleased
+
+### :wrench: Bug fix
+
+* Don't send `content-length: -1` to backends. This caused `400` errors in some configurations.
+
 ## v0.10.6
 
 ### :wrench: Misc
