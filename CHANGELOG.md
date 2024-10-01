@@ -1,5 +1,9 @@
 # TLSPROXY Release Notes
 
+## unreleased
+
+* Update go: 1.23.2
+
 ## v0.10.6
 
 ### :wrench: Misc
