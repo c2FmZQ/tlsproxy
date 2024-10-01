@@ -331,6 +331,10 @@ func (be *Backend) reverseProxy() http.Handler {
 				req.Header.Del(k)
 			}
 		}
+		if req.ContentLength < 0 {
+			req.ContentLength = 0
+			req.Header.Del("Content-Length")
+		}
 		reverseProxy.ServeHTTP(w, req.WithContext(ctx))
 	})
 }
