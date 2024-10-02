@@ -6,6 +6,10 @@
 
 * Don't send `content-length: -1` to backends. This caused `400` errors in some configurations.
 
+### :wrench: Misc
+
+* Update go: 1.23.2
+
 ## v0.10.6
 
 ### :wrench: Misc
