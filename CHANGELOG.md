@@ -4,7 +4,7 @@
 
 ### :wrench: Bug fix
 
-* Don't send `content-length: -1` to backends. This caused `400` errors in some configurations.
+* Don't send `content-length: -1` to backends. This caused `400` errors in some configurations. This bug was introduced in v0.10.6.
 
 ### :wrench: Misc
 
