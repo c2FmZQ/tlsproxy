@@ -10,16 +10,7 @@
   * upgraded golang.org/x/text v0.18.0 => v0.19.0
   * upgraded golang.org/x/time v0.6.0 => v0.7.0
   * upgraded golang.org/x/tools v0.25.0 => v0.26.0
-* Update go dependencies in examples/backend:
-  * upgraded go 1.23.0 => 1.23.2
-  * upgraded github.com/c2FmZQ/tlsproxy v0.10.6 => v0.10.7
-  * upgraded github.com/google/pprof v0.0.0-20241001023024-f4c0cfd0cf1d => v0.0.0-20241008150032-332c0e1a4a34
-  * upgraded golang.org/x/crypto v0.27.0 => v0.28.0
-  * upgraded golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 => v0.0.0-20241004190924-225e2abe05e6
-  * upgraded golang.org/x/net v0.29.0 => v0.30.0
-  * upgraded golang.org/x/sys v0.25.0 => v0.26.0
-  * upgraded golang.org/x/text v0.18.0 => v0.19.0
-  * upgraded golang.org/x/tools v0.25.0 => v0.26.0
+
 ## v0.10.7
 
 ### :wrench: Bug fix
