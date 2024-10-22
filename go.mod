@@ -12,7 +12,7 @@ require (
 	github.com/google/go-tpm-tools v0.4.4
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/pires/go-proxyproto v0.8.0
-	github.com/quic-go/quic-go v0.48.0
+	github.com/quic-go/quic-go v0.48.1
 	github.com/russellhaering/goxmldsig v1.4.0
 	golang.org/x/crypto v0.28.0
 	golang.org/x/net v0.30.0

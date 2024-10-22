@@ -5,7 +5,7 @@
 ### :wrench: Misc
 
 * Update go dependencies:
-  * upgraded github.com/quic-go/quic-go v0.47.0 => v0.48.0
+  * upgraded github.com/quic-go/quic-go v0.47.0 => v0.48.1
 
 ## v0.10.8
 
