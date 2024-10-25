@@ -2,6 +2,10 @@
 
 ## unreleased
 
+### :wrench: Bug fix
+
+* Another fix for `content-length: -1`. The change in v0.10.7 broke HTTP POST requests.
+
 ### :wrench: Misc
 
 * Update go dependencies:
