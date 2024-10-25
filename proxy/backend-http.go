@@ -331,7 +331,7 @@ func (be *Backend) reverseProxy() http.Handler {
 				req.Header.Del(k)
 			}
 		}
-		if req.ContentLength < 0 {
+		if req.ContentLength < 0 && req.Method != http.MethodPost && req.Method != http.MethodPut && req.Method != http.MethodPatch {
 			req.ContentLength = 0
 			req.Header.Del("Content-Length")
 		}
