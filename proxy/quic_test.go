@@ -62,6 +62,10 @@ func TestQUICConnections(t *testing.T) {
 
 	be1 := newTCPServer(t, ctx, "TCP Backend", nil)
 	be2 := newQUICServer(t, ctx, "QUIC Backend", []string{"h3", "imap"}, intCA)
+	be3 := newHTTPServer(t, ctx, "HTTPS Backend", intCA)
+	be4 := newHTTPServer(t, ctx, "HTTP Backend", nil)
+
+	h2Value := "h2"
 
 	cfg := &Config{
 		HTTPAddr: "localhost:0",
@@ -101,6 +105,30 @@ func TestQUICConnections(t *testing.T) {
 				ForwardServerName: "quic-internal.example.com",
 				ForwardRateLimit:  1000,
 			},
+			// HTTPS backend
+			{
+				ServerNames: []string{
+					"https.example.com",
+				},
+				Addresses: []string{
+					be3.String(),
+				},
+				Mode:              "HTTPS",
+				BackendProto:      &h2Value,
+				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+				ForwardServerName: "https-internal.example.com",
+			},
+			// HTTP backend
+			{
+				ServerNames: []string{
+					"http.example.com",
+				},
+				Addresses: []string{
+					be4.String(),
+				},
+				Mode:         "HTTP",
+				BackendProto: &h2Value,
+			},
 			// Local backend
 			{
 				ServerNames: []string{
@@ -131,6 +159,8 @@ func TestQUICConnections(t *testing.T) {
 		{desc: "Hit TCP backend with QUIC", host: "tcp.example.com", want: "Hello from TCP Backend\n", protos: []string{"http/1.1"}, quic: true},
 		{desc: "Hit TCP backend with TLS", host: "tcp.example.com", want: "Hello from TCP Backend\n", protos: []string{"h2"}},
 		{desc: "Hit TCP backend with QUIC", host: "tcp.example.com", want: "Hello from TCP Backend\n", protos: []string{"h2"}, quic: true},
+		{desc: "Hit HTTPS backend with QUIC", host: "https.example.com", want: "HTTP/3.0 200 OK\n[HTTPS Backend] /proxy.go\n", http: true},
+		{desc: "Hit HTTP (H2C) backend with QUIC", host: "http.example.com", want: "HTTP/3.0 200 OK\n[HTTP Backend] /proxy.go\n", http: true},
 		{desc: "Hit QUIC backend with TLS h3", host: "quic.example.com", want: "Hello from QUIC Backend\n", protos: []string{"h3"}, expError: true},
 		{desc: "Hit QUIC backend with TLS imap", host: "quic.example.com", want: "Hello from QUIC Backend\n", protos: []string{"imap"}},
 		{desc: "Hit QUIC backend with QUIC h3", host: "quic.example.com", want: "Hello from QUIC Backend\n", protos: []string{"h3"}, quic: true},
