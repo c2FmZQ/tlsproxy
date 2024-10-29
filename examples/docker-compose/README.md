@@ -20,6 +20,8 @@ tlsAddr: ":10443"
 backends:
   - serverNames:
     - photos.example.com
+    mode: http
+    backendProto: h2
     addresses:
     - c2fmzq-server:8080
 
