@@ -1216,6 +1216,10 @@ func proxyProtoGet(name, addr, msg string, rootCA *certmanager.CertManager) (str
 }
 
 func httpGet(name, addr, path string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate) (string, string, error) {
+	return httpOp(name, addr, path, "GET", nil, rootCA, clientCerts)
+}
+
+func httpOp(name, addr, path, method string, body io.ReadCloser, rootCA *certmanager.CertManager, clientCerts []tls.Certificate) (string, string, error) {
 	var localAddr string
 	var mu sync.Mutex
 	name = idnaToASCII(name)
@@ -1245,7 +1249,7 @@ func httpGet(name, addr, path string, rootCA *certmanager.CertManager, clientCer
 	if host == "" {
 		host = addr
 	}
-	req, err := http.NewRequest(http.MethodGet, "https://"+host+path, nil)
+	req, err := http.NewRequest(method, "https://"+host+path, body)
 	if err != nil {
 		return "", "", err
 	}
@@ -1280,6 +1284,9 @@ func newHTTPServer(t *testing.T, ctx context.Context, name string, ca *certmanag
 	s := &http.Server{
 		Handler: h2c.NewHandler(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Body != nil {
+					defer r.Body.Close()
+				}
 				t.Logf("[%s] ContentLength=%d", name, r.ContentLength)
 				if v := r.Header.Get(xFCCHeader); v != "" {
 					t.Logf("[%s] %s: %s", name, xFCCHeader, v)
@@ -1289,7 +1296,15 @@ func newHTTPServer(t *testing.T, ctx context.Context, name string, ca *certmanag
 						t.Errorf("[%s] Content-Length: %q", name, v)
 					}
 				}
-				fmt.Fprintf(w, "[%s] %s\n", name, r.RequestURI)
+				switch r.Method {
+				case "GET":
+					fmt.Fprintf(w, "[%s] %s\n", name, r.RequestURI)
+				case "POST":
+					b, _ := io.ReadAll(r.Body)
+					fmt.Fprintf(w, "[%s] POST %s %s\n", name, r.RequestURI, b)
+				default:
+					fmt.Fprintf(w, "[%s] %s %s\n", name, r.Method, r.RequestURI)
+				}
 				r.ParseForm()
 				if h := r.Form.Get("header"); h != "" {
 					fmt.Fprintf(w, "%s=%s\n", h, r.Header.Get(h))
