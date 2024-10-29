@@ -342,7 +342,7 @@ func (be *Backend) reverseProxy() http.Handler {
 		// HTTP servers, lighttpd in particular.
 		//
 		// To improve compatibility, we explicitly set the value to 0
-		// the HTTP method doesn't expect a body and the client didn't
+		// the HTTP methods don't expect a body and the client didn't
 		// provide a content length.
 		if req.ContentLength < 0 && req.Method != http.MethodPost && req.Method != http.MethodPut && req.Method != http.MethodPatch {
 			req.ContentLength = 0
