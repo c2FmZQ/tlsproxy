@@ -331,9 +331,25 @@ func (be *Backend) reverseProxy() http.Handler {
 				req.Header.Del(k)
 			}
 		}
+		// A value of -1 for ContentLength indicates that the size of
+		// request's body is unknown or that the client did not specify
+		// it.
+		//
+		// The http2.Transport code encodes the request differently
+		// when the content length is unknown, i.e. it doesn't set the
+		// END_STREAM flag after the headers are sent, even for GET
+		// requests. This is flagged as a protocol violation by some
+		// HTTP servers, lighttpd in particular.
+		//
+		// To improve compatibility, we explicitly set the value to 0
+		// the HTTP methods don't expect a body and the client didn't
+		// provide a content length.
 		if req.ContentLength < 0 && req.Method != http.MethodPost && req.Method != http.MethodPut && req.Method != http.MethodPatch {
 			req.ContentLength = 0
-			req.Header.Del("Content-Length")
+		}
+		if req.ContentLength == 0 && req.Body != nil {
+			req.Body.Close()
+			req.Body = nil
 		}
 		reverseProxy.ServeHTTP(w, req.WithContext(ctx))
 	})

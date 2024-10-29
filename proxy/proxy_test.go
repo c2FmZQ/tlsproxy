@@ -39,6 +39,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -49,6 +50,8 @@ import (
 	"github.com/c2FmZQ/tpm"
 	"github.com/google/go-tpm-tools/simulator"
 	"github.com/pires/go-proxyproto"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
@@ -113,6 +116,7 @@ func TestProxyBackends(t *testing.T) {
 	be13 := newProxyProtocolServer(t, ctx, "backend12", nil)
 
 	trueValue := true
+	h2Value := "h2"
 
 	cfg := &Config{
 		MaxOpen: 100,
@@ -236,6 +240,17 @@ func TestProxyBackends(t *testing.T) {
 					},
 				},
 				SanitizePath: new(bool), // false
+			},
+			// HTTP H2C
+			{
+				ServerNames: []string{
+					"h2c.example.com",
+				},
+				Addresses: []string{
+					be8.String(),
+				},
+				Mode:         "HTTP",
+				BackendProto: &h2Value,
 			},
 			// HTTPS
 			{
@@ -377,6 +392,7 @@ func TestProxyBackends(t *testing.T) {
 		{desc: "Hit backend8 header", host: "http.example.com", want: "[backend8] /?header=x-test\nx-test=foo\n", http: "/?header=x-test"},
 		{desc: "Hit backend8 header /foo", host: "http.example.com", want: "[backend9] /foo/?header=x-test\nx-test=bar\n", http: "/foo/?header=x-test"},
 		{desc: "Hit backend8 header /bar", host: "http.example.com", want: "[backend9] /bar/?header=x-test\nx-test=foo\n", http: "/bar/?header=x-test"},
+		{desc: "Hit backend8 h2c", host: "h2c.example.com", want: "[backend8] /", http: "/"},
 		{desc: "Hit backend9", host: "https.example.com", want: "[backend9] /", http: "/", certName: "client.example.com"},
 		{desc: "Hit backend9 /abc/../xyz/", host: "https.example.com", want: "[backend9] /xyz/", http: "/abc/../xyz/", certName: "client.example.com"},
 		{desc: "Hit backend10", host: "tls-pki.example.com", want: "Hello from backend10\n", certName: "client.example.com"},
@@ -1200,6 +1216,10 @@ func proxyProtoGet(name, addr, msg string, rootCA *certmanager.CertManager) (str
 }
 
 func httpGet(name, addr, path string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate) (string, string, error) {
+	return httpOp(name, addr, path, "GET", nil, rootCA, clientCerts)
+}
+
+func httpOp(name, addr, path, method string, body io.ReadCloser, rootCA *certmanager.CertManager, clientCerts []tls.Certificate) (string, string, error) {
 	var localAddr string
 	var mu sync.Mutex
 	name = idnaToASCII(name)
@@ -1229,7 +1249,7 @@ func httpGet(name, addr, path string, rootCA *certmanager.CertManager, clientCer
 	if host == "" {
 		host = addr
 	}
-	req, err := http.NewRequest(http.MethodGet, "https://"+host+path, nil)
+	req, err := http.NewRequest(method, "https://"+host+path, body)
 	if err != nil {
 		return "", "", err
 	}
@@ -1262,16 +1282,34 @@ func newHTTPServer(t *testing.T, ctx context.Context, name string, ca *certmanag
 		t.Fatalf("[%s] Listen: %v", name, err)
 	}
 	s := &http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if v := r.Header.Get(xFCCHeader); v != "" {
-				t.Logf("[%s] %s: %s", name, xFCCHeader, v)
-			}
-			fmt.Fprintf(w, "[%s] %s\n", name, r.RequestURI)
-			r.ParseForm()
-			if h := r.Form.Get("header"); h != "" {
-				fmt.Fprintf(w, "%s=%s\n", h, r.Header.Get(h))
-			}
-		}),
+		Handler: h2c.NewHandler(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Body != nil {
+					defer r.Body.Close()
+				}
+				t.Logf("[%s] ContentLength=%d", name, r.ContentLength)
+				if v := r.Header.Get(xFCCHeader); v != "" {
+					t.Logf("[%s] %s: %s", name, xFCCHeader, v)
+				}
+				if v := r.Header.Get("Content-Length"); v != "" {
+					if l, err := strconv.Atoi(v); err != nil || l < 0 {
+						t.Errorf("[%s] Content-Length: %q", name, v)
+					}
+				}
+				switch r.Method {
+				case "GET":
+					fmt.Fprintf(w, "[%s] %s\n", name, r.RequestURI)
+				case "POST":
+					b, _ := io.ReadAll(r.Body)
+					fmt.Fprintf(w, "[%s] POST %s %s\n", name, r.RequestURI, b)
+				default:
+					fmt.Fprintf(w, "[%s] %s %s\n", name, r.Method, r.RequestURI)
+				}
+				r.ParseForm()
+				if h := r.Form.Get("header"); h != "" {
+					fmt.Fprintf(w, "%s=%s\n", h, r.Header.Get(h))
+				}
+			}), &http2.Server{}),
 		ErrorLog: log.New(os.Stderr, "["+name+"] ", 0),
 	}
 	go s.Serve(l)

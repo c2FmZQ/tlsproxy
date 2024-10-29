@@ -26,6 +26,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -33,6 +34,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -62,6 +65,10 @@ func TestQUICConnections(t *testing.T) {
 
 	be1 := newTCPServer(t, ctx, "TCP Backend", nil)
 	be2 := newQUICServer(t, ctx, "QUIC Backend", []string{"h3", "imap"}, intCA)
+	be3 := newHTTPServer(t, ctx, "HTTPS Backend", intCA)
+	be4 := newHTTPServer(t, ctx, "HTTP Backend", nil)
+
+	h2Value := "h2"
 
 	cfg := &Config{
 		HTTPAddr: "localhost:0",
@@ -101,6 +108,30 @@ func TestQUICConnections(t *testing.T) {
 				ForwardServerName: "quic-internal.example.com",
 				ForwardRateLimit:  1000,
 			},
+			// HTTPS backend
+			{
+				ServerNames: []string{
+					"https.example.com",
+				},
+				Addresses: []string{
+					be3.String(),
+				},
+				Mode:              "HTTPS",
+				BackendProto:      &h2Value,
+				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+				ForwardServerName: "https-internal.example.com",
+			},
+			// HTTP backend
+			{
+				ServerNames: []string{
+					"http.example.com",
+				},
+				Addresses: []string{
+					be4.String(),
+				},
+				Mode:         "HTTP",
+				BackendProto: &h2Value,
+			},
 			// Local backend
 			{
 				ServerNames: []string{
@@ -131,6 +162,8 @@ func TestQUICConnections(t *testing.T) {
 		{desc: "Hit TCP backend with QUIC", host: "tcp.example.com", want: "Hello from TCP Backend\n", protos: []string{"http/1.1"}, quic: true},
 		{desc: "Hit TCP backend with TLS", host: "tcp.example.com", want: "Hello from TCP Backend\n", protos: []string{"h2"}},
 		{desc: "Hit TCP backend with QUIC", host: "tcp.example.com", want: "Hello from TCP Backend\n", protos: []string{"h2"}, quic: true},
+		{desc: "Hit HTTPS backend with QUIC", host: "https.example.com", want: "HTTP/3.0 200 OK\n[HTTPS Backend] /proxy.go\n", http: true},
+		{desc: "Hit HTTP (H2C) backend with QUIC", host: "http.example.com", want: "HTTP/3.0 200 OK\n[HTTP Backend] /proxy.go\n", http: true},
 		{desc: "Hit QUIC backend with TLS h3", host: "quic.example.com", want: "Hello from QUIC Backend\n", protos: []string{"h3"}, expError: true},
 		{desc: "Hit QUIC backend with TLS imap", host: "quic.example.com", want: "Hello from QUIC Backend\n", protos: []string{"imap"}},
 		{desc: "Hit QUIC backend with QUIC h3", host: "quic.example.com", want: "Hello from QUIC Backend\n", protos: []string{"h3"}, quic: true},
@@ -167,6 +200,189 @@ func TestQUICConnections(t *testing.T) {
 	}
 }
 
+func TestReverseProxyGetPost(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	intCA, err := certmanager.New("internal-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: "localhost:0",
+			TLSAddr:  "localhost:0",
+			CacheDir: t.TempDir(),
+			MaxOpen:  100,
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+
+	// Backends for HTTP and HTTPS.
+	be1 := newHTTPServer(t, ctx, "http", nil)
+	be2 := newHTTPServer(t, ctx, "https", intCA)
+
+	h2Value := "h2"
+
+	cfg := &Config{
+		MaxOpen: 100,
+		Backends: []*Backend{
+			// HTTP
+			{
+				ServerNames: []string{
+					"http.example.com",
+				},
+				Addresses: []string{
+					be1.String(),
+				},
+				Mode: "HTTP",
+			},
+			// HTTP H2C
+			{
+				ServerNames: []string{
+					"h2c.example.com",
+				},
+				Addresses: []string{
+					be1.String(),
+				},
+				Mode:         "HTTP",
+				BackendProto: &h2Value,
+			},
+			// HTTPS
+			{
+				ServerNames: []string{
+					"https.example.com",
+				},
+				Addresses: []string{
+					be2.String(),
+				},
+				Mode:              "HTTPS",
+				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+				ForwardServerName: "https-internal.example.com",
+			},
+		},
+	}
+	if err := proxy.Reconfigure(cfg); err != nil {
+		t.Fatalf("proxy.Reconfigure: %v", err)
+	}
+
+	dir := t.TempDir()
+	filename := filepath.Join(dir, "postdata")
+	if err := os.WriteFile(filename, []byte("foo bar 1 2 3"), 0o644); err != nil {
+		t.Fatalf("os.Writefile: %v", err)
+	}
+
+	openOrDie := func(name string) *os.File {
+		f, err := os.Open(name)
+		if err != nil {
+			t.Fatalf("os.Open(%q): %v", name, err)
+		}
+		return f
+	}
+
+	doReq := func(method, host, path string, body io.ReadCloser, http3 bool) (string, error) {
+		if !http3 {
+			body, _, err := httpOp(host, proxy.listener.Addr().String(), path, method, body, extCA, nil)
+			return body, err
+		}
+		return h3Op(host, proxy.listener.Addr().String(), path, method, body, extCA)
+	}
+
+	for _, tc := range []struct {
+		desc, host, method, path string
+		http3                    bool
+		body                     io.ReadCloser
+		want                     string
+	}{
+		{
+			desc:   "HTTP GET /",
+			host:   "http.example.com",
+			method: "GET",
+			path:   "/",
+			want:   "HTTP/2.0 200 OK\n[http] /\n",
+		},
+		{
+			desc:   "H2C HTTP GET /",
+			host:   "h2c.example.com",
+			method: "GET",
+			path:   "/",
+			want:   "HTTP/2.0 200 OK\n[http] /\n",
+		},
+		{
+			desc:   "HTTP POST /",
+			host:   "http.example.com",
+			method: "POST",
+			path:   "/",
+			body:   io.NopCloser(bytes.NewReader([]byte("foo"))),
+			want:   "HTTP/2.0 200 OK\n[http] POST / foo\n",
+		},
+		{
+			desc:   "H2C HTTP POST /",
+			host:   "h2c.example.com",
+			method: "POST",
+			path:   "/",
+			body:   io.NopCloser(bytes.NewReader([]byte("foo"))),
+			want:   "HTTP/2.0 200 OK\n[http] POST / foo\n",
+		},
+		{
+			desc:   "H3 HTTP POST /",
+			host:   "http.example.com",
+			method: "POST",
+			path:   "/",
+			body:   io.NopCloser(bytes.NewReader([]byte("bar"))),
+			want:   "HTTP/2.0 200 OK\n[http] POST / bar\n",
+		},
+		{
+			desc:   "HTTP POST /",
+			host:   "http.example.com",
+			method: "POST",
+			path:   "/",
+			body:   openOrDie(filename),
+			want:   "HTTP/2.0 200 OK\n[http] POST / foo bar 1 2 3\n",
+		},
+		{
+			desc:   "H3 HTTP POST /",
+			host:   "http.example.com",
+			method: "POST",
+			path:   "/",
+			body:   openOrDie(filename),
+			want:   "HTTP/2.0 200 OK\n[http] POST / foo bar 1 2 3\n",
+		},
+		{
+			desc:   "HTTPS POST /",
+			host:   "https.example.com",
+			method: "POST",
+			path:   "/",
+			body:   openOrDie(filename),
+			want:   "HTTP/2.0 200 OK\n[https] POST / foo bar 1 2 3\n",
+		},
+		{
+			desc:   "H3 HTTPS POST /",
+			host:   "https.example.com",
+			method: "POST",
+			path:   "/",
+			body:   openOrDie(filename),
+			want:   "HTTP/2.0 200 OK\n[https] POST / foo bar 1 2 3\n",
+		},
+	} {
+		got, err := doReq(tc.method, tc.host, tc.path, tc.body, tc.http3)
+		if err != nil {
+			t.Fatalf("%s: doReq() = %q, %v", tc.desc, got, err)
+			continue
+		}
+		if want := tc.want; got != want {
+			t.Errorf("%s: Got %q, want %q", tc.desc, got, want)
+		}
+	}
+}
 func TestQUICMultiStream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -293,6 +509,10 @@ func quicGet(name, addr, msg string, rootCA *certmanager.CertManager, protos []s
 }
 
 func h3Get(name, addr, path string, rootCA *certmanager.CertManager) (string, error) {
+	return h3Op(name, addr, path, "GET", nil, rootCA)
+}
+
+func h3Op(name, addr, path, method string, body io.ReadCloser, rootCA *certmanager.CertManager) (string, error) {
 	name = idnaToASCII(name)
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{Port: 0})
 	if err != nil {
@@ -322,7 +542,7 @@ func h3Get(name, addr, path string, rootCA *certmanager.CertManager) (string, er
 	if host == "" {
 		host = addr
 	}
-	req, err := http.NewRequest(http.MethodGet, "https://"+host+path, nil)
+	req, err := http.NewRequest(method, "https://"+host+path, body)
 	if err != nil {
 		return "", err
 	}
