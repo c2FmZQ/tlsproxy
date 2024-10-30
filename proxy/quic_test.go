@@ -293,7 +293,11 @@ func TestReverseProxyGetPost(t *testing.T) {
 			body, _, err := httpOp(host, proxy.listener.Addr().String(), path, method, body, extCA, nil)
 			return body, err
 		}
-		return h3Op(host, proxy.listener.Addr().String(), path, method, body, extCA)
+		qt, ok := proxy.quicTransport.(*netw.QUICTransport)
+		if !ok {
+			t.Fatalf("proxy.quicTransport is %T", proxy.quicTransport)
+		}
+		return h3Op(host, qt.Addr().String(), path, method, body, extCA)
 	}
 
 	for _, tc := range []struct {
@@ -317,6 +321,14 @@ func TestReverseProxyGetPost(t *testing.T) {
 			want:   "HTTP/2.0 200 OK\n[http] /\n",
 		},
 		{
+			desc:   "H3 HTTP GET /",
+			host:   "http.example.com",
+			method: "GET",
+			path:   "/",
+			http3:  true,
+			want:   "HTTP/3.0 200 OK\n[http] /\n",
+		},
+		{
 			desc:   "HTTP POST /",
 			host:   "http.example.com",
 			method: "POST",
@@ -338,7 +350,8 @@ func TestReverseProxyGetPost(t *testing.T) {
 			method: "POST",
 			path:   "/",
 			body:   io.NopCloser(bytes.NewReader([]byte("bar"))),
-			want:   "HTTP/2.0 200 OK\n[http] POST / bar\n",
+			http3:  true,
+			want:   "HTTP/3.0 200 OK\n[http] POST / bar\n",
 		},
 		{
 			desc:   "HTTP POST /",
@@ -354,7 +367,8 @@ func TestReverseProxyGetPost(t *testing.T) {
 			method: "POST",
 			path:   "/",
 			body:   openOrDie(filename),
-			want:   "HTTP/2.0 200 OK\n[http] POST / foo bar 1 2 3\n",
+			http3:  true,
+			want:   "HTTP/3.0 200 OK\n[http] POST / foo bar 1 2 3\n",
 		},
 		{
 			desc:   "HTTPS POST /",
@@ -370,7 +384,8 @@ func TestReverseProxyGetPost(t *testing.T) {
 			method: "POST",
 			path:   "/",
 			body:   openOrDie(filename),
-			want:   "HTTP/2.0 200 OK\n[https] POST / foo bar 1 2 3\n",
+			http3:  true,
+			want:   "HTTP/3.0 200 OK\n[https] POST / foo bar 1 2 3\n",
 		},
 	} {
 		got, err := doReq(tc.method, tc.host, tc.path, tc.body, tc.http3)
