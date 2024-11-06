@@ -67,10 +67,10 @@ var (
 
 func (be *Backend) logPanic(req *http.Request, recovered any) {
 	if recovered == http.ErrAbortHandler {
-		be.logF(logError, "ERR %s ➔ %s %s ➔ Aborted (%q)", formatReqDesc(req), req.Method, req.URL, userAgent(req))
+		be.logErrorF("ERR %s ➔ %s %s ➔ Aborted (%q)", formatReqDesc(req), req.Method, req.URL, userAgent(req))
 		return
 	}
-	be.logF(logError, "PANIC: %#v\n%s", recovered, string(debug.Stack()))
+	be.logErrorF("PANIC: %#v\n%s", recovered, string(debug.Stack()))
 }
 
 // localHandler returns an HTTP handler for backends that are served entirely by
@@ -101,7 +101,7 @@ func (be *Backend) redirectPermanently(w http.ResponseWriter, req *http.Request,
 		Path:     path,
 		RawQuery: req.URL.RawQuery,
 	}
-	be.logF(logRequest, "REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, code, userAgent(req))
+	be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, code, userAgent(req))
 	http.Redirect(w, req, u.String(), code)
 }
 
@@ -121,7 +121,7 @@ func pathClean(p string) string {
 
 func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, docRoot, prefix string) {
 	notFound := func() {
-		be.logF(logRequest, "REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL, http.StatusNotFound, userAgent(req))
+		be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL, http.StatusNotFound, userAgent(req))
 		http.NotFound(w, req)
 	}
 
@@ -133,7 +133,7 @@ func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, do
 	switch req.Method {
 	case http.MethodGet, http.MethodHead:
 	default:
-		be.logF(logRequest, "REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusMethodNotAllowed, userAgent(req))
+		be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusMethodNotAllowed, userAgent(req))
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
@@ -165,7 +165,7 @@ func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, do
 		}
 		p = filepath.Join(p, "index.html")
 		if s, err := os.Stat(p); err != nil || s.IsDir() {
-			be.logF(logRequest, "REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusForbidden, userAgent(req))
+			be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusForbidden, userAgent(req))
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
@@ -180,11 +180,11 @@ func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, do
 	}
 	defer f.Close()
 	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
-		be.logF(logRequest, "REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusForbidden, userAgent(req))
+		be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusForbidden, userAgent(req))
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
-	be.logF(logRequest, "REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusOK, userAgent(req))
+	be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusOK, userAgent(req))
 	be.setAltSvc(w.Header(), req)
 	http.ServeContent(w, req, p, fi.ModTime(), f)
 }
@@ -532,7 +532,7 @@ func (be *Backend) reverseProxyModifyResponse(resp *http.Response) error {
 		cl = fmt.Sprintf(" content-length:%d", resp.ContentLength)
 	}
 	url, _ := req.Context().Value(ctxURLKey).(string)
-	be.logF(logRequest, "PRX %s ➔ %s %s ➔ status:%d%s (%q)", formatReqDesc(req), req.Method, url, resp.StatusCode, cl, userAgent(req))
+	be.logRequestF("PRX %s ➔ %s %s ➔ status:%d%s (%q)", formatReqDesc(req), req.Method, url, resp.StatusCode, cl, userAgent(req))
 
 	if resp.StatusCode != http.StatusMisdirectedRequest && resp.Header.Get(hstsHeader) == "" {
 		resp.Header.Set(hstsHeader, hstsValue)

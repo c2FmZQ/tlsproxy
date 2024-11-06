@@ -74,22 +74,37 @@ type tokenKey struct {
 	CreationTime time.Time
 }
 
+type logger interface {
+	Errorf(format string, args ...any)
+}
+
+type defaultLogger struct{}
+
+func (defaultLogger) Errorf(format string, args ...any) {
+	log.Printf(format, args...)
+}
+
 // TokenManager implements a simple JSON Web Token (JWT) and JSON Web Key (JWK)
 // management system. It manages key rotation, token creation, and token
 // validation.
 type TokenManager struct {
-	store *storage.Storage
-	tpm   *tpm.TPM
+	store  *storage.Storage
+	tpm    *tpm.TPM
+	logger logger
 
 	mu   sync.Mutex
 	keys tokenKeys
 }
 
 // New returns a new TokenManager.
-func New(store *storage.Storage, tpm *tpm.TPM) (*TokenManager, error) {
+func New(store *storage.Storage, tpm *tpm.TPM, logger logger) (*TokenManager, error) {
+	if logger == nil {
+		logger = defaultLogger{}
+	}
 	tm := TokenManager{
-		store: store,
-		tpm:   tpm,
+		store:  store,
+		tpm:    tpm,
+		logger: logger,
 	}
 	store.CreateEmptyFile(tokenKeyFile, &tm.keys)
 	if err := tm.rotateKeys(); err != nil {
@@ -106,7 +121,7 @@ func (tm *TokenManager) KeyRotationLoop(ctx context.Context) {
 			return
 		case <-time.After(time.Hour):
 			if err := tm.rotateKeys(); err != nil && err != storage.ErrRolledBack {
-				log.Printf("ERR tokenManager.rotateKeys(): %v", err)
+				tm.logger.Errorf("ERR tokenManager.rotateKeys(): %v", err)
 			}
 		}
 	}
@@ -153,7 +168,7 @@ func (tm *TokenManager) rotateKeys() (retErr error) {
 		if tm.tpm != nil {
 			privKey, err := tm.tpm.UnmarshalKey(k.Key)
 			if err != nil {
-				log.Printf("ERR tpm.UnmarshalKey: %v", err)
+				tm.logger.Errorf("ERR tpm.UnmarshalKey: %v", err)
 				continue
 			}
 			k.privKey = privKey
@@ -161,7 +176,7 @@ func (tm *TokenManager) rotateKeys() (retErr error) {
 		}
 		privKey, err := x509.ParsePKCS8PrivateKey(k.Key)
 		if err != nil {
-			log.Printf("ERR x509.ParsePKCS8PrivateKey: %v", err)
+			tm.logger.Errorf("ERR x509.ParsePKCS8PrivateKey: %v", err)
 			continue
 		}
 		k.privKey = privKey.(privateKey)

@@ -78,11 +78,11 @@ func (p *Proxy) RevokeAllCertificates(ctx context.Context, reason string) error 
 	if n := len(toRevoke); n == 1 {
 		log.Print("!!! About to REVOKE 1 certificate:")
 	} else {
-		log.Printf("!!! About to REVOKE %d certificates:", n)
+		p.logErrorF("!!! About to REVOKE %d certificates:", n)
 	}
 	log.Print("!!!")
 	for _, key := range toRevoke {
-		log.Printf("!!!   %s", key)
+		p.logErrorF("!!!   %s", key)
 	}
 	log.Print("!!!")
 	log.Print("!!! Press CTRL-C now to abort.")
@@ -92,13 +92,13 @@ func (p *Proxy) RevokeAllCertificates(ctx context.Context, reason string) error 
 	now := time.Now()
 	for _, key := range toRevoke {
 		if now.After(certs[key].Leaf.NotAfter) {
-			log.Printf("!!! Expired: %s", key)
+			p.logErrorF("!!! Expired: %s", key)
 			continue
 		}
 		if err := client.RevokeCert(ctx, certs[key].PrivateKey.(crypto.Signer), certs[key].Certificate[0], reasonCode); err != nil {
 			return err
 		}
-		log.Printf("!!! Revoked: %s", key)
+		p.logErrorF("!!! Revoked: %s", key)
 	}
 	return p.certManager.(*autocert.Manager).Cache.(*autocertcache.Cache).DeleteKeys(ctx, toRevoke)
 }
@@ -128,7 +128,7 @@ L:
 		}
 		if len(cert.Leaf.DNSNames) > 0 {
 			n := idnaToUnicode(cert.Leaf.DNSNames[0])
-			log.Printf("INF Unused certificate: %s (%s)", n, k)
+			p.logErrorF("INF Unused certificate: %s (%s)", n, k)
 			toRevoke = append(toRevoke, k)
 		}
 	}
@@ -153,13 +153,13 @@ L:
 	now := time.Now()
 	for _, key := range toRevoke {
 		if now.After(certs[key].Leaf.NotAfter) {
-			log.Printf("INF Expired certificate: %s", key)
+			p.logErrorF("INF Expired certificate: %s", key)
 			continue
 		}
 		if err := client.RevokeCert(ctx, certs[key].PrivateKey.(crypto.Signer), certs[key].Certificate[0], acme.CRLReasonUnspecified); err != nil {
 			return err
 		}
-		log.Printf("INF Revoked unused certificate: %s", key)
+		p.logErrorF("INF Revoked unused certificate: %s", key)
 	}
 	return p.certManager.(*autocert.Manager).Cache.(*autocertcache.Cache).DeleteKeys(ctx, toRevoke)
 }
@@ -209,7 +209,7 @@ L:
 		}
 		data, err := cache.Get(ctx, k)
 		if err != nil {
-			log.Printf("ERR %s: %v", k, err)
+			p.logErrorF("ERR %s: %v", k, err)
 			continue
 		}
 		var privKey crypto.Signer
@@ -222,7 +222,7 @@ L:
 			if strings.Contains(b.Type, "PRIVATE KEY") {
 				var err error
 				if privKey, err = parsePrivateKey(b.Bytes); err != nil {
-					log.Printf("ERR %s: %v", k, err)
+					p.logErrorF("ERR %s: %v", k, err)
 					continue L
 				}
 			}
@@ -231,16 +231,16 @@ L:
 			}
 		}
 		if privKey == nil {
-			log.Printf("ERR %s: missing private key", k)
+			p.logErrorF("ERR %s: missing private key", k)
 			continue
 		}
 		if len(certs) == 0 {
-			log.Printf("ERR %s: missing cert", k)
+			p.logErrorF("ERR %s: missing cert", k)
 			continue
 		}
 		leaf, err := x509.ParseCertificate(certs[0])
 		if err != nil {
-			log.Printf("ERR %s: %s", k, err)
+			p.logErrorF("ERR %s: %s", k, err)
 			continue
 		}
 		out[k] = &tls.Certificate{

@@ -94,6 +94,12 @@ type EventRecorder interface {
 	Record(string)
 }
 
+type defaultLogger struct{}
+
+func (defaultLogger) Errorf(format string, args ...any) {
+	log.Printf(format, args...)
+}
+
 type Config struct {
 	Store *storage.Storage
 	Other interface {
@@ -106,9 +112,15 @@ type Config struct {
 	OtherCookieManager *cookiemanager.CookieManager
 	TokenManager       *tokenmanager.TokenManager
 	ClaimsFromCtx      func(context.Context) jwt.MapClaims
+	Logger             interface {
+		Errorf(format string, args ...any)
+	}
 }
 
 func NewManager(cfg Config) (*Manager, error) {
+	if cfg.Logger == nil {
+		cfg.Logger = defaultLogger{}
+	}
 	m := &Manager{
 		cfg:        cfg,
 		challenges: make(map[string]*challenge),
@@ -204,7 +216,7 @@ func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL
 	nonce := hex.EncodeToString(n)
 	ou, err := url.Parse(origURL)
 	if err != nil {
-		log.Printf("ERR %q: %v", origURL, err)
+		m.cfg.Logger.Errorf("ERR %q: %v", origURL, err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -258,7 +270,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	if ok {
 		token, _, err := m.cfg.TokenManager.URLToken(w, req, nData.origURL)
 		if err != nil {
-			log.Printf("ERR %q: %v", nData.origURL, err)
+			m.cfg.Logger.Errorf("ERR %q: %v", nData.origURL, err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
@@ -336,13 +348,13 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		if v := req.Header.Get("x-csrf-check"); v != "1" {
-			log.Printf("ERR x-csrf-check: %v", v)
+			m.cfg.Logger.Errorf("ERR x-csrf-check: %v", v)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
 		opts, err := m.assertionOptions()
 		if err != nil {
-			log.Printf("ERR assertionOptions: %v", err)
+			m.cfg.Logger.Errorf("ERR assertionOptions: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
@@ -355,7 +367,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		if v := req.Header.Get("x-csrf-check"); v != "1" {
-			log.Printf("ERR x-csrf-check: %v", v)
+			m.cfg.Logger.Errorf("ERR x-csrf-check: %v", v)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -366,7 +378,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		}
 		opts, err := m.attestationOptions(claims)
 		if err != nil {
-			log.Printf("ERR attestationOptions: %v", err)
+			m.cfg.Logger.Errorf("ERR attestationOptions: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
@@ -379,13 +391,13 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		if v := req.Header.Get("x-csrf-check"); v != "1" {
-			log.Printf("ERR x-csrf-check: %v", v)
+			m.cfg.Logger.Errorf("ERR x-csrf-check: %v", v)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
 		claims, err := m.processAssertion(req.Form.Get("args"), token)
 		if err != nil {
-			log.Printf("ERR processAssertion: %v", err)
+			m.cfg.Logger.Errorf("ERR processAssertion: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
@@ -417,7 +429,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		if v := req.Header.Get("x-csrf-check"); v != "1" {
-			log.Printf("ERR x-csrf-check: %v", v)
+			m.cfg.Logger.Errorf("ERR x-csrf-check: %v", v)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -433,7 +445,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		}
 		claims, err = m.processAttestation(claims, req.Host, req.Form.Get("args"), false)
 		if err != nil {
-			log.Printf("ERR processAttestation: %v", err)
+			m.cfg.Logger.Errorf("ERR processAttestation: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
@@ -446,7 +458,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		if v := req.Header.Get("x-csrf-check"); v != "1" {
-			log.Printf("ERR x-csrf-check: %v", v)
+			m.cfg.Logger.Errorf("ERR x-csrf-check: %v", v)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -535,13 +547,13 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		if v := req.Header.Get("x-csrf-check"); v != "1" {
-			log.Printf("ERR x-csrf-check: %v", v)
+			m.cfg.Logger.Errorf("ERR x-csrf-check: %v", v)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
 		opts, err := m.attestationOptions(claims)
 		if err != nil {
-			log.Printf("ERR attestationOptions: %v", err)
+			m.cfg.Logger.Errorf("ERR attestationOptions: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
@@ -554,12 +566,12 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		if v := req.Header.Get("x-csrf-check"); v != "1" {
-			log.Printf("ERR x-csrf-check: %v", v)
+			m.cfg.Logger.Errorf("ERR x-csrf-check: %v", v)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
 		if _, err := m.processAttestation(claims, req.Host, req.Form.Get("args"), true); err != nil {
-			log.Printf("ERR processAttestation: %v", err)
+			m.cfg.Logger.Errorf("ERR processAttestation: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
@@ -575,7 +587,7 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		if v := req.Header.Get("x-csrf-check"); v != "1" {
-			log.Printf("ERR x-csrf-check: %v", v)
+			m.cfg.Logger.Errorf("ERR x-csrf-check: %v", v)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -590,7 +602,7 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		if err := m.deleteKey(email, id); err != nil {
-			log.Printf("ERR deleteKey(%q, %v): %v", email, id, err)
+			m.cfg.Logger.Errorf("ERR deleteKey(%q, %v): %v", email, id, err)
 		}
 		w.Header().Set("content-type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
@@ -728,7 +740,7 @@ func (m *Manager) setAuthToken(w http.ResponseWriter, u *url.URL, claims map[str
 		return
 	}
 	if err := m.cfg.CookieManager.SetAuthTokenCookie(w, subject, email, sid, u.Host, claims); err != nil {
-		log.Printf("ERR SetAuthTokenCookie: %v", err)
+		m.cfg.Logger.Errorf("ERR SetAuthTokenCookie: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -812,7 +824,7 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 	}
 	origin := "https://" + host
 	if cd.Origin != origin {
-		log.Printf("ERR cd.Origin: %q != %q", cd.Origin, origin)
+		m.cfg.Logger.Errorf("ERR cd.Origin: %q != %q", cd.Origin, origin)
 		return nil, errors.New("expected clientData.origin")
 	}
 	m.mu.Lock()
@@ -832,7 +844,7 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 		host = h
 	}
 	if hash := sha256.Sum256([]byte(host)); subtle.ConstantTimeCompare(ao.AuthData.RPIDHash, hash[:]) != 1 {
-		log.Printf("ERR rpidHash: %v != %v", ao.AuthData.RPIDHash, hash[:])
+		m.cfg.Logger.Errorf("ERR rpidHash: %v != %v", ao.AuthData.RPIDHash, hash[:])
 		return nil, errors.New("invalid rpIdHash")
 	}
 	if !ao.AuthData.UserPresence {

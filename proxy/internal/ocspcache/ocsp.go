@@ -31,7 +31,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
@@ -52,12 +51,17 @@ var (
 	errOCSPInternal = errors.New("internal error")
 )
 
-func New(store *storage.Storage) *OCSPCache {
+type logger interface {
+	Errorf(f string, args ...any)
+	Fatalf(f string, args ...any)
+}
+
+func New(store *storage.Storage, logger logger) *OCSPCache {
 	var empty []ocspCacheItem
 	store.CreateEmptyFile(ocspFile, &empty)
 	c, err := lru.New2Q[string, *ocsp.Response](ocspCacheSize)
 	if err != nil {
-		log.Panicf("newOCSPCache: %v", err)
+		logger.Fatalf("newOCSPCache: %v", err)
 	}
 	cache := &OCSPCache{
 		store: store,
@@ -65,6 +69,7 @@ func New(store *storage.Storage) *OCSPCache {
 		client: &http.Client{
 			Timeout: 5 * time.Second,
 		},
+		logger: logger,
 	}
 	cache.load()
 	return cache
@@ -74,6 +79,7 @@ type OCSPCache struct {
 	store  *storage.Storage
 	cache  *lru.TwoQueueCache[string, *ocsp.Response]
 	client *http.Client
+	logger logger
 }
 
 type ocspCacheItem struct {
@@ -84,7 +90,7 @@ type ocspCacheItem struct {
 func (c *OCSPCache) load() {
 	var items []ocspCacheItem
 	if err := c.store.ReadDataFile(ocspFile, &items); err != nil {
-		log.Printf("ERR OCSP ReadDataFile: %v", err)
+		c.logger.Errorf("ERR OCSP ReadDataFile: %v", err)
 		return
 	}
 	now := time.Now()
@@ -102,7 +108,7 @@ func (c *OCSPCache) FlushLoop(ctx context.Context) {
 			return
 		case <-time.After(time.Minute):
 			if err := c.flush(); err != nil {
-				log.Printf("ERR OCSP flush: %v", err)
+				c.logger.Errorf("ERR OCSP flush: %v", err)
 			}
 		}
 	}
@@ -158,18 +164,18 @@ nextChain:
 			}
 			switch resp.Status {
 			case ocsp.Revoked:
-				log.Printf("BAD OCSP: %q is revoked", cert.Subject.String())
+				c.logger.Errorf("BAD OCSP: %q is revoked", cert.Subject.String())
 				lastError = errOCSPRevoked
 				continue nextChain
 			case ocsp.Unknown:
-				log.Printf("BAD OCSP: %q is unknown", cert.Subject.String())
+				c.logger.Errorf("BAD OCSP: %q is unknown", cert.Subject.String())
 				lastError = errOCSPUnknown
 				continue nextChain
 			case ocsp.Good:
-				log.Printf("INF OCSP: %q is GOOD", cert.Subject.String())
+				c.logger.Errorf("INF OCSP: %q is GOOD", cert.Subject.String())
 				lastError = nil
 			default:
-				log.Printf("BAD OCSP: %q has unexpected status %v", cert.Subject.String(), resp.Status)
+				c.logger.Errorf("BAD OCSP: %q has unexpected status %v", cert.Subject.String(), resp.Status)
 				lastError = errOCSPProtocol
 				continue nextChain
 			}
@@ -200,7 +206,7 @@ func (c *OCSPCache) Response(cert, issuer *x509.Certificate, margin time.Duratio
 func (c *OCSPCache) fetchOCSP(cert, issuer *x509.Certificate) (*ocsp.Response, error) {
 	ocspReq, err := ocsp.CreateRequest(cert, issuer, nil)
 	if err != nil {
-		log.Printf("ERR ocsp.CreateRequest: %v", err)
+		c.logger.Errorf("ERR ocsp.CreateRequest: %v", err)
 		return nil, errOCSPInternal
 	}
 	var ocspResp *ocsp.Response
@@ -219,7 +225,7 @@ func (c *OCSPCache) fetchOCSP(cert, issuer *x509.Certificate) (*ocsp.Response, e
 func (c *OCSPCache) fetchOneOCSP(cert, issuer *x509.Certificate, ocspReq []byte, server string) (*ocsp.Response, error) {
 	httpReq, err := http.NewRequest(http.MethodPost, server, bytes.NewReader(ocspReq))
 	if err != nil {
-		log.Printf("ERR http.NewRequest: %v", err)
+		c.logger.Errorf("ERR http.NewRequest: %v", err)
 		return nil, errOCSPInternal
 	}
 	httpReq.Header.Set("content-type", "application/ocsp-request")
@@ -228,18 +234,18 @@ func (c *OCSPCache) fetchOneOCSP(cert, issuer *x509.Certificate, ocspReq []byte,
 
 	httpResp, err := c.client.Do(httpReq)
 	if err != nil {
-		log.Printf("ERR %s: %v", server, err)
+		c.logger.Errorf("ERR %s: %v", server, err)
 		return nil, errOCSPProtocol
 	}
 	defer httpResp.Body.Close()
 	body, err := io.ReadAll(&io.LimitedReader{R: httpResp.Body, N: 4096})
 	if err != nil {
-		log.Printf("ERR body: %v", err)
+		c.logger.Errorf("ERR body: %v", err)
 		return nil, errOCSPProtocol
 	}
 	ocspResp, err := ocsp.ParseResponse(body, issuer)
 	if err != nil {
-		log.Printf("ERR ocsp.ParseResponse for %s from %s: %v", cert.Subject, server, err)
+		c.logger.Errorf("ERR ocsp.ParseResponse for %s from %s: %v", cert.Subject, server, err)
 		return nil, errOCSPProtocol
 	}
 	return ocspResp, nil

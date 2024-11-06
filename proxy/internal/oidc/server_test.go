@@ -71,7 +71,8 @@ func TestRewriteRules(t *testing.T) {
 		},
 	}
 
-	applyRewriteRules(rr, in, out)
+	s := NewServer(ServerOptions{})
+	s.applyRewriteRules(rr, in, out)
 
 	if want, got := "jane", out["preferred_username"]; want != got {
 		t.Errorf("preferred_username = %q, want %q", got, want)

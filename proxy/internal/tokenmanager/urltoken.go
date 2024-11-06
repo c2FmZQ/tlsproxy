@@ -28,7 +28,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"time"
@@ -90,7 +89,7 @@ func (tm *TokenManager) ValidateURLToken(w http.ResponseWriter, req *http.Reques
 		return nil, errors.New("invalid token")
 	}
 	if sid := sessionID(w, req); sid != c["sid"] {
-		log.Printf("ERR session ID mismatch %q != %q", sid, c["sid"])
+		tm.logger.Errorf("ERR session ID mismatch %q != %q", sid, c["sid"])
 		return nil, errors.New("invalid token")
 	}
 	u, ok := c["url"].(string)

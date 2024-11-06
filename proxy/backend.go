@@ -31,7 +31,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"slices"
 	"strings"
@@ -79,53 +78,6 @@ func (be *Backend) close(ctx context.Context) {
 			go h3.Close()
 		}
 	}
-}
-
-func (be *Backend) logF(typ logType, format string, args ...any) {
-	if !be.shouldLog(typ) {
-		return
-	}
-	log.Printf(format, args...)
-}
-
-type logType int
-
-const (
-	logConnection logType = iota
-	logRequest
-	logError
-)
-
-func (be *Backend) shouldLog(typ logType) bool {
-	if typ == logConnection {
-		if be.LogFilter.Connections != nil {
-			return *be.LogFilter.Connections
-		}
-		if be.defaultLogFilter.Connections != nil {
-			return *be.defaultLogFilter.Connections
-		}
-		return true
-	}
-	if typ == logRequest {
-		if be.LogFilter.Requests != nil {
-			return *be.LogFilter.Requests
-		}
-		if be.defaultLogFilter.Requests != nil {
-			return *be.defaultLogFilter.Requests
-		}
-		return true
-	}
-	if typ == logError {
-		if be.LogFilter.Errors != nil {
-			return *be.LogFilter.Errors
-		}
-		if be.defaultLogFilter.Errors != nil {
-			return *be.defaultLogFilter.Errors
-		}
-		return true
-	}
-
-	return true
 }
 
 func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error) {
@@ -210,7 +162,7 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 		if err != nil {
 			max--
 			if max > 0 {
-				log.Printf("ERR dial %q: %v", addr, err)
+				be.logErrorF("ERR dial %q: %v", addr, err)
 				continue
 			}
 			return nil, err
