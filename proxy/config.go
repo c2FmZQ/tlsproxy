@@ -130,6 +130,9 @@ type Config struct {
 	// DefaultServerName is the server name to use when the TLS client
 	// doesn't use the Server Name Indication (SNI) extension.
 	DefaultServerName string `yaml:"defaultServerName,omitempty"`
+	// LogFilter specifies what gets logged for this backend. Values can
+	// be overridden on a per-backend basis.
+	LogFilter LogFilter `yaml:"logFilter"`
 	// Backends is the list of service backends.
 	Backends []*Backend `yaml:"backends"`
 	// Email is optionally sent to Let's Encrypt when registering a new
@@ -171,6 +174,16 @@ type BWLimit struct {
 	Ingress float64 `yaml:"ingress"`
 	// Egress is the engress limit, in bytes per second.
 	Egress float64 `yaml:"egress"`
+}
+
+// LogFilter specifies what to log.
+type LogFilter struct {
+	// Connections indicates that incoming connections are logged.
+	Connections *bool `yaml:"connections"`
+	// Requests indicates that http requests are logged.
+	Requests *bool `yaml:"requests"`
+	// Errors indicates that errors are logged.
+	Errors *bool `yaml:"errors"`
 }
 
 // Backend encapsulates the data of one backend.
@@ -280,6 +293,9 @@ type Backend struct {
 	// backend. All backends using the same policy are subject to common
 	// limits.
 	BWLimit string `yaml:"bwLimit,omitempty"`
+	// LogFilter specifies what gets logged for this backend. Values that
+	// are not specified are inherited from the top level config.
+	LogFilter LogFilter `yaml:"logFilter"`
 	// Addresses is a list of server addresses where requests are forwarded.
 	// When more than one address are specified, requests are distributed
 	// using a simple round robin.
@@ -366,9 +382,10 @@ type Backend struct {
 	// open when one stream is closed. The default value is 1 minute.
 	HalfCloseTimeout *time.Duration `yaml:"halfCloseTimeout,omitempty"`
 
-	recordEvent   func(string)
-	tm            *tokenmanager.TokenManager
-	quicTransport io.Closer
+	recordEvent      func(string)
+	tm               *tokenmanager.TokenManager
+	quicTransport    io.Closer
+	defaultLogFilter LogFilter
 
 	tlsConfig            *tls.Config
 	tlsConfigQUIC        *tls.Config
