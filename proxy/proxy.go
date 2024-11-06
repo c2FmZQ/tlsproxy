@@ -823,18 +823,18 @@ func (p *Proxy) reAuthorize() {
 		be, err := p.backend(serverName, proto)
 		if err != nil {
 			p.recordEvent(err.Error())
-			be.logF(logConnection, "BAD [-] ReAuth %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
+			be.logF(logError, "BAD [-] ReAuth %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
 			conn.Close()
 			continue
 		}
 		if oldBE := connBackend(conn); be.Mode != oldBE.Mode {
-			be.logF(logConnection, "INF [-] ReAuth %s ➔  %q backend mode changed %s->%s", conn.RemoteAddr(), idnaToUnicode(serverName), oldBE.Mode, be.Mode)
+			be.logF(logError, "INF [-] ReAuth %s ➔  %q backend mode changed %s->%s", conn.RemoteAddr(), idnaToUnicode(serverName), oldBE.Mode, be.Mode)
 			conn.Close()
 			continue
 		}
 		if err := be.checkIP(conn.RemoteAddr()); err != nil {
 			p.recordEvent(serverName + " CheckIP " + err.Error())
-			be.logF(logConnection, "BAD [-] ReAuth %s ➔ %q CheckIP: %v", conn.RemoteAddr(), idnaToUnicode(serverName), err)
+			be.logF(logError, "BAD [-] ReAuth %s ➔ %q CheckIP: %v", conn.RemoteAddr(), idnaToUnicode(serverName), err)
 			conn.Close()
 			continue
 		}
@@ -844,7 +844,7 @@ func (p *Proxy) reAuthorize() {
 		clientCert := connClientCert(conn)
 		if err := be.authorize(clientCert); err != nil {
 			p.recordEvent(err.Error())
-			be.logF(logConnection, "BAD [-] ReAuth %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), idnaToUnicode(serverName), certSummary(clientCert), err)
+			be.logF(logError, "BAD [-] ReAuth %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), idnaToUnicode(serverName), certSummary(clientCert), err)
 			conn.Close()
 			continue
 		}
