@@ -1,5 +1,19 @@
 # TLSPROXY Release Notes
 
+* Update go: 1.23.3
+* Update go dependencies:
+  * upgraded github.com/google/pprof v0.0.0-20241008150032-332c0e1a4a34 => v0.0.0-20241101162523-b92577c0c142
+  * upgraded github.com/onsi/ginkgo/v2 v2.20.2 => v2.21.0
+  * upgraded go.uber.org/mock v0.4.0 => v0.5.0
+  * upgraded golang.org/x/exp v0.0.0-20241004190924-225e2abe05e6 => v0.0.0-20241009180824-f66d83c29e7c
+* Update go dependencies in examples/backend:
+  * upgraded github.com/c2FmZQ/tlsproxy v0.10.7 => v0.10.9
+  * upgraded github.com/golang-jwt/jwt/v4 v4.5.0 => v4.5.1
+  * upgraded github.com/google/pprof v0.0.0-20241008150032-332c0e1a4a34 => v0.0.0-20241101162523-b92577c0c142
+  * upgraded github.com/onsi/ginkgo/v2 v2.20.2 => v2.21.0
+  * upgraded github.com/quic-go/quic-go v0.47.0 => v0.48.1
+  * upgraded go.uber.org/mock v0.4.0 => v0.5.0
+  * upgraded golang.org/x/exp v0.0.0-20241004190924-225e2abe05e6 => v0.0.0-20241009180824-f66d83c29e7c
 ## unreleased
 
 ### :wrench: Misc
