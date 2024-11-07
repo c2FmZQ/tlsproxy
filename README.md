@@ -149,7 +149,6 @@ backends:
 
 # When documentRoot is set, static content is served from that directory.
 # (The addresses field must be empty)
-backends:
 - serverNames: 
   - static.example.com
   mode: local
