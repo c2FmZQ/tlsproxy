@@ -505,7 +505,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 					ClaimsFromCtx: claimsFromCtx,
 					Clients:       make([]oidc.Client, 0, len(ls.Clients)),
 					EventRecorder: er,
-					Logger:        p.extLogger(),
+					Logger:        be.extLogger(),
 				}
 				for _, client := range ls.Clients {
 					opts.Clients = append(opts.Clients, oidc.Client{
