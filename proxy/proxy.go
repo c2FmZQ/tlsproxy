@@ -201,7 +201,7 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 		Cache: autocertcache.New("autocert", store),
 		Email: cfg.Email,
 	}
-	if p.cfg.AcceptTOS {
+	if cfg.AcceptTOS {
 		p.certManager.(*autocert.Manager).Prompt = autocert.AcceptTOS
 	}
 	p.tpm = pTPM
