@@ -28,7 +28,6 @@ import (
 	_ "embed"
 	"fmt"
 	"html/template"
-	"log"
 	"net/http"
 	"runtime"
 	"runtime/debug"
@@ -488,7 +487,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		}
 		data.Memory = items
 	} else {
-		log.Printf("ERR MemoryProfile n=%d", n)
+		p.logErrorF("ERR MemoryProfile n=%d", n)
 	}
 
 	mutexProfSize, _ := runtime.MutexProfile(nil)
@@ -520,7 +519,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		}
 		data.Mutex = items
 	} else {
-		log.Printf("ERR MutexProfile n=%d", n)
+		p.logErrorF("ERR MutexProfile n=%d", n)
 	}
 
 	goProf := make([]runtime.StackRecord, runtime.NumGoroutine()+10)
@@ -561,7 +560,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 			})
 		}
 	} else {
-		log.Printf("ERR GoroutineProfile n=%d", n)
+		p.logErrorF("ERR GoroutineProfile n=%d", n)
 	}
 
 	cfg := p.cfg.clone()

@@ -59,7 +59,7 @@ func TestTokenManager(t *testing.T) {
 				t.Fatalf("crypto.CreateMasterKey: %v", err)
 			}
 			store := storage.New(dir, mk)
-			tm1, err := New(store, tc.tpm)
+			tm1, err := New(store, tc.tpm, nil)
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
@@ -75,7 +75,7 @@ func TestTokenManager(t *testing.T) {
 			}
 			t.Logf("TOKEN: %s", tok)
 
-			tm2, err := New(store, tc.tpm)
+			tm2, err := New(store, tc.tpm, nil)
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}

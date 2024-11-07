@@ -37,7 +37,6 @@ import (
 	"encoding/pem"
 	"html/template"
 	"io"
-	"log"
 	"mime"
 	"net/http"
 	"net/url"
@@ -136,7 +135,7 @@ func (m *PKIManager) ServeOCSP(w http.ResponseWriter, req *http.Request) {
 		}
 		data, err := url.PathUnescape(req.URL.Path[off+1:])
 		if err != nil {
-			log.Printf("ERR url.PathUnescape: %v", err)
+			m.opts.Logger.Errorf("ERR url.PathUnescape: %v", err)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -146,7 +145,7 @@ func (m *PKIManager) ServeOCSP(w http.ResponseWriter, req *http.Request) {
 		data = strings.ReplaceAll(data, "/", "_")
 		data = strings.TrimRight(data, "=")
 		if raw, err = base64.RawURLEncoding.DecodeString(data); err != nil {
-			log.Printf("ERR base64: %v", err)
+			m.opts.Logger.Errorf("ERR base64: %v", err)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -170,13 +169,13 @@ func (m *PKIManager) ServeOCSP(w http.ResponseWriter, req *http.Request) {
 	}
 	ocspReq, err := ocsp.ParseRequest(raw)
 	if err != nil {
-		log.Printf("ERR ocsp.ParseRequest: %v", err)
+		m.opts.Logger.Errorf("ERR ocsp.ParseRequest: %v", err)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 	resp, err := m.OCSPResponse(ocspReq)
 	if err != nil {
-		log.Printf("ERR OCSPResponse: %v", err)
+		m.opts.Logger.Errorf("ERR OCSPResponse: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -212,7 +211,7 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 		m.handleStaticFile(w, req)
 		return
 	default:
-		log.Printf("ERR unexpected mode: %v", mode)
+		m.opts.Logger.Errorf("ERR unexpected mode: %v", mode)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	case "":
@@ -261,7 +260,7 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 	for _, ic := range m.db.IssuedCerts {
 		c, err := ic.parse()
 		if err != nil {
-			log.Printf("ERR x509.ParseCertificate: %v", err)
+			m.opts.Logger.Errorf("ERR x509.ParseCertificate: %v", err)
 			continue
 		}
 		if ownerFilter != "all" && !slices.Contains(c.EmailAddresses, email) {
@@ -299,7 +298,7 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 		}
 		pubKeyBytes, err := publicKeyFromCert(c)
 		if err != nil {
-			log.Printf("ERR publicKeyFromCert: %v", err)
+			m.opts.Logger.Errorf("ERR publicKeyFromCert: %v", err)
 			continue
 		}
 		certs = append(certs, cert{
@@ -351,36 +350,36 @@ func (m *PKIManager) handleRequestCert(w http.ResponseWriter, req *http.Request)
 	email, _ := claims["email"].(string)
 
 	if req.Method != http.MethodPost {
-		log.Printf("ERR method: %v", req.Method)
+		m.opts.Logger.Errorf("ERR method: %v", req.Method)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 	if v := req.Header.Get("x-csrf-check"); v != "1" {
-		log.Printf("ERR x-csrf-check: %v", v)
+		m.opts.Logger.Errorf("ERR x-csrf-check: %v", v)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 	if ct := req.Header.Get("content-type"); ct != "application/x-pem-file" {
-		log.Printf("ERR content-type: %v", ct)
+		m.opts.Logger.Errorf("ERR content-type: %v", ct)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 	defer req.Body.Close()
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
-		log.Printf("ERR body: %v", err)
+		m.opts.Logger.Errorf("ERR body: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	block, _ := pem.Decode(body)
 	if block == nil {
-		log.Print("ERR no pem block")
+		m.opts.Logger.Errorf("ERR no pem block")
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 	in, err := m.ValidateCertificateRequest(block.Bytes)
 	if err != nil {
-		log.Printf("ERR ValidateCertificateRequest: %v", err)
+		m.opts.Logger.Errorf("ERR ValidateCertificateRequest: %v", err)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
@@ -398,7 +397,7 @@ func (m *PKIManager) handleRequestCert(w http.ResponseWriter, req *http.Request)
 	}
 	cert, err := m.IssueCertificate(cr)
 	if err != nil {
-		log.Printf("ERR body: %v", err)
+		m.opts.Logger.Errorf("ERR body: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -418,19 +417,19 @@ func (m *PKIManager) handleRevokeCert(w http.ResponseWriter, req *http.Request, 
 	email, _ := claims["email"].(string)
 
 	if req.Method != http.MethodPost {
-		log.Printf("ERR method: %v", req.Method)
+		m.opts.Logger.Errorf("ERR method: %v", req.Method)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 	if v := req.Header.Get("x-csrf-check"); v != "1" {
-		log.Printf("ERR x-csrf-check: %v", v)
+		m.opts.Logger.Errorf("ERR x-csrf-check: %v", v)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 
 	c, err := m.findCert(req.Form.Get("sn"))
 	if err != nil {
-		log.Printf("ERR findCert: %v", err)
+		m.opts.Logger.Errorf("ERR findCert: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -447,7 +446,7 @@ func (m *PKIManager) handleRevokeCert(w http.ResponseWriter, req *http.Request, 
 		return
 	}
 	if err := m.RevokeCertificate(c.SerialNumber, RevokeReasonUnspecified); err != nil {
-		log.Printf("ERR m.RevokeCertificate: %v", err)
+		m.opts.Logger.Errorf("ERR m.RevokeCertificate: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -459,7 +458,7 @@ func (m *PKIManager) handleRevokeCert(w http.ResponseWriter, req *http.Request, 
 
 func (m *PKIManager) handleDownloadCert(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
-		log.Printf("ERR method: %v", req.Method)
+		m.opts.Logger.Errorf("ERR method: %v", req.Method)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
@@ -467,7 +466,7 @@ func (m *PKIManager) handleDownloadCert(w http.ResponseWriter, req *http.Request
 	sn := req.Form.Get("sn")
 	c, err := m.findCert(sn)
 	if err != nil {
-		log.Printf("ERR findCert: %v", err)
+		m.opts.Logger.Errorf("ERR findCert: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -478,7 +477,7 @@ func (m *PKIManager) handleDownloadCert(w http.ResponseWriter, req *http.Request
 
 func (m *PKIManager) handleStaticFile(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
-		log.Printf("ERR method: %v", req.Method)
+		m.opts.Logger.Errorf("ERR method: %v", req.Method)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}

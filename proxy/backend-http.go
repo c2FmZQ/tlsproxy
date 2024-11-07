@@ -30,7 +30,6 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -66,12 +65,12 @@ var (
 	commaRE = regexp.MustCompile(`, *`)
 )
 
-func logPanic(req *http.Request, recovered any) {
+func (be *Backend) logPanic(req *http.Request, recovered any) {
 	if recovered == http.ErrAbortHandler {
-		log.Printf("ERR %s ➔ %s %s ➔ Aborted (%q)", formatReqDesc(req), req.Method, req.URL, userAgent(req))
+		be.logErrorF("ERR %s ➔ %s %s ➔ Aborted (%q)", formatReqDesc(req), req.Method, req.URL, userAgent(req))
 		return
 	}
-	log.Printf("PANIC: %#v\n%s", recovered, string(debug.Stack()))
+	be.logErrorF("PANIC: %#v\n%s", recovered, string(debug.Stack()))
 }
 
 // localHandler returns an HTTP handler for backends that are served entirely by
@@ -80,7 +79,7 @@ func (be *Backend) localHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		defer func() {
 			if r := recover(); r != nil {
-				logPanic(req, r)
+				be.logPanic(req, r)
 			}
 		}()
 		if !be.authenticateUser(w, &req) {
@@ -93,7 +92,7 @@ func (be *Backend) localHandler() http.Handler {
 	})
 }
 
-func redirectPermanently(w http.ResponseWriter, req *http.Request, path string) {
+func (be *Backend) redirectPermanently(w http.ResponseWriter, req *http.Request, path string) {
 	code := http.StatusMovedPermanently
 	if req.Method != http.MethodGet && req.Method != http.MethodHead {
 		code = http.StatusSeeOther
@@ -102,7 +101,7 @@ func redirectPermanently(w http.ResponseWriter, req *http.Request, path string) 
 		Path:     path,
 		RawQuery: req.URL.RawQuery,
 	}
-	log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, code, userAgent(req))
+	be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, code, userAgent(req))
 	http.Redirect(w, req, u.String(), code)
 }
 
@@ -122,7 +121,7 @@ func pathClean(p string) string {
 
 func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, docRoot, prefix string) {
 	notFound := func() {
-		log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL, http.StatusNotFound, userAgent(req))
+		be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL, http.StatusNotFound, userAgent(req))
 		http.NotFound(w, req)
 	}
 
@@ -134,7 +133,7 @@ func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, do
 	switch req.Method {
 	case http.MethodGet, http.MethodHead:
 	default:
-		log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusMethodNotAllowed, userAgent(req))
+		be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusMethodNotAllowed, userAgent(req))
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
@@ -142,7 +141,7 @@ func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, do
 
 	cleanPath := pathClean(req.URL.Path)
 	if cleanPath != req.URL.Path {
-		redirectPermanently(w, req, cleanPath)
+		be.redirectPermanently(w, req, cleanPath)
 		return
 	}
 	p := strings.TrimPrefix(cleanPath, prefix)
@@ -161,17 +160,17 @@ func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, do
 	}
 	if fi.IsDir() {
 		if !strings.HasSuffix(cleanPath, "/") {
-			redirectPermanently(w, req, cleanPath+"/")
+			be.redirectPermanently(w, req, cleanPath+"/")
 			return
 		}
 		p = filepath.Join(p, "index.html")
 		if s, err := os.Stat(p); err != nil || s.IsDir() {
-			log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusForbidden, userAgent(req))
+			be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusForbidden, userAgent(req))
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
 	} else if strings.HasSuffix(cleanPath, "/") {
-		redirectPermanently(w, req, strings.TrimSuffix(cleanPath, "/"))
+		be.redirectPermanently(w, req, strings.TrimSuffix(cleanPath, "/"))
 		return
 	}
 	f, err := os.Open(p)
@@ -181,11 +180,11 @@ func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, do
 	}
 	defer f.Close()
 	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
-		log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusForbidden, userAgent(req))
+		be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusForbidden, userAgent(req))
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
-	log.Printf("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusOK, userAgent(req))
+	be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusOK, userAgent(req))
 	be.setAltSvc(w.Header(), req)
 	http.ServeContent(w, req, p, fi.ModTime(), f)
 }
@@ -202,7 +201,7 @@ func (be *Backend) reverseProxy() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		defer func() {
 			if r := recover(); r != nil {
-				logPanic(req, r)
+				be.logPanic(req, r)
 			}
 		}()
 		if !be.authenticateUser(w, &req) {
@@ -264,7 +263,7 @@ func (be *Backend) reverseProxy() http.Handler {
 		for i, po := range be.PathOverrides {
 			for _, prefix := range po.Paths {
 				if cleanPath+"/" == prefix {
-					redirectPermanently(w, req, cleanPath+"/")
+					be.redirectPermanently(w, req, cleanPath+"/")
 					return
 				}
 				if !strings.HasPrefix(cleanPath, prefix) {
@@ -431,7 +430,7 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 			return false
 		}
 		if cleanPath != req.URL.Path {
-			redirectPermanently(w, req, cleanPath)
+			be.redirectPermanently(w, req, cleanPath)
 			return false
 		}
 		be.setAltSvc(w.Header(), req)
@@ -449,7 +448,7 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 			}
 			return pathSlash == h.path
 		}); hi >= 0 {
-			redirectPermanently(w, req, pathSlash)
+			be.redirectPermanently(w, req, pathSlash)
 			return false
 		}
 	}
@@ -533,7 +532,7 @@ func (be *Backend) reverseProxyModifyResponse(resp *http.Response) error {
 		cl = fmt.Sprintf(" content-length:%d", resp.ContentLength)
 	}
 	url, _ := req.Context().Value(ctxURLKey).(string)
-	log.Printf("PRX %s ➔ %s %s ➔ status:%d%s (%q)", formatReqDesc(req), req.Method, url, resp.StatusCode, cl, userAgent(req))
+	be.logRequestF("PRX %s ➔ %s %s ➔ status:%d%s (%q)", formatReqDesc(req), req.Method, url, resp.StatusCode, cl, userAgent(req))
 
 	if resp.StatusCode != http.StatusMisdirectedRequest && resp.Header.Get(hstsHeader) == "" {
 		resp.Header.Set(hstsHeader, hstsValue)

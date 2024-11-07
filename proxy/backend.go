@@ -31,7 +31,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"slices"
 	"strings"
@@ -163,7 +162,7 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 		if err != nil {
 			max--
 			if max > 0 {
-				log.Printf("ERR dial %q: %v", addr, err)
+				be.logErrorF("ERR dial %q: %v", addr, err)
 				continue
 			}
 			return nil, err

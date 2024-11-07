@@ -94,6 +94,9 @@ type ServerOptions struct {
 	RewriteRules  []RewriteRule
 
 	EventRecorder EventRecorder
+	Logger        interface {
+		Errorf(string, ...any)
+	}
 }
 
 // RewriteRule is used to apply a regular expression on an existing JWT claim
@@ -105,8 +108,17 @@ type RewriteRule struct {
 	Value       string
 }
 
+type defaultLogger struct{}
+
+func (defaultLogger) Errorf(format string, args ...any) {
+	log.Printf(format, args...)
+}
+
 // NewServer returns a new ProviderServer.
 func NewServer(opts ServerOptions) *ProviderServer {
+	if opts.Logger == nil {
+		opts.Logger = defaultLogger{}
+	}
 	return &ProviderServer{
 		opts:         opts,
 		codes:        make(map[string]*codeData),
@@ -219,7 +231,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	}
 	req.ParseForm()
 	if rt := req.Form.Get("response_type"); rt != "code" {
-		log.Printf("ERR ServeAuthorization: invalid response_type %q", rt)
+		s.opts.Logger.Errorf("ERR ServeAuthorization: invalid response_type %q", rt)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
@@ -233,14 +245,14 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		}
 	}
 	if !found {
-		log.Printf("ERR ServeAuthorization: invalid client_id %q or redirect_uri %q", clientID, redirectURI)
+		s.opts.Logger.Errorf("ERR ServeAuthorization: invalid client_id %q or redirect_uri %q", clientID, redirectURI)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 
 	ru, err := url.Parse(redirectURI)
 	if err != nil {
-		log.Printf("ERR ServeAuthorization: invalid redirect_uri %q", redirectURI)
+		s.opts.Logger.Errorf("ERR ServeAuthorization: invalid redirect_uri %q", redirectURI)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
@@ -290,7 +302,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	}
 	claims["scope"] = sc
 
-	applyRewriteRules(s.opts.RewriteRules, userClaims, claims)
+	s.applyRewriteRules(s.opts.RewriteRules, userClaims, claims)
 
 	token, err := s.opts.TokenManager.CreateToken(claims, "RS256")
 	if err != nil {
@@ -438,7 +450,7 @@ func (s *ProviderServer) ServeUserInfo(w http.ResponseWriter, req *http.Request)
 	w.Write(content)
 }
 
-func applyRewriteRules(rules []RewriteRule, in, out jwt.MapClaims) {
+func (s *ProviderServer) applyRewriteRules(rules []RewriteRule, in, out jwt.MapClaims) {
 	buf := maps.Clone(in)
 	getClaim := func(n string) string {
 		if v, exists := buf[n]; exists {
@@ -461,7 +473,7 @@ func applyRewriteRules(rules []RewriteRule, in, out jwt.MapClaims) {
 		}
 		re, err := regexp.Compile(rr.Regex)
 		if err != nil {
-			log.Printf("ERR REGEX %q: %v", rr.Regex, err)
+			s.opts.Logger.Errorf("ERR REGEX %q: %v", rr.Regex, err)
 			continue
 		}
 		if !re.MatchString(input) {
@@ -470,6 +482,6 @@ func applyRewriteRules(rules []RewriteRule, in, out jwt.MapClaims) {
 		v := re.ReplaceAllString(input, rr.Value)
 		buf[rr.OutputClaim] = v
 		out[rr.OutputClaim] = v
-		log.Printf("DBG REGEX %s: %q -> %q", rr.OutputClaim, input, v)
+		s.opts.Logger.Errorf("DBG REGEX %s: %q -> %q", rr.OutputClaim, input, v)
 	}
 }

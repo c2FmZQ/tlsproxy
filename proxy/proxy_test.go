@@ -1148,7 +1148,7 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 		panic(err)
 	}
 	store := storage.New(filepath.Join(cfg.CacheDir, "test"), mk)
-	tm, err := tokenmanager.New(store, tpmSim)
+	tm, err := tokenmanager.New(store, tpmSim, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -1158,11 +1158,11 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 		tpm:          tpmSim,
 		store:        store,
 		tokenManager: tm,
-		ocspCache:    ocspcache.New(store),
 		bwLimits:     make(map[string]*bwLimit),
 		inConns:      newConnTracker(),
 		outConns:     newConnTracker(),
 	}
+	p.ocspCache = ocspcache.New(store, p.extLogger())
 	p.Reconfigure(cfg)
 	return p
 }

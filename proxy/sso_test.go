@@ -535,7 +535,7 @@ func newIDPServer(t *testing.T) *idpServer {
 		t.Fatalf("crypto.CreateMasterKey: %v", err)
 	}
 	store := storage.New(dir, mk)
-	tm, err := tokenmanager.New(store, nil)
+	tm, err := tokenmanager.New(store, nil, nil)
 	if err != nil {
 		t.Fatalf("tokenmanager.New: %v", err)
 	}

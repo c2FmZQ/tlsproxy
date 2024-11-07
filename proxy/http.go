@@ -111,7 +111,9 @@ func userAgent(req *http.Request) string {
 
 func logHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		log.Printf("REQ %s ➔ %s %s (%q)", formatReqDesc(req), req.Method, req.URL, userAgent(req))
+		if be := connBackend(req.Context().Value(connCtxKey).(anyConn)); be != nil {
+			be.logRequestF("REQ %s ➔ %s %s (%q)", formatReqDesc(req), req.Method, req.URL, userAgent(req))
+		}
 		next.ServeHTTP(w, req)
 	})
 }

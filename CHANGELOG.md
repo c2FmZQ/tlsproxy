@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## unreleased
+
+### :wrench: Misc
+
+* Add a configuration option to filter out logged data. See `LogFilter` in [config.go](https://github.com/c2FmZQ/tlsproxy/blob/main/proxy/config.go). This can be set at the top level config, the backend level config, or both.
+
 ## v0.10.9
 
 ### :wrench: Bug fix

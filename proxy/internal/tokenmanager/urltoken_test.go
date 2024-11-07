@@ -38,7 +38,7 @@ func TestURLToken(t *testing.T) {
 		t.Fatalf("crypto.CreateMasterKey: %v", err)
 	}
 	store := storage.New(dir, mk)
-	tm, err := New(store, nil)
+	tm, err := New(store, nil, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

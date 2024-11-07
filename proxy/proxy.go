@@ -164,8 +164,9 @@ type identityProvider interface {
 
 // New returns a new initialized Proxy.
 func New(cfg *Config, passphrase []byte) (*Proxy, error) {
+	p := &Proxy{}
 	opts := []crypto.Option{
-		crypto.WithLogger(logger{}),
+		crypto.WithLogger(p.extLogger()),
 	}
 	var pTPM *tpm.TPM
 	if cfg.HWBacked {
@@ -193,26 +194,26 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 	if !cfg.AcceptTOS {
 		return nil, errors.New("AcceptTOS must be set to true")
 	}
-	tm, err := tokenmanager.New(store, pTPM)
+	tm, err := tokenmanager.New(store, pTPM, p.extLogger())
 	if err != nil {
 		return nil, err
 	}
-	p := &Proxy{
-		certManager: &autocert.Manager{
-			Prompt: autocert.AcceptTOS,
-			Cache:  autocertcache.New("autocert", store),
-			Email:  cfg.Email,
-		},
-		tpm:          pTPM,
-		mk:           mk,
-		store:        store,
-		tokenManager: tm,
-		pkis:         make(map[string]*pki.PKIManager),
-		ocspCache:    ocspcache.New(store),
-		bwLimits:     make(map[string]*bwLimit),
-		inConns:      newConnTracker(),
-		outConns:     newConnTracker(),
+
+	p.certManager = &autocert.Manager{
+		Prompt: autocert.AcceptTOS,
+		Cache:  autocertcache.New("autocert", store),
+		Email:  cfg.Email,
 	}
+	p.tpm = pTPM
+	p.mk = mk
+	p.store = store
+	p.tokenManager = tm
+	p.pkis = make(map[string]*pki.PKIManager)
+	p.ocspCache = ocspcache.New(store, p.extLogger())
+	p.bwLimits = make(map[string]*bwLimit)
+	p.inConns = newConnTracker()
+	p.outConns = newConnTracker()
+
 	if err := p.Reconfigure(cfg); err != nil {
 		return nil, err
 	}
@@ -222,8 +223,9 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 // NewTestProxy returns a test Proxy that uses an internal certificate manager
 // instead of letsencrypt.
 func NewTestProxy(cfg *Config) (*Proxy, error) {
+	p := &Proxy{}
 	cm, err := certmanager.New("root-ca.example.com", func(fmt string, args ...interface{}) {
-		log.Printf("DBG CertManager: "+fmt, args...)
+		p.logErrorF("DBG CertManager: "+fmt, args...)
 	})
 	if err != nil {
 		return nil, err
@@ -231,7 +233,7 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 	passphrase := []byte("test")
 	opts := []crypto.Option{
 		crypto.WithAlgo(crypto.PickFastest),
-		crypto.WithLogger(logger{}),
+		crypto.WithLogger(p.extLogger()),
 	}
 	mkFile := filepath.Join(cfg.CacheDir, "test", "masterkey")
 	mk, err := crypto.ReadMasterKey(passphrase, mkFile, opts...)
@@ -245,21 +247,21 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 		return nil, fmt.Errorf("masterkey: %w", err)
 	}
 	store := storage.New(filepath.Join(cfg.CacheDir, "test"), mk)
-	tm, err := tokenmanager.New(store, nil)
+	tm, err := tokenmanager.New(store, nil, p.extLogger())
 	if err != nil {
 		return nil, err
 	}
-	p := &Proxy{
-		certManager:  cm,
-		mk:           mk,
-		store:        store,
-		tokenManager: tm,
-		pkis:         make(map[string]*pki.PKIManager),
-		ocspCache:    ocspcache.New(store),
-		bwLimits:     make(map[string]*bwLimit),
-		inConns:      newConnTracker(),
-		outConns:     newConnTracker(),
-	}
+
+	p.certManager = cm
+	p.mk = mk
+	p.store = store
+	p.tokenManager = tm
+	p.pkis = make(map[string]*pki.PKIManager)
+	p.ocspCache = ocspcache.New(store, p.extLogger())
+	p.bwLimits = make(map[string]*bwLimit)
+	p.inConns = newConnTracker()
+	p.outConns = newConnTracker()
+
 	if err := p.Reconfigure(cfg); err != nil {
 		return nil, err
 	}
@@ -282,7 +284,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		return err
 	}
 	if p.cfg != nil {
-		log.Print("INF Configuration changed")
+		p.logErrorF("INF Configuration changed")
 		p.recordEvent("config change")
 	}
 
@@ -423,6 +425,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		be.tm = p.tokenManager
 		be.quicTransport = p.quicTransport
 		be.ocspCache = p.ocspCache
+		be.defaultLogFilter = cfg.LogFilter
 
 		for _, sn := range be.ServerNames {
 			key := beKey{serverName: sn}
@@ -502,6 +505,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 					ClaimsFromCtx: claimsFromCtx,
 					Clients:       make([]oidc.Client, 0, len(ls.Clients)),
 					EventRecorder: er,
+					Logger:        p.extLogger(),
 				}
 				for _, client := range ls.Clients {
 					opts.Clients = append(opts.Clients, oidc.Client{
@@ -725,12 +729,12 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		for _, v := range urls {
 			host, _, path, err := hostAndPath(v)
 			if err != nil {
-				log.Printf("ERR %s: %v", v, err)
+				p.logErrorF("ERR %s: %v", v, err)
 				continue
 			}
 			be, exists := backends[beKey{serverName: host}]
 			if !exists {
-				log.Printf("ERR Backend for %s not found", v)
+				p.logErrorF("ERR Backend for %s not found", v)
 				continue
 			}
 			h.host = host
@@ -749,7 +753,9 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		addLocalHandler(localHandler{
 			desc: fmt.Sprintf("OIDC Client Redirect Endpoint (%s)", p.name),
 			handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				log.Printf("REQ %s ➔ %s %s (SSO callback) (%q)", formatReqDesc(req), req.Method, req.URL.Path, userAgent(req))
+				if be := connBackend(req.Context().Value(connCtxKey).(anyConn)); be != nil {
+					be.logRequestF("REQ %s ➔ %s %s (SSO callback) (%q)", formatReqDesc(req), req.Method, req.URL.Path, userAgent(req))
+				}
 				p.identityProvider.HandleCallback(w, req)
 			}),
 			ssoBypass:  true,
@@ -819,18 +825,18 @@ func (p *Proxy) reAuthorize() {
 		be, err := p.backend(serverName, proto)
 		if err != nil {
 			p.recordEvent(err.Error())
-			log.Printf("BAD [-] ReAuth %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
+			be.logErrorF("BAD [-] ReAuth %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
 			conn.Close()
 			continue
 		}
 		if oldBE := connBackend(conn); be.Mode != oldBE.Mode {
-			log.Printf("INF [-] ReAuth %s ➔  %q backend mode changed %s->%s", conn.RemoteAddr(), idnaToUnicode(serverName), oldBE.Mode, be.Mode)
+			be.logErrorF("INF [-] ReAuth %s ➔  %q backend mode changed %s->%s", conn.RemoteAddr(), idnaToUnicode(serverName), oldBE.Mode, be.Mode)
 			conn.Close()
 			continue
 		}
 		if err := be.checkIP(conn.RemoteAddr()); err != nil {
 			p.recordEvent(serverName + " CheckIP " + err.Error())
-			log.Printf("BAD [-] ReAuth %s ➔ %q CheckIP: %v", conn.RemoteAddr(), idnaToUnicode(serverName), err)
+			be.logErrorF("BAD [-] ReAuth %s ➔ %q CheckIP: %v", conn.RemoteAddr(), idnaToUnicode(serverName), err)
 			conn.Close()
 			continue
 		}
@@ -840,7 +846,7 @@ func (p *Proxy) reAuthorize() {
 		clientCert := connClientCert(conn)
 		if err := be.authorize(clientCert); err != nil {
 			p.recordEvent(err.Error())
-			log.Printf("BAD [-] ReAuth %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), idnaToUnicode(serverName), certSummary(clientCert), err)
+			be.logErrorF("BAD [-] ReAuth %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), idnaToUnicode(serverName), certSummary(clientCert), err)
 			conn.Close()
 			continue
 		}
@@ -894,15 +900,15 @@ func (p *Proxy) ctxWait(s *http.Server) {
 }
 
 func (p *Proxy) acceptLoop() {
-	log.Printf("INF Accepting TLS connections on %s %s", p.listener.Addr().Network(), p.listener.Addr())
+	p.logErrorF("INF Accepting TLS connections on %s %s", p.listener.Addr().Network(), p.listener.Addr())
 	for {
 		conn, err := p.listener.Accept()
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
-				log.Print("INF TLS Accept loop terminated")
+				p.logErrorF("INF TLS Accept loop terminated")
 				break
 			}
-			log.Printf("ERR TLS Accept: %v", err)
+			p.logErrorF("ERR TLS Accept: %v", err)
 			continue
 		}
 		go p.handleConnection(conn.(*netw.Conn))
@@ -1033,7 +1039,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	defer func() {
 		if r := recover(); r != nil {
 			p.recordEvent("panic")
-			log.Printf("ERR [%s] %s: PANIC: %v", certSummary(connClientCert(conn)), conn.RemoteAddr(), r)
+			p.logErrorF("ERR [%s] %s: PANIC: %v", certSummary(connClientCert(conn)), conn.RemoteAddr(), r)
 			conn.Close()
 		}
 	}()
@@ -1051,20 +1057,20 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	numOpen := p.inConns.add(conn)
 	conn.OnClose(func() {
 		p.inConns.remove(conn)
-		if conn.Annotation(reportEndKey, false).(bool) {
-			startTime := conn.Annotation(startTimeKey, time.Time{}).(time.Time)
-			log.Printf("END %s; Dur:%s Recv:%d Sent:%d",
-				formatConnDesc(conn), time.Since(startTime).Truncate(time.Millisecond),
-				conn.BytesReceived(), conn.BytesSent())
-		}
 		if be := connBackend(conn); be != nil {
 			be.incInFlight(-1)
+			if conn.Annotation(reportEndKey, false).(bool) {
+				startTime := conn.Annotation(startTimeKey, time.Time{}).(time.Time)
+				be.logConnF("END %s; Dur:%s Recv:%d Sent:%d",
+					formatConnDesc(conn), time.Since(startTime).Truncate(time.Millisecond),
+					conn.BytesReceived(), conn.BytesSent())
+			}
 		}
 		p.connClosed.Broadcast()
 	})
 	if numOpen >= p.cfg.MaxOpen {
 		p.recordEvent("too many open connections")
-		log.Printf("ERR [-] %s: too many open connections: %d >= %d", conn.RemoteAddr(), numOpen, p.cfg.MaxOpen)
+		p.logErrorF("ERR [-] %s: too many open connections: %d >= %d", conn.RemoteAddr(), numOpen, p.cfg.MaxOpen)
 		sendCloseNotify(conn)
 		return
 	}
@@ -1073,7 +1079,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	hello, err := peekClientHello(conn)
 	if err != nil {
 		p.recordEvent("invalid ClientHello")
-		log.Printf("BAD [-] %s ➔ %q: invalid ClientHello: %v", conn.RemoteAddr(), hello.ServerName, err)
+		p.logErrorF("BAD [-] %s ➔ %q: invalid ClientHello: %v", conn.RemoteAddr(), hello.ServerName, err)
 		return
 	}
 	serverName := hello.ServerName
@@ -1086,7 +1092,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	be, err := p.backend(serverName, hello.ALPNProtos...)
 	if err != nil {
 		p.recordEvent(err.Error())
-		log.Printf("BAD [-] %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
+		p.logErrorF("BAD [-] %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
 		sendUnrecognizedName(conn)
 		return
 	}
@@ -1122,7 +1128,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		p.handleTLSConnection(tls.Server(conn, be.tlsConfig))
 
 	default:
-		log.Printf("ERR [-] %s: unhandled connection %q", conn.RemoteAddr(), be.Mode)
+		be.logErrorF("ERR [-] %s: unhandled connection %q", conn.RemoteAddr(), be.Mode)
 	}
 }
 
@@ -1133,7 +1139,7 @@ func (p *Proxy) checkIP(conn *netw.Conn) error {
 	if err := be.checkIP(conn.RemoteAddr()); err != nil {
 		serverName := idnaToUnicode(connServerName(conn))
 		p.recordEvent(serverName + " CheckIP " + err.Error())
-		log.Printf("BAD [-] %s ➔ %q CheckIP: %v", conn.RemoteAddr(), serverName, err)
+		be.logConnF("BAD [-] %s ➔ %q CheckIP: %v", conn.RemoteAddr(), serverName, err)
 		sendUnrecognizedName(conn)
 		return err
 	}
@@ -1144,10 +1150,10 @@ func (p *Proxy) handleACMEConnection(conn *tls.Conn) {
 	ctx, cancel := context.WithTimeout(p.ctx, 2*time.Minute)
 	defer cancel()
 	serverName := idnaToUnicode(connServerName(conn))
-	log.Printf("INF ACME %s ➔  %s", conn.RemoteAddr(), serverName)
+	p.logConnF("INF ACME %s ➔  %s", conn.RemoteAddr(), serverName)
 	if err := conn.HandshakeContext(ctx); err != nil {
 		p.recordEvent("tls handshake failed")
-		log.Printf("BAD [-] %s ➔ %q Handshake: %v", conn.RemoteAddr(), serverName, unwrapErr(err))
+		p.logErrorF("BAD [-] %s ➔ %q Handshake: %v", conn.RemoteAddr(), serverName, unwrapErr(err))
 	}
 }
 
@@ -1168,14 +1174,14 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 		default:
 			p.recordEvent("tls handshake failed")
 		}
-		log.Printf("BAD [-] %s ➔ %q Handshake: %v", conn.RemoteAddr(), idnaToUnicode(serverName), unwrapErr(err))
+		be.logErrorF("BAD [-] %s ➔ %q Handshake: %v", conn.RemoteAddr(), idnaToUnicode(serverName), unwrapErr(err))
 		return false
 	}
 	annotatedConn(conn).SetAnnotation(handshakeDoneKey, time.Now())
 	cs := conn.ConnectionState()
 	if (cs.ServerName == "" && serverName != p.defaultServerName()) || (cs.ServerName != "" && cs.ServerName != serverName) {
 		p.recordEvent("mismatched server name")
-		log.Printf("BAD [-] %s ➔ %q Mismatched server name", conn.RemoteAddr(), serverName)
+		be.logErrorF("BAD [-] %s ➔ %q Mismatched server name", conn.RemoteAddr(), serverName)
 		return false
 	}
 	proto := cs.NegotiatedProtocol
@@ -1190,7 +1196,7 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 	if be.ClientAuth != nil && be.ClientAuth.ACL != nil {
 		if err := be.authorize(clientCert); err != nil {
 			p.recordEvent(err.Error())
-			log.Printf("BAD [-] %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), idnaToUnicode(serverName), certSummary(clientCert), err)
+			be.logErrorF("BAD [-] %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), idnaToUnicode(serverName), certSummary(clientCert), err)
 			return false
 		}
 	}
@@ -1206,24 +1212,24 @@ func (p *Proxy) handleHTTPConnection(conn *tls.Conn) {
 	be := connBackend(conn)
 	if err := be.connLimit.Wait(p.ctx); err != nil {
 		p.recordEvent(err.Error())
-		log.Printf("ERR [-] %s ➔  %q Wait: %v", conn.RemoteAddr(), idnaToUnicode(serverName), err)
+		be.logErrorF("ERR [-] %s ➔  %q Wait: %v", conn.RemoteAddr(), idnaToUnicode(serverName), err)
 		conn.Close()
 		return
 	}
 	if be.Mode != ModeConsole && be.Mode != ModeLocal && be.Mode != ModeHTTP && be.Mode != ModeHTTPS {
 		p.recordEvent("wrong mode")
-		log.Printf("ERR [-] %s ➔  %q Mode is not [CONSOLE, LOCAL, HTTP, HTTPS]", conn.RemoteAddr(), idnaToUnicode(serverName))
+		be.logErrorF("ERR [-] %s ➔  %q Mode is not [CONSOLE, LOCAL, HTTP, HTTPS]", conn.RemoteAddr(), idnaToUnicode(serverName))
 		conn.Close()
 		return
 	}
 	if be.httpConnChan == nil {
 		p.recordEvent("conn chan nil")
-		log.Printf("ERR [-] %s ➔  %q conn channel is nil", conn.RemoteAddr(), idnaToUnicode(serverName))
+		be.logErrorF("ERR [-] %s ➔  %q conn channel is nil", conn.RemoteAddr(), idnaToUnicode(serverName))
 		conn.Close()
 		return
 	}
 	annotatedConn(conn).SetAnnotation(reportEndKey, true)
-	log.Printf("CON %s", formatConnDesc(conn.NetConn().(*netw.Conn)))
+	be.logConnF("CON %s", formatConnDesc(conn.NetConn().(*netw.Conn)))
 	be.httpConnChan <- conn
 }
 
@@ -1235,7 +1241,7 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 	be := connBackend(extConn)
 	if err := be.connLimit.Wait(p.ctx); err != nil {
 		p.recordEvent(err.Error())
-		log.Printf("ERR [-] %s ➔  %q Wait: %v", extConn.RemoteAddr(), idnaToUnicode(serverName), err)
+		be.logErrorF("ERR [-] %s ➔  %q Wait: %v", extConn.RemoteAddr(), idnaToUnicode(serverName), err)
 		return
 	}
 
@@ -1247,7 +1253,7 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 	intConn, err := be.dial(context.WithValue(p.ctx, connCtxKey, extConn), protos...)
 	if err != nil {
 		p.recordEvent("dial error")
-		log.Printf("ERR [-] %s ➔  %q Dial: %v", extConn.RemoteAddr(), idnaToUnicode(serverName), err)
+		be.logErrorF("ERR [-] %s ➔  %q Dial: %v", extConn.RemoteAddr(), idnaToUnicode(serverName), err)
 		return
 	}
 	defer intConn.Close()
@@ -1255,10 +1261,10 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 	annotatedConn(extConn).SetAnnotation(dialDoneKey, time.Now())
 
 	desc := formatConnDesc(annotatedConn(extConn))
-	log.Printf("CON %s", desc)
+	be.logConnF("CON %s", desc)
 
 	if err := be.bridgeConns(extConn, intConn); err != nil {
-		log.Printf("DBG %s %v", desc, err)
+		be.logErrorF("DBG %s %v", desc, err)
 	}
 
 	startTime := annotatedConn(extConn).Annotation(startTimeKey, time.Time{}).(time.Time)
@@ -1266,7 +1272,7 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 	dialTime := annotatedConn(extConn).Annotation(dialDoneKey, time.Time{}).(time.Time)
 	totalTime := time.Since(startTime).Truncate(time.Millisecond)
 
-	log.Printf("END %s; HS:%s Dial:%s Dur:%s Recv:%d Sent:%d", desc,
+	be.logConnF("END %s; HS:%s Dial:%s Dur:%s Recv:%d Sent:%d", desc,
 		hsTime.Sub(startTime).Truncate(time.Millisecond),
 		dialTime.Sub(hsTime).Truncate(time.Millisecond), totalTime,
 		annotatedConn(extConn).BytesReceived(), annotatedConn(extConn).BytesSent())
@@ -1277,7 +1283,7 @@ func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
 	be := connBackend(extConn)
 	if err := be.connLimit.Wait(p.ctx); err != nil {
 		p.recordEvent(err.Error())
-		log.Printf("ERR [-] %s ➔  %q Wait: %v", extConn.RemoteAddr(), idnaToUnicode(serverName), err)
+		be.logErrorF("ERR [-] %s ➔  %q Wait: %v", extConn.RemoteAddr(), idnaToUnicode(serverName), err)
 		sendInternalError(extConn)
 		return
 	}
@@ -1285,7 +1291,7 @@ func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
 	intConn, err := be.dial(context.WithValue(p.ctx, connCtxKey, extConn))
 	if err != nil {
 		p.recordEvent("dial error")
-		log.Printf("ERR [-] %s ➔  %q Dial: %v", extConn.RemoteAddr(), idnaToUnicode(serverName), err)
+		be.logErrorF("ERR [-] %s ➔  %q Dial: %v", extConn.RemoteAddr(), idnaToUnicode(serverName), err)
 		sendInternalError(extConn)
 		return
 	}
@@ -1295,17 +1301,17 @@ func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
 	annotatedConn(extConn).SetAnnotation(dialDoneKey, time.Now())
 
 	desc := formatConnDesc(annotatedConn(extConn))
-	log.Printf("CON %s", desc)
+	be.logConnF("CON %s", desc)
 
 	if err := be.bridgeConns(extConn, intConn); err != nil {
-		log.Printf("DBG  %s %v", desc, err)
+		be.logErrorF("DBG  %s %v", desc, err)
 	}
 
 	startTime := annotatedConn(extConn).Annotation(startTimeKey, time.Time{}).(time.Time)
 	dialTime := annotatedConn(extConn).Annotation(dialDoneKey, time.Time{}).(time.Time)
 	totalTime := time.Since(startTime).Truncate(time.Millisecond)
 
-	log.Printf("END %s; Dial:%s Dur:%s Recv:%d Sent:%d", desc,
+	be.logConnF("END %s; Dial:%s Dur:%s Recv:%d Sent:%d", desc,
 		dialTime.Sub(startTime).Truncate(time.Millisecond), totalTime,
 		annotatedConn(extConn).BytesReceived(), annotatedConn(extConn).BytesSent())
 }
@@ -1488,34 +1494,4 @@ func unwrapErr(err error) error {
 		return unwrapErr(e.Err)
 	}
 	return err
-}
-
-type logger struct{}
-
-func (logger) Debug(args ...any) {}
-
-func (logger) Debugf(f string, args ...any) {}
-
-func (logger) Info(args ...any) {
-	log.Print(append([]any{"INF "}, args...)...)
-}
-
-func (logger) Infof(f string, args ...any) {
-	log.Printf("INF "+f, args...)
-}
-
-func (logger) Error(args ...any) {
-	log.Print(append([]any{"ERR "}, args...)...)
-}
-
-func (logger) Errorf(f string, args ...any) {
-	log.Printf("ERR "+f, args...)
-}
-
-func (logger) Fatal(args ...any) {
-	log.Fatal(append([]any{"FATAL "}, args...)...)
-}
-
-func (logger) Fatalf(f string, args ...any) {
-	log.Fatalf("FATAL "+f, args...)
 }

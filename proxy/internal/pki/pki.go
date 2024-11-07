@@ -39,6 +39,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"log"
 	"math/big"
 	"net/url"
 	"slices"
@@ -80,6 +81,12 @@ var (
 	errNotFound      = errors.New("not found")
 )
 
+type defaultLogger struct{}
+
+func (defaultLogger) Errorf(format string, args ...any) {
+	log.Printf(format, args...)
+}
+
 // Options are used to configure the PKI manager.
 type Options struct {
 	// Name is the names of the PKI manager.
@@ -109,6 +116,9 @@ type Options struct {
 	EventRecorder interface {
 		Record(string)
 	}
+	Logger interface {
+		Errorf(format string, args ...any)
+	}
 	// ClaimsFromCtx returns jwt claims for the current user.
 	ClaimsFromCtx func(context.Context) jwt.MapClaims
 }
@@ -116,6 +126,9 @@ type Options struct {
 // New returns a new initialized PKI manager. The Certificate Authority's key
 // and certificate are created the first time New is called for a given name.
 func New(opts Options) (*PKIManager, error) {
+	if opts.Logger == nil {
+		opts.Logger = defaultLogger{}
+	}
 	m := &PKIManager{
 		opts:    opts,
 		pkiFile: "pki-" + url.PathEscape(opts.Name),
