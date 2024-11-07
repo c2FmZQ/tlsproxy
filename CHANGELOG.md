@@ -2,9 +2,17 @@
 
 ## unreleased
 
-### :wrench: Misc
+### :star2: New feature
 
 * Add a configuration option to filter out logged data. See `LogFilter` in [config.go](https://github.com/c2FmZQ/tlsproxy/blob/main/proxy/config.go). This can be set at the top level config, the backend level config, or both.
+
+### :wrench: Misc
+* Update go: 1.23.3
+* Update go dependencies:
+  * upgraded github.com/google/pprof v0.0.0-20241008150032-332c0e1a4a34 => v0.0.0-20241101162523-b92577c0c142
+  * upgraded github.com/onsi/ginkgo/v2 v2.20.2 => v2.21.0
+  * upgraded go.uber.org/mock v0.4.0 => v0.5.0
+  * upgraded golang.org/x/exp v0.0.0-20241004190924-225e2abe05e6 => v0.0.0-20241009180824-f66d83c29e7c
 
 ## v0.10.9
 
