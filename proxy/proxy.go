@@ -43,6 +43,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -191,18 +192,17 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 		return nil, fmt.Errorf("%s: %w", mkFile, err)
 	}
 	store := storage.New(cfg.CacheDir, mk)
-	if !cfg.AcceptTOS {
-		return nil, errors.New("AcceptTOS must be set to true")
-	}
 	tm, err := tokenmanager.New(store, pTPM, p.extLogger())
 	if err != nil {
 		return nil, err
 	}
 
 	p.certManager = &autocert.Manager{
-		Prompt: autocert.AcceptTOS,
-		Cache:  autocertcache.New("autocert", store),
-		Email:  cfg.Email,
+		Cache: autocertcache.New("autocert", store),
+		Email: cfg.Email,
+	}
+	if p.cfg.AcceptTOS {
+		p.certManager.(*autocert.Manager).Prompt = autocert.AcceptTOS
 	}
 	p.tpm = pTPM
 	p.mk = mk
@@ -989,6 +989,18 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 		if hello.ServerName == "" {
 			hello.ServerName = p.defaultServerName()
 		}
+		// Look for a TLS cert from the config.
+		if cert, err := p.getCertFromConfig(hello.ServerName); err != nil {
+			return nil, err
+		} else if cert != nil {
+			return cert, nil
+		}
+		// Get a cert from Let's Encrypt.
+		if !p.cfg.AcceptTOS {
+			if _, ok := p.certManager.(*autocert.Manager); ok {
+				return nil, errors.New("AcceptTOS must be set to true")
+			}
+		}
 		cert, err := getCert(hello)
 		if err != nil {
 			return nil, err
@@ -1017,6 +1029,28 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 	tc.NextProtos = *defaultALPNProtos
 	tc.MinVersion = tls.VersionTLS12
 	return tc
+}
+
+func (p *Proxy) getCertFromConfig(serverName string) (*tls.Certificate, error) {
+	for _, c := range p.cfg.TLSCertificates {
+		if slices.IndexFunc(c.ServerNames, func(v string) bool {
+			if v == serverName {
+				return true
+			}
+			if matched, err := path.Match(v, serverName); err == nil && matched {
+				return true
+			}
+			return false
+		}) < 0 {
+			continue
+		}
+		cert, err := tls.LoadX509KeyPair(c.CertFile, c.KeyFile)
+		if err != nil {
+			return nil, err
+		}
+		return &cert, nil
+	}
+	return nil, nil
 }
 
 func (p *Proxy) acceptProxyHeader(addr net.Addr) bool {

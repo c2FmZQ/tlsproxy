@@ -158,6 +158,10 @@ type Config struct {
 	// PKI is a list of locally hosted and managed Certificate Authorities
 	// that can be used to authenticate TLS clients and backend servers.
 	PKI []*ConfigPKI `yaml:"pki,omitempty"`
+	// TLSCertificates is a lists of TLS certificates that should be used
+	// instead of Let's Encrypt. If a certificate is needed but there is no
+	// match in this list, Let's Encrypt is used.
+	TLSCertificates []*TLSCertificate `yaml:"tlsCertificates"`
 	// BWLimits is the list of named bandwidth limit groups.
 	// Each backend can be associated with one group. The group's limits
 	// are shared between all the backends associated with it.
@@ -184,6 +188,19 @@ type LogFilter struct {
 	Requests *bool `yaml:"requests"`
 	// Errors indicates that errors are logged.
 	Errors *bool `yaml:"errors"`
+}
+
+// TLSCertificate specifies TLS keys and certificates to use for given server
+// names.
+type TLSCertificate struct {
+	// ServerNames is a list of server names for which this certificate
+	// should be used.
+	ServerNames []string `yaml:"serverNames"`
+	// KeyFile is the name of the file that contains the private key.
+	KeyFile string `yaml:"key"`
+	// CertFile is the name of the file that contains the X.509 certificate
+	// chain.
+	CertFile string `yaml:"cert"`
 }
 
 // Backend encapsulates the data of one backend.

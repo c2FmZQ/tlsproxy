@@ -26,6 +26,7 @@ Overview of features:
 * [x] Simple round-robin load balancing between servers.
 * [x] Support any ALPN protocol in TLS, TLSPASSTHROUGH, QUIC, or TCP mode.
 * [x] OCSP stapling and OCSP certificate verification.
+* [x] Support for TLS certificates stored locally.
 * [x] Hardware-backed cryptographic keys for encryption and signing with a [TPM](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/TPM.md).
 * [x] Use the same address (IPAddr:port) for any number of server names, e.g. foo.example.com and bar.example.com on the same xxx.xxx.xxx.xxx:443.
 

@@ -30,6 +30,7 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -584,6 +585,134 @@ func TestAuthnAuthz(t *testing.T) {
 	}
 	if _, err := get("pkitest.example.com", "pki"); err == nil {
 		t.Error("get with revoked cert should have failed")
+	}
+}
+
+func TestLocalTLSCerts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+
+	beCert, err := extCA.GetCert("*.example.com")
+	if err != nil {
+		t.Fatalf("extCA.GetCert: %v", err)
+	}
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "cert.pem")
+	keyFile := filepath.Join(dir, "key.pem")
+
+	f, err := os.Create(certFile)
+	if err != nil {
+		t.Fatalf("os.Create(%q): %v", certFile, err)
+	}
+	for _, c := range beCert.Certificate {
+		if err := pem.Encode(f, &pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: c,
+		}); err != nil {
+			t.Fatalf("pem.Encode: %v", err)
+		}
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close(): %v", err)
+	}
+
+	if f, err = os.Create(keyFile); err != nil {
+		t.Fatalf("os.Create(%q): %v", keyFile, err)
+	}
+	pk, err := x509.MarshalPKCS8PrivateKey(beCert.PrivateKey)
+	if err != nil {
+		t.Fatalf("x509.MarshalPKCS8PrivateKey: %v", err)
+	}
+	if err := pem.Encode(f, &pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: pk,
+	}); err != nil {
+		t.Fatalf("pem.Encode: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close(): %v", err)
+	}
+
+	// Backend for HTTP
+	be := newHTTPServer(t, ctx, "http", nil)
+
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: "localhost:0",
+			TLSAddr:  "localhost:0",
+			CacheDir: t.TempDir(),
+			MaxOpen:  100,
+			TLSCertificates: []*TLSCertificate{
+				{
+					ServerNames: []string{"http.example.com"},
+					KeyFile:     "BADFILE",
+					CertFile:    "BADFILE",
+				},
+				{
+					ServerNames: []string{"http2.example.com", "http3.example.com"},
+					KeyFile:     keyFile,
+					CertFile:    certFile,
+				},
+				{
+					ServerNames: []string{"*.example.com"},
+					KeyFile:     keyFile,
+					CertFile:    certFile,
+				},
+			},
+			Backends: []*Backend{
+				// HTTP
+				{
+					ServerNames: []string{
+						"http.example.com",
+						"http2.example.com",
+						"http3.example.com",
+						"foo.example.com",
+						"bar.example.ORG",
+					},
+					Addresses: []string{
+						be.String(),
+					},
+					Mode: "HTTP",
+				},
+			},
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+
+	get := func(host string) (string, error) {
+		body, _, err := httpGet(host, proxy.listener.Addr().String(), "/", extCA, nil)
+		return body, err
+	}
+
+	for _, tc := range []struct {
+		desc, host, want string
+		expError         bool
+	}{
+		{desc: "Hit http", host: "http.example.com", expError: true},
+		{desc: "Hit http2", host: "http2.example.com", want: "[http] /"},
+		{desc: "Hit http3", host: "http3.example.com", want: "[http] /"},
+		{desc: "Hit foo", host: "foo.example.com", want: "[http] /"},
+		{desc: "Hit bar", host: "bar.example.org", want: "[http] /"},
+	} {
+		got, err := get(tc.host)
+		if tc.expError != (err != nil) {
+			t.Fatalf("%s: Got error %v, want %v. Body: %q err: %v", tc.desc, (err != nil), tc.expError, got, err)
+			continue
+		}
+		if err != nil {
+			continue
+		}
+		if !strings.Contains(got, tc.want) {
+			t.Errorf("%s: Got %q, want %q", tc.desc, got, tc.want)
+		}
 	}
 }
 
