@@ -77,6 +77,13 @@ func (be *Backend) logErrorF(format string, args ...any) {
 	log.Printf(format, args...)
 }
 
+func (be *Backend) logError(args ...any) {
+	if !shouldLog(logError, be.LogFilter, be.defaultLogFilter) {
+		return
+	}
+	log.Print(args...)
+}
+
 func shouldLog(typ logType, f ...LogFilter) bool {
 	if typ == logConnection {
 		for _, ff := range f {
@@ -108,6 +115,10 @@ func shouldLog(typ logType, f ...LogFilter) bool {
 
 func (p *Proxy) extLogger() logger {
 	return logger{p.logErrorF, p.logError}
+}
+
+func (be *Backend) extLogger() logger {
+	return logger{be.logErrorF, be.logError}
 }
 
 type logger struct {
