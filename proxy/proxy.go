@@ -225,7 +225,7 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 func NewTestProxy(cfg *Config) (*Proxy, error) {
 	p := &Proxy{}
 	cm, err := certmanager.New("root-ca.example.com", func(fmt string, args ...interface{}) {
-		log.Printf("DBG CertManager: "+fmt, args...)
+		p.logErrorF("DBG CertManager: "+fmt, args...)
 	})
 	if err != nil {
 		return nil, err
@@ -284,7 +284,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		return err
 	}
 	if p.cfg != nil {
-		log.Print("INF Configuration changed")
+		p.logErrorF("INF Configuration changed")
 		p.recordEvent("config change")
 	}
 
@@ -729,12 +729,12 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		for _, v := range urls {
 			host, _, path, err := hostAndPath(v)
 			if err != nil {
-				log.Printf("ERR %s: %v", v, err)
+				p.logErrorF("ERR %s: %v", v, err)
 				continue
 			}
 			be, exists := backends[beKey{serverName: host}]
 			if !exists {
-				log.Printf("ERR Backend for %s not found", v)
+				p.logErrorF("ERR Backend for %s not found", v)
 				continue
 			}
 			h.host = host
@@ -900,15 +900,15 @@ func (p *Proxy) ctxWait(s *http.Server) {
 }
 
 func (p *Proxy) acceptLoop() {
-	log.Printf("INF Accepting TLS connections on %s %s", p.listener.Addr().Network(), p.listener.Addr())
+	p.logErrorF("INF Accepting TLS connections on %s %s", p.listener.Addr().Network(), p.listener.Addr())
 	for {
 		conn, err := p.listener.Accept()
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
-				log.Print("INF TLS Accept loop terminated")
+				p.logErrorF("INF TLS Accept loop terminated")
 				break
 			}
-			log.Printf("ERR TLS Accept: %v", err)
+			p.logErrorF("ERR TLS Accept: %v", err)
 			continue
 		}
 		go p.handleConnection(conn.(*netw.Conn))

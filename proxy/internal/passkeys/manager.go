@@ -535,7 +535,7 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 	email, _ := claims["email"].(string)
 	passkeyHash, ok := claims["passkey_hash"].(string)
 	if !ok {
-		log.Print("ERR passkey_hash is missing")
+		m.cfg.Logger.Errorf("ERR passkey_hash is missing")
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}

@@ -31,7 +31,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"time"
@@ -72,21 +71,21 @@ func (p *Proxy) RevokeAllCertificates(ctx context.Context, reason string) error 
 		Key:          accountKey,
 		UserAgent:    "tlsproxy",
 	}
-	log.Print("!!!")
-	log.Print("!!! WARNING")
-	log.Print("!!!")
+	p.logErrorF("!!!")
+	p.logErrorF("!!! WARNING")
+	p.logErrorF("!!!")
 	if n := len(toRevoke); n == 1 {
-		log.Print("!!! About to REVOKE 1 certificate:")
+		p.logErrorF("!!! About to REVOKE 1 certificate:")
 	} else {
 		p.logErrorF("!!! About to REVOKE %d certificates:", n)
 	}
-	log.Print("!!!")
+	p.logErrorF("!!!")
 	for _, key := range toRevoke {
 		p.logErrorF("!!!   %s", key)
 	}
-	log.Print("!!!")
-	log.Print("!!! Press CTRL-C now to abort.")
-	log.Print("!!!")
+	p.logErrorF("!!!")
+	p.logErrorF("!!! Press CTRL-C now to abort.")
+	p.logErrorF("!!!")
 	time.Sleep(10 * time.Second)
 
 	now := time.Now()
@@ -136,7 +135,7 @@ L:
 
 	if !actuallyRevoke {
 		if len(toRevoke) > 0 {
-			log.Print("INF Set \"revokeUnusedCertificates: true\" to automatically revoke unused certificates")
+			p.logErrorF("INF Set \"revokeUnusedCertificates: true\" to automatically revoke unused certificates")
 		}
 		return nil
 	}

@@ -34,7 +34,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"sync"
@@ -105,7 +104,7 @@ func (p *Proxy) quicAcceptLoop(ctx context.Context, ln *netw.QUICListener) {
 		conn, err := ln.Accept(ctx)
 		if err != nil {
 			if errors.Is(err, quic.ErrServerClosed) || errors.Is(err, context.Canceled) || err.Error() == "closing" {
-				log.Print("INF QUIC Accept loop terminated")
+				p.logErrorF("INF QUIC Accept loop terminated")
 				break
 			}
 			p.logErrorF("ERR QUIC Accept: %v", err)
