@@ -29,15 +29,18 @@
 package certmanager
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -63,35 +66,35 @@ func New(name string, logger func(string, ...interface{})) (*CertManager, error)
 	if logger == nil {
 		logger = func(string, ...interface{}) {}
 	}
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return nil, fmt.Errorf("rsa.GenerateKey: %w", err)
+
+	var key *rsa.PrivateKey
+	var caCert *x509.Certificate
+	var err error
+
+	duration := time.Hour
+
+	stateFile := os.Getenv("CERTMANAGER_STATE_FILE")
+	if stateFile != "" {
+		if key, caCert, err = readRootKeyAndCert(stateFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+			logger("%q: %v", stateFile, err)
+		}
+		duration = 24 * 365 * time.Hour
 	}
-	sn, _ := rand.Int(rand.Reader, big.NewInt(1<<32))
-	now := time.Now()
-	templ := &x509.Certificate{
-		PublicKeyAlgorithm:    x509.RSA,
-		SerialNumber:          sn,
-		Issuer:                pkix.Name{CommonName: name},
-		Subject:               pkix.Name{CommonName: name},
-		NotBefore:             now,
-		NotAfter:              now.Add(time.Hour),
-		KeyUsage:              x509.KeyUsageCertSign,
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-		DNSNames:              []string{name},
-	}
-	b, err := x509.CreateCertificate(rand.Reader, templ, templ, key.Public(), key)
-	if err != nil {
-		return nil, fmt.Errorf("x509.CreateCertificate: %w", err)
-	}
-	caCert, err := x509.ParseCertificate(b)
-	if err != nil {
-		return nil, fmt.Errorf("x509.ParseCertificate: %w", err)
+	if key == nil {
+		if key, caCert, err = createRootKeyAndCert(name, duration); err != nil {
+			return nil, err
+		}
+		if stateFile != "" {
+			if err := saveRootKeyAndCert(stateFile, key, caCert); err != nil {
+				logger("%q: %v", stateFile, err)
+			} else {
+				logger("state saved in %q", stateFile)
+			}
+		}
 	}
 	caCertPEM := pem.EncodeToMemory(&pem.Block{
 		Type:  "CERTIFICATE",
-		Bytes: b,
+		Bytes: caCert.Raw,
 	})
 	pool := x509.NewCertPool()
 	pool.AddCert(caCert)
@@ -105,6 +108,101 @@ func New(name string, logger func(string, ...interface{})) (*CertManager, error)
 		logger:    logger,
 		certs:     make(map[string]*tls.Certificate),
 	}, nil
+}
+
+func createRootKeyAndCert(name string, d time.Duration) (*rsa.PrivateKey, *x509.Certificate, error) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, nil, fmt.Errorf("rsa.GenerateKey: %w", err)
+	}
+	sn, _ := rand.Int(rand.Reader, big.NewInt(1<<32))
+	now := time.Now()
+	templ := &x509.Certificate{
+		PublicKeyAlgorithm:    x509.RSA,
+		SerialNumber:          sn,
+		Issuer:                pkix.Name{CommonName: name},
+		Subject:               pkix.Name{CommonName: name},
+		NotBefore:             now,
+		NotAfter:              now.Add(d),
+		KeyUsage:              x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		DNSNames:              []string{name},
+	}
+	b, err := x509.CreateCertificate(rand.Reader, templ, templ, key.Public(), key)
+	if err != nil {
+		return nil, nil, fmt.Errorf("x509.CreateCertificate: %w", err)
+	}
+	caCert, err := x509.ParseCertificate(b)
+	if err != nil {
+		return nil, nil, fmt.Errorf("x509.ParseCertificate: %w", err)
+	}
+	return key, caCert, nil
+}
+
+func readRootKeyAndCert(fileName string) (*rsa.PrivateKey, *x509.Certificate, error) {
+	b, err := os.ReadFile(fileName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("os.ReadFile(%q) = %w", fileName, err)
+	}
+	var key *rsa.PrivateKey
+	var caCert *x509.Certificate
+
+	for {
+		block, rest := pem.Decode(b)
+		b = rest
+		if block == nil {
+			break
+		}
+		if block.Type == "PRIVATE KEY" {
+			pk, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+			if err != nil {
+				return nil, nil, fmt.Errorf("x509.ParsePKCS8PrivateKey: %w", err)
+			}
+			var ok bool
+			if key, ok = pk.(*rsa.PrivateKey); !ok {
+				return nil, nil, errors.New("x509.ParsePKCS8PrivateKey: not an RSA key")
+			}
+		}
+		if block.Type == "CERTIFICATE" {
+			if caCert, err = x509.ParseCertificate(block.Bytes); err != nil {
+				return nil, nil, fmt.Errorf("x509.ParseCertificate: %w", err)
+			}
+		}
+
+	}
+	if key == nil {
+		return nil, nil, errors.New("no private key")
+	}
+	if caCert == nil {
+		return nil, nil, errors.New("no certificate")
+	}
+	return key, caCert, nil
+}
+
+func saveRootKeyAndCert(fileName string, key *rsa.PrivateKey, cert *x509.Certificate) error {
+	keyBytes, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return fmt.Errorf("x509.MarshalPKCS8PrivateKey: %w", err)
+	}
+	var buf bytes.Buffer
+
+	if err := pem.Encode(&buf, &pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: keyBytes,
+	}); err != nil {
+		return fmt.Errorf("pem.Encode: %w", err)
+	}
+	if err := pem.Encode(&buf, &pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: cert.Raw,
+	}); err != nil {
+		return fmt.Errorf("pem.Encode: %w", err)
+	}
+	if err := os.WriteFile(fileName, buf.Bytes(), 0o600); err != nil {
+		return fmt.Errorf("os.WriteFile: %w", err)
+	}
+	return nil
 }
 
 // RootCAPEM returns the root certificate in PEM format.

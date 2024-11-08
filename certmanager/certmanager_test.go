@@ -27,6 +27,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"path/filepath"
 	"testing"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
@@ -68,5 +69,42 @@ func TestCertsAreValid(t *testing.T) {
 	}
 	if !cert.PrivateKey.(*rsa.PrivateKey).PublicKey.Equal(cert.Leaf.PublicKey) {
 		t.Error("Cert public key doesn't match the private key")
+	}
+}
+
+func TestSaveRestore(t *testing.T) {
+	t.Setenv("CERTMANAGER_STATE_FILE", filepath.Join(t.TempDir(), "cert.pem"))
+
+	cm, err := certmanager.New("test", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	cm2, err := certmanager.New("test", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+
+	cert, err := cm.GetCert("hello.example.com")
+	if err != nil {
+		t.Fatalf("cm.GetCert: %v", err)
+	}
+	if _, err := cert.Leaf.Verify(x509.VerifyOptions{
+		DNSName:   "hello.example.com",
+		Roots:     cm2.RootCACertPool(),
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+	}); err != nil {
+		t.Errorf("Verify: %v", err)
+	}
+
+	cert2, err := cm.GetCert("hello.example.com")
+	if err != nil {
+		t.Fatalf("cm.GetCert: %v", err)
+	}
+	if _, err := cert2.Leaf.Verify(x509.VerifyOptions{
+		DNSName:   "hello.example.com",
+		Roots:     cm.RootCACertPool(),
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+	}); err != nil {
+		t.Errorf("Verify: %v", err)
 	}
 }

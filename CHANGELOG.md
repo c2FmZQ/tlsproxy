@@ -8,12 +8,15 @@
 * Add support for TLS certificates stored locally. See `tlsCertificates` in [config.go](https://github.com/c2FmZQ/tlsproxy/blob/main/proxy/config.go).
 
 ### :wrench: Misc
+
 * Update go: 1.23.3
 * Update go dependencies:
   * upgraded github.com/google/pprof v0.0.0-20241008150032-332c0e1a4a34 => v0.0.0-20241101162523-b92577c0c142
   * upgraded github.com/onsi/ginkgo/v2 v2.20.2 => v2.21.0
   * upgraded go.uber.org/mock v0.4.0 => v0.5.0
   * upgraded golang.org/x/exp v0.0.0-20241004190924-225e2abe05e6 => v0.0.0-20241009180824-f66d83c29e7c
+* Testing:
+  * When testing with the `--use-ephemeral-certificate-manager` flag, the ephemeral CA cert and key will be saved if the `CERTMANAGER_STATE_FILE` environment variable is set.
 
 ## v0.10.9
 
