@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## v0.11.1
+
+### :wrench: Bug fix
+
+* Add missing lock that might affect the use of `tlsCertificates`.
+
 ## v0.11.0
 
 ### :star2: New features
