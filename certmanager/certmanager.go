@@ -75,7 +75,7 @@ func New(name string, logger func(string, ...interface{})) (*CertManager, error)
 
 	stateFile := os.Getenv("CERTMANAGER_STATE_FILE")
 	if stateFile != "" {
-		if key, caCert, err = readRootKeyAndCert(stateFile); err != nil {
+		if key, caCert, err = readRootKeyAndCert(stateFile); err != nil && !errors.Is(err, os.ErrNotExist) {
 			logger("%q: %v", stateFile, err)
 		}
 		duration = 24 * 365 * time.Hour
@@ -87,6 +87,8 @@ func New(name string, logger func(string, ...interface{})) (*CertManager, error)
 		if stateFile != "" {
 			if err := saveRootKeyAndCert(stateFile, key, caCert); err != nil {
 				logger("%q: %v", stateFile, err)
+			} else {
+				logger("state saved in %q", stateFile)
 			}
 		}
 	}
