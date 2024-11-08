@@ -132,7 +132,7 @@ type Config struct {
 	DefaultServerName string `yaml:"defaultServerName,omitempty"`
 	// LogFilter specifies what gets logged for this backend. Values can
 	// be overridden on a per-backend basis.
-	LogFilter LogFilter `yaml:"logFilter"`
+	LogFilter LogFilter `yaml:"logFilter,omitempty"`
 	// Backends is the list of service backends.
 	Backends []*Backend `yaml:"backends"`
 	// Email is optionally sent to Let's Encrypt when registering a new
@@ -161,7 +161,7 @@ type Config struct {
 	// TLSCertificates is a lists of TLS certificates that should be used
 	// instead of Let's Encrypt. If a certificate is needed but there is no
 	// match in this list, Let's Encrypt is used.
-	TLSCertificates []*TLSCertificate `yaml:"tlsCertificates"`
+	TLSCertificates []*TLSCertificate `yaml:"tlsCertificates,omitempty"`
 	// BWLimits is the list of named bandwidth limit groups.
 	// Each backend can be associated with one group. The group's limits
 	// are shared between all the backends associated with it.
@@ -183,11 +183,11 @@ type BWLimit struct {
 // LogFilter specifies what to log.
 type LogFilter struct {
 	// Connections indicates that incoming connections are logged.
-	Connections *bool `yaml:"connections"`
+	Connections *bool `yaml:"connections,omitempty"`
 	// Requests indicates that http requests are logged.
-	Requests *bool `yaml:"requests"`
+	Requests *bool `yaml:"requests,omitempty"`
 	// Errors indicates that errors are logged.
-	Errors *bool `yaml:"errors"`
+	Errors *bool `yaml:"errors,omitempty"`
 }
 
 // TLSCertificate specifies TLS keys and certificates to use for given server
@@ -312,7 +312,7 @@ type Backend struct {
 	BWLimit string `yaml:"bwLimit,omitempty"`
 	// LogFilter specifies what gets logged for this backend. Values that
 	// are not specified are inherited from the top level config.
-	LogFilter LogFilter `yaml:"logFilter"`
+	LogFilter LogFilter `yaml:"logFilter,omitempty"`
 	// Addresses is a list of server addresses where requests are forwarded.
 	// When more than one address are specified, requests are distributed
 	// using a simple round robin.
