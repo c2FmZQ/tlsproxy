@@ -1036,6 +1036,8 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 }
 
 func (p *Proxy) getCertFromConfig(serverName string) (*tls.Certificate, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	for _, c := range p.cfg.TLSCertificates {
 		if slices.IndexFunc(c.ServerNames, func(v string) bool {
 			if v == serverName {
