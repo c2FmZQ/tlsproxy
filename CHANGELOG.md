@@ -1,5 +1,20 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Update go dependencies:
+  * upgraded golang.org/x/crypto v0.28.0 => v0.29.0
+  * upgraded golang.org/x/exp v0.0.0-20241009180824-f66d83c29e7c => v0.0.0-20241108190413-2d47ceb2692f
+  * upgraded golang.org/x/mod v0.21.0 => v0.22.0
+  * upgraded golang.org/x/net v0.30.0 => v0.31.0
+  * upgraded golang.org/x/sync v0.8.0 => v0.9.0
+  * upgraded golang.org/x/sys v0.26.0 => v0.27.0
+  * upgraded golang.org/x/text v0.19.0 => v0.20.0
+  * upgraded golang.org/x/time v0.7.0 => v0.8.0
+  * upgraded golang.org/x/tools v0.26.0 => v0.27.0
+
 ## v0.11.1
 
 ### :wrench: Bug fix
