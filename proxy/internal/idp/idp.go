@@ -24,21 +24,29 @@
 package idp
 
 type LoginOptions struct {
-	LoginHint     string
-	SelectAccount bool
+	loginHint     string
+	selectAccount bool
+}
+
+func (o LoginOptions) LoginHint() string {
+	return o.loginHint
+}
+
+func (o LoginOptions) SelectAccount() bool {
+	return o.selectAccount
 }
 
 type Option func(*LoginOptions)
 
 func WithLoginHint(v string) Option {
 	return func(o *LoginOptions) {
-		o.LoginHint = v
+		o.loginHint = v
 	}
 }
 
 func WithSelectAccount(v bool) Option {
 	return func(o *LoginOptions) {
-		o.SelectAccount = v
+		o.selectAccount = v
 	}
 }
 

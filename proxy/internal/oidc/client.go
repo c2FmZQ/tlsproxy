@@ -190,10 +190,10 @@ func (p *ProviderClient) RequestLogin(w http.ResponseWriter, req *http.Request, 
 	if p.cfg.HostedDomain != "" {
 		ep += "&hd=" + url.QueryEscape(p.cfg.HostedDomain)
 	}
-	if loginOptions.LoginHint != "" {
-		ep += "&login_hint=" + url.QueryEscape(loginOptions.LoginHint)
+	if hint := loginOptions.LoginHint(); hint != "" {
+		ep += "&login_hint=" + url.QueryEscape(hint)
 	}
-	if loginOptions.SelectAccount {
+	if loginOptions.SelectAccount() {
 		ep += "&prompt=select_account"
 	}
 	p.cm.SetNonce(w, nonceStr)
