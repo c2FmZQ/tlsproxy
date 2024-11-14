@@ -38,6 +38,8 @@ import (
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
+
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/idp"
 )
 
 // Config contains the parameters of an OIDC provider.
@@ -144,7 +146,8 @@ func New(cfg Config, er EventRecorder, cm CookieManager) (*ProviderClient, error
 	return p, nil
 }
 
-func (p *ProviderClient) RequestLogin(w http.ResponseWriter, req *http.Request, originalURL string) {
+func (p *ProviderClient) RequestLogin(w http.ResponseWriter, req *http.Request, originalURL string, opts ...idp.Option) {
+	loginOptions := idp.ApplyOptions(opts)
 	ou, err := url.Parse(originalURL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -186,6 +189,12 @@ func (p *ProviderClient) RequestLogin(w http.ResponseWriter, req *http.Request, 
 		"&code_challenge_method=S256"
 	if p.cfg.HostedDomain != "" {
 		ep += "&hd=" + url.QueryEscape(p.cfg.HostedDomain)
+	}
+	if loginOptions.LoginHint != "" {
+		ep += "&login_hint=" + url.QueryEscape(loginOptions.LoginHint)
+	}
+	if loginOptions.SelectAccount {
+		ep += "&prompt=select_account"
 	}
 	p.cm.SetNonce(w, nonceStr)
 	http.Redirect(w, req, ep, http.StatusFound)

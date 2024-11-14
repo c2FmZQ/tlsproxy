@@ -156,9 +156,7 @@ function loginWithPasskey(token, loginId) {
         window.location.reload();
       }
     } else if (r.result === 'refresh') {
-      if (window.confirm(r.email + ' ID must be refreshed')) {
-        window.location = r.url;
-      }
+      window.location = r.url;
     }
   })
   .catch(err => {

@@ -37,7 +37,7 @@ a.button.big {
     <a class="button" href="{{.Self}}?get=RegisterNewID&redirect={{.Token}}">Register New Identity</a>
 {{- end }}
 {{- if ne .Mode "Login" }}
-    <a class="button" onclick="switchAccount({{.Self}}+'?get=Login&redirect={{.Token}}');">Switch Account</a>
+    <a class="button" onclick="switchAccount({{.Token}});">Switch Account</a>
 {{- end }}
   </div>
   <div id="message">

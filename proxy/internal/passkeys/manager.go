@@ -52,6 +52,7 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/idp"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
@@ -103,7 +104,7 @@ func (defaultLogger) Errorf(format string, args ...any) {
 type Config struct {
 	Store *storage.Storage
 	Other interface {
-		RequestLogin(w http.ResponseWriter, req *http.Request, origURL string)
+		RequestLogin(w http.ResponseWriter, req *http.Request, origURL string, opts ...idp.Option)
 	}
 	RefreshInterval    time.Duration
 	Endpoint           string
@@ -205,7 +206,7 @@ func (m *Manager) ServeWellKnown(w http.ResponseWriter, req *http.Request) {
 	w.Write(content)
 }
 
-func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL string) {
+func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL string, opts ...idp.Option) {
 	m.cfg.EventRecorder.Record("passkey auth request")
 
 	n := make([]byte, 16)
@@ -290,11 +291,13 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 
 	redirectToken := req.Form.Get("redirect")
 	if redirectToken == "" {
+		m.cfg.Logger.Errorf("ERR redirect not set")
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 	originalURL, err := m.cfg.TokenManager.ValidateURLToken(w, req, redirectToken)
 	if err != nil {
+		m.cfg.Logger.Errorf("ERR redirect token: %v", err)
 		http.Error(w, "invalid or expired request", http.StatusBadRequest)
 		return
 	}
@@ -305,7 +308,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		case "RegisterNewID", "RefreshID":
 			req.URL.Scheme = "https"
 			req.URL.Host = req.Host
-			m.cfg.Other.RequestLogin(w, req, req.URL.String())
+			m.cfg.Other.RequestLogin(w, req, req.URL.String(), idp.WithLoginHint(req.Form.Get("email")), idp.WithSelectAccount(mode == "RegisterNewID"))
 			return
 		case "AttestationOptions", "AddKey":
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -408,6 +411,8 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 				u := req.URL
 				args := u.Query()
 				args.Set("get", "RefreshID")
+				email, _ := claims["email"].(string)
+				args.Set("email", email)
 				u.Scheme = "https"
 				u.Host = req.Host
 				u.RawQuery = args.Encode()
@@ -528,7 +533,12 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 	}
 	hh := sha256.Sum256([]byte(req.Host))
 	if claims == nil || claims["hhash"] != hex.EncodeToString(hh[:]) || time.Since(iat) > 10*time.Minute {
-		m.RequestLogin(w, req, here)
+		var opts []idp.Option
+		if claims != nil {
+			email, _ := claims["email"].(string)
+			opts = append(opts, idp.WithLoginHint(email))
+		}
+		m.RequestLogin(w, req, here, opts...)
 		return
 	}
 	mode := req.Form.Get("get")

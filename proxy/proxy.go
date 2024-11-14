@@ -64,6 +64,7 @@ import (
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/idp"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/oidc"
@@ -159,7 +160,7 @@ func (er eventRecorder) Record(s string) {
 }
 
 type identityProvider interface {
-	RequestLogin(w http.ResponseWriter, req *http.Request, origURL string)
+	RequestLogin(w http.ResponseWriter, req *http.Request, origURL string, opts ...idp.Option)
 	HandleCallback(w http.ResponseWriter, req *http.Request)
 }
 
