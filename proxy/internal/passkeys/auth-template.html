@@ -23,6 +23,11 @@ a.button.big {
 #message {
   width: fit-content;
 }
+#loginid {
+  font-size: 125%;
+  margin-top: 2rem;
+  width: 20rem;
+}
 </style>
 </head>
 <body>
@@ -40,7 +45,8 @@ a.button.big {
     <div class="big">🛂</div>
     <div>Authentication required to access</div>
     <div id="target"><a href="{{.URL}}">{{.DisplayURL}}</a></div>
-    <div><a class="button big" onclick="loginWithPasskey({{.Token}});">Continue</a></div>
+    <div><input id="loginid" placeholder="LOGIN ID" /></div>
+    <div><a class="button big" onclick="loginWithPasskey({{.Token}}, document.getElementById('loginid').value);">Continue</a></div>
 {{- end }}
 {{- if eq .Mode "RefreshID" }}
     <div>{{.Email}}</div>

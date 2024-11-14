@@ -86,8 +86,8 @@ type AttestationOptions struct {
 	AuthenticatorSelection struct {
 		// required, preferred, or discouraged
 		UserVerification string `json:"userVerification"`
-		// Whether we want discoverable credentials.
-		RequireResidentKey bool `json:"requireResidentKey"`
+		// required, preferred, or discouraged
+		ResidentKey string `json:"residentKey"`
 	} `json:"authenticatorSelection"`
 	// Extensions.
 	Extensions map[string]interface{} `json:"extensions,omitempty"`
@@ -112,7 +112,7 @@ func newAttestationOptions() (*AttestationOptions, error) {
 		Attestation: "none",
 	}
 	ao.AuthenticatorSelection.UserVerification = "required"
-	ao.AuthenticatorSelection.RequireResidentKey = true
+	ao.AuthenticatorSelection.ResidentKey = "preferred"
 
 	challenge := make([]byte, 32)
 	if _, err := rand.Read(challenge); err != nil {

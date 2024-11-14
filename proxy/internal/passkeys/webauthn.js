@@ -90,15 +90,21 @@ function registerPasskey(token) {
   });
 }
 
-function loginWithPasskey(token) {
+function loginWithPasskey(token, loginId) {
   if (!('PublicKeyCredential' in window)) {
     throw new Error('Browser doesn\'t support WebAuthn');
+  }
+  let body = null;
+  if (loginId) {
+    body = 'loginId=' + encodeURIComponent(loginId)
   }
   fetch('?get=AssertionOptions&redirect='+token, {
     method: 'POST',
     headers: {
+      'content-type': 'application/x-www-form-urlencoded',
       'x-csrf-check': 1,
     },
+    body: body,
   })
   .then(resp => {
     if (resp.status !== 200) {
@@ -108,6 +114,9 @@ function loginWithPasskey(token) {
   })
   .then(options => {
     options.challenge = new Uint8Array(options.challenge);
+    for (let i = 0; i < options.allowCredentials.length; i++) {
+      options.allowCredentials[i].id = new Uint8Array(options.allowCredentials[i].id);
+    }
     return navigator.credentials.get({publicKey: options})
   })
   .then(pkc => {
@@ -120,6 +129,7 @@ function loginWithPasskey(token) {
         authenticatorData: Array.from(new Uint8Array(pkc.response.authenticatorData)),
         signature: Array.from(new Uint8Array(pkc.response.signature)),
         userHandle: Array.from(new Uint8Array(pkc.response.userHandle)),
+        loginId: loginId,
     });
     return fetch('?get=Check&redirect='+token, {
       method: 'POST',

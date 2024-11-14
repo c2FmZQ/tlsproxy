@@ -352,7 +352,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		opts, err := m.assertionOptions()
+		opts, err := m.assertionOptions(req.PostForm.Get("loginId"))
 		if err != nil {
 			m.cfg.Logger.Errorf("ERR assertionOptions: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -896,7 +896,7 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 	return c, commit(true, nil)
 }
 
-func (m *Manager) assertionOptions() (*AssertionOptions, error) {
+func (m *Manager) assertionOptions(email string) (*AssertionOptions, error) {
 	m.vacuum()
 	opts, err := newAssertionOptions()
 	if err != nil {
@@ -906,6 +906,23 @@ func (m *Manager) assertionOptions() (*AssertionOptions, error) {
 	defer m.mu.Unlock()
 	m.challenges[base64.RawURLEncoding.EncodeToString(opts.Challenge)] = &challenge{
 		created: time.Now().UTC(),
+	}
+	if h, ok := m.db.Subjects[email]; ok {
+		if u, ok := m.db.Handles[h]; ok {
+			for _, key := range u.Keys {
+				opts.AllowCredentials = append(opts.AllowCredentials, CredentialID{
+					Type:       "public-key",
+					ID:         key.ID,
+					Transports: key.Transports,
+				})
+			}
+		}
+	} else if email != "" {
+		opts.AllowCredentials = append(opts.AllowCredentials, CredentialID{
+			Type:       "public-key",
+			ID:         Bytes{0xff},
+			Transports: []string{"internal"},
+		})
 	}
 	return opts, nil
 }
@@ -918,6 +935,7 @@ func (m *Manager) processAssertion(jsargs string, token *jwt.Token) (claims map[
 		AuthenticatorData Bytes  `json:"authenticatorData"`
 		Signature         Bytes  `json:"signature"`
 		UserHandle        Bytes  `json:"userHandle"`
+		LoginID           string `json:"loginId"`
 	}
 	if err := json.Unmarshal([]byte(jsargs), &args); err != nil {
 		return nil, err
@@ -953,7 +971,13 @@ func (m *Manager) processAssertion(jsargs string, token *jwt.Token) (claims map[
 	}
 	defer commit(false, &retErr)
 
-	u, ok := m.db.Handles[base64.RawURLEncoding.EncodeToString(args.UserHandle)]
+	userHandle := base64.RawURLEncoding.EncodeToString(args.UserHandle)
+	if userHandle == "" && args.LoginID != "" {
+		if h, ok := m.db.Subjects[args.LoginID]; ok {
+			userHandle = h
+		}
+	}
+	u, ok := m.db.Handles[userHandle]
 	if !ok {
 		return nil, errors.New("invalid userHandle")
 	}
