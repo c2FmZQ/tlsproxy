@@ -39,6 +39,7 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/idp"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/passkeys"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
@@ -188,7 +189,7 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 	}
 	req.URL.Scheme = "https"
 	req.URL.Host = req.Host
-	token, _, err := be.tm.URLToken(w, req, req.URL)
+	token, _, err := be.tm.URLToken(w, req, req.URL, nil)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -204,12 +205,16 @@ func (be *Backend) serveLogin(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	url, err := be.tm.ValidateURLToken(w, req, tok)
+	url, claims, err := be.tm.ValidateURLToken(w, req, tok)
 	if err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	be.SSO.p.RequestLogin(w, req, url.String())
+	var email string
+	if e, ok := claims["email"].(string); ok {
+		email = e
+	}
+	be.SSO.p.RequestLogin(w, req, url.String(), idp.WithLoginHint(email))
 }
 
 func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
@@ -218,12 +223,12 @@ func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
 	}
 	req.ParseForm()
 	if tokenStr := req.Form.Get("u"); tokenStr != "" {
-		url, err := be.tm.ValidateURLToken(w, req, tokenStr)
+		url, _, err := be.tm.ValidateURLToken(w, req, tokenStr)
 		if err != nil {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		be.SSO.p.RequestLogin(w, req, url.String())
+		be.SSO.p.RequestLogin(w, req, url.String(), idp.WithSelectAccount(true))
 		return
 	}
 	logoutTemplate.Execute(w, nil)
@@ -236,7 +241,7 @@ func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Reques
 	}
 	req.URL.Scheme = "https"
 	req.URL.Host = req.Host
-	token, url, err := be.tm.URLToken(w, req, req.URL)
+	token, url, err := be.tm.URLToken(w, req, req.URL, nil)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -284,7 +289,15 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 		}
 		req.URL.Scheme = "https"
 		req.URL.Host = req.Host
-		token, url, err := be.tm.URLToken(w, req, req.URL)
+		var extra map[string]any
+		if claims != nil {
+			if email, ok := claims["email"].(string); ok {
+				extra = map[string]any{
+					"email": email,
+				}
+			}
+		}
+		token, url, err := be.tm.URLToken(w, req, req.URL, extra)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return false

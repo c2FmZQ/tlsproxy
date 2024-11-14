@@ -62,7 +62,7 @@ func sessionID(w http.ResponseWriter, req *http.Request) string {
 }
 
 // URLToken returns a signed token for URL u in the context of request req.
-func (tm *TokenManager) URLToken(w http.ResponseWriter, req *http.Request, u *url.URL) (string, string, error) {
+func (tm *TokenManager) URLToken(w http.ResponseWriter, req *http.Request, u *url.URL, extra map[string]any) (string, string, error) {
 	sid := sessionID(w, req)
 	realHost := u.Host
 	if h, err := idna.Lookup.ToUnicode(u.Hostname()); err == nil {
@@ -70,31 +70,35 @@ func (tm *TokenManager) URLToken(w http.ResponseWriter, req *http.Request, u *ur
 	}
 	displayURL := u.String()
 	u.Host = realHost
-	token, err := tm.CreateToken(jwt.MapClaims{
-		"url": u.String(),
-		"sid": sid,
-	}, "")
+	claims := make(jwt.MapClaims)
+	for k, v := range extra {
+		claims[k] = v
+	}
+	claims["url"] = u.String()
+	claims["sid"] = sid
+	token, err := tm.CreateToken(claims, "")
 	return token, displayURL, err
 }
 
 // ValidateURLToken validates a signed token and returns the URL. The request
 // must on the same host as the one where the token was created.
-func (tm *TokenManager) ValidateURLToken(w http.ResponseWriter, req *http.Request, token string) (*url.URL, error) {
+func (tm *TokenManager) ValidateURLToken(w http.ResponseWriter, req *http.Request, token string) (*url.URL, jwt.MapClaims, error) {
 	tok, err := tm.ValidateToken(token)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	c, ok := tok.Claims.(jwt.MapClaims)
 	if !ok {
-		return nil, errors.New("invalid token")
+		return nil, nil, errors.New("invalid token")
 	}
 	if sid := sessionID(w, req); sid != c["sid"] {
 		tm.logger.Errorf("ERR session ID mismatch %q != %q", sid, c["sid"])
-		return nil, errors.New("invalid token")
+		return nil, nil, errors.New("invalid token")
 	}
 	u, ok := c["url"].(string)
 	if !ok {
-		return nil, errors.New("invalid token")
+		return nil, nil, errors.New("invalid token")
 	}
-	return url.Parse(u)
+	tokURL, err := url.Parse(u)
+	return tokURL, c, err
 }

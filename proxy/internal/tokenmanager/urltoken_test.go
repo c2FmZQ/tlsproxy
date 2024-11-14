@@ -45,7 +45,7 @@ func TestURLToken(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "https://example.com/foo/bar", nil)
 	w := httptest.NewRecorder()
-	tok, displayURL, err := tm.URLToken(w, req, req.URL)
+	tok, displayURL, err := tm.URLToken(w, req, req.URL, nil)
 	if err != nil {
 		t.Errorf("URLToken() err = %v", err)
 	}
@@ -54,13 +54,13 @@ func TestURLToken(t *testing.T) {
 	}
 
 	// Wrong session id
-	if _, err := tm.ValidateURLToken(w, req, tok); err == nil {
+	if _, _, err := tm.ValidateURLToken(w, req, tok); err == nil {
 		t.Fatal("ValidateURLToken should fail")
 	}
 
 	// Correct session id
 	req.Header.Set("cookie", w.Header().Get("set-cookie"))
-	u, err := tm.ValidateURLToken(w, req, tok)
+	u, _, err := tm.ValidateURLToken(w, req, tok)
 	if err != nil {
 		t.Errorf("ValidateURLToken err = %v", err)
 	}

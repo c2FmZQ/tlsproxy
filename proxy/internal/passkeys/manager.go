@@ -160,6 +160,7 @@ type challenge struct {
 type nonceData struct {
 	created time.Time
 	origURL *url.URL
+	opts    idp.LoginOptions
 }
 
 func (m *Manager) SetACL(acl *[]string) {
@@ -226,6 +227,7 @@ func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL
 	m.nonces[nonce] = &nonceData{
 		created: time.Now().UTC(),
 		origURL: ou,
+		opts:    idp.ApplyOptions(opts),
 	}
 	m.noncesMu.Unlock()
 
@@ -269,7 +271,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	m.noncesMu.Unlock()
 
 	if ok {
-		token, _, err := m.cfg.TokenManager.URLToken(w, req, nData.origURL)
+		token, _, err := m.cfg.TokenManager.URLToken(w, req, nData.origURL, map[string]any{"email": nData.opts.LoginHint})
 		if err != nil {
 			m.cfg.Logger.Errorf("ERR %q: %v", nData.origURL, err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -295,7 +297,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	originalURL, err := m.cfg.TokenManager.ValidateURLToken(w, req, redirectToken)
+	originalURL, redirectClaims, err := m.cfg.TokenManager.ValidateURLToken(w, req, redirectToken)
 	if err != nil {
 		m.cfg.Logger.Errorf("ERR redirect token: %v", err)
 		http.Error(w, "invalid or expired request", http.StatusBadRequest)
@@ -308,7 +310,18 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		case "RegisterNewID", "RefreshID":
 			req.URL.Scheme = "https"
 			req.URL.Host = req.Host
-			m.cfg.Other.RequestLogin(w, req, req.URL.String(), idp.WithLoginHint(req.Form.Get("email")), idp.WithSelectAccount(mode == "RegisterNewID"))
+			var opts []idp.Option
+			if mode == "RefreshID" {
+				email, _ := redirectClaims["email"].(string)
+				if email == "" {
+					email = req.Form.Get("email")
+				}
+				opts = append(opts, idp.WithLoginHint(email))
+			}
+			if mode == "RegisterNewID" {
+				opts = append(opts, idp.WithSelectAccount(true))
+			}
+			m.cfg.Other.RequestLogin(w, req, req.URL.String(), opts...)
 			return
 		case "AttestationOptions", "AddKey":
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -341,6 +354,8 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			data.Email, _ = token.Claims.(jwt.MapClaims)["email"].(string)
 			data.IsAllowed = m.subjectIsAllowed(data.Email)
 			data.IsRegistered = m.subjectIsRegistered(data.Email)
+		} else {
+			data.Email, _ = redirectClaims["email"].(string)
 		}
 		w.Header().Set("X-Frame-Options", "DENY")
 		authTemplate.Execute(w, data)
@@ -419,7 +434,6 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 				w.Header().Set("content-type", "application/json")
 				json.NewEncoder(w).Encode(map[string]any{
 					"result": "refresh",
-					"email":  claims["email"],
 					"url":    u.String(),
 				})
 				return
