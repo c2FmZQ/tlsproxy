@@ -198,6 +198,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var data struct {
+		Email              string
 		Version            string
 		Metrics            []backendMetric
 		Events             []proxyEvent
@@ -211,6 +212,13 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		BuildInfo          string
 		Config             string
 	}
+
+	if c := claimsFromCtx(req.Context()); c != nil {
+		if email, ok := c["email"].(string); ok {
+			data.Email = email
+		}
+	}
+
 	if info, ok := debug.ReadBuildInfo(); ok {
 		data.BuildInfo = info.String()
 		const v = "main.Version="

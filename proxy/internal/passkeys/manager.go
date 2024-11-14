@@ -271,7 +271,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	m.noncesMu.Unlock()
 
 	if ok {
-		token, _, err := m.cfg.TokenManager.URLToken(w, req, nData.origURL, map[string]any{"email": nData.opts.LoginHint})
+		token, _, err := m.cfg.TokenManager.URLToken(w, req, nData.origURL, map[string]any{"email": nData.opts.LoginHint()})
 		if err != nil {
 			m.cfg.Logger.Errorf("ERR %q: %v", nData.origURL, err)
 			http.Error(w, "internal error", http.StatusInternalServerError)

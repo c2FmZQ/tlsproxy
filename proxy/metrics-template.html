@@ -99,9 +99,13 @@ h1 {
 .table > div.row:nth-child(even) > div {
   background-color: #f8f8ff;
 }
-
 .group > div:nth-child(even) {
   background-color: #f8f8ff;
+}
+#sso {
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
 }
 </style>
 <script>
@@ -160,6 +164,11 @@ function selectTab(target) {
 <body onload="init();">
 <div id="header">
 <h1>TLSPROXY {{.Version}}</h1>
+{{ if ne .Email "" }}
+<div id="sso">
+{{.Email}} <a href="/.sso/logout">Logout</a>
+</div>
+{{ end }}
 
 <div id="tabs"></div>
 </div>
