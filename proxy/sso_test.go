@@ -451,7 +451,7 @@ func TestSSOEnforcePasskey(t *testing.T) {
 			if got, want := code, 200; got != want {
 				t.Errorf("Code = %v, want %v", got, want)
 			}
-			m = regexp.MustCompile(`loginWithPasskey\(&#34;(.*)&#34;\)`).FindStringSubmatch(body)
+			m = regexp.MustCompile(`loginWithPasskey\(&#34;(.*)&#34;,`).FindStringSubmatch(body)
 			if len(m) != 2 {
 				t.Fatalf("FindStringSubmatch: %v", m)
 			}

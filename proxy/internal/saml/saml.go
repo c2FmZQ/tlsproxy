@@ -43,6 +43,8 @@ import (
 
 	"github.com/beevik/etree"
 	dsig "github.com/russellhaering/goxmldsig"
+
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/idp"
 )
 
 // http://docs.oasis-open.org/security/saml/v2.0/saml-core-2.0-os.pdf
@@ -103,7 +105,7 @@ func New(cfg Config, er EventRecorder, cm CookieManager) (*Provider, error) {
 	return p, nil
 }
 
-func (p *Provider) RequestLogin(w http.ResponseWriter, req *http.Request, origURL string) {
+func (p *Provider) RequestLogin(w http.ResponseWriter, req *http.Request, origURL string, opts ...idp.Option) {
 	ou, err := url.Parse(origURL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -2,6 +2,10 @@
 
 ## next
 
+### :star: Feature improvements
+
+* Improve passkey authentication to support WebAuthn devices without discoverable credentials.
+
 ### :wrench: Misc
 
 * Update go dependencies:

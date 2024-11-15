@@ -21,50 +21,39 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package tokenmanager
+package idp
 
-import (
-	"net/http/httptest"
-	"testing"
+type LoginOptions struct {
+	loginHint     string
+	selectAccount bool
+}
 
-	"github.com/c2FmZQ/storage"
-	"github.com/c2FmZQ/storage/crypto"
-)
+func (o LoginOptions) LoginHint() string {
+	return o.loginHint
+}
 
-func TestURLToken(t *testing.T) {
-	dir := t.TempDir()
-	mk, err := crypto.CreateAESMasterKeyForTest()
-	if err != nil {
-		t.Fatalf("crypto.CreateMasterKey: %v", err)
-	}
-	store := storage.New(dir, mk)
-	tm, err := New(store, nil, nil)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+func (o LoginOptions) SelectAccount() bool {
+	return o.selectAccount
+}
 
-	req := httptest.NewRequest("GET", "https://example.com/foo/bar", nil)
-	w := httptest.NewRecorder()
-	tok, displayURL, err := tm.URLToken(w, req, req.URL, nil)
-	if err != nil {
-		t.Errorf("URLToken() err = %v", err)
-	}
-	if got, want := displayURL, "https://example.com/foo/bar"; got != want {
-		t.Errorf("displayURL = %q, want %q", got, want)
-	}
+type Option func(*LoginOptions)
 
-	// Wrong session id
-	if _, _, err := tm.ValidateURLToken(w, req, tok); err == nil {
-		t.Fatal("ValidateURLToken should fail")
+func WithLoginHint(v string) Option {
+	return func(o *LoginOptions) {
+		o.loginHint = v
 	}
+}
 
-	// Correct session id
-	req.Header.Set("cookie", w.Header().Get("set-cookie"))
-	u, _, err := tm.ValidateURLToken(w, req, tok)
-	if err != nil {
-		t.Errorf("ValidateURLToken err = %v", err)
+func WithSelectAccount(v bool) Option {
+	return func(o *LoginOptions) {
+		o.selectAccount = v
 	}
-	if got, want := u.String(), "https://example.com/foo/bar"; got != want {
-		t.Errorf("url = %q, want %q", got, want)
+}
+
+func ApplyOptions(opts []Option) LoginOptions {
+	var lo LoginOptions
+	for _, opt := range opts {
+		opt(&lo)
 	}
+	return lo
 }

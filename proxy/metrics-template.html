@@ -26,6 +26,25 @@ body {
 h1 {
   margin-left: 1rem;
 }
+a {
+  color: black;
+  cursor: pointer;
+}
+a.button {
+  text-decoration: none;
+  border: solid 1px black;
+  border-radius: 1rem;
+  background-color: lightgray;
+  color: black;
+  margin: 0;
+  padding: 0.5rem;
+  line-height: 2.25rem;
+  white-space: nowrap;
+  font-family: monospace;
+}
+a.button:hover {
+  background-color: darkgray;
+}
 #panels {
   background-color: white;
   margin-left: 1rem;
@@ -99,9 +118,13 @@ h1 {
 .table > div.row:nth-child(even) > div {
   background-color: #f8f8ff;
 }
-
 .group > div:nth-child(even) {
   background-color: #f8f8ff;
+}
+#sso {
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
 }
 </style>
 <script>
@@ -160,6 +183,11 @@ function selectTab(target) {
 <body onload="init();">
 <div id="header">
 <h1>TLSPROXY {{.Version}}</h1>
+{{ if ne .Email "" }}
+<div id="sso">
+{{.Email}} <a href="/.sso/logout" class="button">Logout</a>
+</div>
+{{ end }}
 
 <div id="tabs"></div>
 </div>

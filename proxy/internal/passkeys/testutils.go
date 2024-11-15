@@ -102,7 +102,7 @@ func (a *FakeAuthenticator) Create(options *AttestationOptions) (clientDataJSON,
 	}
 
 	authKey.uid = options.User.ID
-	authKey.rk = options.AuthenticatorSelection.RequireResidentKey
+	authKey.rk = options.AuthenticatorSelection.ResidentKey == "preferred" || options.AuthenticatorSelection.ResidentKey == "required"
 
 	authKey.id = make([]byte, 32)
 	if _, err := rand.Read(authKey.id); err != nil {

@@ -52,6 +52,7 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/idp"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
@@ -103,7 +104,7 @@ func (defaultLogger) Errorf(format string, args ...any) {
 type Config struct {
 	Store *storage.Storage
 	Other interface {
-		RequestLogin(w http.ResponseWriter, req *http.Request, origURL string)
+		RequestLogin(w http.ResponseWriter, req *http.Request, origURL string, opts ...idp.Option)
 	}
 	RefreshInterval    time.Duration
 	Endpoint           string
@@ -159,6 +160,7 @@ type challenge struct {
 type nonceData struct {
 	created time.Time
 	origURL *url.URL
+	opts    idp.LoginOptions
 }
 
 func (m *Manager) SetACL(acl *[]string) {
@@ -205,7 +207,7 @@ func (m *Manager) ServeWellKnown(w http.ResponseWriter, req *http.Request) {
 	w.Write(content)
 }
 
-func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL string) {
+func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL string, opts ...idp.Option) {
 	m.cfg.EventRecorder.Record("passkey auth request")
 
 	n := make([]byte, 16)
@@ -225,6 +227,7 @@ func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL
 	m.nonces[nonce] = &nonceData{
 		created: time.Now().UTC(),
 		origURL: ou,
+		opts:    idp.ApplyOptions(opts),
 	}
 	m.noncesMu.Unlock()
 
@@ -268,7 +271,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	m.noncesMu.Unlock()
 
 	if ok {
-		token, _, err := m.cfg.TokenManager.URLToken(w, req, nData.origURL)
+		token, _, err := m.cfg.TokenManager.URLToken(w, req, nData.origURL, map[string]any{"email": nData.opts.LoginHint()})
 		if err != nil {
 			m.cfg.Logger.Errorf("ERR %q: %v", nData.origURL, err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -290,11 +293,13 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 
 	redirectToken := req.Form.Get("redirect")
 	if redirectToken == "" {
+		m.cfg.Logger.Errorf("ERR redirect not set")
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	originalURL, err := m.cfg.TokenManager.ValidateURLToken(w, req, redirectToken)
+	originalURL, redirectClaims, err := m.cfg.TokenManager.ValidateURLToken(w, req, redirectToken)
 	if err != nil {
+		m.cfg.Logger.Errorf("ERR redirect token: %v", err)
 		http.Error(w, "invalid or expired request", http.StatusBadRequest)
 		return
 	}
@@ -305,7 +310,18 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		case "RegisterNewID", "RefreshID":
 			req.URL.Scheme = "https"
 			req.URL.Host = req.Host
-			m.cfg.Other.RequestLogin(w, req, req.URL.String())
+			var opts []idp.Option
+			if mode == "RefreshID" {
+				email, _ := redirectClaims["email"].(string)
+				if email == "" {
+					email = req.Form.Get("email")
+				}
+				opts = append(opts, idp.WithLoginHint(email))
+			}
+			if mode == "RegisterNewID" {
+				opts = append(opts, idp.WithSelectAccount(true))
+			}
+			m.cfg.Other.RequestLogin(w, req, req.URL.String(), opts...)
 			return
 		case "AttestationOptions", "AddKey":
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -338,6 +354,8 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			data.Email, _ = token.Claims.(jwt.MapClaims)["email"].(string)
 			data.IsAllowed = m.subjectIsAllowed(data.Email)
 			data.IsRegistered = m.subjectIsRegistered(data.Email)
+		} else {
+			data.Email, _ = redirectClaims["email"].(string)
 		}
 		w.Header().Set("X-Frame-Options", "DENY")
 		authTemplate.Execute(w, data)
@@ -352,7 +370,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		opts, err := m.assertionOptions()
+		opts, err := m.assertionOptions(req.PostForm.Get("loginId"))
 		if err != nil {
 			m.cfg.Logger.Errorf("ERR assertionOptions: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -408,13 +426,14 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 				u := req.URL
 				args := u.Query()
 				args.Set("get", "RefreshID")
+				email, _ := claims["email"].(string)
+				args.Set("email", email)
 				u.Scheme = "https"
 				u.Host = req.Host
 				u.RawQuery = args.Encode()
 				w.Header().Set("content-type", "application/json")
 				json.NewEncoder(w).Encode(map[string]any{
 					"result": "refresh",
-					"email":  claims["email"],
 					"url":    u.String(),
 				})
 				return
@@ -528,7 +547,12 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 	}
 	hh := sha256.Sum256([]byte(req.Host))
 	if claims == nil || claims["hhash"] != hex.EncodeToString(hh[:]) || time.Since(iat) > 10*time.Minute {
-		m.RequestLogin(w, req, here)
+		var opts []idp.Option
+		if claims != nil {
+			email, _ := claims["email"].(string)
+			opts = append(opts, idp.WithLoginHint(email))
+		}
+		m.RequestLogin(w, req, here, opts...)
 		return
 	}
 	mode := req.Form.Get("get")
@@ -896,7 +920,7 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 	return c, commit(true, nil)
 }
 
-func (m *Manager) assertionOptions() (*AssertionOptions, error) {
+func (m *Manager) assertionOptions(email string) (*AssertionOptions, error) {
 	m.vacuum()
 	opts, err := newAssertionOptions()
 	if err != nil {
@@ -906,6 +930,25 @@ func (m *Manager) assertionOptions() (*AssertionOptions, error) {
 	defer m.mu.Unlock()
 	m.challenges[base64.RawURLEncoding.EncodeToString(opts.Challenge)] = &challenge{
 		created: time.Now().UTC(),
+	}
+	if h, ok := m.db.Subjects[email]; ok {
+		if u, ok := m.db.Handles[h]; ok {
+			for _, key := range u.Keys {
+				opts.AllowCredentials = append(opts.AllowCredentials, CredentialID{
+					Type:       "public-key",
+					ID:         key.ID,
+					Transports: key.Transports,
+				})
+			}
+		}
+	} else if email != "" {
+		// Add fake credential ID to force the client to return an error
+		// like "No passkey registered for ..."
+		opts.AllowCredentials = append(opts.AllowCredentials, CredentialID{
+			Type:       "public-key",
+			ID:         Bytes{0xff},
+			Transports: []string{"internal"},
+		})
 	}
 	return opts, nil
 }
@@ -918,6 +961,7 @@ func (m *Manager) processAssertion(jsargs string, token *jwt.Token) (claims map[
 		AuthenticatorData Bytes  `json:"authenticatorData"`
 		Signature         Bytes  `json:"signature"`
 		UserHandle        Bytes  `json:"userHandle"`
+		LoginID           string `json:"loginId"`
 	}
 	if err := json.Unmarshal([]byte(jsargs), &args); err != nil {
 		return nil, err
@@ -953,7 +997,13 @@ func (m *Manager) processAssertion(jsargs string, token *jwt.Token) (claims map[
 	}
 	defer commit(false, &retErr)
 
-	u, ok := m.db.Handles[base64.RawURLEncoding.EncodeToString(args.UserHandle)]
+	userHandle := base64.RawURLEncoding.EncodeToString(args.UserHandle)
+	if userHandle == "" && args.LoginID != "" {
+		if h, ok := m.db.Subjects[args.LoginID]; ok {
+			userHandle = h
+		}
+	}
+	u, ok := m.db.Handles[userHandle]
 	if !ok {
 		return nil, errors.New("invalid userHandle")
 	}
