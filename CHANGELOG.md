@@ -1,8 +1,8 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.12.0
 
-### :star: Feature improvements
+### :star: Feature improvement
 
 * Improve passkey authentication to support WebAuthn devices without discoverable credentials.
 
