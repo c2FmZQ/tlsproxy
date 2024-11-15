@@ -171,8 +171,9 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 		Key, Value string
 	}
 	var data struct {
-		Token  string
-		Claims []kv
+		Token    string
+		Claims   []kv
+		Passkeys bool
 	}
 	for _, k := range keys {
 		if k == "iat" {
@@ -195,6 +196,7 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	data.Token = token
+	_, data.Passkeys = be.SSO.p.(*passkeys.Manager)
 	ssoStatusTemplate.Execute(w, data)
 }
 

@@ -28,6 +28,9 @@
 <body>
 <div id="buttons">
 {{ if len .Claims | ne 0 }}
+{{ if .Passkeys }}
+<a class="button" href="/.sso/passkeys">Passkeys</a>
+{{ end }}
 <a class="button" href="/.sso/logout?u={{.Token}}">Switch Account</a>
 <a class="button" href="/.sso/logout">Logout</a>
 {{ else }}
