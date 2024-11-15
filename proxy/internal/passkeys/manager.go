@@ -942,6 +942,8 @@ func (m *Manager) assertionOptions(email string) (*AssertionOptions, error) {
 			}
 		}
 	} else if email != "" {
+		// Add fake credential ID to force the client to return an error
+		// like "No passkey registered for ..."
 		opts.AllowCredentials = append(opts.AllowCredentials, CredentialID{
 			Type:       "public-key",
 			ID:         Bytes{0xff},
