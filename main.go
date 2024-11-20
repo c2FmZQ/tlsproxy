@@ -112,6 +112,17 @@ func main() {
 
 	ctx, canc := context.WithTimeout(ctx, *shutdownGraceFlag)
 	defer canc()
+
+	go func() {
+		ch := make(chan os.Signal, 1)
+		signal.Notify(ch, syscall.SIGINT)
+		signal.Notify(ch, syscall.SIGTERM)
+		select {
+		case <-ch:
+			os.Exit(1)
+		case <-ctx.Done():
+		}
+	}()
 	p.Shutdown(ctx)
 }
 
