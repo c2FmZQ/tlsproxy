@@ -166,6 +166,13 @@ type Config struct {
 	// Each backend can be associated with one group. The group's limits
 	// are shared between all the backends associated with it.
 	BWLimits []*BWLimit `yaml:"bwLimits,omitempty"`
+	// WebSockets is a list of WebSocket endpoints and where they get
+	// forwarded.
+	// Incoming WebSocket requests are bridged to TCP connections. The
+	// content of BinaryMessages are streamed to the TCP server, and
+	// data received from the server is sent to the client also
+	// as BinaryMessages.
+	WebSockets []*WebSocketConfig `yaml:"webSockets,omitempty"`
 
 	acceptProxyHeaderFrom []*net.IPNet
 }
@@ -201,6 +208,12 @@ type TLSCertificate struct {
 	// CertFile is the name of the file that contains the X.509 certificate
 	// chain.
 	CertFile string `yaml:"cert"`
+}
+
+// WebSocketConfig specifies a WebSocket endpoint.
+type WebSocketConfig struct {
+	Endpoint string `yaml:"endpoint"`
+	Address  string `yaml:"address,omitempty"`
 }
 
 // Backend encapsulates the data of one backend.

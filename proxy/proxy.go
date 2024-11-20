@@ -55,6 +55,7 @@ import (
 	"github.com/c2FmZQ/storage/autocertcache"
 	"github.com/c2FmZQ/storage/crypto"
 	"github.com/c2FmZQ/tpm"
+	"github.com/gorilla/websocket"
 	"github.com/pires/go-proxyproto"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
@@ -117,6 +118,7 @@ type Proxy struct {
 	mk            crypto.MasterKey
 	store         *storage.Storage
 	tokenManager  *tokenmanager.TokenManager
+	wsUpgrader    *websocket.Upgrader
 
 	mu            sync.RWMutex
 	connClosed    *sync.Cond
@@ -790,6 +792,15 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				handler: logHandler(http.HandlerFunc(pkis[pp.Name].ServeCertificateManagement)),
 			}, pp.Endpoint)
 		}
+	}
+	if len(cfg.WebSockets) > 0 && p.wsUpgrader == nil {
+		p.wsUpgrader = newWebSocketUpgrader()
+	}
+	for _, ws := range cfg.WebSockets {
+		addLocalHandler(localHandler{
+			desc:    "WebSocket Endpoint",
+			handler: logHandler(p.webSocketHandler(*ws)),
+		}, ws.Endpoint)
 	}
 	for _, be := range backends {
 		sort.Slice(be.localHandlers, func(i, j int) bool {
