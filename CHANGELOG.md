@@ -1,10 +1,11 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.13.0
 
-### :star2: New features
+### :star2: New feature
 
 * Add support for forwarding WebSocket requests to arbitrary TCP servers. WebSockets were already forwarded transparently to backends before, and that is not changing. The new feature lets tlsproxy itself handle the WebSocket request and forward them to any TCP servers. The content of BinaryMessages is streamed to the remote server, and data received from the server is sent back to the client also as BinaryMessages.
+  * This is used by [SSH Term](https://github.com/c2FmZQ/sshterm).
 
 ## v0.12.0
 
