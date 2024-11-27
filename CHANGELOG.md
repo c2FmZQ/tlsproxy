@@ -1,5 +1,14 @@
 # TLSPROXY Release Notes
 
+* Update go dependencies:
+  * upgraded github.com/google/pprof v0.0.0-20241101162523-b92577c0c142 => v0.0.0-20241122213907-cbe949e5a41b
+  * upgraded github.com/onsi/ginkgo/v2 v2.21.0 => v2.22.0
+  * upgraded github.com/quic-go/quic-go v0.48.1 => v0.48.2
+* Update go dependencies in examples/backend:
+  * upgraded github.com/c2FmZQ/tlsproxy v0.11.1 => v0.13.0
+  * upgraded github.com/google/pprof v0.0.0-20241101162523-b92577c0c142 => v0.0.0-20241122213907-cbe949e5a41b
+  * upgraded github.com/onsi/ginkgo/v2 v2.21.0 => v2.22.0
+  * upgraded github.com/quic-go/quic-go v0.48.1 => v0.48.2
 ## v0.13.0
 
 ### :star2: New feature
