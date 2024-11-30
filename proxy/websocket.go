@@ -62,6 +62,8 @@ func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 		wc := netw.NewConn(out)
 		wc.SetAnnotation(startTimeKey, time.Now())
 		if conn, ok := req.Context().Value(connCtxKey).(anyConn); ok {
+			annotatedConn(conn).SetAnnotation(httpUpgradeKey, "websocket")
+			wc.SetAnnotation(httpUpgradeKey, "websocket")
 			wc.SetAnnotation(serverNameKey, connServerName(conn))
 			wc.SetAnnotation(modeKey, connMode(conn))
 		}
