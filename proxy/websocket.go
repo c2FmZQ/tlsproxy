@@ -30,6 +30,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
 
 func newWebSocketUpgrader() *websocket.Upgrader {
@@ -57,8 +59,22 @@ func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 			p.logErrorF("ERR webSocketHandler: %v", err)
 			return
 		}
+		wc := netw.NewConn(out)
+		wc.SetAnnotation(startTimeKey, time.Now())
+		if conn, ok := req.Context().Value(connCtxKey).(anyConn); ok {
+			annotatedConn(conn).SetAnnotation(httpUpgradeKey, "websocket")
+			wc.SetAnnotation(serverNameKey, connServerName(conn))
+			wc.SetAnnotation(protoKey, "websocket->tcp")
+			wc.SetAnnotation(modeKey, connMode(conn))
+		}
+		p.outConns.add(wc)
+		defer func() {
+			wc.Close()
+			p.outConns.remove(wc)
+		}()
+		out = wc
 
-		done := make(chan bool, 2)
+		done := make(chan bool, 1)
 
 		lastActive := time.Now()
 		in.SetPongHandler(func(string) error {
@@ -72,10 +88,14 @@ func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 			for {
 				select {
 				case <-ctx.Done():
+					out.SetDeadline(time.Now())
 					return
 				case <-ticker.C:
 					if time.Since(lastActive) > 30*time.Second {
-						done <- true
+						select {
+						case done <- true:
+						default:
+						}
 						return
 					}
 					if err := in.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(5*time.Second)); err != nil {
@@ -88,7 +108,11 @@ func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 		// in -> out loop
 		go func() {
 			defer func() {
-				done <- true
+				select {
+				case done <- true:
+				default:
+				}
+				return
 			}()
 			for {
 				messageType, r, err := in.NextReader()
@@ -107,7 +131,11 @@ func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 		// out -> in loop
 		go func() {
 			defer func() {
-				done <- true
+				select {
+				case done <- true:
+				default:
+				}
+				return
 			}()
 			buf := make([]byte, 1024)
 			for {

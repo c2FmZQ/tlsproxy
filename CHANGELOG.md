@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Bug fix
+
+* Fix goroutine and connection leak with websockets.
+
 ## v0.13.0
 
 ### :star2: New feature
