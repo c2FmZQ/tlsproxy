@@ -1,5 +1,15 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Update go: 1.23.4
+* Update go dependencies:
+  * upgraded github.com/google/pprof v0.0.0-20241101162523-b92577c0c142 => v0.0.0-20241203143554-1e3fdc7de467
+  * upgraded github.com/onsi/ginkgo/v2 v2.21.0 => v2.22.0
+  * upgraded github.com/quic-go/quic-go v0.48.1 => v0.48.2
+
 ## v0.13.1
 
 ### :wrench: Bug fix
