@@ -158,6 +158,9 @@ type Config struct {
 	// PKI is a list of locally hosted and managed Certificate Authorities
 	// that can be used to authenticate TLS clients and backend servers.
 	PKI []*ConfigPKI `yaml:"pki,omitempty"`
+	// SSHCertificateAuthorities are locally hosted certificate authorities
+	// for SSH. Credentials are issued based on SSO data.
+	SSHCertificateAuthorities []*ConfigSSHCertificateAuthority `yaml:"sshCertificateAuthorities,omitempty"`
 	// TLSCertificates is a lists of TLS certificates that should be used
 	// instead of Let's Encrypt. If a certificate is needed but there is no
 	// match in this list, Let's Encrypt is used.
@@ -561,7 +564,7 @@ type ConfigPKI struct {
 	// Name is the name of the CA.
 	Name string `yaml:"name"`
 	// KeyType is type of cryptographic key to use with this CA. Valid
-	// values are: ecdsa-p224, ecdsa-p256, ecdsa-p394, ecdsa-p521, ed25519,
+	// values are: ecdsa-p224, ecdsa-p256, ecdsa-p384, ecdsa-p521, ed25519,
 	// rsa-2048, rsa-3072, and rsa-4096.
 	KeyType string `yaml:"keyType,omitempty"`
 	// IssuingCertificateURLs is a list of URLs that return the X509
@@ -581,6 +584,21 @@ type ConfigPKI struct {
 	// Admins is a list of users who are allowed to perform administrative
 	// tasks on the CA, e.g. revoke any certificate.
 	Admins []string `yaml:"admins"`
+}
+
+// ConfigSSHCertificateAuthority defines a certificate authority.
+type ConfigSSHCertificateAuthority struct {
+	// Name is the name of the CA.
+	Name string `yaml:"name"`
+	// KeyType is type of cryptographic key to use with this CA. Valid
+	// values are: ecdsa-p256, ecdsa-p384, ecdsa-p521, ed25519,
+	// rsa-2048, rsa-3072, and rsa-4096.
+	KeyType string `yaml:"keyType,omitempty"`
+	// PublicKeyEndpoint is the URL where the CA's public key is published.
+	PublicKeyEndpoint string `yaml:"publicKeyEndpoint"`
+	// CertificateEndpoint is the URL where certificates are issued. It
+	// receives a public key in a POST request and returns a certificate.
+	CertificateEndpoint string `yaml:"certificateEndpoint"`
 }
 
 // BackendSSO specifies the identity parameters to use for a backend.
