@@ -809,16 +809,19 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		if err != nil {
 			return err
 		}
-		addLocalHandler(localHandler{
-			desc:      fmt.Sprintf("SSH CA Public Key (%s)", pp.Name),
-			handler:   logHandler(http.HandlerFunc(ca.ServePublicKey)),
-			ssoBypass: true,
-		}, pp.PublicKeyEndpoint)
-		addLocalHandler(localHandler{
-			desc:      fmt.Sprintf("SSH CA Certificate (%s)", pp.Name),
-			handler:   logHandler(http.HandlerFunc(ca.ServeCertificate)),
-			ssoBypass: false,
-		}, pp.CertificateEndpoint)
+		if pp.PublicKeyEndpoint != "" {
+			addLocalHandler(localHandler{
+				desc:      fmt.Sprintf("SSH CA Public Key (%s)", pp.Name),
+				handler:   logHandler(http.HandlerFunc(ca.ServePublicKey)),
+				ssoBypass: true,
+			}, pp.PublicKeyEndpoint)
+		}
+		if pp.CertificateEndpoint != "" {
+			addLocalHandler(localHandler{
+				desc:    fmt.Sprintf("SSH CA Certificate (%s)", pp.Name),
+				handler: logHandler(http.HandlerFunc(ca.ServeCertificate)),
+			}, pp.CertificateEndpoint)
+		}
 	}
 
 	if len(cfg.WebSockets) > 0 && p.wsUpgrader == nil {
