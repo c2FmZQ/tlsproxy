@@ -29,6 +29,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -266,13 +267,13 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	claims := ca.opts.ClaimsFromCtx(req.Context())
-	if claims == nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+	var email string
+	if claims := ca.opts.ClaimsFromCtx(req.Context()); claims != nil {
+		if e, ok := claims["email"].(string); ok && e != "" {
+			email = e
+		}
 	}
-	email, ok := claims["email"].(string)
-	if !ok || email == "" {
+	if email == "" {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -305,9 +306,16 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	rnd := make([]byte, 8)
+	if _, err := io.ReadFull(rand.Reader, rnd); err != nil {
+		ca.opts.Logger.Errorf("ERR rand: %v", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	now := time.Now().UTC()
 	cert := &ssh.Certificate{
 		Key:             pub,
+		Serial:          binary.BigEndian.Uint64(rnd),
 		CertType:        ssh.UserCert,
 		KeyId:           email,
 		ValidPrincipals: []string{email},
