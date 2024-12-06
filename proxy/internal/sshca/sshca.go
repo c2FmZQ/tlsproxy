@@ -118,13 +118,8 @@ type SSHCA struct {
 }
 
 type certificateAuthority struct {
-	Name        string
-	PrivateKey  []byte
-	IssuedCerts []*certificate
-}
-
-type certificate struct {
-	Cert []byte
+	Name       string
+	PrivateKey []byte
 }
 
 func (ca *SSHCA) open() (func(commit bool, errp *error) error, error) {
