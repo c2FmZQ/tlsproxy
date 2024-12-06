@@ -973,6 +973,9 @@ func (cfg *Config) Check() error {
 
 	pkis := make(map[string]bool)
 	for i, p := range cfg.PKI {
+		if p.Name == "" {
+			return fmt.Errorf("pki[%d].Name: must be set", i)
+		}
 		if pkis[p.Name] {
 			return fmt.Errorf("pki[%d].Name: duplicate name %q", i, p.Name)
 		}
@@ -986,6 +989,26 @@ func (cfg *Config) Check() error {
 				return fmt.Errorf("pki[%d].Endpoint %q: backend not found", i, p.Endpoint)
 			} else if mode := strings.ToUpper(be.Mode); mode != ModeLocal && mode != ModeConsole {
 				return fmt.Errorf("pki[%d].Endpoint %q: backend must have mode %s or %s, found %s", i, p.Endpoint, ModeLocal, ModeConsole, mode)
+			}
+		}
+	}
+
+	sshCAs := make(map[string]bool)
+	for i, p := range cfg.SSHCertificateAuthorities {
+		if p.Name == "" {
+			return fmt.Errorf("sshCertificateAuthorities[%d].Name: must be set", i)
+		}
+		if sshCAs[p.Name] {
+			return fmt.Errorf("sshCertificateAuthorities[%d].Name: duplicate name %q", i, p.Name)
+		}
+		sshCAs[p.Name] = true
+		if p.CertificateEndpoint != "" {
+			host, _, _, err := hostAndPath(p.CertificateEndpoint)
+			if err != nil {
+				return fmt.Errorf("sshCertificateAuthorities[%d].CertificateEndpoint %q: %v", i, p.CertificateEndpoint, err)
+			}
+			if be := serverNames[host]; be == nil {
+				return fmt.Errorf("sshCertificateAuthorities[%d].CertificateEndpoint %q: backend not found", i, p.CertificateEndpoint)
 			}
 		}
 	}
