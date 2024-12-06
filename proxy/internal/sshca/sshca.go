@@ -336,7 +336,9 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	ca.opts.EventRecorder.Record("ssh certificate issued")
+	if ca.opts.EventRecorder != nil {
+		ca.opts.EventRecorder.Record("ssh certificate issued")
+	}
 
 	out := ssh.MarshalAuthorizedKey(cert)
 	w.Header().Set("cache-control", "no-store")
