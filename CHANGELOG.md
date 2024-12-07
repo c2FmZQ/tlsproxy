@@ -11,6 +11,10 @@
 cert-authority,principals="<email>" <CA's public key>
 ```
 
+### :star: Feature improvement
+
+* Add an option to exclude some path prefixes from SSO enforcement.
+
 ## v0.13.2
 
 ### :wrench: Misc
