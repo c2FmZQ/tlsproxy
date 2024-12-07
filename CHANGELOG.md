@@ -1,5 +1,16 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :star2: New feature
+
+* Add a built-in certificate authority for SSH. It is enabled with the top-level `sshCertificateAuthorities` field in the config file.
+  * This CA issues SSH user certificates with the current user's email address as both `Key ID` and `Principal`. It only works when SSO is enabled.
+  * User authorization is done by adding a line like this to the user's `.ssh/authorized_keys` file:
+```
+cert-authority,principals="<email>" <CA's public key>
+```
+
 ## v0.13.2
 
 ### :wrench: Misc

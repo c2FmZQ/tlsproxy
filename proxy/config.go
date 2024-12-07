@@ -158,6 +158,9 @@ type Config struct {
 	// PKI is a list of locally hosted and managed Certificate Authorities
 	// that can be used to authenticate TLS clients and backend servers.
 	PKI []*ConfigPKI `yaml:"pki,omitempty"`
+	// SSHCertificateAuthorities are locally hosted certificate authorities
+	// for SSH. Credentials are issued based on SSO data.
+	SSHCertificateAuthorities []*ConfigSSHCertificateAuthority `yaml:"sshCertificateAuthorities,omitempty"`
 	// TLSCertificates is a lists of TLS certificates that should be used
 	// instead of Let's Encrypt. If a certificate is needed but there is no
 	// match in this list, Let's Encrypt is used.
@@ -561,7 +564,7 @@ type ConfigPKI struct {
 	// Name is the name of the CA.
 	Name string `yaml:"name"`
 	// KeyType is type of cryptographic key to use with this CA. Valid
-	// values are: ecdsa-p224, ecdsa-p256, ecdsa-p394, ecdsa-p521, ed25519,
+	// values are: ecdsa-p224, ecdsa-p256, ecdsa-p384, ecdsa-p521, ed25519,
 	// rsa-2048, rsa-3072, and rsa-4096.
 	KeyType string `yaml:"keyType,omitempty"`
 	// IssuingCertificateURLs is a list of URLs that return the X509
@@ -581,6 +584,21 @@ type ConfigPKI struct {
 	// Admins is a list of users who are allowed to perform administrative
 	// tasks on the CA, e.g. revoke any certificate.
 	Admins []string `yaml:"admins"`
+}
+
+// ConfigSSHCertificateAuthority defines a certificate authority.
+type ConfigSSHCertificateAuthority struct {
+	// Name is the name of the CA.
+	Name string `yaml:"name"`
+	// KeyType is type of cryptographic key to use with this CA. Valid
+	// values are: ecdsa-p256, ecdsa-p384, ecdsa-p521, ed25519,
+	// rsa-2048, rsa-3072, and rsa-4096.
+	KeyType string `yaml:"keyType,omitempty"`
+	// PublicKeyEndpoint is the URL where the CA's public key is published.
+	PublicKeyEndpoint string `yaml:"publicKeyEndpoint"`
+	// CertificateEndpoint is the URL where certificates are issued. It
+	// receives a public key in a POST request and returns a certificate.
+	CertificateEndpoint string `yaml:"certificateEndpoint"`
 }
 
 // BackendSSO specifies the identity parameters to use for a backend.
@@ -955,6 +973,9 @@ func (cfg *Config) Check() error {
 
 	pkis := make(map[string]bool)
 	for i, p := range cfg.PKI {
+		if p.Name == "" {
+			return fmt.Errorf("pki[%d].Name: must be set", i)
+		}
 		if pkis[p.Name] {
 			return fmt.Errorf("pki[%d].Name: duplicate name %q", i, p.Name)
 		}
@@ -968,6 +989,26 @@ func (cfg *Config) Check() error {
 				return fmt.Errorf("pki[%d].Endpoint %q: backend not found", i, p.Endpoint)
 			} else if mode := strings.ToUpper(be.Mode); mode != ModeLocal && mode != ModeConsole {
 				return fmt.Errorf("pki[%d].Endpoint %q: backend must have mode %s or %s, found %s", i, p.Endpoint, ModeLocal, ModeConsole, mode)
+			}
+		}
+	}
+
+	sshCAs := make(map[string]bool)
+	for i, p := range cfg.SSHCertificateAuthorities {
+		if p.Name == "" {
+			return fmt.Errorf("sshCertificateAuthorities[%d].Name: must be set", i)
+		}
+		if sshCAs[p.Name] {
+			return fmt.Errorf("sshCertificateAuthorities[%d].Name: duplicate name %q", i, p.Name)
+		}
+		sshCAs[p.Name] = true
+		if p.CertificateEndpoint != "" {
+			host, _, _, err := hostAndPath(p.CertificateEndpoint)
+			if err != nil {
+				return fmt.Errorf("sshCertificateAuthorities[%d].CertificateEndpoint %q: %v", i, p.CertificateEndpoint, err)
+			}
+			if be := serverNames[host]; be == nil {
+				return fmt.Errorf("sshCertificateAuthorities[%d].CertificateEndpoint %q: backend not found", i, p.CertificateEndpoint)
 			}
 		}
 	}

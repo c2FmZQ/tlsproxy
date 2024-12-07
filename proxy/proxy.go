@@ -72,6 +72,7 @@ import (
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/passkeys"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/saml"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/sshca"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
@@ -793,6 +794,36 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			}, pp.Endpoint)
 		}
 	}
+	for _, pp := range cfg.SSHCertificateAuthorities {
+		opts := sshca.Options{
+			Name:                pp.Name,
+			KeyType:             pp.KeyType,
+			PublicKeyEndpoint:   pp.PublicKeyEndpoint,
+			CertificateEndpoint: pp.CertificateEndpoint,
+			TPM:                 p.tpm,
+			Store:               p.store,
+			EventRecorder:       er,
+			ClaimsFromCtx:       claimsFromCtx,
+		}
+		ca, err := sshca.New(opts)
+		if err != nil {
+			return err
+		}
+		if pp.PublicKeyEndpoint != "" {
+			addLocalHandler(localHandler{
+				desc:      fmt.Sprintf("SSH CA Public Key (%s)", pp.Name),
+				handler:   logHandler(http.HandlerFunc(ca.ServePublicKey)),
+				ssoBypass: true,
+			}, pp.PublicKeyEndpoint)
+		}
+		if pp.CertificateEndpoint != "" {
+			addLocalHandler(localHandler{
+				desc:    fmt.Sprintf("SSH CA Certificate (%s)", pp.Name),
+				handler: logHandler(http.HandlerFunc(ca.ServeCertificate)),
+			}, pp.CertificateEndpoint)
+		}
+	}
+
 	if len(cfg.WebSockets) > 0 && p.wsUpgrader == nil {
 		p.wsUpgrader = newWebSocketUpgrader()
 	}
