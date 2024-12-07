@@ -619,7 +619,7 @@ type BackendSSO struct {
 	// Paths lists the path prefixes for which this policy will be enforced.
 	// If Paths is empty, the policy applies to all paths.
 	Paths []string `yaml:"paths,omitempty"`
-	// Exceptions is a list of path prefixes that are exempt to SSO
+	// Exceptions is a list of path prefixes that are exempt from SSO
 	// enforcement, e.g. /app.webmanifest or /favicon.png
 	Exceptions []string `yaml:"exceptions,omitempty"`
 	// SetUserIDHeader indicates that the x-tlsproxy-user-id header should
