@@ -1,6 +1,6 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.14.0
 
 ### :star2: New feature
 
