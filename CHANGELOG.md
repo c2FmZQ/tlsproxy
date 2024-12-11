@@ -19,7 +19,7 @@ cert-authority,principals="<email>" <CA's public key>
 
 * Update go dependencies:
   * upgraded github.com/google/pprof v0.0.0-20241203143554-1e3fdc7de467 => v0.0.0-20241210010833-40e02aabc2ad
-  * upgraded golang.org/x/crypto v0.29.0 => v0.30.0
+  * upgraded golang.org/x/crypto v0.29.0 => v0.31.0
   * upgraded golang.org/x/exp v0.0.0-20241108190413-2d47ceb2692f => v0.0.0-20241210194714-1829a127f884
   * upgraded golang.org/x/net v0.31.0 => v0.32.0
   * upgraded golang.org/x/sync v0.9.0 => v0.10.0
