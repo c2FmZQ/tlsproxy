@@ -2,7 +2,7 @@
 
 ## next
 
-### :star2: New feature
+### :star2: New features
 
 * Add a built-in certificate authority for SSH. It is enabled with the top-level `sshCertificateAuthorities` field in the config file.
   * This CA issues SSH user certificates with the current user's email address as both `Key ID` and `Principal`. It only works when SSO is enabled.
@@ -10,6 +10,18 @@
 ```
 cert-authority,principals="<email>" <CA's public key>
 ```
+
+### :wrench: Misc
+
+* Update go dependencies:
+  * upgraded github.com/google/pprof v0.0.0-20241203143554-1e3fdc7de467 => v0.0.0-20241210010833-40e02aabc2ad
+  * upgraded golang.org/x/crypto v0.29.0 => v0.30.0
+  * upgraded golang.org/x/exp v0.0.0-20241108190413-2d47ceb2692f => v0.0.0-20241210194714-1829a127f884
+  * upgraded golang.org/x/net v0.31.0 => v0.32.0
+  * upgraded golang.org/x/sync v0.9.0 => v0.10.0
+  * upgraded golang.org/x/sys v0.27.0 => v0.28.0
+  * upgraded golang.org/x/text v0.20.0 => v0.21.0
+  * upgraded golang.org/x/tools v0.27.0 => v0.28.0
 
 ## v0.13.2
 
