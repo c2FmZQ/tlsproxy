@@ -268,7 +268,7 @@ func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Reques
 }
 
 func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bool {
-	if be.SSO == nil || !pathMatches(be.SSO.Paths, req.URL.Path) {
+	if be.SSO == nil || !pathMatches(be.SSO.Paths, req.URL.Path) || (len(be.SSO.Exceptions) > 0 && pathMatches(be.SSO.Exceptions, req.URL.Path)) {
 		return true
 	}
 	claims := claimsFromCtx(req.Context())

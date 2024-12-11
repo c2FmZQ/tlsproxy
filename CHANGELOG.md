@@ -2,7 +2,7 @@
 
 ## next
 
-### :star2: New features
+### :star2: New feature
 
 * Add a built-in certificate authority for SSH. It is enabled with the top-level `sshCertificateAuthorities` field in the config file.
   * This CA issues SSH user certificates with the current user's email address as both `Key ID` and `Principal`. It only works when SSO is enabled.
@@ -10,6 +10,10 @@
 ```
 cert-authority,principals="<email>" <CA's public key>
 ```
+
+### :star: Feature improvement
+
+* Add an option to exclude some path prefixes from SSO enforcement.
 
 ### :wrench: Misc
 
