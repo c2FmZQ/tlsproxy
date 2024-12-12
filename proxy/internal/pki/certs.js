@@ -21,6 +21,20 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+'use strict';
+
+window.pkiApp = {};
+pkiApp.ready = new Promise(resolve => {
+  pkiApp.pkiwasmIsReady = () => {
+    console.log('PKI WASM is ready');
+    resolve();
+  };
+});
+
+const go = new Go();
+WebAssembly.instantiateStreaming(fetch('?get=static&file=pki.wasm.bz2'), go.importObject)
+  .then(r => go.run(r.instance));
+
 function requestCert(csr) {
   fetch('?get=requestCert', {
     method: 'POST',
@@ -91,7 +105,8 @@ function hideForm() {
   document.getElementById('csrform').style.display = 'none';
   window.location.reload();
 }
-function generateKeyAndCert(f) {
+function generateKeyAndCert(b) {
+  let f = b.form;
   if (f.pw1.value.length < 6) {
     alert('Password must be at least 6 characters');
     return;
@@ -101,51 +116,29 @@ function generateKeyAndCert(f) {
     return;
   }
   const pw = f.pw1.value;
-  const fmt = f.format.value;
-  const kty = f.keytype.value;
-  const label = f.label.value;
-  const dns = f.dnsname.value;
   f.pw1.value = '';
   f.pw2.value = '';
-  const path = window.location.pathname + '/generateKeyAndCert';
-  navigator.serviceWorker.register('?get=static&file=sw.js', {scope: path})
-    .then(r => r.update())
-    .then(r => {
-      console.log('Service worker ready');
-      document.getElementById('csrform').style.display = 'none';
-      const f = document.createElement('form');
-      f.setAttribute('method', 'post');
-      f.setAttribute('action', path);
-      let p = document.createElement('input');
-      p.setAttribute('type', 'hidden');
-      p.setAttribute('name', 'password');
-      p.setAttribute('value', pw);
-      f.appendChild(p);
-      p = document.createElement('input');
-      p.setAttribute('type', 'hidden');
-      p.setAttribute('name', 'format');
-      p.setAttribute('value', fmt);
-      f.appendChild(p);
-      p = document.createElement('input');
-      p.setAttribute('type', 'hidden');
-      p.setAttribute('name', 'keytype');
-      p.setAttribute('value', kty);
-      f.appendChild(p);
-      p = document.createElement('input');
-      p.setAttribute('type', 'hidden');
-      p.setAttribute('name', 'label');
-      p.setAttribute('value', label);
-      f.appendChild(p);
-      p = document.createElement('input');
-      p.setAttribute('type', 'hidden');
-      p.setAttribute('name', 'dnsname');
-      p.setAttribute('value', dns);
-      f.appendChild(p);
-      document.body.appendChild(f);
-      f.submit();
-    })
-    .catch(err => console.error('Service worker update failed', err))
+
+  pkiApp.ready
+  .then(() => {
+    b.disabled = true;
+    document.body.classList.add('waiting');
+    return pkiApp.getCertificate({
+      'keytype': f.keytype.value,
+      'format': f.format.value,
+      'password': pw,
+      'label': f.label.value,
+      'dnsname': f.dnsname.value,
+    });
+  })
+  .then(() => window.location.reload())
+  .catch(err => {
+    b.disabled = false;
+    document.body.classList.remove('waiting');
+    console.error('getCertificate failed', err);
+  });
 }
+
 function showView(sn) {
   fetch('?get=downloadCert&sn='+encodeURIComponent(sn))
   .then(resp => {

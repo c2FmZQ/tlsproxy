@@ -1,6 +1,9 @@
 body {
   margin: 2rem;
 }
+body.waiting, body.waiting a:hover, body.waiting * {
+  cursor: wait !important;
+}
 h1 {
   font-size: 150%;
 }

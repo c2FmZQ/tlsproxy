@@ -32,10 +32,11 @@ import (
 	"math/big"
 	"testing"
 	"time"
+
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki/keys"
 )
 
 func TestKeyTypeFormat(t *testing.T) {
-	count := 0
 	for _, tc := range []struct {
 		keyType     string
 		format      string
@@ -50,10 +51,14 @@ func TestKeyTypeFormat(t *testing.T) {
 		{keyType: "rsa-2048", format: "p12", contentType: "application/x-pkcs12", ext: ".p12"},
 		{keyType: "ed25519", format: "gpg", dnsName: "example.com", contentType: "application/octet-stream", ext: ".pem.gpg"},
 	} {
-		count++
-		csrPEM, err := MakeCSR(count, tc.keyType, tc.format, tc.label, tc.dnsName, "foo")
+		privKey, err := keys.GenerateKey(tc.keyType)
 		if err != nil {
-			t.Fatalf("MakeCSR: %v", err)
+			t.Fatalf("GenerateKey: %v", err)
+		}
+
+		csrPEM, err := makeCSR(privKey, tc.label, tc.dnsName)
+		if err != nil {
+			t.Fatalf("makeCSR: %v", err)
 		}
 		block, _ := pem.Decode(csrPEM)
 		if block == nil {
@@ -68,7 +73,7 @@ func TestKeyTypeFormat(t *testing.T) {
 			t.Fatalf("x509.ParseCertificateRequest: %v", err)
 		}
 
-		_, privKey, err := ed25519.GenerateKey(rand.Reader)
+		_, caKey, err := ed25519.GenerateKey(rand.Reader)
 		if err != nil {
 			t.Fatalf("ed25519.GenerateKey: %v", err)
 		}
@@ -86,13 +91,13 @@ func TestKeyTypeFormat(t *testing.T) {
 			KeyUsage:              x509.KeyUsageDataEncipherment | x509.KeyUsageDigitalSignature,
 			BasicConstraintsValid: true,
 		}
-		raw, err := x509.CreateCertificate(rand.Reader, templ, templ, cr.PublicKey, privKey)
+		raw, err := x509.CreateCertificate(rand.Reader, templ, templ, cr.PublicKey, caKey)
 		if err != nil {
 			t.Fatalf("x509.CreateCertificate: %v", err)
 		}
 		cert := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: raw})
 
-		_, contentType, fileName, err := MakeResponse(count, string(cert))
+		_, contentType, fileName, err := makeResponse(privKey, cert, tc.format, "foo")
 		if err != nil {
 			t.Fatalf("MakeResponse: %v", err)
 		}

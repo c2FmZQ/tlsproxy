@@ -52,7 +52,7 @@ import (
 var embedCerts string
 var certsTemplate *template.Template
 
-//go:embed certs.js sw.js style.css pki.wasm.bz2 wasm_exec.js
+//go:embed certs.js style.css pki.wasm.bz2 wasm_exec.js
 var staticFiles embed.FS
 var staticEtags map[string]string
 

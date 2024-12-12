@@ -29,15 +29,9 @@ package main
 
 import (
 	"fmt"
-	"net/url"
 	"syscall/js"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki/clientwasm/impl"
-)
-
-var (
-	jsUint8Array = js.Global().Get("Uint8Array")
-	jsResponse   = js.Global().Get("Response")
 )
 
 func main() {
@@ -49,74 +43,61 @@ func main() {
 	if ready.Type() != js.TypeFunction {
 		panic("pkiApp.pkiwasmIsReady not found")
 	}
-	pkiApp.Set("makeCertificateRequest", js.FuncOf(makeCSR))
-	pkiApp.Set("makeResponse", js.FuncOf(makeResponse))
+	pkiApp.Set("getCertificate", js.FuncOf(getCertificate))
 	ready.Invoke()
 	<-make(chan struct{})
 }
 
-func makeCSR(this js.Value, args []js.Value) any {
-	// arg0: id  (a unique ID to match makeCSR with makeP12)
-	// arg2: application/x-www-form-urlencoded arguments
-	if len(args) != 2 || args[0].Type() != js.TypeNumber || args[1].Type() != js.TypeString {
-		fmt.Println("makeCertificateRequest: unexpected arguments")
-		return js.Undefined()
+func getCertificate(this js.Value, args []js.Value) (result any) {
+	defer func() {
+		switch v := result.(type) {
+		case error:
+			jsErr := js.Global().Get("Error").New(fmt.Sprintf("Start: %v", v))
+			result = js.Global().Get("Promise").Call("reject", jsErr)
+		default:
+		}
+	}()
+	if len(args) != 1 || args[0].Type() != js.TypeObject {
+		return fmt.Errorf("getCertificate: unexpected arguments")
 	}
-	form, err := url.ParseQuery(args[1].String())
-	if err != nil {
-		fmt.Printf("ParseQuery(%q): %v\n", args[1].String(), err)
-		return js.Undefined()
-	}
-	keyType := form.Get("keytype")
-	if keyType == "" {
-		keyType = "ecdsa-p256"
-	}
-	format := form.Get("format")
-	if format == "" {
-		format = "gpg"
-	}
-	password := form.Get("password")
-	if password == "" {
-		fmt.Println("password is missing")
-		return js.Undefined()
-	}
-	resp, err := impl.MakeCSR(args[0].Int(), keyType, format, form.Get("label"), form.Get("dnsname"), password)
-	if err != nil {
-		fmt.Println(err)
-		return js.Undefined()
-	}
-	return Uint8ArrayFromBytes(resp)
-}
+	arg := args[0]
+	keyType := arg.Get("keytype").String()
+	format := arg.Get("format").String()
+	password := arg.Get("password").String()
+	label := arg.Get("label").String()
+	dnsName := arg.Get("dnsname").String()
+	url := js.Global().Get("location").Get("pathname").String() + "?get=requestCert"
 
-func makeResponse(this js.Value, args []js.Value) any {
-	// arg0: id  (the same id used with makeCSR)
-	// arg1: the pem-encoded cert
-	if len(args) != 2 || args[0].Type() != js.TypeNumber || args[1].Type() != js.TypeString {
-		fmt.Println("makeResponse: unexpected argument")
-		return js.Undefined()
-	}
-	body, contentType, fileName, err := impl.MakeResponse(args[0].Int(), args[1].String())
-	if err != nil {
-		fmt.Println(err)
-		return js.Undefined()
-	}
+	return js.Global().Get("Promise").New(js.FuncOf(
+		func(this js.Value, args []js.Value) any {
+			resolve := args[0]
+			reject := args[1]
+			go func() {
+				data, contentType, filename, err := impl.GetCertificate(url, keyType, format, label, dnsName, password)
+				if err != nil {
+					reject.Invoke(js.Global().Get("Error").New(err.Error()))
+					return
+				}
+				opts := js.Global().Get("Object").New()
+				opts.Set("type", contentType)
+				blob := js.Global().Get("Blob").New(js.Global().Get("Array").New(Uint8ArrayFromBytes(data)), opts)
 
-	return jsResponse.New(
-		Uint8ArrayFromBytes(body),
-		js.ValueOf(map[string]any{
-			"status":     200,
-			"statusText": "OK",
-			"headers": map[string]any{
-				"content-type":        contentType,
-				"content-disposition": `attachment; filename="` + fileName + `"`,
-				"cache-control":       "private, no-store",
-			},
-		}),
-	)
+				a := js.Global().Get("document").Call("createElement", "a")
+				a.Set("href", js.Global().Get("URL").Call("createObjectURL", blob))
+				a.Call("setAttribute", "download", js.ValueOf(filename))
+				el := js.Global().Get("document").Get("body")
+				el.Call("appendChild", a)
+				a.Call("click")
+				el.Call("removeChild", a)
+				resolve.Invoke()
+			}()
+			return nil
+		},
+	))
 }
 
 func Uint8ArrayFromBytes(in []byte) js.Value {
-	out := jsUint8Array.New(js.ValueOf(len(in)))
+	out := js.Global().Get("Uint8Array").New(js.ValueOf(len(in)))
 	js.CopyBytesToJS(out, in)
 	return out
 }
