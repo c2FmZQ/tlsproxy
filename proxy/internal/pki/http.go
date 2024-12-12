@@ -365,7 +365,7 @@ func (m *PKIManager) handleRequestCert(w http.ResponseWriter, req *http.Request)
 		return
 	}
 	defer req.Body.Close()
-	body, err := io.ReadAll(req.Body)
+	body, err := io.ReadAll(io.LimitedReader{R: req.Body, N: 102400})
 	if err != nil {
 		m.opts.Logger.Errorf("ERR body: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
