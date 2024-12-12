@@ -1,6 +1,9 @@
 body {
   margin: 2rem;
 }
+body.waiting, body.waiting a:hover, body.waiting * {
+  cursor: wait !important;
+}
 h1 {
   font-size: 150%;
 }
@@ -97,4 +100,10 @@ textarea {
 }
 .table2>div {
   padding: 0.25rem;
+}
+.dnsinput {
+  display: none;
+}
+.dnsinput.selected {
+  display: block;
 }

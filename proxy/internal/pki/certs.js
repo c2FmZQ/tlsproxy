@@ -21,6 +21,19 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+'use strict';
+
+window.pkiApp = {};
+pkiApp.ready = new Promise(resolve => {
+  pkiApp.pkiwasmIsReady = () => {
+    console.log('PKI WASM is ready');
+    resolve();
+  };
+});
+
+const go = new Go();
+let wasmLoaded = false;
+
 function requestCert(csr) {
   fetch('?get=requestCert', {
     method: 'POST',
@@ -85,13 +98,25 @@ function downloadCert(sn) {
   window.location = '?get=downloadCert&sn='+encodeURIComponent(sn);
 }
 function showForm() {
+  if (!wasmLoaded) {
+    WebAssembly.instantiateStreaming(fetch('?get=static&file=pki.wasm.bz2'), go.importObject).then(r => go.run(r.instance));
+    wasmLoaded = true;
+  }
   document.getElementById('csrform').style.display = 'block';
 }
 function hideForm() {
   document.getElementById('csrform').style.display = 'none';
   window.location.reload();
 }
-function generateKeyAndCert(f) {
+function selectUsage(e) {
+  const isServer = e.options[e.selectedIndex].value === 'server';
+  for (const e of document.querySelectorAll('.dnsinput')) {
+    if (isServer) e.classList.add('selected');
+    else e.classList.remove('selected');
+  }
+}
+function generateKeyAndCert(b) {
+  let f = b.form;
   if (f.pw1.value.length < 6) {
     alert('Password must be at least 6 characters');
     return;
@@ -100,52 +125,36 @@ function generateKeyAndCert(f) {
     alert('Passwords don\'t match');
     return;
   }
+  if (f.usage.options[f.usage.selectedIndex].value === 'server' && f.dnsname.value === '') {
+    alert('DNS Name is required');
+    return;
+  }
   const pw = f.pw1.value;
-  const fmt = f.format.value;
-  const kty = f.keytype.value;
-  const label = f.label.value;
-  const dns = f.dnsname.value;
   f.pw1.value = '';
   f.pw2.value = '';
-  const path = window.location.pathname + '/generateKeyAndCert';
-  navigator.serviceWorker.register('?get=static&file=sw.js', {scope: path})
-    .then(r => r.update())
-    .then(r => {
-      console.log('Service worker ready');
-      document.getElementById('csrform').style.display = 'none';
-      const f = document.createElement('form');
-      f.setAttribute('method', 'post');
-      f.setAttribute('action', path);
-      let p = document.createElement('input');
-      p.setAttribute('type', 'hidden');
-      p.setAttribute('name', 'password');
-      p.setAttribute('value', pw);
-      f.appendChild(p);
-      p = document.createElement('input');
-      p.setAttribute('type', 'hidden');
-      p.setAttribute('name', 'format');
-      p.setAttribute('value', fmt);
-      f.appendChild(p);
-      p = document.createElement('input');
-      p.setAttribute('type', 'hidden');
-      p.setAttribute('name', 'keytype');
-      p.setAttribute('value', kty);
-      f.appendChild(p);
-      p = document.createElement('input');
-      p.setAttribute('type', 'hidden');
-      p.setAttribute('name', 'label');
-      p.setAttribute('value', label);
-      f.appendChild(p);
-      p = document.createElement('input');
-      p.setAttribute('type', 'hidden');
-      p.setAttribute('name', 'dnsname');
-      p.setAttribute('value', dns);
-      f.appendChild(p);
-      document.body.appendChild(f);
-      f.submit();
-    })
-    .catch(err => console.error('Service worker update failed', err))
+
+  const oldb = b.textContent;
+  b.disabled = true;
+  b.textContent = 'working...';
+  document.body.classList.add('waiting');
+  pkiApp.ready
+  .then(() => pkiApp.getCertificate({
+    'keytype': f.keytype.value,
+    'format': f.format.value,
+    'password': pw,
+    'label': f.label.value,
+    'dnsname': f.dnsname.value,
+  }))
+  .then(() => window.location.reload())
+  .catch(err => {
+    b.disabled = false;
+    b.textContent = oldb;
+    document.body.classList.remove('waiting');
+    console.error('getCertificate failed', err);
+    alert('Request failed: '+err.message);
+  });
 }
+
 function showView(sn) {
   fetch('?get=downloadCert&sn='+encodeURIComponent(sn))
   .then(resp => {

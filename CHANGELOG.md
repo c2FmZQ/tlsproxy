@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Simplify the PKI client-side code and remove the service worker.
+
 ## v0.14.0
 
 ### :star2: New feature

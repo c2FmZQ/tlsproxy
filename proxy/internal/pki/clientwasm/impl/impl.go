@@ -25,14 +25,16 @@ package impl
 
 import (
 	"bytes"
-	"crypto"
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 
 	"golang.org/x/crypto/openpgp"
@@ -41,30 +43,40 @@ import (
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki/keys"
 )
 
-var (
-	privateKeys map[int]keyData
-)
-
-type keyData struct {
-	key      crypto.PrivateKey
-	format   string
-	password string
-}
-
-func MakeCSR(id int, keyType, format, label, dnsname, password string) ([]byte, error) {
+func GetCertificate(url, keyType, format, label, dnsname, password string) (data []byte, contentType, filename string, err error) {
 	privKey, err := keys.GenerateKey(keyType)
 	if err != nil {
-		return nil, err
+		return nil, "", "", err
 	}
-	if privateKeys == nil {
-		privateKeys = make(map[int]keyData)
+	csr, err := makeCSR(privKey, label, dnsname)
+	if err != nil {
+		return nil, "", "", err
 	}
-	privateKeys[id] = keyData{
-		key:      privKey,
-		format:   format,
-		password: password,
+	req, err := http.NewRequest("POST", url, bytes.NewReader(csr))
+	if err != nil {
+		return nil, "", "", err
 	}
+	req.Header.Set("content-type", "application/x-pem-file")
+	req.Header.Set("x-csrf-check", "1")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, "", "", err
+	}
+	defer resp.Body.Close()
+	var reqResult struct {
+		Cert   string `json:"cert"`
+		Result string `json:"result"`
+	}
+	if err := json.NewDecoder(&io.LimitedReader{R: resp.Body, N: 102400}).Decode(&reqResult); err != nil {
+		return nil, "", "", err
+	}
+	if reqResult.Result != "ok" {
+		return nil, "", "", fmt.Errorf("result: %s", reqResult.Result)
+	}
+	return makeResponse(privKey, []byte(reqResult.Cert), format, password)
+}
 
+func makeCSR(privKey any, label, dnsname string) ([]byte, error) {
 	templ := &x509.CertificateRequest{
 		Subject: pkix.Name{CommonName: label},
 	}
@@ -78,29 +90,25 @@ func MakeCSR(id int, keyType, format, label, dnsname, password string) ([]byte, 
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: raw}), nil
 }
 
-func MakeResponse(id int, pemCert string) ([]byte, string, string, error) {
-	block, _ := pem.Decode([]byte(pemCert))
+func makeResponse(privKey any, pemCert []byte, format, password string) ([]byte, string, string, error) {
+	block, _ := pem.Decode(pemCert)
 	if block == nil || block.Type != "CERTIFICATE" {
-		return nil, "", "", errors.New("invalid pem certificate")
+		return nil, "", "", fmt.Errorf("invalid pem certificate: %q", pemCert)
 	}
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
 		return nil, "", "", errors.New("invalid certificate")
 	}
 	sn := hex.EncodeToString(cert.SerialNumber.Bytes())
-	kd, ok := privateKeys[id]
-	if !ok {
-		return nil, "", "", errors.New("invalid id")
-	}
-	delete(privateKeys, id)
-	switch kd.format {
+
+	switch format {
 	case "gpg":
-		b, err := x509.MarshalPKCS8PrivateKey(kd.key)
+		b, err := x509.MarshalPKCS8PrivateKey(privKey)
 		if err != nil {
 			return nil, "", "", fmt.Errorf("x509.MarshalPKCS8PrivateKey: %v\n", err)
 		}
 		var buf bytes.Buffer
-		w, err := openpgp.SymmetricallyEncrypt(&buf, []byte(kd.password), &openpgp.FileHints{FileName: sn + ".pem", ModTime: cert.NotBefore}, nil)
+		w, err := openpgp.SymmetricallyEncrypt(&buf, []byte(password), &openpgp.FileHints{FileName: sn + ".pem", ModTime: cert.NotBefore}, nil)
 		if err != nil {
 			return nil, "", "", fmt.Errorf("openpgp.SymmetricallyEncrypt: %v\n", err)
 		}
@@ -117,7 +125,7 @@ func MakeResponse(id int, pemCert string) ([]byte, string, string, error) {
 
 	case "p12":
 		enc := pkcs12.Modern.WithIterations(250000)
-		p12, err := enc.Encode(kd.key, cert, nil, kd.password)
+		p12, err := enc.Encode(privKey, cert, nil, password)
 		if err != nil {
 			return nil, "", "", fmt.Errorf("pkcs12.Encode: %v", err)
 		}
