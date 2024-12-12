@@ -103,7 +103,11 @@ key is never sent to the server.
 <option value="rsa-4096">RSA 4096</option>
 </select></div>
 <div><b>Label:</b></div><div><input type="text" name="label" size="20" placeholder="optional common name suffix" /></div>
-<div><b>DNS Name:</b></div><div><input type="text" name="dnsname" size="20" placeholder="optional (server certs)" /></div>
+<div><b>Usage:</b></div><div><select name="usage" onchange="selectUsage(this)">
+<option value="client">Client</option>
+<option value="server">Server</select>
+</div>
+<div class="dnsinput"><b>DNS Name:</b></div><div class="dnsinput"><input type="text" name="dnsname" size="20" placeholder="required" /></div>
 <div><b>Password:</b></div><div><input type="password" name="pw1" size="20" placeholder="required" autocomplete="new-password" /></div>
 <div><b>Re-type Password:</b></div><div><input type="password" name="pw2" size="20" placeholder="required" autocomplete="new-password" /></div>
 </div>

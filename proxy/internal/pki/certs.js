@@ -32,8 +32,7 @@ pkiApp.ready = new Promise(resolve => {
 });
 
 const go = new Go();
-WebAssembly.instantiateStreaming(fetch('?get=static&file=pki.wasm.bz2'), go.importObject)
-  .then(r => go.run(r.instance));
+let wasmLoaded = false;
 
 function requestCert(csr) {
   fetch('?get=requestCert', {
@@ -99,11 +98,22 @@ function downloadCert(sn) {
   window.location = '?get=downloadCert&sn='+encodeURIComponent(sn);
 }
 function showForm() {
+  if (!wasmLoaded) {
+    WebAssembly.instantiateStreaming(fetch('?get=static&file=pki.wasm.bz2'), go.importObject).then(r => go.run(r.instance));
+    wasmLoaded = true;
+  }
   document.getElementById('csrform').style.display = 'block';
 }
 function hideForm() {
   document.getElementById('csrform').style.display = 'none';
   window.location.reload();
+}
+function selectUsage(e) {
+  const isServer = e.options[e.selectedIndex].value === 'server';
+  for (const e of document.querySelectorAll('.dnsinput')) {
+    if (isServer) e.classList.add('selected');
+    else e.classList.remove('selected');
+  }
 }
 function generateKeyAndCert(b) {
   let f = b.form;
@@ -113,6 +123,10 @@ function generateKeyAndCert(b) {
   }
   if (f.pw1.value !== f.pw2.value) {
     alert('Passwords don\'t match');
+    return;
+  }
+  if (f.usage.options[f.usage.selectedIndex].value === 'server' && f.dnsname.value === '') {
+    alert('DNS Name is required');
     return;
   }
   const pw = f.pw1.value;

@@ -101,3 +101,9 @@ textarea {
 .table2>div {
   padding: 0.25rem;
 }
+.dnsinput {
+  display: none;
+}
+.dnsinput.selected {
+  display: block;
+}
