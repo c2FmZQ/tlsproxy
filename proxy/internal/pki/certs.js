@@ -133,23 +133,25 @@ function generateKeyAndCert(b) {
   f.pw1.value = '';
   f.pw2.value = '';
 
+  const oldb = b.textContent;
+  b.disabled = true;
+  b.textContent = 'working...';
+  document.body.classList.add('waiting');
   pkiApp.ready
-  .then(() => {
-    b.disabled = true;
-    document.body.classList.add('waiting');
-    return pkiApp.getCertificate({
-      'keytype': f.keytype.value,
-      'format': f.format.value,
-      'password': pw,
-      'label': f.label.value,
-      'dnsname': f.dnsname.value,
-    });
-  })
+  .then(() => pkiApp.getCertificate({
+    'keytype': f.keytype.value,
+    'format': f.format.value,
+    'password': pw,
+    'label': f.label.value,
+    'dnsname': f.dnsname.value,
+  }))
   .then(() => window.location.reload())
   .catch(err => {
     b.disabled = false;
+    b.textContent = oldb;
     document.body.classList.remove('waiting');
     console.error('getCertificate failed', err);
+    alert('Request failed: '+err.message);
   });
 }
 
