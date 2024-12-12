@@ -1,6 +1,6 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.14.1
 
 ### :wrench: Misc
 
