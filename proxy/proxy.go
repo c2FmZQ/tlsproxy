@@ -45,12 +45,14 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/c2FmZQ/ech"
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/storage/autocertcache"
 	"github.com/c2FmZQ/storage/crypto"
@@ -136,6 +138,8 @@ type Proxy struct {
 
 	eventsmu sync.Mutex
 	events   map[string]int64
+
+	echKeys []tls.EncryptedClientHelloKey
 }
 
 type beKey struct {
@@ -858,6 +862,9 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	p.backends = backends
 	p.pkis = pkis
 	p.cfg = cfg
+	if err := p.initECH(); err != nil && err != storage.ErrRolledBack {
+		return err
+	}
 	go p.reAuthorize()
 	return nil
 }
@@ -1074,7 +1081,10 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 		return cert, nil
 	}
 	tc.NextProtos = *defaultALPNProtos
-	tc.MinVersion = tls.VersionTLS12
+	if p.echKeys != nil {
+		tc.MinVersion = tls.VersionTLS13
+		tc.EncryptedClientHelloKeys = p.echKeys
+	}
 	return tc
 }
 
@@ -1122,7 +1132,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	defer func() {
 		if r := recover(); r != nil {
 			p.recordEvent("panic")
-			p.logErrorF("ERR [%s] %s: PANIC: %v", certSummary(connClientCert(conn)), conn.RemoteAddr(), r)
+			p.logErrorF("ERR [%s] %s: PANIC: %v\n%s", certSummary(connClientCert(conn)), conn.RemoteAddr(), r, debug.Stack())
 			conn.Close()
 		}
 	}()
@@ -1159,20 +1169,25 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	}
 	setKeepAlive(conn)
 
-	hello, err := peekClientHello(conn)
+	ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
+	defer cancel()
+	echConn, err := ech.New(ctx, conn.Conn, p.echKeys)
 	if err != nil {
 		p.recordEvent("invalid ClientHello")
-		p.logErrorF("BAD [-] %s ➔ %q: invalid ClientHello: %v", conn.RemoteAddr(), hello.ServerName, err)
+		p.logErrorF("BAD [-] %s ➔ %q: invalid ClientHello: %v", conn.RemoteAddr(), echConn.ServerName(), err)
 		return
 	}
-	serverName := hello.ServerName
+	conn.Conn = echConn
+	if echConn.ECHAccepted() {
+		p.recordEvent("encrypted client hello")
+	}
+	serverName := echConn.ServerName()
 	if serverName == "" {
 		p.recordEvent("no SNI")
 		serverName = p.defaultServerName()
 	}
 	conn.SetAnnotation(serverNameKey, serverName)
-
-	be, err := p.backend(serverName, hello.ALPNProtos...)
+	be, err := p.backend(serverName, echConn.ALPNProtos()...)
 	if err != nil {
 		p.recordEvent(err.Error())
 		p.logErrorF("BAD [-] %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
@@ -1192,7 +1207,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		}
 		p.handleTLSPassthroughConnection(conn)
 
-	case len(hello.ALPNProtos) == 1 && hello.ALPNProtos[0] == acme.ALPNProto && hello.ServerName != "":
+	case len(echConn.ALPNProtos()) == 1 && echConn.ALPNProtos()[0] == acme.ALPNProto && echConn.ServerName() != "":
 		tc := p.baseTLSConfig()
 		tc.NextProtos = []string{acme.ALPNProto}
 		p.handleACMEConnection(tls.Server(conn, tc))

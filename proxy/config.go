@@ -110,6 +110,10 @@ type Config struct {
 	// EnableQUIC specifies whether the QUIC protocol should be enabled.
 	// The default is true if the binary is compiled with QUIC support.
 	EnableQUIC *bool `yaml:"enableQUIC,omitempty"`
+	// EnableECH specifies whether EncryptedClientHello should be enabled.
+	// See https://datatracker.ietf.org/doc/draft-ietf-tls-esni/
+	// The default is false, but might change in the future.
+	EnableECH *bool `yaml:"enableECH,omitempty"`
 	// AcceptProxyHeaderFrom is a list of CIDRs. The PROXY protocol is
 	// enabled for incoming TCP connections originating from IP addresses
 	// within one of these CIDRs. By default, the proxy protocol is not
