@@ -1,13 +1,13 @@
 # TLSPROXY Release Notes
 
+## Next
+
+### :wrench: Misc
+
 * Update go dependencies:
   * upgraded github.com/google/go-tpm v0.9.1 => v0.9.3
   * upgraded golang.org/x/exp v0.0.0-20241210194714-1829a127f884 => v0.0.0-20241217172543-b2144cdd0a67
-* Update go dependencies in examples/backend:
-  * upgraded github.com/c2FmZQ/tlsproxy v0.13.2 => v0.14.1
-  * upgraded github.com/goccy/go-json v0.10.3 => v0.10.4
-  * upgraded golang.org/x/crypto v0.30.0 => v0.31.0
-  * upgraded golang.org/x/exp v0.0.0-20241210194714-1829a127f884 => v0.0.0-20241217172543-b2144cdd0a67
+
 ## v0.14.1
 
 ### :wrench: Misc
