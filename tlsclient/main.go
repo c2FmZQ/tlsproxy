@@ -28,6 +28,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"io"
@@ -49,6 +50,7 @@ func main() {
 	key := flag.String("key", "", "A file that contains the TLS key to use.")
 	cert := flag.String("cert", "", "A file that contains the TLS certificate to use.")
 	alpn := flag.String("alpn", "", "The ALPN proto to request.")
+	ech := flag.String("ech", "", "Use this ECH ConfigList.")
 	useQUIC := flag.Bool("quic", false, "Use QUIC.")
 	verifyOCSP := flag.Bool("ocsp", false, "Require stapled OCSP response.")
 	flag.Parse()
@@ -127,6 +129,13 @@ func main() {
 			}
 			return nil
 		},
+	}
+	if *ech != "" {
+		configList, err := base64.StdEncoding.DecodeString(*ech)
+		if err != nil {
+			log.Fatalf("ERR: --ech decoding error: %v", err)
+		}
+		tc.EncryptedClientHelloConfigList = configList
 	}
 
 	if *useQUIC {

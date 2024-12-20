@@ -1,6 +1,8 @@
 github.com/beevik/etree v1.1.0/go.mod h1:r8Aw8JqVegEf0w2fDnATrX9VpkMcyFeM0FhwO62wh+A=
 github.com/beevik/etree v1.4.1 h1:PmQJDDYahBGNKDcpdX8uPy1xRCwoCGVUiW669MEirVI=
 github.com/beevik/etree v1.4.1/go.mod h1:gPNJNaBGVZ9AwsidazFZyygnd+0pAU38N4D+WemwKNs=
+github.com/c2FmZQ/ech v0.0.0-20241220224648-8e119a4dd2b6 h1:ZGz3FiqjalXXqCDLiICeNO+R/hec79TKxHHBNBOSVvM=
+github.com/c2FmZQ/ech v0.0.0-20241220224648-8e119a4dd2b6/go.mod h1:shk3kb9AiqI1cFKKVABmlOsF/Sa/XiLzowd35u+H2eM=
 github.com/c2FmZQ/storage v0.2.3 h1:v3NXQ5GrQeFVoAd8xAU9+caMfys4goAySO5TwtrIHrk=
 github.com/c2FmZQ/storage v0.2.3/go.mod h1:CdaXciuaGjBFRFefZQR2Iv1lSkjJTvhyIOvv5KIntCM=
 github.com/c2FmZQ/tpm v0.3.1 h1:hMLftSKUrkDcj/x32YrJ88f7Dr7gG6LbXTKyHjj5GdA=

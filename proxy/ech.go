@@ -25,6 +25,8 @@ package proxy
 
 import (
 	"crypto/tls"
+	"encoding/base64"
+	"log"
 	"time"
 
 	"github.com/c2FmZQ/ech"
@@ -79,5 +81,10 @@ func (p *Proxy) initECH() (retErr error) {
 			SendAsRetry: k.SendAsRetry,
 		})
 	}
+	configList, err := ech.ConfigList([]ech.Config{p.echKeys[0].Config})
+	if err != nil {
+		return err
+	}
+	log.Printf("INF ECH ConfigList: %s", base64.StdEncoding.EncodeToString(configList))
 	return nil
 }

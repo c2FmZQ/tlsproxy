@@ -1082,7 +1082,6 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 	}
 	tc.NextProtos = *defaultALPNProtos
 	if p.echKeys != nil {
-		tc.MinVersion = tls.VersionTLS13
 		tc.EncryptedClientHelloKeys = p.echKeys
 	}
 	return tc
