@@ -162,16 +162,20 @@ func main() {
 
 	conn, err := tls.Dial("tcp", target, tc)
 	if err != nil {
-		log.Fatalf("ERR: %v", err)
+		var echErr *tls.ECHRejectionError
+		if errors.As(err, &echErr) {
+			log.Fatalf("ECH RetryConfigList: %s", echErr.RetryConfigList)
+		}
+		log.Fatalf("ERR Dial: %v", err)
 	}
 	go func() {
 		if _, err := io.Copy(conn, os.Stdin); err != nil && !errors.Is(err, net.ErrClosed) {
-			log.Printf("ERR %v", err)
+			log.Printf("ERR Stdin: %v", err)
 		}
 		conn.CloseWrite()
 	}()
 	if _, err := io.Copy(os.Stdout, conn); err != nil && !errors.Is(err, net.ErrClosed) {
-		log.Printf("ERR %v", err)
+		log.Printf("ERR Conn: %v", err)
 	}
 	conn.Close()
 	return

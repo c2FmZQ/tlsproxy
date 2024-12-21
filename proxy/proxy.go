@@ -1178,7 +1178,9 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	}
 	conn.Conn = echConn
 	if echConn.ECHAccepted() {
-		p.recordEvent("encrypted client hello")
+		p.recordEvent("encrypted client hello accepted")
+	} else if echConn.ECHPresented() {
+		p.recordEvent("encrypted client hello rejected")
 	}
 	serverName := echConn.ServerName()
 	if serverName == "" {
