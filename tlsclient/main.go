@@ -164,7 +164,7 @@ func main() {
 	if err != nil {
 		var echErr *tls.ECHRejectionError
 		if errors.As(err, &echErr) {
-			log.Fatalf("ECH RetryConfigList: %s", echErr.RetryConfigList)
+			log.Fatalf("ECH RetryConfigList: %s", base64.StdEncoding.EncodeToString(echErr.RetryConfigList))
 		}
 		log.Fatalf("ERR Dial: %v", err)
 	}
