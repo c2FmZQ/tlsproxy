@@ -1187,8 +1187,9 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		p.recordEvent("no SNI")
 		serverName = p.defaultServerName()
 	}
+	alpnProtos := echConn.ALPNProtos()
 	conn.SetAnnotation(serverNameKey, serverName)
-	be, err := p.backend(serverName, echConn.ALPNProtos()...)
+	be, err := p.backend(serverName, alpnProtos...)
 	if err != nil {
 		p.recordEvent(err.Error())
 		p.logErrorF("BAD [-] %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
@@ -1208,7 +1209,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		}
 		p.handleTLSPassthroughConnection(conn)
 
-	case len(echConn.ALPNProtos()) == 1 && echConn.ALPNProtos()[0] == acme.ALPNProto && echConn.ServerName() != "":
+	case len(alpnProtos) == 1 && alpnProtos[0] == acme.ALPNProto && echConn.ServerName() != "":
 		tc := p.baseTLSConfig()
 		tc.NextProtos = []string{acme.ALPNProto}
 		p.handleACMEConnection(tls.Server(conn, tc))
