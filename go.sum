@@ -5,6 +5,8 @@ github.com/c2FmZQ/ech v0.0.0-20241221154359-aad1a76f08ef h1:OBoIFa4rRAMvZr9QmdS2
 github.com/c2FmZQ/ech v0.0.0-20241221154359-aad1a76f08ef/go.mod h1:shk3kb9AiqI1cFKKVABmlOsF/Sa/XiLzowd35u+H2eM=
 github.com/c2FmZQ/ech v0.0.0-20241221193610-54632164d980 h1:39Z+oqwTD1fFyLfDmvYGN+ishprqItNJkiTSVCWS99A=
 github.com/c2FmZQ/ech v0.0.0-20241221193610-54632164d980/go.mod h1:shk3kb9AiqI1cFKKVABmlOsF/Sa/XiLzowd35u+H2eM=
+github.com/c2FmZQ/ech v0.0.0-20241224010720-201725627517 h1:I2Ifhv6+c1JTJCtM3pLDeX01DTYD9soM7TpqUiXlgSM=
+github.com/c2FmZQ/ech v0.0.0-20241224010720-201725627517/go.mod h1:shk3kb9AiqI1cFKKVABmlOsF/Sa/XiLzowd35u+H2eM=
 github.com/c2FmZQ/storage v0.2.3 h1:v3NXQ5GrQeFVoAd8xAU9+caMfys4goAySO5TwtrIHrk=
 github.com/c2FmZQ/storage v0.2.3/go.mod h1:CdaXciuaGjBFRFefZQR2Iv1lSkjJTvhyIOvv5KIntCM=
 github.com/c2FmZQ/tpm v0.3.1 h1:hMLftSKUrkDcj/x32YrJ88f7Dr7gG6LbXTKyHjj5GdA=

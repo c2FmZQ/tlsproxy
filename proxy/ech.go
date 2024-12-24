@@ -24,9 +24,12 @@
 package proxy
 
 import (
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
+	"io"
 	"log"
+	"slices"
 	"time"
 
 	"github.com/c2FmZQ/ech"
@@ -39,7 +42,6 @@ type echKey struct {
 	PublicName   string    `json:"publicName"`
 	Config       []byte    `json:"config"`
 	PrivateKey   []byte    `json:"privateKey"`
-	SendAsRetry  bool      `json:"sendAsRetry"`
 }
 
 func (p *Proxy) initECH() (retErr error) {
@@ -56,8 +58,29 @@ func (p *Proxy) initECH() (retErr error) {
 	}
 	defer commit(false, &retErr)
 
-	if len(echKeys) == 0 || echKeys[0].PublicName != publicName {
-		id := uint8(len(echKeys) + 1)
+	if len(echKeys) > 5 {
+		echKeys = echKeys[:5]
+	}
+	if len(echKeys) == 0 || echKeys[0].PublicName != publicName || time.Since(echKeys[0].CreationTime) > 30*24*time.Hour {
+		idExists := func(id uint8) bool {
+			return slices.IndexFunc(echKeys, func(k echKey) bool {
+				s, err := ech.Config(k.Config).Spec()
+				if err != nil {
+					return false
+				}
+				return s.ID == id
+			}) != -1
+		}
+		var id uint8
+		for {
+			b := make([]byte, 1)
+			if _, err := io.ReadFull(rand.Reader, b); err != nil {
+				return err
+			}
+			if id = b[0]; !idExists(id) {
+				break
+			}
+		}
 		key, cfg, err := ech.NewConfig(id, []byte(publicName))
 		if err != nil {
 			return err
@@ -67,18 +90,17 @@ func (p *Proxy) initECH() (retErr error) {
 			PublicName:   publicName,
 			Config:       cfg,
 			PrivateKey:   key.Bytes(),
-			SendAsRetry:  true,
 		}}, echKeys...)
 		if err := commit(true, nil); err != nil {
 			return err
 		}
 	}
 	p.echKeys = make([]tls.EncryptedClientHelloKey, 0, len(echKeys))
-	for _, k := range echKeys {
+	for i, k := range echKeys {
 		p.echKeys = append(p.echKeys, tls.EncryptedClientHelloKey{
 			Config:      k.Config,
 			PrivateKey:  k.PrivateKey,
-			SendAsRetry: k.SendAsRetry,
+			SendAsRetry: i == 0,
 		})
 	}
 	configList, err := ech.ConfigList([]ech.Config{p.echKeys[0].Config})
