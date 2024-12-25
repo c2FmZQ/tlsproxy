@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+* Update go dependencies:
+  * upgraded github.com/onsi/ginkgo/v2 v2.22.0 => v2.22.1
+  * upgraded golang.org/x/net v0.32.0 => v0.33.0
+* Update go dependencies in examples/backend:
+  * upgraded github.com/onsi/ginkgo/v2 v2.22.0 => v2.22.1
+  * upgraded golang.org/x/net v0.32.0 => v0.33.0
 ## Next
 
 ### :wrench: Misc
