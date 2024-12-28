@@ -434,7 +434,13 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		be.quicTransport = p.quicTransport
 		be.ocspCache = p.ocspCache
 		be.defaultLogFilter = cfg.LogFilter
-
+		if be.DocumentRoot != "" {
+			r, err := os.OpenRoot(be.DocumentRoot)
+			if err != nil {
+				return err
+			}
+			be.documentRoot = r
+		}
 		for _, sn := range be.ServerNames {
 			key := beKey{serverName: sn}
 			if backends[key] == nil {
@@ -676,6 +682,13 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			}
 		}
 		for _, po := range be.PathOverrides {
+			if po.DocumentRoot != "" {
+				r, err := os.OpenRoot(po.DocumentRoot)
+				if err != nil {
+					return err
+				}
+				po.documentRoot = r
+			}
 			for _, n := range po.ForwardRootCAs {
 				if po.forwardRootCAs == nil {
 					po.forwardRootCAs = x509.NewCertPool()

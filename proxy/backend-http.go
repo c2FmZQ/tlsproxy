@@ -88,7 +88,7 @@ func (be *Backend) localHandler() http.Handler {
 		if !be.handleLocalEndpointsAndAuthorize(w, req) {
 			return
 		}
-		be.serveStaticFiles(w, req, be.DocumentRoot, "")
+		be.serveStaticFiles(w, req, be.documentRoot, "")
 	})
 }
 
@@ -119,13 +119,13 @@ func pathClean(p string) string {
 	return pp
 }
 
-func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, docRoot, prefix string) {
+func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, docRoot *os.Root, prefix string) {
 	notFound := func() {
 		be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL, http.StatusNotFound, userAgent(req))
 		http.NotFound(w, req)
 	}
 
-	if docRoot == "" {
+	if docRoot == nil {
 		notFound()
 		return
 	}
@@ -152,8 +152,8 @@ func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, do
 			return
 		}
 	}
-	p = filepath.Join(docRoot, filepath.FromSlash(p))
-	fi, err := os.Stat(p)
+	p = filepath.Join(".", filepath.FromSlash(p))
+	fi, err := docRoot.Stat(p)
 	if err != nil {
 		notFound()
 		return
@@ -164,7 +164,7 @@ func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, do
 			return
 		}
 		p = filepath.Join(p, "index.html")
-		if s, err := os.Stat(p); err != nil || s.IsDir() {
+		if s, err := docRoot.Stat(p); err != nil || s.IsDir() {
 			be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (%q)", formatReqDesc(req), req.Method, req.URL.Path, http.StatusForbidden, userAgent(req))
 			w.WriteHeader(http.StatusForbidden)
 			return
@@ -173,7 +173,7 @@ func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, do
 		be.redirectPermanently(w, req, strings.TrimSuffix(cleanPath, "/"))
 		return
 	}
-	f, err := os.Open(p)
+	f, err := docRoot.Open(p)
 	if err != nil {
 		notFound()
 		return
@@ -270,7 +270,7 @@ func (be *Backend) reverseProxy() http.Handler {
 					continue
 				}
 				if len(po.Addresses) == 0 {
-					be.serveStaticFiles(w, req, po.DocumentRoot, prefix)
+					be.serveStaticFiles(w, req, po.documentRoot, prefix)
 					return
 				}
 				if po.SanitizePath != nil {
@@ -286,7 +286,7 @@ func (be *Backend) reverseProxy() http.Handler {
 			}
 		}
 		if len(be.Addresses) == 0 {
-			be.serveStaticFiles(w, req, be.DocumentRoot, "")
+			be.serveStaticFiles(w, req, be.documentRoot, "")
 			return
 		}
 

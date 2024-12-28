@@ -7,6 +7,7 @@
 * Update go dependencies:
   * upgraded github.com/google/go-tpm v0.9.1 => v0.9.3
   * upgraded golang.org/x/exp v0.0.0-20241210194714-1829a127f884 => v0.0.0-20241217172543-b2144cdd0a67
+* Use os.Root for static file isolation
 
 ## v0.14.1
 

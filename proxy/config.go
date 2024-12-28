@@ -433,6 +433,8 @@ type Backend struct {
 	allowIPs *[]*net.IPNet
 	denyIPs  *[]*net.IPNet
 
+	documentRoot *os.Root
+
 	httpServer    *http.Server
 	httpConnChan  chan net.Conn
 	http3Server   io.Closer
@@ -703,6 +705,7 @@ type PathOverride struct {
 
 	forwardRootCAs       *x509.CertPool
 	proxyProtocolVersion byte
+	documentRoot         *os.Root
 }
 
 // LocalOIDCServer is used to configure a local OpenID Provider to
