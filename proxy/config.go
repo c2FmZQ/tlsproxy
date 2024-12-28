@@ -110,7 +110,8 @@ type Config struct {
 	// EnableQUIC specifies whether the QUIC protocol should be enabled.
 	// The default is true if the binary is compiled with QUIC support.
 	EnableQUIC *bool `yaml:"enableQUIC,omitempty"`
-	// EnableECH specifies whether EncryptedClientHello should be enabled.
+	// EnableECH specifies whether Encrypted Client Hello should be enabled.
+	// When enabled, tlsproxy acts as Client-Facing Server for all backends.
 	// See https://datatracker.ietf.org/doc/draft-ietf-tls-esni/
 	// The default is false, but might change in the future.
 	EnableECH *bool `yaml:"enableECH,omitempty"`

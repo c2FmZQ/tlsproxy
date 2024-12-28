@@ -2,6 +2,10 @@
 
 ## Next
 
+### :star2: New feature
+
+* Add support for Encrypted Client Hello. When `EnableECH: true` is set in `config.yaml`, tlsproxy handles ECH as a Client-Facing Server with a Split Mode Topology as specified in https://datatracker.ietf.org/doc/draft-ietf-tls-esni/.
+
 ### :wrench: Misc
 
 * Update go dependencies:
