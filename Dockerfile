@@ -1,4 +1,4 @@
-FROM golang:1.23.4-alpine3.20 AS build
+FROM golang:1.24rc1-alpine3.20 AS build
 MAINTAINER info@c2fmzq.org
 RUN apk update && apk upgrade
 RUN apk add ca-certificates bluefish
