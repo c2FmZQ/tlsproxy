@@ -7,6 +7,10 @@ github.com/c2FmZQ/ech v0.0.0-20241221193610-54632164d980 h1:39Z+oqwTD1fFyLfDmvYG
 github.com/c2FmZQ/ech v0.0.0-20241221193610-54632164d980/go.mod h1:shk3kb9AiqI1cFKKVABmlOsF/Sa/XiLzowd35u+H2eM=
 github.com/c2FmZQ/ech v0.0.0-20241224010720-201725627517 h1:I2Ifhv6+c1JTJCtM3pLDeX01DTYD9soM7TpqUiXlgSM=
 github.com/c2FmZQ/ech v0.0.0-20241224010720-201725627517/go.mod h1:shk3kb9AiqI1cFKKVABmlOsF/Sa/XiLzowd35u+H2eM=
+github.com/c2FmZQ/ech v0.0.0-20241225231931-9197c21c0c39 h1:StYSFjwXnFtI54qVZFt9r1GC9/LCZZ6z+nVf8Y9Z7Ks=
+github.com/c2FmZQ/ech v0.0.0-20241225231931-9197c21c0c39/go.mod h1:shk3kb9AiqI1cFKKVABmlOsF/Sa/XiLzowd35u+H2eM=
+github.com/c2FmZQ/ech v0.0.0-20241228163458-376cf8ce59b8 h1:Q/hDCoTwR6SnrVGJU/kO58xIc8TbHJYUa6pjol+2L/A=
+github.com/c2FmZQ/ech v0.0.0-20241228163458-376cf8ce59b8/go.mod h1:shk3kb9AiqI1cFKKVABmlOsF/Sa/XiLzowd35u+H2eM=
 github.com/c2FmZQ/storage v0.2.3 h1:v3NXQ5GrQeFVoAd8xAU9+caMfys4goAySO5TwtrIHrk=
 github.com/c2FmZQ/storage v0.2.3/go.mod h1:CdaXciuaGjBFRFefZQR2Iv1lSkjJTvhyIOvv5KIntCM=
 github.com/c2FmZQ/tpm v0.3.1 h1:hMLftSKUrkDcj/x32YrJ88f7Dr7gG6LbXTKyHjj5GdA=
