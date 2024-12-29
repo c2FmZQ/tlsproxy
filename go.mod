@@ -5,8 +5,8 @@ go 1.24
 require (
 	github.com/beevik/etree v1.4.1
 	github.com/c2FmZQ/ech v0.0.0-20241229164233-10c80470217d
-	github.com/c2FmZQ/storage v0.2.3
-	github.com/c2FmZQ/tpm v0.3.1
+	github.com/c2FmZQ/storage v0.2.4
+	github.com/c2FmZQ/tpm v0.4.0
 	github.com/fxamacker/cbor/v2 v2.7.0
 	github.com/go-test/deep v1.1.0
 	github.com/golang-jwt/jwt/v5 v5.2.1
@@ -17,7 +17,7 @@ require (
 	github.com/quic-go/quic-go v0.48.2
 	github.com/russellhaering/goxmldsig v1.4.0
 	golang.org/x/crypto v0.31.0
-	golang.org/x/net v0.32.0
+	golang.org/x/net v0.33.0
 	golang.org/x/sys v0.28.0
 	golang.org/x/time v0.8.0
 	gopkg.in/yaml.v3 v3.0.1
