@@ -1183,7 +1183,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 
 	ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
 	defer cancel()
-	echConn, err := ech.New(ctx, conn.Conn, ech.WithKeys(p.echKeys))
+	echConn, err := ech.NewConn(ctx, conn.Conn, ech.WithKeys(p.echKeys))
 	if err != nil {
 		p.recordEvent("invalid ClientHello")
 		p.logErrorF("BAD [-] %s ➔ %q: invalid ClientHello: %v", conn.RemoteAddr(), echConn.ServerName(), err)
