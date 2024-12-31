@@ -43,15 +43,13 @@ func TestECH(t *testing.T) {
 	if err != nil {
 		t.Fatalf("certmanager.New: %v", err)
 	}
-	truev := true
 	proxy := newTestProxy(
 		&Config{
-			HTTPAddr:          "localhost:0",
-			TLSAddr:           "localhost:0",
-			EnableECH:         &truev,
-			CacheDir:          t.TempDir(),
-			MaxOpen:           100,
-			DefaultServerName: "https.example.com",
+			HTTPAddr: "localhost:0",
+			TLSAddr:  "localhost:0",
+			ECH:      &ECH{PublicName: "https.example.com"},
+			CacheDir: t.TempDir(),
+			MaxOpen:  100,
 		},
 		extCA,
 	)
@@ -72,9 +70,8 @@ func TestECH(t *testing.T) {
 	be1 := newTCPServer(t, ctx, "backend1", intCA)
 
 	cfg := &Config{
-		EnableECH:         &truev,
-		MaxOpen:           100,
-		DefaultServerName: "https.example.com",
+		ECH:     &ECH{PublicName: "https.example.com"},
+		MaxOpen: 100,
 		Backends: []*Backend{
 			{
 				ServerNames: []string{

@@ -110,11 +110,11 @@ type Config struct {
 	// EnableQUIC specifies whether the QUIC protocol should be enabled.
 	// The default is true if the binary is compiled with QUIC support.
 	EnableQUIC *bool `yaml:"enableQUIC,omitempty"`
-	// EnableECH specifies whether Encrypted Client Hello should be enabled.
-	// When enabled, tlsproxy acts as Client-Facing Server for all backends.
-	// See https://datatracker.ietf.org/doc/draft-ietf-tls-esni/
-	// The default is false, but might change in the future.
-	EnableECH *bool `yaml:"enableECH,omitempty"`
+	// ECH specifies the Encrypted Client Hello parameters.
+	// When set, tlsproxy acts as Client-Facing Server for all backends.
+	// See https://datatracker.ietf.org/doc/html/draft-ietf-tls-esni/
+	// By default, ECH is disabled.
+	ECH *ECH `yaml:"ech,omitempty"`
 	// AcceptProxyHeaderFrom is a list of CIDRs. The PROXY protocol is
 	// enabled for incoming TCP connections originating from IP addresses
 	// within one of these CIDRs. By default, the proxy protocol is not
@@ -183,6 +183,14 @@ type Config struct {
 	WebSockets []*WebSocketConfig `yaml:"webSockets,omitempty"`
 
 	acceptProxyHeaderFrom []*net.IPNet
+}
+
+// ECH contains the Encrypted Client Hello parameters.
+type ECH struct {
+	// The PublicName of the ECH Config.
+	PublicName string `yaml:"publicName"`
+	// The time interval between key/config rotations.
+	Interval time.Duration `yaml:"interval,omitempty"`
 }
 
 // BWLimit is a named bandwidth limit configuration.

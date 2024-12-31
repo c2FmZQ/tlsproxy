@@ -53,6 +53,7 @@ func main() {
 	ech := flag.String("ech", "", "Use this ECH ConfigList.")
 	useQUIC := flag.Bool("quic", false, "Use QUIC.")
 	verifyOCSP := flag.Bool("ocsp", false, "Require stapled OCSP response.")
+	serverName := flag.String("servername", "", "The expected server name.")
 	flag.Parse()
 
 	if *versionFlag {
@@ -60,7 +61,7 @@ func main() {
 		return
 	}
 	if flag.NArg() != 1 || (*key == "") != (*cert == "") {
-		os.Stderr.WriteString("Usage: tlsclient [-key=<keyfile> -cert=<certfile>] [-alpn=<proto>] host:port\n")
+		os.Stderr.WriteString("Usage: tlsclient [-key=<keyfile> -cert=<certfile>] [-alpn=<proto>] [-ech=<configlist>] [-quic] host:port\n")
 		os.Exit(1)
 	}
 	addr := flag.Arg(0)
@@ -101,10 +102,13 @@ func main() {
 	}
 	target := net.JoinHostPort(addrs[0], port)
 
+	if *serverName == "" {
+		*serverName = host
+	}
 	tc := &tls.Config{
 		Certificates: certs,
 		NextProtos:   protos,
-		ServerName:   host,
+		ServerName:   *serverName,
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			if !*verifyOCSP {
 				return nil

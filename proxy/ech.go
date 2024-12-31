@@ -45,8 +45,7 @@ type echKey struct {
 }
 
 func (p *Proxy) initECH() (retErr error) {
-	publicName := p.defServerName
-	if len(publicName) == 0 || p.cfg.EnableECH == nil || !*p.cfg.EnableECH {
+	if p.cfg.ECH == nil || p.cfg.ECH.PublicName == "" {
 		return nil
 	}
 	var echKeys []echKey
@@ -61,7 +60,7 @@ func (p *Proxy) initECH() (retErr error) {
 	if len(echKeys) > 5 {
 		echKeys = echKeys[:5]
 	}
-	if len(echKeys) == 0 || echKeys[0].PublicName != publicName || time.Since(echKeys[0].CreationTime) > 30*24*time.Hour {
+	if len(echKeys) == 0 || echKeys[0].PublicName != p.cfg.ECH.PublicName || (p.cfg.ECH.Interval > 0 && time.Since(echKeys[0].CreationTime) > p.cfg.ECH.Interval) {
 		idExists := func(id uint8) bool {
 			return slices.IndexFunc(echKeys, func(k echKey) bool {
 				s, err := ech.Config(k.Config).Spec()
@@ -81,13 +80,13 @@ func (p *Proxy) initECH() (retErr error) {
 				break
 			}
 		}
-		key, cfg, err := ech.NewConfig(id, []byte(publicName))
+		key, cfg, err := ech.NewConfig(id, []byte(p.cfg.ECH.PublicName))
 		if err != nil {
 			return err
 		}
 		echKeys = append([]echKey{{
 			CreationTime: time.Now().UTC(),
-			PublicName:   publicName,
+			PublicName:   p.cfg.ECH.PublicName,
 			Config:       cfg,
 			PrivateKey:   key.Bytes(),
 		}}, echKeys...)
