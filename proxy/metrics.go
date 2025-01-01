@@ -572,6 +572,11 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	cfg := p.cfg.clone()
+	if cfg.ECH != nil {
+		for _, c := range cfg.ECH.Cloudflare {
+			c.Token = "**REDACTED**"
+		}
+	}
 	for _, p := range cfg.OIDCProviders {
 		p.ClientSecret = "**REDACTED**"
 	}

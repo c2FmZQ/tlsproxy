@@ -776,6 +776,13 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			}
 		}
 	}
+	if cfg.ECH != nil && cfg.ECH.Endpoint != "" {
+		addLocalHandler(localHandler{
+			desc:      "ECH ConfigList",
+			handler:   logHandler(http.HandlerFunc(p.serveECHConfigList)),
+			ssoBypass: true,
+		}, cfg.ECH.Endpoint)
+	}
 	for _, p := range identityProviders {
 		p := p
 		addLocalHandler(localHandler{

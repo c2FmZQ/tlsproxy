@@ -29,10 +29,13 @@ import (
 	"encoding/base64"
 	"io"
 	"log"
+	"net/http"
 	"slices"
 	"time"
 
 	"github.com/c2FmZQ/ech"
+
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/cloudflare"
 )
 
 const echFile = "ech"
@@ -106,6 +109,25 @@ func (p *Proxy) initECH() (retErr error) {
 	if err != nil {
 		return err
 	}
-	log.Printf("INF ECH ConfigList: %s", base64.StdEncoding.EncodeToString(configList))
+	b64 := base64.StdEncoding.EncodeToString(configList)
+	log.Printf("INF ECH ConfigList: %s", b64)
+	if len(p.cfg.ECH.Cloudflare) > 0 {
+		go cloudflare.UpdateECH(p.cfg.ECH.Cloudflare, b64, p.logErrorF)
+	}
 	return nil
+}
+
+func (p *Proxy) serveECHConfigList(w http.ResponseWriter, req *http.Request) {
+	if len(p.echKeys) == 0 {
+		http.NotFound(w, req)
+		return
+	}
+	configList, err := ech.ConfigList([]ech.Config{p.echKeys[0].Config})
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	enc := base64.NewEncoder(base64.StdEncoding, w)
+	enc.Write(configList)
+	enc.Close()
 }

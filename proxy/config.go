@@ -46,6 +46,7 @@ import (
 	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
 
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/cloudflare"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
@@ -191,7 +192,13 @@ type ECH struct {
 	PublicName string `yaml:"publicName"`
 	// The time interval between key/config rotations.
 	Interval time.Duration `yaml:"interval,omitempty"`
+	// The local endpoint where to public the current ECH ConfigList.
+	Endpoint string `yaml:"endpoint,omitempty"`
+	// The cloudflare DNS records to update when the ECH ConfigList changes.
+	Cloudflare []*Cloudflare `yaml:"cloudflare,omitempty"`
 }
+
+type Cloudflare = cloudflare.Target
 
 // BWLimit is a named bandwidth limit configuration.
 type BWLimit struct {
