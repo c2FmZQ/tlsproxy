@@ -1,5 +1,13 @@
 # TLSPROXY Release Notes
 
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/storage v0.2.3 => v0.2.4
+  * upgraded github.com/c2FmZQ/tpm v0.3.1 => v0.4.0
+  * upgraded github.com/onsi/ginkgo/v2 v2.22.0 => v2.22.2
+  * upgraded golang.org/x/net v0.32.0 => v0.33.0
+* Update go dependencies in examples/backend:
+  * upgraded github.com/onsi/ginkgo/v2 v2.22.0 => v2.22.2
+  * upgraded golang.org/x/net v0.32.0 => v0.33.0
 ## Next
 
 ### :wrench: Misc
