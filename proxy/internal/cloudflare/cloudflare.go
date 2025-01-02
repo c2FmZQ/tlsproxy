@@ -25,6 +25,7 @@ package cloudflare
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -57,14 +58,14 @@ type httpsData struct {
 	Value    string `json:"value"`
 }
 
-func UpdateECH(records []*Target, configList string, logger func(string, ...any)) {
+func UpdateECH(ctx context.Context, records []*Target, configList string, logger func(string, ...any)) {
 	zones := make(map[string]bool)
 	data := make(map[zoneName]idData)
 	re := regexp.MustCompile(` *ech=[^ ]*`)
 	for _, r := range records {
 		if !zones[r.Zone] {
 			zones[r.Zone] = true
-			if err := getZoneData(r.Token, r.Zone, data); err != nil {
+			if err := getZoneData(ctx, r.Token, r.Zone, data); err != nil {
 				logger("ERR cloudflare [%s]: %v", r.Zone, err)
 				continue
 			}
@@ -81,7 +82,7 @@ func UpdateECH(records []*Target, configList string, logger func(string, ...any)
 				continue
 			}
 			v.Data.Value = value
-			if err := updateRecord(r.Token, v.ZoneID, v.RecordID, v.Data); err != nil {
+			if err := updateRecord(ctx, r.Token, v.ZoneID, v.RecordID, v.Data); err != nil {
 				logger("ERR cloudflare [%s] %s: %v", r.Zone, name, err)
 			}
 			logger("INF cloudflare [%s] %s: updated", r.Zone, name)
@@ -89,7 +90,7 @@ func UpdateECH(records []*Target, configList string, logger func(string, ...any)
 	}
 }
 
-func getZoneData(token, zone string, data map[zoneName]idData) error {
+func getZoneData(ctx context.Context, token, zone string, data map[zoneName]idData) error {
 	u := url.URL{
 		Scheme: "https",
 		Host:   "api.cloudflare.com",
@@ -98,7 +99,7 @@ func getZoneData(token, zone string, data map[zoneName]idData) error {
 	q := u.Query()
 	q.Set("name", zone)
 	u.RawQuery = q.Encode()
-	req, err := http.NewRequest("GET", u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return err
 	}
@@ -135,7 +136,7 @@ func getZoneData(token, zone string, data map[zoneName]idData) error {
 		q.Set("per_page", "20")
 		q.Set("page", strconv.Itoa(page))
 		u.RawQuery = q.Encode()
-		req, err = http.NewRequest("GET", u.String(), nil)
+		req, err = http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 		if err != nil {
 			return err
 		}
@@ -175,7 +176,7 @@ func getZoneData(token, zone string, data map[zoneName]idData) error {
 	return nil
 }
 
-func updateRecord(token, zoneID, recordID string, data httpsData) error {
+func updateRecord(ctx context.Context, token, zoneID, recordID string, data httpsData) error {
 	b, err := json.Marshal(struct {
 		Data httpsData `json:"data"`
 	}{Data: data})
@@ -187,7 +188,7 @@ func updateRecord(token, zoneID, recordID string, data httpsData) error {
 		Host:   "api.cloudflare.com",
 		Path:   "/client/v4/zones/" + zoneID + "/dns_records/" + recordID,
 	}
-	req, err := http.NewRequest("PATCH", u.String(), bytes.NewReader(b))
+	req, err := http.NewRequestWithContext(ctx, "PATCH", u.String(), bytes.NewReader(b))
 	if err != nil {
 		return err
 	}

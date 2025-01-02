@@ -24,11 +24,11 @@
 package proxy
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
 	"io"
-	"log"
 	"net/http"
 	"slices"
 	"time"
@@ -96,6 +96,7 @@ func (p *Proxy) initECH() (retErr error) {
 		if err := commit(true, nil); err != nil {
 			return err
 		}
+		p.logErrorF("INF ECH ConfigList updated")
 	}
 	p.echKeys = make([]tls.EncryptedClientHelloKey, 0, len(echKeys))
 	for i, k := range echKeys {
@@ -109,10 +110,16 @@ func (p *Proxy) initECH() (retErr error) {
 	if err != nil {
 		return err
 	}
-	b64 := base64.StdEncoding.EncodeToString(configList)
-	log.Printf("INF ECH ConfigList: %s", b64)
 	if len(p.cfg.ECH.Cloudflare) > 0 {
-		go cloudflare.UpdateECH(p.cfg.ECH.Cloudflare, b64, p.logErrorF)
+		go func() {
+			ctx := p.ctx
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+			defer cancel()
+			cloudflare.UpdateECH(ctx, p.cfg.ECH.Cloudflare, base64.StdEncoding.EncodeToString(configList), p.logErrorF)
+		}()
 	}
 	return nil
 }

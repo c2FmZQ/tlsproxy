@@ -575,7 +575,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		}
 		be.pkiMap = make(map[string]*pki.PKIManager)
 		tc := p.baseTLSConfig()
-		if p.echKeys != nil && slices.Contains(be.ServerNames, cfg.DefaultServerName) {
+		if cfg.ECH != nil && slices.Contains(be.ServerNames, cfg.ECH.PublicName) {
 			tc.EncryptedClientHelloKeys = p.echKeys
 		}
 		if be.ClientAuth != nil {
@@ -969,11 +969,23 @@ func (p *Proxy) Start(ctx context.Context) error {
 }
 
 func (p *Proxy) ctxWait(s *http.Server) {
-	<-p.ctx.Done()
-	if s != nil {
-		s.Close()
+	for {
+		select {
+		case <-p.ctx.Done():
+			if s != nil {
+				s.Close()
+			}
+			p.Stop()
+			return
+		case <-time.After(60 * time.Minute):
+			p.mu.Lock()
+			err := p.initECH()
+			p.mu.Unlock()
+			if err != nil && err != storage.ErrRolledBack {
+				p.logErrorF("ERR ECH: %v", err)
+			}
+		}
 	}
-	p.Stop()
 }
 
 func (p *Proxy) acceptLoop() {

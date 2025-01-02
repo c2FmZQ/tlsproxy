@@ -192,7 +192,7 @@ type ECH struct {
 	PublicName string `yaml:"publicName"`
 	// The time interval between key/config rotations.
 	Interval time.Duration `yaml:"interval,omitempty"`
-	// The local endpoint where to public the current ECH ConfigList.
+	// The local endpoint where to publish the current ECH ConfigList.
 	Endpoint string `yaml:"endpoint,omitempty"`
 	// The cloudflare DNS records to update when the ECH ConfigList changes.
 	Cloudflare []*Cloudflare `yaml:"cloudflare,omitempty"`
