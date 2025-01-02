@@ -28,6 +28,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -58,6 +59,25 @@ type httpsData struct {
 	Value    string `json:"value"`
 }
 
+type cfError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+func (e cfError) Error() string {
+	return fmt.Sprintf("%d: %s", e.Code, e.Message)
+}
+
+type cfErrors []cfError
+
+func (e cfErrors) Join() error {
+	errs := make([]error, 0, len(e))
+	for _, ee := range e {
+		errs = append(errs, ee)
+	}
+	return errors.Join(errs...)
+}
+
 func UpdateECH(ctx context.Context, records []*Target, configList string, logger func(string, ...any)) {
 	zones := make(map[string]bool)
 	data := make(map[zoneName]idData)
@@ -78,7 +98,7 @@ func UpdateECH(ctx context.Context, records []*Target, configList string, logger
 			}
 			value := re.ReplaceAllString(v.Data.Value, "") + ` ech="` + configList + `"`
 			if value == v.Data.Value {
-				logger("INF cloudflare [%s] %s: no change", r.Zone, name)
+				//logger("INF cloudflare [%s] %s: no change", r.Zone, name)
 				continue
 			}
 			v.Data.Value = value
@@ -111,7 +131,8 @@ func getZoneData(ctx context.Context, token, zone string, data map[zoneName]idDa
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
 	var result struct {
-		Success bool `json:"success"`
+		Success bool     `json:"success"`
+		Errors  cfErrors `json:"errors"`
 		Result  []struct {
 			ID   string `json:"id"`
 			Name string `json:"name"`
@@ -121,7 +142,7 @@ func getZoneData(ctx context.Context, token, zone string, data map[zoneName]idDa
 		return err
 	}
 	if !result.Success || len(result.Result) == 0 {
-		return errors.New("not found")
+		return result.Errors.Join()
 	}
 	zoneID := result.Result[0].ID
 
@@ -148,7 +169,8 @@ func getZoneData(ctx context.Context, token, zone string, data map[zoneName]idDa
 		defer resp.Body.Close()
 		b, _ = io.ReadAll(resp.Body)
 		var result struct {
-			Success bool `json:"success"`
+			Success bool     `json:"success"`
+			Errors  cfErrors `json:"errors"`
 			Result  []struct {
 				ID   string    `json:"id"`
 				Name string    `json:"name"`
@@ -164,7 +186,7 @@ func getZoneData(ctx context.Context, token, zone string, data map[zoneName]idDa
 			return err
 		}
 		if !result.Success {
-			return errors.New("not found")
+			return result.Errors.Join()
 		}
 		for _, r := range result.Result {
 			data[zoneName{zone, r.Name}] = idData{zoneID, r.ID, r.Data}
@@ -201,13 +223,14 @@ func updateRecord(ctx context.Context, token, zoneID, recordID string, data http
 	defer resp.Body.Close()
 	b, _ = io.ReadAll(resp.Body)
 	var result struct {
-		Success bool `json:"success"`
+		Success bool     `json:"success"`
+		Errors  cfErrors `json:"errors"`
 	}
 	if err := json.Unmarshal(b, &result); err != nil {
 		return err
 	}
 	if !result.Success {
-		return errors.New("failed")
+		return result.Errors.Join()
 	}
 	return nil
 }
