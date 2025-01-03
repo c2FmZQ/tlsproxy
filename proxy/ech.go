@@ -31,6 +31,8 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/c2FmZQ/ech"
@@ -47,7 +49,7 @@ type echKey struct {
 	PrivateKey   []byte    `json:"privateKey"`
 }
 
-func (p *Proxy) initECH() (retErr error) {
+func (p *Proxy) rotateECH(forceCheck bool) (retErr error) {
 	if p.cfg.ECH == nil || p.cfg.ECH.PublicName == "" {
 		return nil
 	}
@@ -60,9 +62,7 @@ func (p *Proxy) initECH() (retErr error) {
 	}
 	defer commit(false, &retErr)
 
-	if len(echKeys) > 5 {
-		echKeys = echKeys[:5]
-	}
+	var changed bool
 	if len(echKeys) == 0 || echKeys[0].PublicName != p.cfg.ECH.PublicName || (p.cfg.ECH.Interval > 0 && time.Since(echKeys[0].CreationTime) > p.cfg.ECH.Interval) {
 		idExists := func(id uint8) bool {
 			return slices.IndexFunc(echKeys, func(k echKey) bool {
@@ -97,6 +97,10 @@ func (p *Proxy) initECH() (retErr error) {
 			return err
 		}
 		p.logErrorF("INF ECH ConfigList updated")
+		changed = true
+	}
+	if len(echKeys) > 5 {
+		echKeys = echKeys[:5]
 	}
 	p.echKeys = make([]tls.EncryptedClientHelloKey, 0, len(echKeys))
 	for i, k := range echKeys {
@@ -106,11 +110,13 @@ func (p *Proxy) initECH() (retErr error) {
 			SendAsRetry: i == 0,
 		})
 	}
-	configList, err := ech.ConfigList([]ech.Config{p.echKeys[0].Config})
+	p.echLastUpdate = echKeys[0].CreationTime
+	b, err := ech.ConfigList([]ech.Config{p.echKeys[0].Config})
 	if err != nil {
 		return err
 	}
-	if len(p.cfg.ECH.Cloudflare) > 0 {
+	configList := base64.StdEncoding.EncodeToString(b)
+	if (changed || forceCheck) && len(p.cfg.ECH.Cloudflare) > 0 {
 		go func() {
 			ctx := p.ctx
 			if ctx == nil {
@@ -118,23 +124,62 @@ func (p *Proxy) initECH() (retErr error) {
 			}
 			ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 			defer cancel()
-			cloudflare.UpdateECH(ctx, p.cfg.ECH.Cloudflare, base64.StdEncoding.EncodeToString(configList), p.logErrorF)
+			cloudflare.UpdateECH(ctx, p.cfg.ECH.Cloudflare, configList, p.logErrorF)
+		}()
+	}
+	if changed {
+		go func() {
+			ctx := p.ctx
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+			defer cancel()
+
+			for _, wh := range p.cfg.ECH.WebHooks {
+				req, err := http.NewRequestWithContext(ctx, "POST", wh, nil)
+				if err != nil {
+					p.logErrorF("ERR ECH WebHook %q: %v", wh, err)
+					continue
+				}
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					p.logErrorF("ERR ECH WebHook %q: %v", wh, err)
+					continue
+				}
+				resp.Body.Close()
+				if resp.StatusCode != 200 {
+					p.logErrorF("ERR ECH WebHook %q: status code %d", wh, resp.StatusCode)
+				}
+			}
 		}()
 	}
 	return nil
 }
 
 func (p *Proxy) serveECHConfigList(w http.ResponseWriter, req *http.Request) {
-	if len(p.echKeys) == 0 {
+	p.mu.Lock()
+	lastUpdate := p.echLastUpdate
+	var config []byte
+	if len(p.echKeys) > 0 {
+		config = p.echKeys[0].Config
+	}
+	cacheTime := 6 * time.Hour
+	if p.cfg.ECH != nil && p.cfg.ECH.Interval > 0 {
+		cacheTime = min(cacheTime, p.cfg.ECH.Interval)
+	}
+	p.mu.Unlock()
+
+	if config == nil {
 		http.NotFound(w, req)
 		return
 	}
-	configList, err := ech.ConfigList([]ech.Config{p.echKeys[0].Config})
+	configList, err := ech.ConfigList([]ech.Config{config})
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	enc := base64.NewEncoder(base64.StdEncoding, w)
-	enc.Write(configList)
-	enc.Close()
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Cache-Control", "public, max-age="+strconv.Itoa(int(cacheTime.Seconds())))
+	http.ServeContent(w, req, "echConfigList", lastUpdate, strings.NewReader(base64.StdEncoding.EncodeToString(configList)))
 }

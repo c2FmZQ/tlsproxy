@@ -139,7 +139,8 @@ type Proxy struct {
 	eventsmu sync.Mutex
 	events   map[string]int64
 
-	echKeys []tls.EncryptedClientHelloKey
+	echKeys       []tls.EncryptedClientHelloKey
+	echLastUpdate time.Time
 }
 
 type beKey struct {
@@ -885,7 +886,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	p.backends = backends
 	p.pkis = pkis
 	p.cfg = cfg
-	if err := p.initECH(); err != nil && err != storage.ErrRolledBack {
+	if err := p.rotateECH(true); err != nil && err != storage.ErrRolledBack {
 		return err
 	}
 	go p.reAuthorize()
@@ -977,9 +978,9 @@ func (p *Proxy) ctxWait(s *http.Server) {
 			}
 			p.Stop()
 			return
-		case <-time.After(60 * time.Minute):
+		case <-time.After(10 * time.Minute):
 			p.mu.Lock()
-			err := p.initECH()
+			err := p.rotateECH(false)
 			p.mu.Unlock()
 			if err != nil && err != storage.ErrRolledBack {
 				p.logErrorF("ERR ECH: %v", err)

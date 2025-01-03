@@ -194,6 +194,10 @@ type ECH struct {
 	Interval time.Duration `yaml:"interval,omitempty"`
 	// The local endpoint where to publish the current ECH ConfigList.
 	Endpoint string `yaml:"endpoint,omitempty"`
+	// A list of WebHooks to call when the ECH config is updated. There is
+	// no payload other than the URLs themselves. The receipient should
+	// fetch the ECH endpoint (above) to get the current ConfigList.
+	WebHooks []string `yaml:"webhooks,omitempty"`
 	// The cloudflare DNS records to update when the ECH ConfigList changes.
 	Cloudflare []*Cloudflare `yaml:"cloudflare,omitempty"`
 }
