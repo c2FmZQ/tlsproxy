@@ -576,9 +576,6 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		}
 		be.pkiMap = make(map[string]*pki.PKIManager)
 		tc := p.baseTLSConfig()
-		if cfg.ECH != nil && slices.Contains(be.ServerNames, cfg.ECH.PublicName) {
-			tc.EncryptedClientHelloKeys = p.echKeys
-		}
 		if be.ClientAuth != nil {
 			tc.ClientAuth = tls.RequireAndVerifyClientCert
 			for _, n := range be.ClientAuth.RootCAs {
@@ -1117,6 +1114,7 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 		return cert, nil
 	}
 	tc.NextProtos = *defaultALPNProtos
+	tc.EncryptedClientHelloKeys = p.echKeys
 	return tc
 }
 

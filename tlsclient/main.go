@@ -145,6 +145,10 @@ func main() {
 	if *useQUIC {
 		conn, err := quic.DialAddr(context.Background(), target, tc, &quic.Config{})
 		if err != nil {
+			var echErr *tls.ECHRejectionError
+			if errors.As(err, &echErr) {
+				log.Fatalf("ECH RetryConfigList: %s", base64.StdEncoding.EncodeToString(echErr.RetryConfigList))
+			}
 			log.Fatalf("ERR: %v", err)
 		}
 		stream, err := conn.OpenStream()

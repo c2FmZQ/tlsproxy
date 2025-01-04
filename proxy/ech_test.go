@@ -21,15 +21,22 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+//go:build !noquic
+
 package proxy
 
 import (
+	"context"
 	"crypto/tls"
+	"errors"
 	"io"
 	"testing"
 
 	"github.com/c2FmZQ/ech"
+	"github.com/quic-go/quic-go"
+
 	"github.com/c2FmZQ/tlsproxy/certmanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
 
 func TestECH(t *testing.T) {
@@ -77,6 +84,7 @@ func TestECH(t *testing.T) {
 				ServerNames: []string{
 					"https.example.com",
 				},
+				ALPNProtos: &[]string{"foo"},
 				Addresses: []string{
 					be1.listener.Addr().String(),
 				},
@@ -90,18 +98,22 @@ func TestECH(t *testing.T) {
 		t.Fatalf("proxy.Reconfigure: %v", err)
 	}
 
-	get := func(host string) (string, error) {
+	get := func(host string, quic bool) (string, error) {
+		if quic {
+			return echGetQUIC(host, proxy.quicTransport.(*netw.QUICTransport).Addr().String(), "Hello!\n", extCA, echConfigList)
+		}
 		return echGet(host, proxy.listener.Addr().String(), "Hello!\n", extCA, echConfigList)
 	}
 
 	for _, tc := range []struct {
 		desc, host, want string
-		protos           []string
+		quic             bool
 		expError         bool
 	}{
-		{desc: "Hit backend1", host: "https.example.com", want: "Hello from backend1\n"},
+		{desc: "Hit TCP", host: "https.example.com", want: "Hello from backend1\n"},
+		{desc: "Hit QUIC", host: "https.example.com", want: "Hello from backend1\n", quic: true},
 	} {
-		got, err := get(tc.host)
+		got, err := get(tc.host, tc.quic)
 		if tc.expError != (err != nil) {
 			t.Fatalf("%s: Got error %v, want %v. Body: %q err: %#v", tc.desc, (err != nil), tc.expError, got, err)
 			continue
@@ -127,9 +139,45 @@ func echGet(name, addr, msg string, rootCA *certmanager.CertManager, configList 
 		return "", err
 	}
 	defer c.Close()
+	if !c.ConnectionState().ECHAccepted {
+		return "", errors.New("ECH was not accepted")
+	}
 	if _, err := c.Write([]byte(msg)); err != nil {
 		return "", err
 	}
 	b, err := io.ReadAll(c)
 	return string(b), err
+}
+
+func echGetQUIC(name, addr, msg string, rootCA *certmanager.CertManager, configList []byte) (string, error) {
+	ctx := context.Background()
+	tc := &tls.Config{
+		ServerName:                     name,
+		InsecureSkipVerify:             name == "",
+		RootCAs:                        rootCA.RootCACertPool(),
+		EncryptedClientHelloConfigList: configList,
+		NextProtos:                     []string{"foo"},
+	}
+
+	conn, err := quic.DialAddr(ctx, addr, tc, &quic.Config{})
+	if err != nil {
+		return "", err
+	}
+	if !conn.ConnectionState().TLS.ECHAccepted {
+		return "", errors.New("ECH was not accepted")
+	}
+	stream, err := conn.OpenStreamSync(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer stream.Close()
+	defer stream.CancelRead(0)
+	if _, err := stream.Write([]byte(msg)); err != nil {
+		return "", err
+	}
+	b, err := io.ReadAll(stream)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
