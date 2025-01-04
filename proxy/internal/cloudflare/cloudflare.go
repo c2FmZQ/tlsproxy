@@ -30,10 +30,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
+
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 type Target struct {
@@ -82,10 +83,12 @@ func UpdateECH(ctx context.Context, records []*Target, configList string, logger
 	zones := make(map[string]bool)
 	data := make(map[zoneName]idData)
 	re := regexp.MustCompile(` *ech=[^ ]*`)
+	client := retryablehttp.NewClient()
+	client.Logger = nil
 	for _, r := range records {
 		if !zones[r.Zone] {
 			zones[r.Zone] = true
-			if err := getZoneData(ctx, r.Token, r.Zone, data); err != nil {
+			if err := getZoneData(ctx, client, r.Token, r.Zone, data); err != nil {
 				logger("ERR cloudflare [%s]: %v", r.Zone, err)
 				continue
 			}
@@ -102,7 +105,7 @@ func UpdateECH(ctx context.Context, records []*Target, configList string, logger
 				continue
 			}
 			v.Data.Value = value
-			if err := updateRecord(ctx, r.Token, v.ZoneID, v.RecordID, v.Data); err != nil {
+			if err := updateRecord(ctx, client, r.Token, v.ZoneID, v.RecordID, v.Data); err != nil {
 				logger("ERR cloudflare [%s] %s: %v", r.Zone, name, err)
 			}
 			logger("INF cloudflare [%s] %s: updated", r.Zone, name)
@@ -110,7 +113,7 @@ func UpdateECH(ctx context.Context, records []*Target, configList string, logger
 	}
 }
 
-func getZoneData(ctx context.Context, token, zone string, data map[zoneName]idData) error {
+func getZoneData(ctx context.Context, client *retryablehttp.Client, token, zone string, data map[zoneName]idData) error {
 	u := url.URL{
 		Scheme: "https",
 		Host:   "api.cloudflare.com",
@@ -119,12 +122,12 @@ func getZoneData(ctx context.Context, token, zone string, data map[zoneName]idDa
 	q := u.Query()
 	q.Set("name", zone)
 	u.RawQuery = q.Encode()
-	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	req, err := retryablehttp.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -157,12 +160,12 @@ func getZoneData(ctx context.Context, token, zone string, data map[zoneName]idDa
 		q.Set("per_page", "20")
 		q.Set("page", strconv.Itoa(page))
 		u.RawQuery = q.Encode()
-		req, err = http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+		req, err = retryablehttp.NewRequestWithContext(ctx, "GET", u.String(), nil)
 		if err != nil {
 			return err
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
-		resp, err = http.DefaultClient.Do(req)
+		resp, err = client.Do(req)
 		if err != nil {
 			return err
 		}
@@ -198,7 +201,7 @@ func getZoneData(ctx context.Context, token, zone string, data map[zoneName]idDa
 	return nil
 }
 
-func updateRecord(ctx context.Context, token, zoneID, recordID string, data httpsData) error {
+func updateRecord(ctx context.Context, client *retryablehttp.Client, token, zoneID, recordID string, data httpsData) error {
 	b, err := json.Marshal(struct {
 		Data httpsData `json:"data"`
 	}{Data: data})
@@ -210,13 +213,13 @@ func updateRecord(ctx context.Context, token, zoneID, recordID string, data http
 		Host:   "api.cloudflare.com",
 		Path:   "/client/v4/zones/" + zoneID + "/dns_records/" + recordID,
 	}
-	req, err := http.NewRequestWithContext(ctx, "PATCH", u.String(), bytes.NewReader(b))
+	req, err := retryablehttp.NewRequestWithContext(ctx, "PATCH", u.String(), bytes.NewReader(b))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

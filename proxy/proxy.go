@@ -621,7 +621,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						return tlsCertificateRevoked
 					}
 				} else if len(cert.OCSPServer) > 0 {
-					if err := p.ocspCache.VerifyChains(cs.VerifiedChains, cs.OCSPResponse); err != nil {
+					if err := p.ocspCache.VerifyChains(p.ctx, cs.VerifiedChains, cs.OCSPResponse); err != nil {
 						p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (OCSP:%v)", sum, idnaToUnicode(cs.ServerName), err))
 						return tlsCertificateRevoked
 					}
@@ -1109,7 +1109,7 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 		if err != nil {
 			return nil, err
 		}
-		if ocspResp, err := p.ocspCache.Response(cert.Leaf, issuer, time.Hour); err == nil && ocspResp.Status == ocsp.Good {
+		if ocspResp, err := p.ocspCache.Response(p.ctx, cert.Leaf, issuer, time.Hour); err == nil && ocspResp.Status == ocsp.Good {
 			cert.OCSPStaple = ocspResp.Raw
 		} else {
 			p.recordEvent("ocsp staple error for " + idnaToUnicode(hello.ServerName))

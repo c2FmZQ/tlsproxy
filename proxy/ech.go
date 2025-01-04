@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"github.com/c2FmZQ/ech"
+	"github.com/hashicorp/go-retryablehttp"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cloudflare"
 )
@@ -135,14 +136,15 @@ func (p *Proxy) rotateECH(forceCheck bool) (retErr error) {
 			}
 			ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 			defer cancel()
-
+			client := retryablehttp.NewClient()
+			client.Logger = nil
 			for _, wh := range p.cfg.ECH.WebHooks {
-				req, err := http.NewRequestWithContext(ctx, "POST", wh, nil)
+				req, err := retryablehttp.NewRequestWithContext(ctx, "POST", wh, nil)
 				if err != nil {
 					p.logErrorF("ERR ECH WebHook %q: %v", wh, err)
 					continue
 				}
-				resp, err := http.DefaultClient.Do(req)
+				resp, err := client.Do(req)
 				if err != nil {
 					p.logErrorF("ERR ECH WebHook %q: %v", wh, err)
 					continue
