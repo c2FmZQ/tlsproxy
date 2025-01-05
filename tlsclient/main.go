@@ -38,6 +38,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/c2FmZQ/ech"
 	"github.com/quic-go/quic-go"
 	"golang.org/x/crypto/ocsp"
 )
@@ -50,7 +51,7 @@ func main() {
 	key := flag.String("key", "", "A file that contains the TLS key to use.")
 	cert := flag.String("cert", "", "A file that contains the TLS certificate to use.")
 	alpn := flag.String("alpn", "", "The ALPN proto to request.")
-	ech := flag.String("ech", "", "Use this ECH ConfigList.")
+	echFlag := flag.String("ech", "", "Use this ECH ConfigList.")
 	useQUIC := flag.Bool("quic", false, "Use QUIC.")
 	verifyOCSP := flag.Bool("ocsp", false, "Require stapled OCSP response.")
 	serverName := flag.String("servername", "", "The expected server name.")
@@ -84,23 +85,17 @@ func main() {
 		host = addr
 		port = "443"
 	}
-	addrs, err := net.LookupHost(host)
-	if err != nil {
-		res := &net.Resolver{
-			PreferGo: true,
-			Dial: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("udp", "8.8.8.8:53")
-			},
-		}
-		addrs, err = res.LookupHost(context.Background(), host)
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	result, err := ech.Resolve(ctx, host)
 	if err != nil {
 		log.Fatalf("ERR: %v", err)
 	}
-	if len(addrs) == 0 {
+	ipaddr := result.Addr()
+	if ipaddr == "" {
 		log.Fatalf("ERR: cannot resolve %s", host)
 	}
-	target := net.JoinHostPort(addrs[0], port)
+	target := net.JoinHostPort(ipaddr, port)
 
 	if *serverName == "" {
 		*serverName = host
@@ -133,9 +128,10 @@ func main() {
 			}
 			return nil
 		},
+		EncryptedClientHelloConfigList: result.ECH(),
 	}
-	if *ech != "" {
-		configList, err := base64.StdEncoding.DecodeString(*ech)
+	if *echFlag != "" {
+		configList, err := base64.StdEncoding.DecodeString(*echFlag)
 		if err != nil {
 			log.Fatalf("ERR: --ech decoding error: %v", err)
 		}
