@@ -932,6 +932,8 @@ func (p *Proxy) reAuthorize() {
 // Start starts a TLS proxy with the given configuration. The proxy runs
 // in background until the context is canceled.
 func (p *Proxy) Start(ctx context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.startTime = time.Now()
 	p.connClosed = sync.NewCond(&p.mu)
 	var httpServer *http.Server
