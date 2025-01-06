@@ -164,6 +164,9 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 	}
 
 	be, err := p.backend(cs.ServerName, cs.NegotiatedProtocol)
+	if err != nil && p.isECHPublicName(cs.ServerName) && cs.NegotiatedProtocol != "h3" {
+		be, err = p.backend(cs.ServerName, "h3")
+	}
 	if err != nil {
 		p.recordEvent(err.Error())
 		be.logErrorF("BAD [%s] %s:%s ➔ %q: %v", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), cs.ServerName, err)
