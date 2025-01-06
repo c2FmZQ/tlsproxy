@@ -68,7 +68,22 @@ func (p *Proxy) startQUIC(ctx context.Context) error {
 			return err
 		}
 	}
+	qt, err := netw.NewQUIC(p.cfg.TLSAddr, statelessResetKey)
+	if err != nil {
+		return err
+	}
+	p.quicTransport = qt
+	for _, be := range p.cfg.Backends {
+		be.quicTransport = qt
+	}
+	return p.startQUICListener(ctx)
+}
 
+func (p *Proxy) startQUICListener(ctx context.Context) error {
+	if p.quicListener != nil {
+		p.quicListener.Close()
+		p.quicListener = nil
+	}
 	tc := p.baseTLSConfig()
 	tc.MinVersion = tls.VersionTLS13
 	tc.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
@@ -82,18 +97,11 @@ func (p *Proxy) startQUIC(ctx context.Context) error {
 		p.logErrorF("ERR QUIC connection %s %s", hello.ServerName, hello.SupportedProtos)
 		return nil, tlsUnrecognizedName
 	}
-	qt, err := netw.NewQUIC(p.cfg.TLSAddr, statelessResetKey)
+	quicListener, err := p.quicTransport.(*netw.QUICTransport).Listen(tc)
 	if err != nil {
 		return err
 	}
-	quicListener, err := qt.Listen(tc)
-	if err != nil {
-		return err
-	}
-	p.quicTransport = qt
-	for _, be := range p.cfg.Backends {
-		be.quicTransport = qt
-	}
+	p.quicListener = quicListener
 	go p.quicAcceptLoop(ctx, quicListener)
 	return nil
 }

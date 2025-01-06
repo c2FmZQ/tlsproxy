@@ -42,6 +42,10 @@ func (p *Proxy) startQUIC(context.Context) error {
 	return errQUICNotEnabled
 }
 
+func (p *Proxy) startQUICListener(context.Context) error {
+	return errQUICNotEnabled
+}
+
 func (be *Backend) dialQUICStream(context.Context, string, *tls.Config) (net.Conn, error) {
 	return nil, errQUICNotEnabled
 }

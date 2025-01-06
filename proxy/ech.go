@@ -129,6 +129,9 @@ func (p *Proxy) rotateECH(forceCheck bool) (retErr error) {
 		}()
 	}
 	if changed {
+		if p.quicListener != nil {
+			p.startQUICListener(p.ctx)
+		}
 		go func() {
 			ctx := p.ctx
 			if ctx == nil {

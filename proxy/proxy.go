@@ -117,6 +117,7 @@ type Proxy struct {
 	cancel        func()
 	listener      net.Listener
 	quicTransport io.Closer
+	quicListener  io.Closer
 	tpm           *tpm.TPM
 	mk            crypto.MasterKey
 	store         *storage.Storage
@@ -945,18 +946,18 @@ func (p *Proxy) Start(ctx context.Context) error {
 		httpServer.SetKeepAlivesEnabled(false)
 		go serveHTTP(httpServer, httpListener)
 	}
+	p.ctx, p.cancel = context.WithCancel(ctx)
+
 	if *p.cfg.EnableQUIC {
-		if err := p.startQUIC(ctx); err != nil {
+		if err := p.startQUIC(p.ctx); err != nil {
 			return err
 		}
 	}
-
 	listener, err := netw.Listen("tcp", p.cfg.TLSAddr)
 	if err != nil {
 		return err
 	}
 	p.listener = listener
-	p.ctx, p.cancel = context.WithCancel(ctx)
 
 	go p.revokeUnusedCertificates(p.ctx)
 	go p.ctxWait(httpServer)
