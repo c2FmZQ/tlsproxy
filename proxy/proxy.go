@@ -84,6 +84,7 @@ const (
 	dialDoneKey      = "d"
 	serverNameKey    = "sn"
 	protoKey         = "p"
+	echAcceptedKey   = "ea"
 	clientCertKey    = "c"
 	internalConnKey  = "ic"
 	reportEndKey     = "re"
@@ -1226,6 +1227,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	conn.Conn = echConn
 	if echConn.ECHAccepted() {
 		p.recordEvent("encrypted client hello accepted")
+		conn.SetAnnotation(echAcceptedKey, true)
 	} else if echConn.ECHPresented() {
 		p.recordEvent("encrypted client hello rejected")
 	}
@@ -1511,6 +1513,7 @@ func formatConnDesc(c anyConn, ids ...string) string {
 	serverName := connServerName(c)
 	mode := connMode(c)
 	proto := connProto(c)
+	ech := connECHAccepted(c)
 	clientCert := connClientCert(c)
 	intConn := connIntConn(c)
 
@@ -1537,6 +1540,9 @@ func formatConnDesc(c anyConn, ids ...string) string {
 		buf.WriteString("|" + mode)
 		if proto != "" {
 			buf.WriteString(":" + proto)
+		}
+		if ech {
+			buf.WriteString("+ECH")
 		}
 		if httpUpgrade := connHTTPUpgrade(c); httpUpgrade != "" {
 			buf.WriteString("+" + httpUpgrade)

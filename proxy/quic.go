@@ -151,6 +151,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 	cs := qc.TLSConnectionState()
 	qc.SetAnnotation(serverNameKey, cs.ServerName)
 	qc.SetAnnotation(protoKey, cs.NegotiatedProtocol)
+	qc.SetAnnotation(echAcceptedKey, cs.ECHAccepted)
 
 	var clientCert *x509.Certificate
 	if len(cs.PeerCertificates) > 0 {
@@ -191,7 +192,11 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		return
 	}
 
-	be.logConnF("QUC [%s] %s:%s ➔ %s|%s:%s", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol)
+	var showECH string
+	if cs.ECHAccepted {
+		showECH = "+ECH"
+	}
+	be.logConnF("QUC [%s] %s:%s ➔ %s|%s:%s%s", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol, showECH)
 	if err := be.connLimit.Wait(ctx); err != nil {
 		if !errors.Is(err, context.Canceled) {
 			p.recordEvent(err.Error())

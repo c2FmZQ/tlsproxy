@@ -92,6 +92,11 @@ func connProto(c anyConn) string {
 	return ""
 }
 
+func connECHAccepted(c anyConn) bool {
+	v, _ := annotatedConn(c).Annotation(echAcceptedKey, false).(bool)
+	return v
+}
+
 func connClientCert(c anyConn) *x509.Certificate {
 	if v, ok := annotatedConn(c).Annotation(clientCertKey, (*x509.Certificate)(nil)).(*x509.Certificate); ok {
 		return v

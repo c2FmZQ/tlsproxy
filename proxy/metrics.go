@@ -131,6 +131,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		ServerName   string
 		Mode         string
 		Proto        string
+		ECH          string
 		Destinations []connDest
 		Time         string
 		EgressBytes  string
@@ -306,6 +307,9 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		}
 		if up := connHTTPUpgrade(c); up != "" {
 			connection.Proto += "+" + up
+		}
+		if connECHAccepted(c) {
+			connection.ECH = "ECH"
 		}
 		var streams []*netw.QUICStream
 
