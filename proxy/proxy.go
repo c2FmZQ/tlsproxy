@@ -1211,12 +1211,10 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		return
 	}
 	conn.Conn = echConn
-	var echRejected bool
 	if echConn.ECHAccepted() {
 		p.recordEvent("encrypted client hello accepted")
 	} else if echConn.ECHPresented() {
 		p.recordEvent("encrypted client hello rejected")
-		echRejected = true
 	}
 	serverName := echConn.ServerName()
 	if serverName == "" {
@@ -1226,9 +1224,6 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	alpnProtos := echConn.ALPNProtos()
 	conn.SetAnnotation(serverNameKey, serverName)
 	be, err := p.backend(serverName, alpnProtos...)
-	if err != nil && p.isECHPublicName(serverName) && echRejected {
-		be, err = p.backend(serverName)
-	}
 	if err != nil {
 		p.recordEvent(err.Error())
 		p.logErrorF("BAD [-] %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
