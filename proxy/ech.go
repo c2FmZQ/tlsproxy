@@ -94,14 +94,14 @@ func (p *Proxy) rotateECH(forceCheck bool) (retErr error) {
 			Config:       cfg,
 			PrivateKey:   key.Bytes(),
 		}}, echKeys...)
+		if len(echKeys) > 5 {
+			echKeys = echKeys[:5]
+		}
 		if err := commit(true, nil); err != nil {
 			return err
 		}
 		p.logErrorF("INF ECH ConfigList updated")
 		changed = true
-	}
-	if len(echKeys) > 5 {
-		echKeys = echKeys[:5]
 	}
 	p.echKeys = make([]tls.EncryptedClientHelloKey, 0, len(echKeys))
 	for i, k := range echKeys {
@@ -118,14 +118,15 @@ func (p *Proxy) rotateECH(forceCheck bool) (retErr error) {
 	}
 	configList := base64.StdEncoding.EncodeToString(b)
 	if (changed || forceCheck) && len(p.cfg.ECH.Cloudflare) > 0 {
+		ctx := p.ctx
+		cf := p.cfg.ECH.Cloudflare
 		go func() {
-			ctx := p.ctx
 			if ctx == nil {
 				ctx = context.Background()
 			}
 			ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 			defer cancel()
-			cloudflare.UpdateECH(ctx, p.cfg.ECH.Cloudflare, configList, p.logErrorF)
+			cloudflare.UpdateECH(ctx, cf, configList, p.logErrorF)
 		}()
 	}
 	if changed {
@@ -133,6 +134,7 @@ func (p *Proxy) rotateECH(forceCheck bool) (retErr error) {
 			p.startQUICListener(p.ctx)
 		}
 		ctx := p.ctx
+		webhooks := p.cfg.ECH.WebHooks
 		go func() {
 			if ctx == nil {
 				ctx = context.Background()
@@ -141,7 +143,7 @@ func (p *Proxy) rotateECH(forceCheck bool) (retErr error) {
 			defer cancel()
 			client := retryablehttp.NewClient()
 			client.Logger = nil
-			for _, wh := range p.cfg.ECH.WebHooks {
+			for _, wh := range webhooks {
 				req, err := retryablehttp.NewRequestWithContext(ctx, "POST", wh, nil)
 				if err != nil {
 					p.logErrorF("ERR ECH WebHook %q: %v", wh, err)

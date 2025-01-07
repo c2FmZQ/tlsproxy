@@ -986,6 +986,12 @@ func (p *Proxy) ctxWait(s *http.Server) {
 			p.Stop()
 			return
 		case <-time.After(10 * time.Minute):
+			p.mu.RLock()
+			needed := p.cfg.ECH != nil && p.cfg.ECH.Interval > 0 && time.Since(p.echLastUpdate) > p.cfg.ECH.Interval
+			p.mu.RUnlock()
+			if !needed {
+				continue
+			}
 			p.mu.Lock()
 			err := p.rotateECH(false)
 			p.mu.Unlock()
