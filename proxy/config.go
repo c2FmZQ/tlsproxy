@@ -444,8 +444,8 @@ type Backend struct {
 	quicTransport    io.Closer
 	defaultLogFilter LogFilter
 
-	tlsConfig            *tls.Config
-	tlsConfigQUIC        *tls.Config
+	tlsConfig            func(isQUIC bool) *tls.Config
+	clientCAs            *x509.CertPool
 	forwardRootCAs       *x509.CertPool
 	getClientCert        func(context.Context) func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
 	pkiMap               map[string]*pki.PKIManager

@@ -576,12 +576,11 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			}
 		}
 		be.pkiMap = make(map[string]*pki.PKIManager)
-		tc := p.baseTLSConfig()
+
 		if be.ClientAuth != nil {
-			tc.ClientAuth = tls.RequireAndVerifyClientCert
 			for _, n := range be.ClientAuth.RootCAs {
-				if tc.ClientCAs == nil {
-					tc.ClientCAs = x509.NewCertPool()
+				if be.clientCAs == nil {
+					be.clientCAs = x509.NewCertPool()
 				}
 				if m, ok := pkis[n]; ok {
 					ca, err := m.CACert()
@@ -589,66 +588,36 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						return err
 					}
 					be.pkiMap[hex.EncodeToString(ca.SubjectKeyId)] = m
-					tc.ClientCAs.AddCert(ca)
+					be.clientCAs.AddCert(ca)
 					continue
 				}
-				if err := loadCerts(tc.ClientCAs, n); err != nil {
+				if err := loadCerts(be.clientCAs, n); err != nil {
 					return err
 				}
 			}
-			tc.VerifyConnection = func(cs tls.ConnectionState) error {
-				be, err := p.backend(cs.ServerName, cs.NegotiatedProtocol)
-				if err != nil {
-					return tlsUnrecognizedName
-				}
-				if be.ClientAuth == nil {
-					return nil
-				}
-				if len(cs.PeerCertificates) == 0 || len(cs.VerifiedChains) == 0 {
-					p.recordEvent(fmt.Sprintf("deny no cert to %s", idnaToUnicode(cs.ServerName)))
-					if cs.Version == tls.VersionTLS12 {
-						return tlsBadCertificate
-					}
-					return tlsCertificateRequired
-				}
-				cert := cs.PeerCertificates[0]
-				sum := certSummary(cert)
-				if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok {
-					if m.IsRevoked(cert.SerialNumber) {
-						p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (revoked)", sum, idnaToUnicode(cs.ServerName)))
-						return tlsCertificateRevoked
-					}
-				} else if len(cert.OCSPServer) > 0 {
-					if err := p.ocspCache.VerifyChains(p.ctx, cs.VerifiedChains, cs.OCSPResponse); err != nil {
-						p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (OCSP:%v)", sum, idnaToUnicode(cs.ServerName), err))
-						return tlsCertificateRevoked
-					}
-				}
-				if err := be.authorize(cert); err != nil {
-					p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s", sum, idnaToUnicode(cs.ServerName)))
-					return tlsAccessDenied
-				}
-				if sum != "" {
-					p.recordEvent(fmt.Sprintf("allow X509 [%s] to %s", sum, idnaToUnicode(cs.ServerName)))
-				}
-				return nil
+		}
+		be.tlsConfig = func(forQUIC bool) *tls.Config {
+			tc := p.baseTLSConfig()
+			if forQUIC {
+				tc.MinVersion = tls.VersionTLS13
 			}
+			if be.ClientAuth != nil {
+				tc.ClientAuth = tls.RequireAndVerifyClientCert
+				tc.ClientCAs = be.clientCAs
+				tc.VerifyConnection = p.verifyConnection
+			}
+			if be.ALPNProtos != nil {
+				tc.NextProtos = slices.Clone(*be.ALPNProtos)
+			}
+			if !forQUIC || be.Mode == ModeTLS || be.Mode == ModeTCP || be.Mode == ModeTLSPassthrough {
+				// http/3 requires QUIC. Offering it on a TCP connection could
+				// lead to confusion.
+				tc.NextProtos = slices.DeleteFunc(tc.NextProtos, func(p string) bool {
+					return quicOnlyProtocols[p]
+				})
+			}
+			return tc
 		}
-		if be.ALPNProtos != nil {
-			tc.NextProtos = slices.Clone(*be.ALPNProtos)
-			tc.NextProtos = slices.DeleteFunc(tc.NextProtos, func(p string) bool {
-				return quicOnlyProtocols[p] && (be.Mode == ModeTLS || be.Mode == ModeTCP)
-			})
-		}
-		be.tlsConfigQUIC = tc.Clone()
-		be.tlsConfigQUIC.MinVersion = tls.VersionTLS13
-		// http/3 requires QUIC. Offering it on a TCP connection could
-		// lead to confusion.
-		tc.NextProtos = slices.Clone(tc.NextProtos)
-		tc.NextProtos = slices.DeleteFunc(tc.NextProtos, func(p string) bool {
-			return quicOnlyProtocols[p]
-		})
-		be.tlsConfig = tc
 
 		be.getClientCert = func(ctx context.Context) func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			serverName := connServerName(ctx.Value(connCtxKey).(anyConn))
@@ -927,6 +896,44 @@ func (p *Proxy) reAuthorize() {
 			continue
 		}
 	}
+}
+
+func (p *Proxy) verifyConnection(cs tls.ConnectionState) error {
+	be, err := p.backend(cs.ServerName, cs.NegotiatedProtocol)
+	if err != nil {
+		return tlsUnrecognizedName
+	}
+	if be.ClientAuth == nil {
+		return nil
+	}
+	if len(cs.PeerCertificates) == 0 || len(cs.VerifiedChains) == 0 {
+		p.recordEvent(fmt.Sprintf("deny no cert to %s", idnaToUnicode(cs.ServerName)))
+		if cs.Version == tls.VersionTLS12 {
+			return tlsBadCertificate
+		}
+		return tlsCertificateRequired
+	}
+	cert := cs.PeerCertificates[0]
+	sum := certSummary(cert)
+	if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok {
+		if m.IsRevoked(cert.SerialNumber) {
+			p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (revoked)", sum, idnaToUnicode(cs.ServerName)))
+			return tlsCertificateRevoked
+		}
+	} else if len(cert.OCSPServer) > 0 {
+		if err := p.ocspCache.VerifyChains(p.ctx, cs.VerifiedChains, cs.OCSPResponse); err != nil {
+			p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (OCSP:%v)", sum, idnaToUnicode(cs.ServerName), err))
+			return tlsCertificateRevoked
+		}
+	}
+	if err := be.authorize(cert); err != nil {
+		p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s", sum, idnaToUnicode(cs.ServerName)))
+		return tlsAccessDenied
+	}
+	if sum != "" {
+		p.recordEvent(fmt.Sprintf("allow X509 [%s] to %s", sum, idnaToUnicode(cs.ServerName)))
+	}
+	return nil
 }
 
 // Start starts a TLS proxy with the given configuration. The proxy runs
@@ -1252,14 +1259,14 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		if err := p.checkIP(conn); err != nil {
 			return
 		}
-		p.handleHTTPConnection(tls.Server(conn, be.tlsConfig))
+		p.handleHTTPConnection(tls.Server(conn, be.tlsConfig(false)))
 		closeConnNeeded = false
 
 	case be.Mode == ModeTCP || be.Mode == ModeTLS || be.Mode == ModeQUIC:
 		if err := p.checkIP(conn); err != nil {
 			return
 		}
-		p.handleTLSConnection(tls.Server(conn, be.tlsConfig))
+		p.handleTLSConnection(tls.Server(conn, be.tlsConfig(false)))
 
 	default:
 		be.logErrorF("ERR [-] %s: unhandled connection %q", conn.RemoteAddr(), be.Mode)
