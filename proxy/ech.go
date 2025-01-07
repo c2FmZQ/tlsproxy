@@ -138,8 +138,8 @@ func (p *Proxy) rotateECH(forceCheck bool) (retErr error) {
 		if p.quicListener != nil {
 			p.startQUICListener(p.ctx)
 		}
+		ctx := p.ctx
 		go func() {
-			ctx := p.ctx
 			if ctx == nil {
 				ctx = context.Background()
 			}
