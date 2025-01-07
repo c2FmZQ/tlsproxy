@@ -31,6 +31,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -139,14 +140,18 @@ func main() {
 	}
 
 	if *useQUIC {
+	retryQUIC:
 		conn, err := quic.DialAddr(context.Background(), target, tc, &quic.Config{})
 		if err != nil {
 			var echErr *tls.ECHRejectionError
 			if errors.As(err, &echErr) && len(echErr.RetryConfigList) > 0 {
-				log.Fatalf("%v: RetryConfigList: %s", err, base64.StdEncoding.EncodeToString(echErr.RetryConfigList))
+				fmt.Fprintf(os.Stderr, "%v: retrying with %s\n", err, base64.StdEncoding.EncodeToString(echErr.RetryConfigList))
+				tc.EncryptedClientHelloConfigList = echErr.RetryConfigList
+				goto retryQUIC
 			}
 			log.Fatalf("ERR: %v", err)
 		}
+		fmt.Fprintf(os.Stderr, "Connected to %s\n", target)
 		stream, err := conn.OpenStream()
 		if err != nil {
 			log.Fatalf("ERR: %v", err)
@@ -164,14 +169,18 @@ func main() {
 		return
 	}
 
+retryTCP:
 	conn, err := tls.Dial("tcp", target, tc)
 	if err != nil {
 		var echErr *tls.ECHRejectionError
 		if errors.As(err, &echErr) && len(echErr.RetryConfigList) > 0 {
-			log.Fatalf("%v: RetryConfigList: %s", err, base64.StdEncoding.EncodeToString(echErr.RetryConfigList))
+			fmt.Fprintf(os.Stderr, "%v: retrying with %s\n", err, base64.StdEncoding.EncodeToString(echErr.RetryConfigList))
+			tc.EncryptedClientHelloConfigList = echErr.RetryConfigList
+			goto retryTCP
 		}
 		log.Fatalf("ERR Dial: %v", err)
 	}
+	fmt.Fprintf(os.Stderr, "Connected to %s\n", target)
 	go func() {
 		if _, err := io.Copy(conn, os.Stdin); err != nil && !errors.Is(err, net.ErrClosed) {
 			log.Printf("ERR Stdin: %v", err)
