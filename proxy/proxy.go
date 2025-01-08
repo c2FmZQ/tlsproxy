@@ -102,6 +102,18 @@ var (
 	errAccessDenied = errors.New("access denied")
 )
 
+func init() {
+	// https://github.com/golang/go/issues/71128
+	v := os.Getenv("GODEBUG")
+	if len(v) > 0 {
+		if strings.Contains(v, "http2xconnect=0") {
+			return
+		}
+		v += ","
+	}
+	os.Setenv("GODEBUG", v+"http2xconnect=0")
+}
+
 // Proxy receives TLS connections and forwards them to the configured
 // backends.
 type Proxy struct {
