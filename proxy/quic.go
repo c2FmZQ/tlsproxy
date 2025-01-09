@@ -90,7 +90,11 @@ func (p *Proxy) startQUICListener(ctx context.Context) error {
 		p.mu.RLock()
 		defer p.mu.RUnlock()
 		for _, proto := range hello.SupportedProtos {
-			if be, ok := p.backends[beKey{serverName: hello.ServerName, proto: proto}]; ok && be.Mode != ModeTLSPassthrough {
+			be, ok := p.backends[beKey{serverName: hello.ServerName, proto: proto}]
+			if !ok && p.isECHPublicName(hello.ServerName) {
+				be, ok = p.backends[beKey{serverName: hello.ServerName}]
+			}
+			if ok && be.Mode != ModeTLSPassthrough {
 				return be.tlsConfig(true), nil
 			}
 		}
@@ -164,10 +168,12 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		sum = "-"
 	}
 
-	be, err := p.backend(cs.ServerName, cs.NegotiatedProtocol)
-	if err != nil {
-		p.recordEvent(err.Error())
-		be.logErrorF("BAD [%s] %s:%s ➔ %q: %v", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), cs.ServerName, err)
+	p.mu.RLock()
+	be, ok := p.backends[beKey{serverName: cs.ServerName, proto: cs.NegotiatedProtocol}]
+	p.mu.RUnlock()
+	if !ok {
+		p.recordEvent("unexpected SNI")
+		p.logErrorF("BAD [%s] %s:%s ➔ %q: unexpected SNI", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), cs.ServerName)
 		qc.CloseWithError(quicUnrecognizedName, "unrecognized name")
 		return
 	}
