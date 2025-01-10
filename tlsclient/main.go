@@ -40,7 +40,7 @@ import (
 	"time"
 
 	"github.com/c2FmZQ/ech"
-	"github.com/quic-go/quic-go"
+	"github.com/c2FmZQ/ech/quic"
 	"golang.org/x/crypto/ocsp"
 )
 
@@ -86,17 +86,7 @@ func main() {
 		host = addr
 		port = "443"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	result, err := ech.Resolve(ctx, host)
-	if err != nil {
-		log.Fatalf("ERR: %v", err)
-	}
-	ipaddr := result.Addr()
-	if ipaddr == "" {
-		log.Fatalf("ERR: cannot resolve %s", host)
-	}
-	target := net.JoinHostPort(ipaddr, port)
+	target := net.JoinHostPort(host, port)
 
 	if *serverName == "" {
 		*serverName = host
@@ -129,7 +119,6 @@ func main() {
 			}
 			return nil
 		},
-		EncryptedClientHelloConfigList: result.ECH(),
 	}
 	if *echFlag != "" {
 		configList, err := base64.StdEncoding.DecodeString(*echFlag)
@@ -139,17 +128,13 @@ func main() {
 		tc.EncryptedClientHelloConfigList = configList
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	if *useQUIC {
-	retryQUIC:
-		conn, err := quic.DialAddr(context.Background(), target, tc, &quic.Config{})
+		conn, err := quic.Dial(ctx, "udp", target, tc, nil)
 		if err != nil {
-			var echErr *tls.ECHRejectionError
-			if errors.As(err, &echErr) && len(echErr.RetryConfigList) > 0 {
-				fmt.Fprintf(os.Stderr, "%v: retrying with %s\n", err, base64.StdEncoding.EncodeToString(echErr.RetryConfigList))
-				tc.EncryptedClientHelloConfigList = echErr.RetryConfigList
-				goto retryQUIC
-			}
-			log.Fatalf("ERR: %v", err)
+			log.Fatalf("ERR Dial: %v", err)
 		}
 		fmt.Fprintf(os.Stderr, "Connected to %s\n", target)
 		stream, err := conn.OpenStream()
@@ -169,17 +154,11 @@ func main() {
 		return
 	}
 
-retryTCP:
-	conn, err := tls.Dial("tcp", target, tc)
+	conn, err := ech.Dial(ctx, "tcp", target, tc)
 	if err != nil {
-		var echErr *tls.ECHRejectionError
-		if errors.As(err, &echErr) && len(echErr.RetryConfigList) > 0 {
-			fmt.Fprintf(os.Stderr, "%v: retrying with %s\n", err, base64.StdEncoding.EncodeToString(echErr.RetryConfigList))
-			tc.EncryptedClientHelloConfigList = echErr.RetryConfigList
-			goto retryTCP
-		}
 		log.Fatalf("ERR Dial: %v", err)
 	}
+	defer conn.Close()
 	fmt.Fprintf(os.Stderr, "Connected to %s\n", target)
 	go func() {
 		if _, err := io.Copy(conn, os.Stdin); err != nil && !errors.Is(err, net.ErrClosed) {
@@ -190,6 +169,4 @@ retryTCP:
 	if _, err := io.Copy(os.Stdout, conn); err != nil && !errors.Is(err, net.ErrClosed) {
 		log.Printf("ERR Conn: %v", err)
 	}
-	conn.Close()
-	return
 }
