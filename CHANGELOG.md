@@ -9,6 +9,11 @@
 ### :wrench: Misc
 
 * Use os.Root for static file isolation
+
+## v0.14.2
+
+### :wrench: Misc
+
 * Update go dependencies:
   * upgraded github.com/c2FmZQ/storage v0.2.3 => v0.2.4
   * upgraded github.com/c2FmZQ/tpm v0.3.1 => v0.4.0
