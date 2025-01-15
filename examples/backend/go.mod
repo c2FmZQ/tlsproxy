@@ -4,7 +4,7 @@ go 1.23.2
 
 require (
 	github.com/blend/go-sdk v1.20240719.1
-	github.com/c2FmZQ/tlsproxy v0.14.1
+	github.com/c2FmZQ/tlsproxy v0.14.2
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/lestrrat-go/jwx v1.2.30
 	github.com/quic-go/quic-go v0.48.2
