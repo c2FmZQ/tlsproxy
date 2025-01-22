@@ -155,7 +155,6 @@ type Proxy struct {
 
 	echKeys       []tls.EncryptedClientHelloKey
 	echLastUpdate time.Time
-	echAllProtos  []string
 }
 
 type beKey struct {
@@ -618,12 +617,6 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				tc.VerifyConnection = p.verifyConnection
 			}
 			tc.NextProtos = slices.Clone(*be.ALPNProtos)
-			for _, n := range be.ServerNames {
-				if p.isECHPublicName(n) {
-					tc.NextProtos = slices.Clone(p.echAllProtos)
-					break
-				}
-			}
 			if !forQUIC || be.Mode == ModeTLS || be.Mode == ModeTCP || be.Mode == ModeTLSPassthrough {
 				// http/3 requires QUIC. Offering it on a TCP connection could
 				// lead to confusion.
@@ -732,32 +725,6 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			be.httpServer = startInternalHTTPServer(be.reverseProxy(), be.httpConnChan)
 			if *cfg.EnableQUIC && be.ALPNProtos != nil && slices.Contains(*be.ALPNProtos, "h3") {
 				be.http3Server = http3Server(be.reverseProxy())
-			}
-		}
-	}
-
-	// echAllProtos is used for ALPN negotiation for the backend that serves
-	// the ECH PublicName. It contains all the ALPN protocols from all
-	// backends. This is done to ensure that a RetryConfigList will be sent
-	// to the client during the TLS handshake. If the negotiated protocol
-	// is not actually used by the backend, the connection will be closed
-	// immediately after the handshake.
-	p.echAllProtos = nil
-	if cfg.ECH != nil {
-		seenProtos := make(map[string]bool)
-		if be, ok := backends[beKey{serverName: cfg.ECH.PublicName}]; ok {
-			for _, proto := range *be.ALPNProtos {
-				p.echAllProtos = append(p.echAllProtos, proto)
-				seenProtos[proto] = true
-			}
-		}
-		for _, be := range cfg.Backends {
-			for _, proto := range *be.ALPNProtos {
-				if seenProtos[proto] {
-					continue
-				}
-				p.echAllProtos = append(p.echAllProtos, proto)
-				seenProtos[proto] = true
 			}
 		}
 	}
@@ -941,9 +908,6 @@ func (p *Proxy) reAuthorize() {
 
 func (p *Proxy) verifyConnection(cs tls.ConnectionState) error {
 	be, err := p.backend(cs.ServerName, cs.NegotiatedProtocol)
-	if err != nil && p.isECHPublicName(cs.ServerName) {
-		be, err = p.backend(cs.ServerName)
-	}
 	if err != nil {
 		return tlsUnrecognizedName
 	}

@@ -50,12 +50,6 @@ type echKey struct {
 	PrivateKey   []byte    `json:"privateKey"`
 }
 
-func (p *Proxy) isECHPublicName(n string) bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.cfg.ECH != nil && p.cfg.ECH.PublicName == n
-}
-
 func (p *Proxy) rotateECH(forceCheck bool) (retErr error) {
 	if p.cfg.ECH == nil || p.cfg.ECH.PublicName == "" {
 		return nil

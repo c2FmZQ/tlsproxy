@@ -91,9 +91,6 @@ func (p *Proxy) startQUICListener(ctx context.Context) error {
 		defer p.mu.RUnlock()
 		for _, proto := range hello.SupportedProtos {
 			be, ok := p.backends[beKey{serverName: hello.ServerName, proto: proto}]
-			if !ok && p.isECHPublicName(hello.ServerName) {
-				be, ok = p.backends[beKey{serverName: hello.ServerName}]
-			}
 			if ok && be.Mode != ModeTLSPassthrough {
 				return be.tlsConfig(true), nil
 			}
