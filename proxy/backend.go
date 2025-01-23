@@ -153,9 +153,12 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 				KeepAlive: 30 * time.Second,
 			}
 			c, err = dialer.DialContext(ctx, "tcp", addr)
-			if err == nil && proxyProtoVersion > 0 {
-				if err = writeProxyHeader(proxyProtoVersion, c, ctx.Value(connCtxKey).(anyConn)); err != nil {
-					c.Close()
+			if err == nil {
+				setKeepAlive(c)
+				if proxyProtoVersion > 0 {
+					if err = writeProxyHeader(proxyProtoVersion, c, ctx.Value(connCtxKey).(anyConn)); err != nil {
+						c.Close()
+					}
 				}
 			}
 		}
