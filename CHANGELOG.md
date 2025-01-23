@@ -7,6 +7,7 @@
 * Update go: 1.23.5
 * Update go dependencies:
   * upgraded github.com/google/pprof v0.0.0-20241210010833-40e02aabc2ad => v0.0.0-20250121033306-997b0b79cac0
+  * upgraded github.com/quic-go/quic-go v0.48.2 => v0.49.0
 
 ## v0.14.2
 
