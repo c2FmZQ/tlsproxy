@@ -4,7 +4,7 @@
 
 ### :star2: New feature
 
-* Add support for Encrypted Client Hello. When `ech:` is set in `config.yaml`, tlsproxy handles ECH as a Client-Facing Server with a Split Mode Topology as specified in https://datatracker.ietf.org/doc/html/draft-ietf-tls-esni/. See [ECH](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/ECH.md)
+* Add support for Encrypted Client Hello. This feature improves privacy by allowing the clients to encrypt the Server Name to which they are connecting. Without ECH, this information is actually transmitted in plaintext. When `ech:` is set in `config.yaml`, tlsproxy handles ECH as a Client-Facing Server with a Split Mode Topology as specified in https://datatracker.ietf.org/doc/html/draft-ietf-tls-esni/. See [ECH](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/ECH.md)
 
 ### :wrench: Misc
 

@@ -4,6 +4,8 @@ ECH is a TLS extension that improves privacy by allowing the clients to encrypt 
 
 https://datatracker.ietf.org/doc/html/draft-ietf-tls-esni/
 
+Note that enabling ECH is not sufficient to protect privacy. The ECH config list also needs to be published, e.g. via DNS, and the client needs to use secure DNS name resolution, e.g. using DNS-over-HTTPS (DoH) or DNS-over-TLS (DoT).
+
 ## ECH Support in TLSPROXY
 
 TLSPROXY has built-in support to generate ECH keys and configs. It can also publish the config list in different ways:
