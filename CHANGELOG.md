@@ -1,11 +1,15 @@
 # TLSPROXY Release Notes
 
-## next
+## Next
+
+### :star2: New feature
+
+* Add support for Encrypted Client Hello. This feature improves privacy by allowing the clients to encrypt the Server Name to which they are connecting. Without ECH, this information is actually transmitted in plaintext. When `ech:` is set in `config.yaml`, tlsproxy handles ECH as a Client-Facing Server with a Split Mode Topology as specified in https://datatracker.ietf.org/doc/html/draft-ietf-tls-esni/. See [ECH](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/ECH.md)
 
 ### :wrench: Misc
 
 * Use os.Root for static file isolation
-* Update go: 1.23.5
+* Update go: 1.24rc2
 * Update go dependencies:
   * upgraded github.com/google/pprof v0.0.0-20241210010833-40e02aabc2ad => v0.0.0-20250121033306-997b0b79cac0
   * upgraded github.com/quic-go/quic-go v0.48.2 => v0.49.0

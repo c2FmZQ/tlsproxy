@@ -68,25 +68,7 @@ func (p *Proxy) startQUIC(ctx context.Context) error {
 			return err
 		}
 	}
-
-	tc := p.baseTLSConfig()
-	tc.MinVersion = tls.VersionTLS13
-	tc.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
-		p.mu.RLock()
-		defer p.mu.RUnlock()
-		for _, proto := range hello.SupportedProtos {
-			if be, ok := p.backends[beKey{serverName: hello.ServerName, proto: proto}]; ok && be.Mode != ModeTLSPassthrough {
-				return be.tlsConfigQUIC, nil
-			}
-		}
-		p.logErrorF("ERR QUIC connection %s %s", hello.ServerName, hello.SupportedProtos)
-		return nil, tlsUnrecognizedName
-	}
 	qt, err := netw.NewQUIC(p.cfg.TLSAddr, statelessResetKey)
-	if err != nil {
-		return err
-	}
-	quicListener, err := qt.Listen(tc)
 	if err != nil {
 		return err
 	}
@@ -94,6 +76,33 @@ func (p *Proxy) startQUIC(ctx context.Context) error {
 	for _, be := range p.cfg.Backends {
 		be.quicTransport = qt
 	}
+	return p.startQUICListener(ctx)
+}
+
+func (p *Proxy) startQUICListener(ctx context.Context) error {
+	if p.quicListener != nil {
+		p.quicListener.Close()
+		p.quicListener = nil
+	}
+	tc := p.baseTLSConfig()
+	tc.MinVersion = tls.VersionTLS13
+	tc.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+		p.mu.RLock()
+		defer p.mu.RUnlock()
+		for _, proto := range hello.SupportedProtos {
+			be, ok := p.backends[beKey{serverName: hello.ServerName, proto: proto}]
+			if ok && be.Mode != ModeTLSPassthrough {
+				return be.tlsConfig(true), nil
+			}
+		}
+		p.logErrorF("ERR QUIC connection %s %s", hello.ServerName, hello.SupportedProtos)
+		return nil, tlsUnrecognizedName
+	}
+	quicListener, err := p.quicTransport.(*netw.QUICTransport).Listen(tc)
+	if err != nil {
+		return err
+	}
+	p.quicListener = quicListener
 	go p.quicAcceptLoop(ctx, quicListener)
 	return nil
 }
@@ -143,6 +152,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 	cs := qc.TLSConnectionState()
 	qc.SetAnnotation(serverNameKey, cs.ServerName)
 	qc.SetAnnotation(protoKey, cs.NegotiatedProtocol)
+	qc.SetAnnotation(echAcceptedKey, cs.ECHAccepted)
 
 	var clientCert *x509.Certificate
 	if len(cs.PeerCertificates) > 0 {
@@ -155,10 +165,12 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		sum = "-"
 	}
 
-	be, err := p.backend(cs.ServerName, cs.NegotiatedProtocol)
-	if err != nil {
-		p.recordEvent(err.Error())
-		be.logErrorF("BAD [%s] %s:%s ➔ %q: %v", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), cs.ServerName, err)
+	p.mu.RLock()
+	be, ok := p.backends[beKey{serverName: cs.ServerName, proto: cs.NegotiatedProtocol}]
+	p.mu.RUnlock()
+	if !ok {
+		p.recordEvent("unexpected SNI")
+		p.logErrorF("BAD [%s] %s:%s ➔ %q: unexpected SNI", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), cs.ServerName)
 		qc.CloseWithError(quicUnrecognizedName, "unrecognized name")
 		return
 	}
@@ -183,7 +195,11 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		return
 	}
 
-	be.logConnF("QUC [%s] %s:%s ➔ %s|%s:%s", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol)
+	var showECH string
+	if cs.ECHAccepted {
+		showECH = "+ECH"
+	}
+	be.logConnF("QUC [%s] %s:%s ➔ %s|%s:%s%s", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol, showECH)
 	if err := be.connLimit.Wait(ctx); err != nil {
 		if !errors.Is(err, context.Canceled) {
 			p.recordEvent(err.Error())
@@ -534,7 +550,7 @@ func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUI
 					return tlsCertificateRevoked
 				}
 			} else if len(cert.OCSPServer) > 0 {
-				if err := be.ocspCache.VerifyChains(cs.VerifiedChains, cs.OCSPResponse); err != nil {
+				if err := be.ocspCache.VerifyChains(ctx, cs.VerifiedChains, cs.OCSPResponse); err != nil {
 					be.recordEvent(fmt.Sprintf("backend X509 %s [%s] (OCSP:%v)", idnaToUnicode(cs.ServerName), cert.Subject, err))
 					return tlsCertificateRevoked
 				}

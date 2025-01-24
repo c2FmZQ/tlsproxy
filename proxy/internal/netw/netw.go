@@ -27,7 +27,6 @@ package netw
 
 import (
 	"context"
-	"io"
 	"net"
 	"sync"
 	"time"
@@ -92,8 +91,6 @@ type Conn struct {
 	upBytesSent     *counter.Counter
 	upBytesReceived *counter.Counter
 
-	peekBuf []byte
-
 	mu          sync.Mutex
 	onClose     func()
 	annotations map[string]any
@@ -139,7 +136,7 @@ func (c *Conn) Annotation(key string, defaultValue any) any {
 }
 
 // SetLimiter sets the rate limiters for this connection.
-// It must be called before the first Read() or Write(). Peek() is OK.
+// It must be called before the first Read() or Write().
 func (c *Conn) SetLimiters(ingress, egress *rate.Limiter) {
 	c.ingressLimiter = ingress
 	c.egressLimiter = egress
@@ -180,38 +177,13 @@ func (c *Conn) OnClose(f func()) {
 	c.onClose = f
 }
 
-func (c *Conn) Peek(b []byte) (int, error) {
-	want := len(b)
-	have := len(c.peekBuf)
-	if want > have {
-		c.Conn.SetReadDeadline(time.Now().Add(30 * time.Second))
-		bb := make([]byte, want-have)
-		n, _ := io.ReadFull(c.Conn, bb)
-		c.peekBuf = append(c.peekBuf, bb[:n]...)
-		c.Conn.SetReadDeadline(time.Time{})
-	}
-	n := copy(b, c.peekBuf)
-	var err error
-	if n < want {
-		err = io.ErrUnexpectedEOF
-	}
-	return n, err
-}
-
 func (c *Conn) Read(b []byte) (int, error) {
 	if l := c.ingressLimiter; l != nil {
 		if err := l.WaitN(c.ctx, len(b)); err != nil {
 			return 0, err
 		}
 	}
-	var n int
-	var err error
-	if len(c.peekBuf) > 0 {
-		n = copy(b, c.peekBuf)
-		c.peekBuf = c.peekBuf[n:]
-	} else {
-		n, err = c.Conn.Read(b)
-	}
+	n, err := c.Conn.Read(b)
 	c.bytesReceived.Incr(int64(n))
 	c.upBytesReceived.Incr(int64(n))
 	return n, err

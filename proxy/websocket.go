@@ -59,6 +59,7 @@ func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 			p.logErrorF("ERR webSocketHandler: %v", err)
 			return
 		}
+		setKeepAlive(out)
 		wc := netw.NewConn(out)
 		wc.SetAnnotation(startTimeKey, time.Now())
 		if conn, ok := req.Context().Value(connCtxKey).(anyConn); ok {

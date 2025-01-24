@@ -1,9 +1,11 @@
 module github.com/c2FmZQ/tlsproxy
 
-go 1.23.2
+go 1.24
 
 require (
 	github.com/beevik/etree v1.4.1
+	github.com/c2FmZQ/ech v0.1.8
+	github.com/c2FmZQ/ech/quic v0.1.8
 	github.com/c2FmZQ/storage v0.2.4
 	github.com/c2FmZQ/tpm v0.4.0
 	github.com/fxamacker/cbor/v2 v2.7.0
@@ -11,6 +13,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/google/go-tpm-tools v0.4.4
 	github.com/gorilla/websocket v1.5.3
+	github.com/hashicorp/go-retryablehttp v0.7.7
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/pires/go-proxyproto v0.8.0
 	github.com/quic-go/quic-go v0.49.0
@@ -26,7 +29,8 @@ require (
 require (
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/google/go-tpm v0.9.3 // indirect
-	github.com/google/pprof v0.0.0-20250121033306-997b0b79cac0 // indirect
+	github.com/google/pprof v0.0.0-20241210010833-40e02aabc2ad // indirect
+	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/onsi/ginkgo/v2 v2.22.2 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect

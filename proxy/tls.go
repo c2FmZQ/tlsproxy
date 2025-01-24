@@ -21,39 +21,35 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-//go:build noquic
-
 package proxy
 
 import (
-	"context"
-	"crypto/tls"
-	"errors"
 	"io"
-	"net"
-	"net/http"
 )
 
-const quicIsEnabled = false
-
-var errQUICNotEnabled = errors.New("QUIC is not enabled in this binary")
-
-func (p *Proxy) startQUIC(context.Context) error {
-	return errQUICNotEnabled
+func sendCloseNotify(w io.Writer) error {
+	return sendAlert(w, 0x2 /* fatal */, 0x00 /* Close notify */)
 }
 
-func (p *Proxy) startQUICListener(context.Context) error {
-	return errQUICNotEnabled
+func sendHandshakeFailure(w io.Writer) error {
+	return sendAlert(w, 0x2 /* fatal */, 0x28 /* Handshake failure */)
 }
 
-func (be *Backend) dialQUICStream(context.Context, string, *tls.Config) (net.Conn, error) {
-	return nil, errQUICNotEnabled
+func sendInternalError(w io.Writer) error {
+	return sendAlert(w, 0x2 /* fatal */, 0x50 /* Internal error */)
 }
 
-func (be *Backend) http3Transport() http.RoundTripper {
-	return nil
+func sendUnrecognizedName(w io.Writer) error {
+	return sendAlert(w, 0x2 /* fatal */, 0x70 /* Unrecognized name */)
 }
 
-func http3Server(http.Handler) io.Closer {
-	return nil
+func sendAlert(w io.Writer, level, description uint8) error {
+	// https://en.wikipedia.org/wiki/Transport_Layer_Security
+	_, err := w.Write([]byte{
+		0x15,       // alert
+		0x03, 0x03, // version TLS 1.2
+		0x00, 0x02, // length
+		level, description,
+	})
+	return err
 }

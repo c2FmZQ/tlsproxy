@@ -45,12 +45,14 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/c2FmZQ/ech"
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/storage/autocertcache"
 	"github.com/c2FmZQ/storage/crypto"
@@ -82,6 +84,7 @@ const (
 	dialDoneKey      = "d"
 	serverNameKey    = "sn"
 	protoKey         = "p"
+	echAcceptedKey   = "ea"
 	clientCertKey    = "c"
 	internalConnKey  = "ic"
 	reportEndKey     = "re"
@@ -127,6 +130,7 @@ type Proxy struct {
 	cancel        func()
 	listener      net.Listener
 	quicTransport io.Closer
+	quicListener  io.Closer
 	tpm           *tpm.TPM
 	mk            crypto.MasterKey
 	store         *storage.Storage
@@ -148,6 +152,9 @@ type Proxy struct {
 
 	eventsmu sync.Mutex
 	events   map[string]int64
+
+	echKeys       []tls.EncryptedClientHelloKey
+	echLastUpdate time.Time
 }
 
 type beKey struct {
@@ -458,9 +465,6 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			if backends[key] == nil {
 				backends[key] = be
 			}
-			if be.ALPNProtos == nil {
-				continue
-			}
 			for _, proto := range *be.ALPNProtos {
 				backends[beKey{serverName: sn, proto: proto}] = be
 			}
@@ -582,12 +586,11 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			}
 		}
 		be.pkiMap = make(map[string]*pki.PKIManager)
-		tc := p.baseTLSConfig()
+
 		if be.ClientAuth != nil {
-			tc.ClientAuth = tls.RequireAndVerifyClientCert
 			for _, n := range be.ClientAuth.RootCAs {
-				if tc.ClientCAs == nil {
-					tc.ClientCAs = x509.NewCertPool()
+				if be.clientCAs == nil {
+					be.clientCAs = x509.NewCertPool()
 				}
 				if m, ok := pkis[n]; ok {
 					ca, err := m.CACert()
@@ -595,66 +598,34 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						return err
 					}
 					be.pkiMap[hex.EncodeToString(ca.SubjectKeyId)] = m
-					tc.ClientCAs.AddCert(ca)
+					be.clientCAs.AddCert(ca)
 					continue
 				}
-				if err := loadCerts(tc.ClientCAs, n); err != nil {
+				if err := loadCerts(be.clientCAs, n); err != nil {
 					return err
 				}
 			}
-			tc.VerifyConnection = func(cs tls.ConnectionState) error {
-				be, err := p.backend(cs.ServerName, cs.NegotiatedProtocol)
-				if err != nil {
-					return tlsUnrecognizedName
-				}
-				if be.ClientAuth == nil {
-					return nil
-				}
-				if len(cs.PeerCertificates) == 0 || len(cs.VerifiedChains) == 0 {
-					p.recordEvent(fmt.Sprintf("deny no cert to %s", idnaToUnicode(cs.ServerName)))
-					if cs.Version == tls.VersionTLS12 {
-						return tlsBadCertificate
-					}
-					return tlsCertificateRequired
-				}
-				cert := cs.PeerCertificates[0]
-				sum := certSummary(cert)
-				if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok {
-					if m.IsRevoked(cert.SerialNumber) {
-						p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (revoked)", sum, idnaToUnicode(cs.ServerName)))
-						return tlsCertificateRevoked
-					}
-				} else if len(cert.OCSPServer) > 0 {
-					if err := p.ocspCache.VerifyChains(cs.VerifiedChains, cs.OCSPResponse); err != nil {
-						p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (OCSP:%v)", sum, idnaToUnicode(cs.ServerName), err))
-						return tlsCertificateRevoked
-					}
-				}
-				if err := be.authorize(cert); err != nil {
-					p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s", sum, idnaToUnicode(cs.ServerName)))
-					return tlsAccessDenied
-				}
-				if sum != "" {
-					p.recordEvent(fmt.Sprintf("allow X509 [%s] to %s", sum, idnaToUnicode(cs.ServerName)))
-				}
-				return nil
+		}
+		be.tlsConfig = func(forQUIC bool) *tls.Config {
+			tc := p.baseTLSConfig()
+			if forQUIC {
+				tc.MinVersion = tls.VersionTLS13
 			}
-		}
-		if be.ALPNProtos != nil {
+			if be.ClientAuth != nil {
+				tc.ClientAuth = tls.RequireAndVerifyClientCert
+				tc.ClientCAs = be.clientCAs
+				tc.VerifyConnection = p.verifyConnection
+			}
 			tc.NextProtos = slices.Clone(*be.ALPNProtos)
-			tc.NextProtos = slices.DeleteFunc(tc.NextProtos, func(p string) bool {
-				return quicOnlyProtocols[p] && (be.Mode == ModeTLS || be.Mode == ModeTCP)
-			})
+			if !forQUIC || be.Mode == ModeTLS || be.Mode == ModeTCP || be.Mode == ModeTLSPassthrough {
+				// http/3 requires QUIC. Offering it on a TCP connection could
+				// lead to confusion.
+				tc.NextProtos = slices.DeleteFunc(tc.NextProtos, func(p string) bool {
+					return quicOnlyProtocols[p]
+				})
+			}
+			return tc
 		}
-		be.tlsConfigQUIC = tc.Clone()
-		be.tlsConfigQUIC.MinVersion = tls.VersionTLS13
-		// http/3 requires QUIC. Offering it on a TCP connection could
-		// lead to confusion.
-		tc.NextProtos = slices.Clone(tc.NextProtos)
-		tc.NextProtos = slices.DeleteFunc(tc.NextProtos, func(p string) bool {
-			return quicOnlyProtocols[p]
-		})
-		be.tlsConfig = tc
 
 		be.getClientCert = func(ctx context.Context) func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			serverName := connServerName(ctx.Value(connCtxKey).(anyConn))
@@ -781,6 +752,13 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			}
 		}
 	}
+	if cfg.ECH != nil && cfg.ECH.Endpoint != "" {
+		addLocalHandler(localHandler{
+			desc:      "ECH ConfigList",
+			handler:   logHandler(http.HandlerFunc(p.serveECHConfigList)),
+			ssoBypass: true,
+		}, cfg.ECH.Endpoint)
+	}
 	for _, p := range identityProviders {
 		p := p
 		addLocalHandler(localHandler{
@@ -883,6 +861,9 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	p.backends = backends
 	p.pkis = pkis
 	p.cfg = cfg
+	if err := p.rotateECH(true); err != nil && err != storage.ErrRolledBack {
+		return err
+	}
 	go p.reAuthorize()
 	return nil
 }
@@ -925,9 +906,49 @@ func (p *Proxy) reAuthorize() {
 	}
 }
 
+func (p *Proxy) verifyConnection(cs tls.ConnectionState) error {
+	be, err := p.backend(cs.ServerName, cs.NegotiatedProtocol)
+	if err != nil {
+		return tlsUnrecognizedName
+	}
+	if be.ClientAuth == nil {
+		return nil
+	}
+	if len(cs.PeerCertificates) == 0 || len(cs.VerifiedChains) == 0 {
+		p.recordEvent(fmt.Sprintf("deny no cert to %s", idnaToUnicode(cs.ServerName)))
+		if cs.Version == tls.VersionTLS12 {
+			return tlsBadCertificate
+		}
+		return tlsCertificateRequired
+	}
+	cert := cs.PeerCertificates[0]
+	sum := certSummary(cert)
+	if m, ok := be.pkiMap[hex.EncodeToString(cert.AuthorityKeyId)]; ok {
+		if m.IsRevoked(cert.SerialNumber) {
+			p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (revoked)", sum, idnaToUnicode(cs.ServerName)))
+			return tlsCertificateRevoked
+		}
+	} else if len(cert.OCSPServer) > 0 {
+		if err := p.ocspCache.VerifyChains(p.ctx, cs.VerifiedChains, cs.OCSPResponse); err != nil {
+			p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (OCSP:%v)", sum, idnaToUnicode(cs.ServerName), err))
+			return tlsCertificateRevoked
+		}
+	}
+	if err := be.authorize(cert); err != nil {
+		p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s", sum, idnaToUnicode(cs.ServerName)))
+		return tlsAccessDenied
+	}
+	if sum != "" {
+		p.recordEvent(fmt.Sprintf("allow X509 [%s] to %s", sum, idnaToUnicode(cs.ServerName)))
+	}
+	return nil
+}
+
 // Start starts a TLS proxy with the given configuration. The proxy runs
 // in background until the context is canceled.
 func (p *Proxy) Start(ctx context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.startTime = time.Now()
 	p.connClosed = sync.NewCond(&p.mu)
 	var httpServer *http.Server
@@ -942,18 +963,18 @@ func (p *Proxy) Start(ctx context.Context) error {
 		httpServer.SetKeepAlivesEnabled(false)
 		go serveHTTP(httpServer, httpListener)
 	}
+	p.ctx, p.cancel = context.WithCancel(ctx)
+
 	if *p.cfg.EnableQUIC {
-		if err := p.startQUIC(ctx); err != nil {
+		if err := p.startQUIC(p.ctx); err != nil {
 			return err
 		}
 	}
-
 	listener, err := netw.Listen("tcp", p.cfg.TLSAddr)
 	if err != nil {
 		return err
 	}
 	p.listener = listener
-	p.ctx, p.cancel = context.WithCancel(ctx)
 
 	go p.revokeUnusedCertificates(p.ctx)
 	go p.ctxWait(httpServer)
@@ -964,11 +985,29 @@ func (p *Proxy) Start(ctx context.Context) error {
 }
 
 func (p *Proxy) ctxWait(s *http.Server) {
-	<-p.ctx.Done()
-	if s != nil {
-		s.Close()
+	for {
+		select {
+		case <-p.ctx.Done():
+			if s != nil {
+				s.Close()
+			}
+			p.Stop()
+			return
+		case <-time.After(10 * time.Minute):
+			p.mu.RLock()
+			needed := p.cfg.ECH != nil && p.cfg.ECH.Interval > 0 && time.Since(p.echLastUpdate) > p.cfg.ECH.Interval
+			p.mu.RUnlock()
+			if !needed {
+				continue
+			}
+			p.mu.Lock()
+			err := p.rotateECH(false)
+			p.mu.Unlock()
+			if err != nil && err != storage.ErrRolledBack {
+				p.logErrorF("ERR ECH: %v", err)
+			}
+		}
 	}
-	p.Stop()
 }
 
 func (p *Proxy) acceptLoop() {
@@ -1091,7 +1130,7 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 		if err != nil {
 			return nil, err
 		}
-		if ocspResp, err := p.ocspCache.Response(cert.Leaf, issuer, time.Hour); err == nil && ocspResp.Status == ocsp.Good {
+		if ocspResp, err := p.ocspCache.Response(p.ctx, cert.Leaf, issuer, time.Hour); err == nil && ocspResp.Status == ocsp.Good {
 			cert.OCSPStaple = ocspResp.Raw
 		} else {
 			p.recordEvent("ocsp staple error for " + idnaToUnicode(hello.ServerName))
@@ -1099,7 +1138,7 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 		return cert, nil
 	}
 	tc.NextProtos = *defaultALPNProtos
-	tc.MinVersion = tls.VersionTLS12
+	tc.EncryptedClientHelloKeys = p.echKeys
 	return tc
 }
 
@@ -1147,7 +1186,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	defer func() {
 		if r := recover(); r != nil {
 			p.recordEvent("panic")
-			p.logErrorF("ERR [%s] %s: PANIC: %v", certSummary(connClientCert(conn)), conn.RemoteAddr(), r)
+			p.logErrorF("ERR [%s] %s: PANIC: %v\n%s", certSummary(connClientCert(conn)), conn.RemoteAddr(), r, debug.Stack())
 			conn.Close()
 		}
 	}()
@@ -1184,20 +1223,29 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	}
 	setKeepAlive(conn)
 
-	hello, err := peekClientHello(conn)
+	ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
+	defer cancel()
+	echConn, err := ech.NewConn(ctx, conn.Conn, ech.WithKeys(p.echKeys))
 	if err != nil {
 		p.recordEvent("invalid ClientHello")
-		p.logErrorF("BAD [-] %s ➔ %q: invalid ClientHello: %v", conn.RemoteAddr(), hello.ServerName, err)
+		p.logErrorF("BAD [-] %s ➔ %q: invalid ClientHello: %v", conn.RemoteAddr(), echConn.ServerName(), err)
 		return
 	}
-	serverName := hello.ServerName
+	conn.Conn = echConn
+	if echConn.ECHAccepted() {
+		p.recordEvent("encrypted client hello accepted")
+		conn.SetAnnotation(echAcceptedKey, true)
+	} else if echConn.ECHPresented() {
+		p.recordEvent("encrypted client hello rejected")
+	}
+	serverName := echConn.ServerName()
 	if serverName == "" {
 		p.recordEvent("no SNI")
 		serverName = p.defaultServerName()
 	}
+	alpnProtos := echConn.ALPNProtos()
 	conn.SetAnnotation(serverNameKey, serverName)
-
-	be, err := p.backend(serverName, hello.ALPNProtos...)
+	be, err := p.backend(serverName, alpnProtos...)
 	if err != nil {
 		p.recordEvent(err.Error())
 		p.logErrorF("BAD [-] %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
@@ -1217,7 +1265,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		}
 		p.handleTLSPassthroughConnection(conn)
 
-	case len(hello.ALPNProtos) == 1 && hello.ALPNProtos[0] == acme.ALPNProto && hello.ServerName != "":
+	case len(alpnProtos) == 1 && alpnProtos[0] == acme.ALPNProto && echConn.ServerName() != "":
 		tc := p.baseTLSConfig()
 		tc.NextProtos = []string{acme.ALPNProto}
 		p.handleACMEConnection(tls.Server(conn, tc))
@@ -1226,14 +1274,14 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		if err := p.checkIP(conn); err != nil {
 			return
 		}
-		p.handleHTTPConnection(tls.Server(conn, be.tlsConfig))
+		p.handleHTTPConnection(tls.Server(conn, be.tlsConfig(false)))
 		closeConnNeeded = false
 
 	case be.Mode == ModeTCP || be.Mode == ModeTLS || be.Mode == ModeQUIC:
 		if err := p.checkIP(conn); err != nil {
 			return
 		}
-		p.handleTLSConnection(tls.Server(conn, be.tlsConfig))
+		p.handleTLSConnection(tls.Server(conn, be.tlsConfig(false)))
 
 	default:
 		be.logErrorF("ERR [-] %s: unhandled connection %q", conn.RemoteAddr(), be.Mode)
@@ -1472,6 +1520,7 @@ func formatConnDesc(c anyConn, ids ...string) string {
 	serverName := connServerName(c)
 	mode := connMode(c)
 	proto := connProto(c)
+	ech := connECHAccepted(c)
 	clientCert := connClientCert(c)
 	intConn := connIntConn(c)
 
@@ -1498,6 +1547,9 @@ func formatConnDesc(c anyConn, ids ...string) string {
 		buf.WriteString("|" + mode)
 		if proto != "" {
 			buf.WriteString(":" + proto)
+		}
+		if ech {
+			buf.WriteString("+ECH")
 		}
 		if httpUpgrade := connHTTPUpgrade(c); httpUpgrade != "" {
 			buf.WriteString("+" + httpUpgrade)

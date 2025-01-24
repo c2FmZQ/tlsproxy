@@ -46,6 +46,7 @@ import (
 	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
 
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/cloudflare"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
@@ -110,6 +111,11 @@ type Config struct {
 	// EnableQUIC specifies whether the QUIC protocol should be enabled.
 	// The default is true if the binary is compiled with QUIC support.
 	EnableQUIC *bool `yaml:"enableQUIC,omitempty"`
+	// ECH specifies the Encrypted Client Hello parameters.
+	// When set, tlsproxy acts as Client-Facing Server for all backends.
+	// See https://datatracker.ietf.org/doc/html/draft-ietf-tls-esni/
+	// By default, ECH is disabled.
+	ECH *ECH `yaml:"ech,omitempty"`
 	// AcceptProxyHeaderFrom is a list of CIDRs. The PROXY protocol is
 	// enabled for incoming TCP connections originating from IP addresses
 	// within one of these CIDRs. By default, the proxy protocol is not
@@ -179,6 +185,24 @@ type Config struct {
 
 	acceptProxyHeaderFrom []*net.IPNet
 }
+
+// ECH contains the Encrypted Client Hello parameters.
+type ECH struct {
+	// The PublicName of the ECH Config.
+	PublicName string `yaml:"publicName"`
+	// The time interval between key/config rotations.
+	Interval time.Duration `yaml:"interval,omitempty"`
+	// The local endpoint where to publish the current ECH ConfigList.
+	Endpoint string `yaml:"endpoint,omitempty"`
+	// A list of WebHooks to call when the ECH config is updated. There is
+	// no payload other than the URLs themselves. The receipient should
+	// fetch the ECH endpoint (above) to get the current ConfigList.
+	WebHooks []string `yaml:"webhooks,omitempty"`
+	// The cloudflare DNS records to update when the ECH ConfigList changes.
+	Cloudflare []*Cloudflare `yaml:"cloudflare,omitempty"`
+}
+
+type Cloudflare = cloudflare.Target
 
 // BWLimit is a named bandwidth limit configuration.
 type BWLimit struct {
@@ -420,8 +444,8 @@ type Backend struct {
 	quicTransport    io.Closer
 	defaultLogFilter LogFilter
 
-	tlsConfig            *tls.Config
-	tlsConfigQUIC        *tls.Config
+	tlsConfig            func(isQUIC bool) *tls.Config
+	clientCAs            *x509.CertPool
 	forwardRootCAs       *x509.CertPool
 	getClientCert        func(context.Context) func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
 	pkiMap               map[string]*pki.PKIManager

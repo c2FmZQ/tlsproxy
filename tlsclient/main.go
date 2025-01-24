@@ -28,8 +28,10 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -37,7 +39,8 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/quic-go/quic-go"
+	"github.com/c2FmZQ/ech"
+	"github.com/c2FmZQ/ech/quic"
 	"golang.org/x/crypto/ocsp"
 )
 
@@ -49,8 +52,10 @@ func main() {
 	key := flag.String("key", "", "A file that contains the TLS key to use.")
 	cert := flag.String("cert", "", "A file that contains the TLS certificate to use.")
 	alpn := flag.String("alpn", "", "The ALPN proto to request.")
+	echFlag := flag.String("ech", "", "Use this ECH ConfigList.")
 	useQUIC := flag.Bool("quic", false, "Use QUIC.")
 	verifyOCSP := flag.Bool("ocsp", false, "Require stapled OCSP response.")
+	serverName := flag.String("servername", "", "The expected server name.")
 	flag.Parse()
 
 	if *versionFlag {
@@ -58,7 +63,7 @@ func main() {
 		return
 	}
 	if flag.NArg() != 1 || (*key == "") != (*cert == "") {
-		os.Stderr.WriteString("Usage: tlsclient [-key=<keyfile> -cert=<certfile>] [-alpn=<proto>] host:port\n")
+		os.Stderr.WriteString("Usage: tlsclient [-key=<keyfile> -cert=<certfile>] [-alpn=<proto>] [-ech=<configlist>] [-quic] host:port\n")
 		os.Exit(1)
 	}
 	addr := flag.Arg(0)
@@ -81,28 +86,15 @@ func main() {
 		host = addr
 		port = "443"
 	}
-	addrs, err := net.LookupHost(host)
-	if err != nil {
-		res := &net.Resolver{
-			PreferGo: true,
-			Dial: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("udp", "8.8.8.8:53")
-			},
-		}
-		addrs, err = res.LookupHost(context.Background(), host)
-	}
-	if err != nil {
-		log.Fatalf("ERR: %v", err)
-	}
-	if len(addrs) == 0 {
-		log.Fatalf("ERR: cannot resolve %s", host)
-	}
-	target := net.JoinHostPort(addrs[0], port)
+	target := net.JoinHostPort(host, port)
 
+	if *serverName == "" {
+		*serverName = host
+	}
 	tc := &tls.Config{
 		Certificates: certs,
 		NextProtos:   protos,
-		ServerName:   host,
+		ServerName:   *serverName,
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			if !*verifyOCSP {
 				return nil
@@ -128,12 +120,23 @@ func main() {
 			return nil
 		},
 	}
+	if *echFlag != "" {
+		configList, err := base64.StdEncoding.DecodeString(*echFlag)
+		if err != nil {
+			log.Fatalf("ERR: --ech decoding error: %v", err)
+		}
+		tc.EncryptedClientHelloConfigList = configList
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	if *useQUIC {
-		conn, err := quic.DialAddr(context.Background(), target, tc, &quic.Config{})
+		conn, err := quic.Dial(ctx, "udp", target, tc, nil)
 		if err != nil {
-			log.Fatalf("ERR: %v", err)
+			log.Fatalf("ERR Dial: %v", err)
 		}
+		fmt.Fprintf(os.Stderr, "Connected to %s\n", target)
 		stream, err := conn.OpenStream()
 		if err != nil {
 			log.Fatalf("ERR: %v", err)
@@ -151,19 +154,19 @@ func main() {
 		return
 	}
 
-	conn, err := tls.Dial("tcp", target, tc)
+	conn, err := ech.Dial(ctx, "tcp", target, tc)
 	if err != nil {
-		log.Fatalf("ERR: %v", err)
+		log.Fatalf("ERR Dial: %v", err)
 	}
+	defer conn.Close()
+	fmt.Fprintf(os.Stderr, "Connected to %s\n", target)
 	go func() {
 		if _, err := io.Copy(conn, os.Stdin); err != nil && !errors.Is(err, net.ErrClosed) {
-			log.Printf("ERR %v", err)
+			log.Printf("ERR Stdin: %v", err)
 		}
 		conn.CloseWrite()
 	}()
 	if _, err := io.Copy(os.Stdout, conn); err != nil && !errors.Is(err, net.ErrClosed) {
-		log.Printf("ERR %v", err)
+		log.Printf("ERR Conn: %v", err)
 	}
-	conn.Close()
-	return
 }

@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/c2FmZQ/storage"
+	"github.com/hashicorp/go-retryablehttp"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"golang.org/x/crypto/ocsp"
 )
@@ -64,13 +65,12 @@ func New(store *storage.Storage, logger logger) *OCSPCache {
 		logger.Fatalf("newOCSPCache: %v", err)
 	}
 	cache := &OCSPCache{
-		store: store,
-		cache: c,
-		client: &http.Client{
-			Timeout: 5 * time.Second,
-		},
+		store:  store,
+		cache:  c,
+		client: retryablehttp.NewClient(),
 		logger: logger,
 	}
+	cache.client.Logger = nil
 	cache.load()
 	return cache
 }
@@ -78,7 +78,7 @@ func New(store *storage.Storage, logger logger) *OCSPCache {
 type OCSPCache struct {
 	store  *storage.Storage
 	cache  *lru.TwoQueueCache[string, *ocsp.Response]
-	client *http.Client
+	client *retryablehttp.Client
 	logger logger
 }
 
@@ -131,7 +131,7 @@ func (c *OCSPCache) flush() error {
 	return c.store.SaveDataFile(ocspFile, &items)
 }
 
-func (c *OCSPCache) VerifyChains(chains [][]*x509.Certificate, stapled []byte) error {
+func (c *OCSPCache) VerifyChains(ctx context.Context, chains [][]*x509.Certificate, stapled []byte) error {
 	if stapled != nil && len(chains) > 0 && len(chains[0]) > 1 {
 		cert, issuer := chains[0][0], chains[0][1]
 		if resp, err := ocsp.ParseResponseForCert(stapled, cert, issuer); err == nil && time.Now().Before(resp.NextUpdate) && resp.Status == ocsp.Good {
@@ -154,7 +154,7 @@ nextChain:
 			if i+1 < len(chain) {
 				issuer = chain[i+1]
 			}
-			resp, err := c.Response(cert, issuer, 0)
+			resp, err := c.Response(ctx, cert, issuer, 0)
 			if err == errOCSPInternal {
 				continue
 			}
@@ -191,19 +191,19 @@ func certHash(b []byte) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func (c *OCSPCache) Response(cert, issuer *x509.Certificate, margin time.Duration) (*ocsp.Response, error) {
+func (c *OCSPCache) Response(ctx context.Context, cert, issuer *x509.Certificate, margin time.Duration) (*ocsp.Response, error) {
 	hash := certHash(cert.Raw)
 	if resp, ok := c.cache.Get(hash); ok && time.Now().Add(margin).Before(resp.NextUpdate) {
 		return resp, nil
 	}
-	resp, err := c.fetchOCSP(cert, issuer)
+	resp, err := c.fetchOCSP(ctx, cert, issuer)
 	if err == nil {
 		c.cache.Add(hash, resp)
 	}
 	return resp, err
 }
 
-func (c *OCSPCache) fetchOCSP(cert, issuer *x509.Certificate) (*ocsp.Response, error) {
+func (c *OCSPCache) fetchOCSP(ctx context.Context, cert, issuer *x509.Certificate) (*ocsp.Response, error) {
 	ocspReq, err := ocsp.CreateRequest(cert, issuer, nil)
 	if err != nil {
 		c.logger.Errorf("ERR ocsp.CreateRequest: %v", err)
@@ -211,7 +211,7 @@ func (c *OCSPCache) fetchOCSP(cert, issuer *x509.Certificate) (*ocsp.Response, e
 	}
 	var ocspResp *ocsp.Response
 	for _, server := range cert.OCSPServer {
-		ocspResp, err = c.fetchOneOCSP(cert, issuer, ocspReq, server)
+		ocspResp, err = c.fetchOneOCSP(ctx, cert, issuer, ocspReq, server)
 		if err != nil || ocspResp.Status == ocsp.Unknown {
 			continue
 		}
@@ -222,8 +222,10 @@ func (c *OCSPCache) fetchOCSP(cert, issuer *x509.Certificate) (*ocsp.Response, e
 	return ocspResp, err
 }
 
-func (c *OCSPCache) fetchOneOCSP(cert, issuer *x509.Certificate, ocspReq []byte, server string) (*ocsp.Response, error) {
-	httpReq, err := http.NewRequest(http.MethodPost, server, bytes.NewReader(ocspReq))
+func (c *OCSPCache) fetchOneOCSP(ctx context.Context, cert, issuer *x509.Certificate, ocspReq []byte, server string) (*ocsp.Response, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	httpReq, err := retryablehttp.NewRequestWithContext(ctx, http.MethodPost, server, bytes.NewReader(ocspReq))
 	if err != nil {
 		c.logger.Errorf("ERR http.NewRequest: %v", err)
 		return nil, errOCSPInternal

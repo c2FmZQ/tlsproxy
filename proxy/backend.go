@@ -122,7 +122,7 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 					return tlsCertificateRevoked
 				}
 			} else if len(cert.OCSPServer) > 0 {
-				if err := be.ocspCache.VerifyChains(cs.VerifiedChains, cs.OCSPResponse); err != nil {
+				if err := be.ocspCache.VerifyChains(ctx, cs.VerifiedChains, cs.OCSPResponse); err != nil {
 					be.recordEvent(fmt.Sprintf("backend X509 %s [%s] (OCSP:%v)", idnaToUnicode(cs.ServerName), cert.Subject, err))
 					return tlsCertificateRevoked
 				}
@@ -153,9 +153,12 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 				KeepAlive: 30 * time.Second,
 			}
 			c, err = dialer.DialContext(ctx, "tcp", addr)
-			if err == nil && proxyProtoVersion > 0 {
-				if err = writeProxyHeader(proxyProtoVersion, c, ctx.Value(connCtxKey).(anyConn)); err != nil {
-					c.Close()
+			if err == nil {
+				setKeepAlive(c)
+				if proxyProtoVersion > 0 {
+					if err = writeProxyHeader(proxyProtoVersion, c, ctx.Value(connCtxKey).(anyConn)); err != nil {
+						c.Close()
+					}
 				}
 			}
 		}
