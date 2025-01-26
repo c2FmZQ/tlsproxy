@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Bug fixes
+
+* Handle quic.ErrTransportClosed correctly.
+
 ## v0.15.0-rc1
 
 ### :star2: New feature
