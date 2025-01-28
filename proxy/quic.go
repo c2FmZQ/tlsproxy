@@ -112,7 +112,7 @@ func (p *Proxy) quicAcceptLoop(ctx context.Context, ln *netw.QUICListener) {
 	for {
 		conn, err := ln.Accept(ctx)
 		if err != nil {
-			if errors.Is(err, quic.ErrServerClosed) || errors.Is(err, context.Canceled) || err.Error() == "closing" {
+			if errors.Is(err, quic.ErrServerClosed) || errors.Is(err, quic.ErrTransportClosed) || errors.Is(err, context.Canceled) || err.Error() == "closing" {
 				p.logErrorF("INF QUIC Accept loop terminated")
 				break
 			}
