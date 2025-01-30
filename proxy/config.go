@@ -648,6 +648,9 @@ type BackendSSO struct {
 	// Exceptions is a list of path prefixes that are exempt from SSO
 	// enforcement, e.g. /app.webmanifest or /favicon.png
 	Exceptions []string `yaml:"exceptions,omitempty"`
+	// HTMLMessage is displayed on the permission denied screen. The value
+	// is HTML and will be used as it is without escaping.
+	HTMLMessage string `yaml:"htmlMessage,omitempty"`
 	// SetUserIDHeader indicates that the x-tlsproxy-user-id header should
 	// be set with the email address of the user.
 	//

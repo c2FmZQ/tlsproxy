@@ -164,7 +164,22 @@ type nonceData struct {
 }
 
 func (m *Manager) SetACL(acl *[]string) {
-	m.acl = acl
+	if acl == nil {
+		return
+	}
+	if m.acl == nil {
+		m.acl = new([]string)
+	}
+	v := make(map[string]bool)
+	for _, a := range *m.acl {
+		v[a] = true
+	}
+	for _, a := range *acl {
+		if v[a] {
+			continue
+		}
+		*m.acl = append(*m.acl, a)
+	}
 }
 
 func (m *Manager) vacuum() {
@@ -358,7 +373,9 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			data.Email, _ = redirectClaims["email"].(string)
 		}
 		w.Header().Set("X-Frame-Options", "DENY")
-		authTemplate.Execute(w, data)
+		if err := authTemplate.Execute(w, data); err != nil {
+			m.cfg.Logger.Errorf("ERR auth-template: %v", err)
+		}
 
 	case "AssertionOptions":
 		if req.Method != "POST" {
