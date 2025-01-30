@@ -5,6 +5,7 @@
 ### :wrench: Bug fixes
 
 * Handle quic.ErrTransportClosed correctly.
+* Allow customized permission denied messages.
 
 ## v0.15.0-rc1
 

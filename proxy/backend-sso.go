@@ -254,17 +254,21 @@ func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Reques
 		URL        string
 		DisplayURL string
 		Token      string
+		Message    template.HTML
 	}{
 		Email:      email,
 		URL:        url,
 		DisplayURL: url,
 		Token:      token,
+		Message:    template.HTML(be.SSO.HTMLMessage),
 	}
 	if len(data.DisplayURL) > 100 {
 		data.DisplayURL = data.DisplayURL[:97] + "..."
 	}
 	w.WriteHeader(http.StatusForbidden)
-	permissionDeniedTemplate.Execute(w, data)
+	if err := permissionDeniedTemplate.Execute(w, data); err != nil {
+		be.logErrorF("ERR permission-denied-template: %v", err)
+	}
 }
 
 func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bool {
@@ -325,7 +329,9 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 			data.DisplayURL = data.DisplayURL[:97] + "..."
 		}
 		w.WriteHeader(http.StatusForbidden)
-		loginTemplate.Execute(w, data)
+		if err := loginTemplate.Execute(w, data); err != nil {
+			be.logErrorF("ERR login-template: %v", err)
+		}
 		return false
 	}
 	userID, _ := claims["email"].(string)
