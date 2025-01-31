@@ -1,10 +1,10 @@
 github.com/beevik/etree v1.1.0/go.mod h1:r8Aw8JqVegEf0w2fDnATrX9VpkMcyFeM0FhwO62wh+A=
 github.com/beevik/etree v1.5.0 h1:iaQZFSDS+3kYZiGoc9uKeOkUY3nYMXOKLl6KIJxiJWs=
 github.com/beevik/etree v1.5.0/go.mod h1:gPNJNaBGVZ9AwsidazFZyygnd+0pAU38N4D+WemwKNs=
-github.com/c2FmZQ/ech v0.1.10 h1:hE20SjKA1WlFUzN+NTd9qmQjY4f+ev6C+Wi3H0bJmls=
-github.com/c2FmZQ/ech v0.1.10/go.mod h1:shk3kb9AiqI1cFKKVABmlOsF/Sa/XiLzowd35u+H2eM=
-github.com/c2FmZQ/ech/quic v0.1.9 h1:fJQR4M0a7ybMDFQPxWvVN4jYtatyl9UOjSWgRNdBIN4=
-github.com/c2FmZQ/ech/quic v0.1.9/go.mod h1:+vYw20CVzYoHgKaqIRTNeuIKE5chvT695KclpgNYJFU=
+github.com/c2FmZQ/ech v0.1.11 h1:wUrlStC9Za8ddPm1FO5yuFVQmNtpo/HC5f7UFYIibGg=
+github.com/c2FmZQ/ech v0.1.11/go.mod h1:shk3kb9AiqI1cFKKVABmlOsF/Sa/XiLzowd35u+H2eM=
+github.com/c2FmZQ/ech/quic v0.1.11 h1:axn6qlxs4nzwW9kCVdN9HY4N/XXUZ359uS1/NdFrBeA=
+github.com/c2FmZQ/ech/quic v0.1.11/go.mod h1:o5nz1+dg9eqs4nIHXkx4J2ILYK0yQIExitJoJ9/5uzk=
 github.com/c2FmZQ/storage v0.2.4 h1:MitbKBuf91oStPFnQbrTzv4KWb9KPk8n81DZ4yG7+uo=
 github.com/c2FmZQ/storage v0.2.4/go.mod h1:LvNiho+dmOmiTS+/i+UUQ4DOnww6Dk08ssAwVUIIweM=
 github.com/c2FmZQ/tpm v0.4.0 h1:XiP8kAUJQCRO8ZffFdctIJAtFDzAImeG+JRgz2Y3CI4=

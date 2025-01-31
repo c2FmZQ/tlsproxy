@@ -4,8 +4,8 @@ go 1.24
 
 require (
 	github.com/beevik/etree v1.5.0
-	github.com/c2FmZQ/ech v0.1.10
-	github.com/c2FmZQ/ech/quic v0.1.9
+	github.com/c2FmZQ/ech v0.1.11
+	github.com/c2FmZQ/ech/quic v0.1.11
 	github.com/c2FmZQ/storage v0.2.4
 	github.com/c2FmZQ/tpm v0.4.0
 	github.com/fxamacker/cbor/v2 v2.7.0
