@@ -1,5 +1,19 @@
 # TLSPROXY Release Notes
 
+* Update go: 1.23.6
+* Update go dependencies:
+  * upgraded github.com/google/pprof v0.0.0-20250128161936-077ca0a936bf => v0.0.0-20250202011525-fc3143867406
+  * upgraded golang.org/x/mod v0.22.0 => v0.23.0
+  * upgraded golang.org/x/sync v0.10.0 => v0.11.0
+  * upgraded golang.org/x/sys v0.29.0 => v0.30.0
+  * upgraded golang.org/x/text v0.21.0 => v0.22.0
+  * upgraded golang.org/x/time v0.9.0 => v0.10.0
+* Update go dependencies in examples/backend:
+  * upgraded github.com/google/pprof v0.0.0-20250128161936-077ca0a936bf => v0.0.0-20250202011525-fc3143867406
+  * upgraded golang.org/x/mod v0.22.0 => v0.23.0
+  * upgraded golang.org/x/sync v0.10.0 => v0.11.0
+  * upgraded golang.org/x/sys v0.29.0 => v0.30.0
+  * upgraded golang.org/x/text v0.21.0 => v0.22.0
 ## v0.15.0-rc3
 
 ### :star2: New feature
