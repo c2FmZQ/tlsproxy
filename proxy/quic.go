@@ -153,6 +153,9 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 	qc.SetAnnotation(serverNameKey, cs.ServerName)
 	qc.SetAnnotation(protoKey, cs.NegotiatedProtocol)
 	qc.SetAnnotation(echAcceptedKey, cs.ECHAccepted)
+	if cs.ECHAccepted {
+		p.recordEvent("encrypted client hello accepted " + idnaToUnicode(cs.ServerName))
+	}
 
 	var clientCert *x509.Certificate
 	if len(cs.PeerCertificates) > 0 {
