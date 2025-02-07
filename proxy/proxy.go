@@ -1221,10 +1221,10 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	}
 	conn.Conn = echConn
 	if echConn.ECHAccepted() {
-		p.recordEvent("encrypted client hello accepted")
+		p.recordEvent("encrypted client hello accepted " + idnaToUnicode(echConn.ServerName()))
 		conn.SetAnnotation(echAcceptedKey, true)
 	} else if echConn.ECHPresented() {
-		p.recordEvent("encrypted client hello rejected")
+		p.recordEvent("encrypted client hello rejected " + idnaToUnicode(echConn.ServerName()))
 	}
 	serverName := echConn.ServerName()
 	if serverName == "" {
