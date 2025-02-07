@@ -53,6 +53,7 @@ func main() {
 	cert := flag.String("cert", "", "A file that contains the TLS certificate to use.")
 	alpn := flag.String("alpn", "", "The ALPN proto to request.")
 	echFlag := flag.String("ech", "", "Use this ECH ConfigList.")
+	echPublicName := flag.String("publicname", "", "Use this ECH Public Name to retrieve the ECH ConfigList.")
 	useQUIC := flag.Bool("quic", false, "Use QUIC.")
 	verifyOCSP := flag.Bool("ocsp", false, "Require stapled OCSP response.")
 	serverName := flag.String("servername", "", "The expected server name.")
@@ -63,7 +64,7 @@ func main() {
 		return
 	}
 	if flag.NArg() != 1 || (*key == "") != (*cert == "") {
-		os.Stderr.WriteString("Usage: tlsclient [-key=<keyfile> -cert=<certfile>] [-alpn=<proto>] [-ech=<configlist>] [-quic] host:port\n")
+		os.Stderr.WriteString("Usage: tlsclient [-key=<keyfile> -cert=<certfile>] [-alpn=<proto>] [-ech=<configlist>] [-publicname=<ECH publicname>] [-quic] host:port\n")
 		os.Exit(1)
 	}
 	addr := flag.Arg(0)
@@ -132,7 +133,10 @@ func main() {
 	defer cancel()
 
 	if *useQUIC {
-		conn, err := quic.Dial(ctx, "udp", target, tc, nil)
+		dialer := quic.NewDialer(nil)
+		dialer.RequireECH = *echFlag != "" || *echPublicName != ""
+		dialer.PublicName = *echPublicName
+		conn, err := dialer.Dial(ctx, "udp", target, tc)
 		if err != nil {
 			log.Fatalf("ERR Dial: %v", err)
 		}
@@ -154,7 +158,10 @@ func main() {
 		return
 	}
 
-	conn, err := ech.Dial(ctx, "tcp", target, tc)
+	dialer := ech.NewDialer()
+	dialer.RequireECH = *echFlag != "" || *echPublicName != ""
+	dialer.PublicName = *echPublicName
+	conn, err := dialer.Dial(ctx, "tcp", target, tc)
 	if err != nil {
 		log.Fatalf("ERR Dial: %v", err)
 	}
