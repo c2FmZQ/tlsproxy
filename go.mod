@@ -4,8 +4,8 @@ go 1.24
 
 require (
 	github.com/beevik/etree v1.5.0
-	github.com/c2FmZQ/ech v0.1.11
-	github.com/c2FmZQ/ech/quic v0.1.11
+	github.com/c2FmZQ/ech v0.2.0
+	github.com/c2FmZQ/ech/quic v0.2.0
 	github.com/c2FmZQ/storage v0.2.4
 	github.com/c2FmZQ/tpm v0.4.0
 	github.com/fxamacker/cbor/v2 v2.7.0
@@ -36,7 +36,7 @@ require (
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/mock v0.5.0 // indirect
-	golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c // indirect
+	golang.org/x/exp v0.0.0-20250207012021-f9890c6ad9f3 // indirect
 	golang.org/x/mod v0.23.0 // indirect
 	golang.org/x/sync v0.11.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
