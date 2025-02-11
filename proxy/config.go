@@ -46,7 +46,6 @@ import (
 	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
 
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/cloudflare"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
@@ -202,7 +201,11 @@ type ECH struct {
 	Cloudflare []*Cloudflare `yaml:"cloudflare,omitempty"`
 }
 
-type Cloudflare = cloudflare.Target
+type Cloudflare struct {
+	Token string   `yaml:"token"`
+	Zone  string   `yaml:"zone"`
+	Names []string `yaml:"names"`
+}
 
 // BWLimit is a named bandwidth limit configuration.
 type BWLimit struct {

@@ -53,6 +53,7 @@ import (
 	"time"
 
 	"github.com/c2FmZQ/ech"
+	"github.com/c2FmZQ/ech/publish"
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/storage/autocertcache"
 	"github.com/c2FmZQ/storage/crypto"
@@ -143,6 +144,7 @@ type Proxy struct {
 
 	echKeys       []tls.EncryptedClientHelloKey
 	echLastUpdate time.Time
+	echPublishers map[string]publish.ECHPublisher
 }
 
 type beKey struct {
@@ -740,12 +742,24 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			}
 		}
 	}
-	if cfg.ECH != nil && cfg.ECH.Endpoint != "" {
-		addLocalHandler(localHandler{
-			desc:      "ECH ConfigList",
-			handler:   logHandler(http.HandlerFunc(p.serveECHConfigList)),
-			ssoBypass: true,
-		}, cfg.ECH.Endpoint)
+	if cfg.ECH != nil {
+		if cfg.ECH.Endpoint != "" {
+			addLocalHandler(localHandler{
+				desc:      "ECH ConfigList",
+				handler:   logHandler(http.HandlerFunc(p.serveECHConfigList)),
+				ssoBypass: true,
+			}, cfg.ECH.Endpoint)
+		}
+		if len(cfg.ECH.Cloudflare) > 0 {
+			p.echPublishers = make(map[string]publish.ECHPublisher)
+		}
+		for _, cf := range cfg.ECH.Cloudflare {
+			pub, exists := p.echPublishers[cf.Token]
+			if !exists {
+				pub = publish.NewCloudflarePublisher(cf.Token)
+				p.echPublishers[cf.Token] = pub
+			}
+		}
 	}
 	for _, p := range identityProviders {
 		p := p
