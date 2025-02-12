@@ -36,9 +36,8 @@ import (
 	"time"
 
 	"github.com/c2FmZQ/ech"
+	"github.com/c2FmZQ/ech/publish"
 	"github.com/hashicorp/go-retryablehttp"
-
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/cloudflare"
 )
 
 const echFile = "ech"
@@ -112,11 +111,10 @@ func (p *Proxy) rotateECH(forceCheck bool) (retErr error) {
 		})
 	}
 	p.echLastUpdate = echKeys[0].CreationTime
-	b, err := ech.ConfigList([]ech.Config{p.echKeys[0].Config})
+	configList, err := ech.ConfigList([]ech.Config{p.echKeys[0].Config})
 	if err != nil {
 		return err
 	}
-	configList := base64.StdEncoding.EncodeToString(b)
 	if (changed || forceCheck) && len(p.cfg.ECH.Cloudflare) > 0 {
 		ctx := p.ctx
 		cf := p.cfg.ECH.Cloudflare
@@ -126,7 +124,29 @@ func (p *Proxy) rotateECH(forceCheck bool) (retErr error) {
 			}
 			ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 			defer cancel()
-			cloudflare.UpdateECH(ctx, cf, configList, p.logErrorF)
+			targets := make(map[string][]publish.Target)
+			for _, z := range cf {
+				t := targets[z.Token]
+				for _, name := range z.Names {
+					t = append(t, publish.Target{Zone: z.Zone, Name: name})
+				}
+				targets[z.Token] = t
+			}
+			for tok, tar := range targets {
+				for i, result := range p.echPublishers[tok].PublishECH(ctx, tar, configList) {
+					if i >= len(tar) {
+						p.logErrorF("ERR cloudflare more results than targets: %d >= %d", i, len(tar))
+						continue
+					}
+					if err := result.Err(); err != nil {
+						p.logErrorF("ERR cloudflare [%s] %s: %v", tar[i].Zone, tar[i].Name, err)
+						continue
+					}
+					if result.Code != publish.StatusNoChange {
+						p.logErrorF("INF cloudflare [%s] %s: %s", tar[i].Zone, tar[i].Name, result)
+					}
+				}
+			}
 		}()
 	}
 	if changed {
