@@ -1,6 +1,6 @@
 # TLSPROXY Release Notes
 
-## v0.15.0-rc4
+## v0.15.0
 
 ### :star2: New feature
 
@@ -14,7 +14,7 @@
 
 * Use os.Root for static file isolation
 * Allow customized permission denied messages.
-* Update go: 1.24rc3
+* Update go: 1.24.0
 * Update go dependencies:
   * upgraded github.com/quic-go/quic-go v0.48.2 => v0.49.0
   * upgraded github.com/beevik/etree v1.4.1 => v1.5.0
