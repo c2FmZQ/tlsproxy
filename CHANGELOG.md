@@ -1,14 +1,15 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
 * Update go dependencies:
   * upgraded github.com/c2FmZQ/ech v0.2.2 => v0.2.5
   * upgraded github.com/c2FmZQ/ech/publish v0.0.0-20250212043933-8c11bf5e715e => v0.1.0
   * upgraded github.com/c2FmZQ/ech/quic v0.2.2 => v0.2.4
   * upgraded golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac => v0.0.0-20250218142911-aa4b98e5adaa
-* Update go dependencies in examples/backend:
-  * upgraded go 1.23.2 => 1.24
-  * upgraded github.com/c2FmZQ/tlsproxy v0.14.2 => v0.15.0
-  * upgraded golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac => v0.0.0-20250218142911-aa4b98e5adaa
+
 ## v0.15.0
 
 ### :star2: New feature
