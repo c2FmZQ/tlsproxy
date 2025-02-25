@@ -4,7 +4,7 @@
 
 ### :star: Feature improvement
 
-* Use [ech.Dial](https://pkg.go.dev/github.com/c2FmZQ/ech#Dial) to connect to backends. This has a number of advantages:
+* Use [ech.Dialer](https://pkg.go.dev/github.com/c2FmZQ/ech#Dialer) to connect to backends. This has a number of advantages:
   * It can use Encrypted Client Hello automatically when available.
   * It uses DNS-over-HTTPS.
   * It supports delayed concurrent connection attempts for faster connections when some servers are slow or unresponsive.
