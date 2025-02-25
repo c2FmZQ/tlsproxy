@@ -1,13 +1,28 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :star: Feature improvement
+
+* Use [ech.Dial](https://pkg.go.dev/github.com/c2FmZQ/ech#Dial) to connect to backends. This has a number of advantages:
+  * It can use Encrypted Client Hello automatically when available.
+  * It uses DNS-over-HTTPS.
+  * It supports delayed concurrent connection attempts for faster connections when some servers are slow or unresponsive.
+
+### :wrench: Misc
+
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/ech v0.2.6 => v0.2.7
+  * upgraded github.com/c2FmZQ/ech/quic v0.2.6 => v0.2.7
+
 ## v0.15.1
 
 ### :wrench: Misc
 
 * Update go dependencies:
-  * upgraded github.com/c2FmZQ/ech v0.2.2 => v0.2.7
+  * upgraded github.com/c2FmZQ/ech v0.2.2 => v0.2.6
   * upgraded github.com/c2FmZQ/ech/publish v0.0.0-20250212043933-8c11bf5e715e => v0.1.1
-  * upgraded github.com/c2FmZQ/ech/quic v0.2.2 => v0.2.7
+  * upgraded github.com/c2FmZQ/ech/quic v0.2.2 => v0.2.6
   * upgraded github.com/quic-go/quic-go v0.49.0 => v0.50.0
   * upgraded golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac => v0.0.0-20250218142911-aa4b98e5adaa
 
