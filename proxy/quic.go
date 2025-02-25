@@ -498,11 +498,7 @@ func (be *Backend) dialQUIC(ctx context.Context, addr string, tc *tls.Config) (*
 	if cc, ok := ctx.Value(connCtxKey).(*netw.QUICConn); ok {
 		enableDatagrams = cc.ConnectionState().SupportsDatagrams
 	}
-	conn, err := qt.DialEarly(ctx, udpAddr, tc, enableDatagrams)
-	if err != nil {
-		return nil, err
-	}
-	return conn, nil
+	return qt.DialEarly(ctx, udpAddr, tc, enableDatagrams)
 }
 
 func (be *Backend) dialQUICStream(ctx context.Context, addr string, tc *tls.Config) (net.Conn, error) {
@@ -598,7 +594,7 @@ func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUI
 }
 
 func (be *Backend) http3Transport() http.RoundTripper {
-	return &http3.RoundTripper{
+	return &http3.Transport{
 		DisableCompression: true,
 		Dial: func(ctx context.Context, _ string, _ *tls.Config, _ *quic.Config) (quic.EarlyConnection, error) {
 			conn, err := be.dialQUICBackend(ctx, "h3")
