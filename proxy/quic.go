@@ -36,9 +36,12 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/c2FmZQ/ech"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 
@@ -562,40 +565,36 @@ func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUI
 		},
 	}
 
-	var max int
-	for {
-		be.state.mu.Lock()
-		sz := len(addresses)
-		if max == 0 {
-			max = sz
-		}
-		addr := addresses[*next]
-		*next = (*next + 1) % sz
-		be.state.mu.Unlock()
-
-		ctx, cancel := context.WithTimeout(ctx, timeout)
-		conn, err := be.dialQUIC(ctx, addr, tc)
-		cancel()
-		if err != nil {
-			if max--; max > 0 {
-				be.logErrorF("ERR dialQUIC %q: %v", addr, err)
-				continue
-			}
-			return nil, err
-		}
-		conn.OnClose(func() {
-			be.outConns.remove(conn)
-		})
-		be.outConns.add(conn)
-		conn.SetAnnotation(startTimeKey, time.Now())
-		conn.SetAnnotation(modeKey, be.Mode)
-		conn.SetAnnotation(protoKey, proto)
-		if cc, ok := ctx.Value(connCtxKey).(net.Conn); ok {
-			conn.SetAnnotation(serverNameKey, connServerName(cc))
-			annotatedConn(cc).SetAnnotation(internalConnKey, conn)
-		}
-		return conn, nil
+	dialer := ech.Dialer[*netw.QUICConn]{
+		DialFunc: func(ctx context.Context, network, addr string, tc *tls.Config) (*netw.QUICConn, error) {
+			return be.dialQUIC(ctx, addr, tc)
+		},
 	}
+
+	be.state.mu.Lock()
+	addr := strings.Join(slices.Concat(addresses[*next:], addresses[:*next]), ",")
+	*next = (*next + 1) % len(addresses)
+	be.state.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	conn, err := dialer.Dial(ctx, "udp", addr, tc)
+	cancel()
+	if err != nil {
+		return nil, err
+	}
+
+	conn.OnClose(func() {
+		be.outConns.remove(conn)
+	})
+	be.outConns.add(conn)
+	conn.SetAnnotation(startTimeKey, time.Now())
+	conn.SetAnnotation(modeKey, be.Mode)
+	conn.SetAnnotation(protoKey, proto)
+	if cc, ok := ctx.Value(connCtxKey).(net.Conn); ok {
+		conn.SetAnnotation(serverNameKey, connServerName(cc))
+		annotatedConn(cc).SetAnnotation(internalConnKey, conn)
+	}
+	return conn, nil
 }
 
 func (be *Backend) http3Transport() http.RoundTripper {
