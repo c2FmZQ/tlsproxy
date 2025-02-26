@@ -4,9 +4,9 @@ go 1.24
 
 require (
 	github.com/beevik/etree v1.5.0
-	github.com/c2FmZQ/ech v0.2.7
+	github.com/c2FmZQ/ech v0.2.8
 	github.com/c2FmZQ/ech/publish v0.1.1
-	github.com/c2FmZQ/ech/quic v0.2.7
+	github.com/c2FmZQ/ech/quic v0.2.8
 	github.com/c2FmZQ/storage v0.2.4
 	github.com/c2FmZQ/tpm v0.4.0
 	github.com/fxamacker/cbor/v2 v2.7.0
@@ -19,7 +19,7 @@ require (
 	github.com/pires/go-proxyproto v0.8.0
 	github.com/quic-go/quic-go v0.50.0
 	github.com/russellhaering/goxmldsig v1.4.0
-	golang.org/x/crypto v0.33.0
+	golang.org/x/crypto v0.35.0
 	golang.org/x/net v0.35.0
 	golang.org/x/sys v0.30.0
 	golang.org/x/time v0.10.0
