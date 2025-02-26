@@ -1,5 +1,14 @@
 # TLSPROXY Release Notes
 
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/ech v0.2.6 => v0.2.7
+  * upgraded github.com/c2FmZQ/ech/quic v0.2.6 => v0.2.7
+  * upgraded golang.org/x/crypto v0.33.0 => v0.35.0
+* Update go dependencies in examples/backend:
+  * upgraded github.com/c2FmZQ/tlsproxy v0.15.0 => v0.15.1
+  * upgraded github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 => v4.4.0
+  * upgraded github.com/quic-go/quic-go v0.49.0 => v0.50.0
+  * upgraded golang.org/x/crypto v0.33.0 => v0.35.0
 ## v0.15.1
 
 ### :wrench: Misc
