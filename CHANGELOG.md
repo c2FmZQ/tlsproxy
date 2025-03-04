@@ -1,5 +1,21 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :star: Feature improvement
+
+* Use [ech.Dialer](https://pkg.go.dev/github.com/c2FmZQ/ech#Dialer) to connect to backends. This has a number of advantages:
+  * It can use Encrypted Client Hello automatically when available.
+  * It uses DNS-over-HTTPS.
+  * It supports delayed concurrent connection attempts for faster connections when some servers are slow or unresponsive.
+
+### :wrench: Misc
+
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/ech v0.2.6 => v0.3.1
+  * upgraded github.com/c2FmZQ/ech/quic v0.2.6 => v0.3.0
+  * upgraded golang.org/x/crypto v0.33.0 => v0.35.0
+
 ## v0.15.1
 
 ### :wrench: Misc

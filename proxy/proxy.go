@@ -951,6 +951,7 @@ func (p *Proxy) verifyConnection(cs tls.ConnectionState) error {
 func (p *Proxy) Start(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	ech.DefaultResolver.SetCacheSize(512)
 	p.startTime = time.Now()
 	p.connClosed = sync.NewCond(&p.mu)
 	var httpServer *http.Server

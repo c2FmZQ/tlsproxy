@@ -36,6 +36,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/c2FmZQ/ech"
 	"github.com/pires/go-proxyproto"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
@@ -130,67 +131,74 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 			return nil
 		},
 	}
-	var max int
-	for {
-		be.state.mu.Lock()
-		sz := len(addresses)
-		if max == 0 {
-			max = sz
-		}
-		addr := addresses[*next]
-		*next = (*next + 1) % sz
-		be.state.mu.Unlock()
 
-		var c net.Conn
-		var err error
-		if mode == ModeQUIC {
-			ctx, cancel := context.WithTimeout(ctx, timeout)
-			c, err = be.dialQUICStream(ctx, addr, tc)
-			cancel()
-		} else {
-			dialer := &net.Dialer{
-				Timeout:   timeout,
-				KeepAlive: 30 * time.Second,
+	dialer := ech.Dialer[net.Conn]{
+		DialFunc: func(ctx context.Context, network, addr string, tc *tls.Config) (net.Conn, error) {
+			if mode == ModeQUIC {
+				return be.dialQUICStream(ctx, addr, tc)
 			}
-			c, err = dialer.DialContext(ctx, "tcp", addr)
-			if err == nil {
-				setKeepAlive(c)
-				if proxyProtoVersion > 0 {
-					if err = writeProxyHeader(proxyProtoVersion, c, ctx.Value(connCtxKey).(anyConn)); err != nil {
-						c.Close()
-					}
+			netDialer := &net.Dialer{
+				KeepAlive: 30 * time.Second,
+				Resolver: &net.Resolver{
+					Dial: func(context.Context, string, string) (net.Conn, error) {
+						return nil, errors.New("not using go resolver")
+					},
+				},
+			}
+			c, err := netDialer.DialContext(ctx, network, addr)
+			if err != nil {
+				return nil, err
+			}
+			setKeepAlive(c)
+			if proxyProtoVersion > 0 {
+				if err := writeProxyHeader(proxyProtoVersion, c, ctx.Value(connCtxKey).(anyConn)); err != nil {
+					c.Close()
+					return nil, err
 				}
 			}
-		}
-		if err != nil {
-			max--
-			if max > 0 {
-				be.logErrorF("ERR dial %q: %v", addr, err)
-				continue
+			if mode != ModeTLS && mode != ModeHTTPS {
+				return c, nil
 			}
-			return nil, err
-		}
-		if mode == ModeTLS || mode == ModeHTTPS {
-			c = tls.Client(c, tc)
-		}
-		wc := netw.NewConn(c)
-		wc.OnClose(func() {
-			be.outConns.remove(wc)
-		})
-		be.outConns.add(wc)
-		wc.SetAnnotation(startTimeKey, time.Now())
-		wc.SetAnnotation(modeKey, mode)
-		wc.SetAnnotation(protoKey, strings.Join(protos, ","))
-		if cc, ok := ctx.Value(connCtxKey).(anyConn); ok {
-			wc.SetAnnotation(serverNameKey, connServerName(cc))
-			annotatedConn(cc).SetAnnotation(internalConnKey, wc)
-			if proxyProtoVersion > 0 {
-				wc.SetAnnotation(proxyProtoKey, cc.RemoteAddr().Network()+":"+cc.RemoteAddr().String())
+			conn := tls.Client(c, tc)
+			if err := conn.HandshakeContext(ctx); err != nil {
+				conn.Close()
+				return nil, err
 			}
-		}
-
-		return wc, nil
+			return conn, nil
+		},
 	}
+	be.state.mu.Lock()
+	addr := strings.Join(slices.Concat(addresses[*next:], addresses[:*next]), ",")
+	*next = (*next + 1) % len(addresses)
+	be.state.mu.Unlock()
+
+	network := "tcp"
+	if mode == ModeQUIC {
+		network = "udp"
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	c, err := dialer.Dial(ctx, network, addr, tc)
+	cancel()
+	if err != nil {
+		return nil, err
+	}
+	wc := netw.NewConn(c)
+	wc.OnClose(func() {
+		be.outConns.remove(wc)
+	})
+	be.outConns.add(wc)
+	wc.SetAnnotation(startTimeKey, time.Now())
+	wc.SetAnnotation(modeKey, mode)
+	wc.SetAnnotation(protoKey, strings.Join(protos, ","))
+	if cc, ok := ctx.Value(connCtxKey).(anyConn); ok {
+		wc.SetAnnotation(serverNameKey, connServerName(cc))
+		annotatedConn(cc).SetAnnotation(internalConnKey, wc)
+		if proxyProtoVersion > 0 {
+			wc.SetAnnotation(proxyProtoKey, cc.RemoteAddr().Network()+":"+cc.RemoteAddr().String())
+		}
+	}
+
+	return wc, nil
 }
 
 func writeProxyHeader(v byte, out io.Writer, in anyConn) error {
