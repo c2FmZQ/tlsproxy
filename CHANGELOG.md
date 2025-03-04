@@ -12,7 +12,7 @@
 ### :wrench: Misc
 
 * Update go dependencies:
-  * upgraded github.com/c2FmZQ/ech v0.2.6 => v0.3.0
+  * upgraded github.com/c2FmZQ/ech v0.2.6 => v0.3.1
   * upgraded github.com/c2FmZQ/ech/quic v0.2.6 => v0.3.0
   * upgraded golang.org/x/crypto v0.33.0 => v0.35.0
 
