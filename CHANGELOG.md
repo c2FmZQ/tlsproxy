@@ -11,10 +11,14 @@
 
 ### :wrench: Misc
 
+* Update go: 1.24.1
 * Update go dependencies:
-  * upgraded github.com/c2FmZQ/ech v0.2.6 => v0.3.1
+  * upgraded github.com/c2FmZQ/ech v0.2.6 => v0.3.2
   * upgraded github.com/c2FmZQ/ech/quic v0.2.6 => v0.3.0
+  * upgraded github.com/google/pprof v0.0.0-20250208200701-d0013a598941 => v0.0.0-20250302191652-9094ed2288e7
   * upgraded golang.org/x/crypto v0.33.0 => v0.35.0
+  * upgraded golang.org/x/exp v0.0.0-20250218142911-aa4b98e5adaa => v0.0.0-20250228200357-dead58393ab7
+  * upgraded golang.org/x/net v0.35.0 => v0.36.0
 
 ## v0.15.1
 
