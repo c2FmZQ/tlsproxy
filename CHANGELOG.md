@@ -1,5 +1,18 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Bug fix
+
+* Fix [issue 195](https://github.com/c2FmZQ/tlsproxy/issues/195).
+  * Use the default GO resolver by default to resolve backend addresses.
+  * Add new config option `UseDoH` to enable DNS-over-HTTPS as needed.
+
+### :wrench: Misc
+
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/ech v0.3.2 => v0.3.4
+
 ## v0.15.2
 
 ### :star: Feature improvement
