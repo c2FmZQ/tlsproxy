@@ -1,8 +1,8 @@
 github.com/beevik/etree v1.1.0/go.mod h1:r8Aw8JqVegEf0w2fDnATrX9VpkMcyFeM0FhwO62wh+A=
 github.com/beevik/etree v1.5.0 h1:iaQZFSDS+3kYZiGoc9uKeOkUY3nYMXOKLl6KIJxiJWs=
 github.com/beevik/etree v1.5.0/go.mod h1:gPNJNaBGVZ9AwsidazFZyygnd+0pAU38N4D+WemwKNs=
-github.com/c2FmZQ/ech v0.3.2 h1:QcOIGYczZ9LZ6FrwB7D49VVBURJGGjds/AeVKIc4Iew=
-github.com/c2FmZQ/ech v0.3.2/go.mod h1:l27DtuP6rSjRMYvneEc6FBK5gnuOkOQIbY58PB38DWo=
+github.com/c2FmZQ/ech v0.3.4 h1:1+YnNolbLCzEEUT2kpws9RAUCBtBPo891HqBaoKyzc4=
+github.com/c2FmZQ/ech v0.3.4/go.mod h1:l27DtuP6rSjRMYvneEc6FBK5gnuOkOQIbY58PB38DWo=
 github.com/c2FmZQ/ech/publish v0.1.1 h1:NRrLalLZfQgEET3cqsiaR2Y5oB2V/do5ErAQ2boWykI=
 github.com/c2FmZQ/ech/publish v0.1.1/go.mod h1:sUZW3FxGqL6optTBmmFgtwekpC86RkOC261wA/HUcK4=
 github.com/c2FmZQ/ech/quic v0.3.0 h1:VAus+2qNBbT9ceWabJXu4cv16UtQaX184OI/xcryxGg=

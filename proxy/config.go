@@ -43,6 +43,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/c2FmZQ/ech"
 	"golang.org/x/time/rate"
 	yaml "gopkg.in/yaml.v3"
 
@@ -360,6 +361,11 @@ type Backend struct {
 	// When more than one address are specified, requests are distributed
 	// using a simple round robin.
 	Addresses []string `yaml:"addresses,omitempty"`
+	// UseDoH specifies that DNS-over-HTTPS should be used to resolve the
+	// backend addresses. The value is the URL of the DoH server to use,
+	// e.g. https://1.1.1.1/dns-query. An empty value indicates that the
+	// default GO resolver should be used.
+	UseDoH string `yaml:"useDoH,omitempty"`
 	// InsecureSkipVerify disabled the verification of the backend server's
 	// TLS certificate. See https://pkg.go.dev/crypto/tls#Config
 	InsecureSkipVerify bool `yaml:"insecureSkipVerify,omitempty"`
@@ -456,6 +462,7 @@ type Backend struct {
 	bwLimit              *bwLimit
 	connLimit            *rate.Limiter
 	proxyProtocolVersion byte
+	resolver             *ech.Resolver
 
 	allowIPs *[]*net.IPNet
 	denyIPs  *[]*net.IPNet
@@ -1072,6 +1079,15 @@ func (cfg *Config) Check() error {
 		}
 		if n := be.BWLimit; n != "" && !bwLimits[n] {
 			return fmt.Errorf("backend[%d].BWLimit: undefined name %q", i, n)
+		}
+		if be.UseDoH == "" {
+			be.resolver = ech.InsecureGoResolver()
+		} else {
+			res, err := ech.NewResolver(be.UseDoH)
+			if err != nil {
+				return fmt.Errorf("backend[%d].UseDoH: %v", i, err)
+			}
+			be.resolver = res
 		}
 		if be.ClientAuth != nil {
 			pool := x509.NewCertPool()

@@ -133,6 +133,7 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 	}
 
 	dialer := ech.Dialer[net.Conn]{
+		Resolver: be.resolver,
 		DialFunc: func(ctx context.Context, network, addr string, tc *tls.Config) (net.Conn, error) {
 			if mode == ModeQUIC {
 				return be.dialQUICStream(ctx, addr, tc)
