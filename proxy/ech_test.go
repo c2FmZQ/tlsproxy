@@ -28,6 +28,7 @@ package proxy
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"errors"
 	"io"
 	"testing"
@@ -76,6 +77,10 @@ func TestECH(t *testing.T) {
 	// Backend with TLS enabled.
 	be1 := newTCPServer(t, ctx, "backend1", intCA)
 
+	truev := true
+	pubname := "public.example.com"
+	configList := base64.StdEncoding.EncodeToString(be1.echConfigList)
+
 	cfg := &Config{
 		ECH:     &ECH{PublicName: "https.example.com"},
 		MaxOpen: 100,
@@ -91,6 +96,53 @@ func TestECH(t *testing.T) {
 				Mode:              "TLS",
 				ForwardServerName: "blah",
 				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+			},
+			{
+				ServerNames: []string{
+					"require-ech.example.com",
+				},
+				ALPNProtos: &[]string{"foo"},
+				Addresses: []string{
+					be1.listener.Addr().String(),
+				},
+				Mode:              "TLS",
+				ForwardServerName: "blah",
+				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+				ForwardECH: &BackendECH{
+					RequireECH: &truev,
+				},
+			},
+			{
+				ServerNames: []string{
+					"be-publicname.example.com",
+				},
+				ALPNProtos: &[]string{"foo"},
+				Addresses: []string{
+					be1.listener.Addr().String(),
+				},
+				Mode:              "TLS",
+				ForwardServerName: "blah",
+				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+				ForwardECH: &BackendECH{
+					RequireECH:    &truev,
+					ECHPublicName: &pubname,
+				},
+			},
+			{
+				ServerNames: []string{
+					"static-ech.example.com",
+				},
+				ALPNProtos: &[]string{"foo"},
+				Addresses: []string{
+					be1.listener.Addr().String(),
+				},
+				Mode:              "TLS",
+				ForwardServerName: "blah",
+				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+				ForwardECH: &BackendECH{
+					RequireECH:    &truev,
+					ECHConfigList: &configList,
+				},
 			},
 		},
 	}
@@ -112,6 +164,9 @@ func TestECH(t *testing.T) {
 	}{
 		{desc: "Hit TCP", host: "https.example.com", want: "Hello from backend1\n"},
 		{desc: "Hit QUIC", host: "https.example.com", want: "Hello from backend1\n", quic: true},
+		{desc: "Hit TCP require ECH without ECH", host: "require-ech.example.com", expError: true},
+		{desc: "Hit TCP require ECH with public name", host: "be-publicname.example.com", want: "Hello from backend1\n"},
+		{desc: "Hit TCP require ECH with static config list", host: "static-ech.example.com", want: "Hello from backend1\n"},
 	} {
 		got, err := get(tc.host, tc.quic)
 		if tc.expError != (err != nil) {
