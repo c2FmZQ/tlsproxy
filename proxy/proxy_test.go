@@ -46,6 +46,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/c2FmZQ/ech"
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/storage/crypto"
 	"github.com/c2FmZQ/tpm"
@@ -1512,10 +1513,25 @@ func (ca caWithClientAuth) TLSConfig() *tls.Config {
 func newTCPServer(t *testing.T, ctx context.Context, name string, ca tcProvider) *tcpServer {
 	var l net.Listener
 	var err error
+	var configList []byte
 	if ca == nil {
 		l, err = net.Listen("tcp", "localhost:0")
 	} else {
-		l, err = tls.Listen("tcp", "localhost:0", ca.TLSConfig())
+		tc := ca.TLSConfig()
+		echKey, cfg, err := ech.NewConfig(123, []byte("public.example.com"))
+		if err != nil {
+			t.Fatalf("[%s] ech.NewConfig: %v", name, err)
+		}
+		configList, err = ech.ConfigList([]ech.Config{cfg})
+		if err != nil {
+			t.Fatalf("[%s] ech.ConfigList: %v", name, err)
+		}
+		tc.EncryptedClientHelloKeys = []tls.EncryptedClientHelloKey{{
+			Config:      cfg,
+			PrivateKey:  echKey.Bytes(),
+			SendAsRetry: true,
+		}}
+		l, err = tls.Listen("tcp", "localhost:0", tc)
 	}
 	if err != nil {
 		t.Fatalf("[%s] Listen: %v", name, err)
@@ -1542,8 +1558,9 @@ func newTCPServer(t *testing.T, ctx context.Context, name string, ca tcProvider)
 		l.Close()
 	}()
 	return &tcpServer{
-		t:        t,
-		listener: l,
+		t:             t,
+		listener:      l,
+		echConfigList: configList,
 	}
 }
 
@@ -1598,8 +1615,9 @@ func newProxyProtocolServer(t *testing.T, ctx context.Context, name string, ca t
 }
 
 type tcpServer struct {
-	t        *testing.T
-	listener net.Listener
+	t             *testing.T
+	listener      net.Listener
+	echConfigList []byte
 }
 
 type pkiCert struct {

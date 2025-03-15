@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :star: Feature improvement
+
+* Add backend config options to facilitate enabling Encrypted Client Hello (ECH) between tlsproxy and its backends. See `ForwardECH` in proxy/config.go.
+
 ## v0.15.4
 
 ### :wrench: Misc

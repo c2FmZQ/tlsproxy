@@ -28,6 +28,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -391,6 +392,9 @@ type Backend struct {
 	// ForwardHTTPHeaders is a list of HTTP headers to add to the forwarded
 	// request. Headers that already exist are overwritten.
 	ForwardHTTPHeaders map[string]string `yaml:"forwardHttpHeaders,omitempty"`
+	// ForwardECH contains Encrypted Client Hello parameters for connecting
+	// to this backend.
+	ForwardECH *BackendECH `yaml:"forwardECH"`
 
 	// PathOverrides specifies different backend parameters for some path
 	// prefixes.
@@ -681,6 +685,22 @@ type BackendSSO struct {
 	actualIDP string
 }
 
+// BackendECH contains Encrypted Client Hello parameters for connecting to the
+// backend.
+type BackendECH struct {
+	// ECHConfigList is a static ECH Config list to use with the backend.
+	// The value is base64-encoded.
+	ECHConfigList *string `yaml:"echConfigList"`
+	// ECHPublicName, is set, should match the Public Name of backend
+	// server's ECH config.
+	ECHPublicName *string `yaml:"echPublicName"`
+	// RequireECH indicates that connections to the backend should not be
+	// attempted without an ECH Config List.
+	RequireECH *bool `yaml:"requireECH"`
+
+	echConfigList *[]byte
+}
+
 // PathOverride specifies different backend parameters for some path prefixes.
 type PathOverride struct {
 	// Paths is the list of path prefixes for which these parameters apply.
@@ -719,6 +739,9 @@ type PathOverride struct {
 	// long to wait before trying the next address in the list. The default
 	// value is 30 seconds.
 	ForwardTimeout time.Duration `yaml:"forwardTimeout"`
+	// ForwardECH contains Encrypted Client Hello parameters for connecting
+	// to this backend.
+	ForwardECH *BackendECH `yaml:"forwardECH"`
 	// ProxyProtocolVersion enables the PROXY protocol on this backend. The
 	// value is the version of the protocol to use, e.g. v1 or v2.
 	// By default, the proxy protocol is not enabled.
@@ -1183,6 +1206,13 @@ func (cfg *Config) Check() error {
 		}
 		be.proxyProtocolVersion = ver
 
+		if be.ForwardECH != nil && be.ForwardECH.ECHConfigList != nil {
+			v, err := base64.StdEncoding.DecodeString(*be.ForwardECH.ECHConfigList)
+			if err != nil {
+				return fmt.Errorf("backend[%d].ForwardECH.ECHConfigList: %w", i, err)
+			}
+			be.ForwardECH.echConfigList = &v
+		}
 		if len(be.PathOverrides) > 0 && be.Mode != ModeHTTP && be.Mode != ModeHTTPS {
 			return fmt.Errorf("backend[%d].PathOverrides is only valid in %s or %s mode", i, ModeHTTP, ModeHTTPS)
 		}
@@ -1214,6 +1244,13 @@ func (cfg *Config) Check() error {
 			po.ForwardServerName = idnaToASCII(po.ForwardServerName)
 			if po.ForwardTimeout == 0 {
 				po.ForwardTimeout = 30 * time.Second
+			}
+			if po.ForwardECH != nil && po.ForwardECH.ECHConfigList != nil {
+				v, err := base64.StdEncoding.DecodeString(*po.ForwardECH.ECHConfigList)
+				if err != nil {
+					return fmt.Errorf("backend[%d].PathOverrides[%d].ForwardECH.ECHConfigList: %w", i, j, err)
+				}
+				po.ForwardECH.echConfigList = &v
 			}
 			ver, err := validateProxyProtoVersion(po.ProxyProtocolVersion)
 			if err != nil {

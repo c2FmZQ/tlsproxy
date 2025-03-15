@@ -81,6 +81,12 @@ func (be *Backend) close(ctx context.Context) {
 	}
 }
 
+func setIfNotNil[T any](a, b *T) {
+	if b != nil {
+		*a = *b
+	}
+}
+
 func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error) {
 	var (
 		addresses          = be.Addresses
@@ -91,7 +97,16 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 		rootCAs            = be.forwardRootCAs
 		proxyProtoVersion  = be.proxyProtocolVersion
 		next               = &be.state.next
+
+		echConfigList []byte
+		echPublicName string
+		echRequired   bool
 	)
+	if be.ForwardECH != nil {
+		setIfNotNil(&echConfigList, be.ForwardECH.echConfigList)
+		setIfNotNil(&echPublicName, be.ForwardECH.ECHPublicName)
+		setIfNotNil(&echRequired, be.ForwardECH.RequireECH)
+	}
 	if id, ok := ctx.Value(ctxOverrideIDKey).(int); ok && id >= 0 && id < len(be.PathOverrides) {
 		po := be.PathOverrides[id]
 		addresses = po.Addresses
@@ -102,6 +117,11 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 		rootCAs = po.forwardRootCAs
 		proxyProtoVersion = po.proxyProtocolVersion
 		next = &be.state.oNext[id]
+		if po.ForwardECH != nil {
+			setIfNotNil(&echConfigList, po.ForwardECH.echConfigList)
+			setIfNotNil(&echPublicName, po.ForwardECH.ECHPublicName)
+			setIfNotNil(&echRequired, po.ForwardECH.RequireECH)
+		}
 	}
 
 	if len(addresses) == 0 {
@@ -130,13 +150,19 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 			}
 			return nil
 		},
+		EncryptedClientHelloConfigList: echConfigList,
 	}
 
 	dialer := ech.Dialer[net.Conn]{
-		Resolver: be.resolver,
+		RequireECH: echRequired,
+		Resolver:   be.resolver,
+		PublicName: echPublicName,
 		DialFunc: func(ctx context.Context, network, addr string, tc *tls.Config) (net.Conn, error) {
 			if mode == ModeQUIC {
 				return be.dialQUICStream(ctx, addr, tc)
+			}
+			if echRequired && mode != ModeTLS && mode != ModeHTTPS {
+				return nil, errors.New("require ECH for non TLS connection")
 			}
 			netDialer := &net.Dialer{
 				KeepAlive: 30 * time.Second,
