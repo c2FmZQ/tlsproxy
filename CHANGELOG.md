@@ -1,5 +1,12 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Update go dependencies:
+  * upgraded github.com/google/pprof v0.0.0-20250302191652-9094ed2288e7 => v0.0.0-20250317173921-a4b03ec1a45e
+
 ## v0.15.5
 
 ### :star: Feature improvement
