@@ -1,5 +1,18 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/ech v0.3.4 => v0.3.5
+  * upgraded github.com/c2FmZQ/ech/quic v0.3.0 => v0.3.5
+  * upgraded github.com/golang-jwt/jwt/v5 v5.2.1 => v5.2.2
+  * upgraded github.com/google/pprof v0.0.0-20250302191652-9094ed2288e7 => v0.0.0-20250317173921-a4b03ec1a45e
+  * upgraded github.com/onsi/ginkgo/v2 v2.23.0 => v2.23.3
+  * upgraded github.com/quic-go/quic-go v0.50.0 => v0.50.1
+  * upgraded github.com/russellhaering/goxmldsig v1.4.0 => v1.5.0
+
 ## v0.15.5
 
 ### :star: Feature improvement
