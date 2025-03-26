@@ -52,7 +52,7 @@ jobs:
     - name: Run go tests (-race)
       run: go test -race -timeout=5m -failfast ./...
     - name: Run govulncheck
-      run: (go install golang.org/x/vuln/cmd/govulncheck@latest && govulncheck ./...) || true
+      run: go install golang.org/x/vuln/cmd/govulncheck@latest && govulncheck ./...
     - name: Build example
       run: cd examples/backend && go build -o /tmp/backend .
     - name: Build test docker image
