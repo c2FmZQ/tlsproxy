@@ -1,6 +1,6 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.15.6
 
 ### :wrench: Misc
 
@@ -12,6 +12,7 @@
   * upgraded github.com/onsi/ginkgo/v2 v2.23.0 => v2.23.3
   * upgraded github.com/quic-go/quic-go v0.50.0 => v0.50.1
   * upgraded github.com/russellhaering/goxmldsig v1.4.0 => v1.5.0
+  * upgraded golang.org/x/net v0.37.0 => v0.38.0
 
 ## v0.15.5
 

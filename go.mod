@@ -20,7 +20,7 @@ require (
 	github.com/quic-go/quic-go v0.50.1
 	github.com/russellhaering/goxmldsig v1.5.0
 	golang.org/x/crypto v0.36.0
-	golang.org/x/net v0.37.0
+	golang.org/x/net v0.38.0
 	golang.org/x/sys v0.31.0
 	golang.org/x/time v0.11.0
 	gopkg.in/yaml.v3 v3.0.1
