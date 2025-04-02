@@ -1,7 +1,7 @@
 github.com/blend/go-sdk v1.20240719.1 h1:eyispDP9DzQuNE+y7j1xSqwRm6ndMS4jgwlOQU4BTGY=
 github.com/blend/go-sdk v1.20240719.1/go.mod h1:aTw/exIbMHDYcJLTiqeWMMVhUs9+72BDe26AA0A6jno=
-github.com/c2FmZQ/tlsproxy v0.15.5 h1:piP5N7wPwJ+tHjSWWc5r6G1gs1z5mkzgkHpCbrPDm4A=
-github.com/c2FmZQ/tlsproxy v0.15.5/go.mod h1:EvzzNXZ+QIUc52FlB9MOuGQkmY7XRzz0FbBopry09Dg=
+github.com/c2FmZQ/tlsproxy v0.15.6 h1:HVEBTf8SAKo5GFH9t5ejrSytR9aUVjwTnJEv2YQfRCE=
+github.com/c2FmZQ/tlsproxy v0.15.6/go.mod h1:sE7Q1TUIeU+YDCvZ/3Hoter3m5JO1hn5tMnlhNnz01U=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -59,8 +59,8 @@ golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 h1:nDVHiLt8aIbd/VzvPWN6kSOPE
 golang.org/x/exp v0.0.0-20250305212735-054e65f0b394/go.mod h1:sIifuuw/Yco/y6yb6+bDNfyeQ/MdPUy/hKEMYQV17cM=
 golang.org/x/mod v0.24.0 h1:ZfthKaKaT4NrhGVZHO1/WDTwGES4De8KtWO0SIbNJMU=
 golang.org/x/mod v0.24.0/go.mod h1:IXM97Txy2VM4PJ3gI61r1YEk/gAj6zAHN3AdZt6S9Ww=
-golang.org/x/net v0.37.0 h1:1zLorHbz+LYj7MQlSf1+2tPIIgibq2eL5xkrGk6f+2c=
-golang.org/x/net v0.37.0/go.mod h1:ivrbrMbzFq5J41QOQh0siUuly180yBYtLp+CKbEaFx8=
+golang.org/x/net v0.38.0 h1:vRMAPTMaeGqVhG5QyLJHqNDwecKTomGeqbnfZyKlBI8=
+golang.org/x/net v0.38.0/go.mod h1:ivrbrMbzFq5J41QOQh0siUuly180yBYtLp+CKbEaFx8=
 golang.org/x/sync v0.12.0 h1:MHc5BpPuC30uJk597Ri8TV3CNZcTLu6B6z4lJy+g6Jw=
 golang.org/x/sync v0.12.0/go.mod h1:1dzgHSNfp02xaA81J2MS99Qcpr2w7fw1gpm99rleRqA=
 golang.org/x/sys v0.31.0 h1:ioabZlmFYtWhL+TRYpcnNlLwhyxaM9kWTDEmfnprqik=

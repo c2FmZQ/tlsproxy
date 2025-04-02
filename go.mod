@@ -9,7 +9,7 @@ require (
 	github.com/c2FmZQ/ech/quic v0.3.5
 	github.com/c2FmZQ/storage v0.2.4
 	github.com/c2FmZQ/tpm v0.4.0
-	github.com/fxamacker/cbor/v2 v2.7.0
+	github.com/fxamacker/cbor/v2 v2.8.0
 	github.com/go-test/deep v1.1.0
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/google/go-tpm-tools v0.4.4

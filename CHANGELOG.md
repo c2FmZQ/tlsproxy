@@ -1,5 +1,13 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Update go: 1.24.2
+* Update go dependencies:
+  * upgraded github.com/fxamacker/cbor/v2 v2.7.0 => v2.8.0
+
 ## v0.15.6
 
 ### :wrench: Misc
