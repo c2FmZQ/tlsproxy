@@ -394,7 +394,7 @@ type Backend struct {
 	ForwardHTTPHeaders map[string]string `yaml:"forwardHttpHeaders,omitempty"`
 	// ForwardECH contains Encrypted Client Hello parameters for connecting
 	// to this backend.
-	ForwardECH *BackendECH `yaml:"forwardECH"`
+	ForwardECH *BackendECH `yaml:"forwardECH,omitempty"`
 
 	// PathOverrides specifies different backend parameters for some path
 	// prefixes.
@@ -690,10 +690,10 @@ type BackendSSO struct {
 type BackendECH struct {
 	// ECHConfigList is a static ECH Config list to use with the backend.
 	// The value is base64-encoded.
-	ECHConfigList *string `yaml:"echConfigList"`
+	ECHConfigList *string `yaml:"echConfigList,omitempty"`
 	// ECHPublicName, is set, should match the Public Name of backend
 	// server's ECH config.
-	ECHPublicName *string `yaml:"echPublicName"`
+	ECHPublicName *string `yaml:"echPublicName,omitempty"`
 	// RequireECH indicates that connections to the backend should not be
 	// attempted without an ECH Config List.
 	RequireECH *bool `yaml:"requireECH"`
@@ -741,7 +741,7 @@ type PathOverride struct {
 	ForwardTimeout time.Duration `yaml:"forwardTimeout"`
 	// ForwardECH contains Encrypted Client Hello parameters for connecting
 	// to this backend.
-	ForwardECH *BackendECH `yaml:"forwardECH"`
+	ForwardECH *BackendECH `yaml:"forwardECH,omitempty"`
 	// ProxyProtocolVersion enables the PROXY protocol on this backend. The
 	// value is the version of the protocol to use, e.g. v1 or v2.
 	// By default, the proxy protocol is not enabled.
