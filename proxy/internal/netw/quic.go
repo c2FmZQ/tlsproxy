@@ -343,6 +343,10 @@ func (c *QUICConn) ConnectionState() quic.ConnectionState {
 	return c.qc.ConnectionState()
 }
 
+func (c *QUICConn) AddPath(t *quic.Transport) (*quic.Path, error) {
+	return c.qc.AddPath(t)
+}
+
 func (c *QUICConn) AcceptStream(ctx context.Context) (quic.Stream, error) {
 	s, err := c.qc.AcceptStream(ctx)
 	if err != nil {
