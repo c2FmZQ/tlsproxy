@@ -71,10 +71,10 @@ func TestQUICConnections(t *testing.T) {
 	h2Value := "h2"
 
 	cfg := &Config{
-		HTTPAddr: "localhost:0",
-		TLSAddr:  "localhost:0",
-		CacheDir: t.TempDir(),
-		MaxOpen:  1000,
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(1000),
 		Backends: []*Backend{
 			// TCP backend
 			{
@@ -215,10 +215,10 @@ func TestReverseProxyGetPost(t *testing.T) {
 
 	proxy := newTestProxy(
 		&Config{
-			HTTPAddr: "localhost:0",
-			TLSAddr:  "localhost:0",
-			CacheDir: t.TempDir(),
-			MaxOpen:  100,
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
 		},
 		extCA,
 	)
@@ -233,7 +233,7 @@ func TestReverseProxyGetPost(t *testing.T) {
 	h2Value := "h2"
 
 	cfg := &Config{
-		MaxOpen: 100,
+		MaxOpen: newPtr(100),
 		Backends: []*Backend{
 			// HTTP
 			{
@@ -435,10 +435,10 @@ func TestQUICMultiStream(t *testing.T) {
 	}()
 
 	cfg := &Config{
-		HTTPAddr: "localhost:0",
-		TLSAddr:  "localhost:0",
-		CacheDir: t.TempDir(),
-		MaxOpen:  1000,
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(1000),
 		Backends: []*Backend{
 			{
 				ServerNames: []string{

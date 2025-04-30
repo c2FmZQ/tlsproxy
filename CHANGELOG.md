@@ -2,6 +2,14 @@
 
 ## next
 
+### :star2: New feature
+
+* The config file can now be split across multiple files or directories with the 'include' directive, e.g.
+  ```
+  include:
+    - "conf/*.yaml"
+  ```
+
 ### :wrench: Misc
 
 * Update go dependencies:

@@ -202,10 +202,10 @@ func TestEnforceSSOPolicy(t *testing.T) {
 func newBackendSSOTestProxy(t *testing.T) *Proxy {
 	return newTestProxy(
 		&Config{
-			HTTPAddr: "localhost:0",
-			TLSAddr:  "localhost:0",
-			CacheDir: t.TempDir(),
-			MaxOpen:  100,
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
 			OIDCProviders: []*ConfigOIDC{
 				{
 					Name:          "test-idp",

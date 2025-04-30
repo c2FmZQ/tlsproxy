@@ -37,6 +37,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -100,15 +101,18 @@ type Config struct {
 	// otherwise ignored by the proxy.
 	Definitions any `yaml:"definitions,omitempty"`
 
+	// Include is a list of configuration files to read. They can be glob
+	// patterns.
+	Include []string `yaml:"include,omitempty"`
 	// HTTPAddr must be reachable from the internet via port 80 for the
 	// letsencrypt ACME http-01 challenge to work. If the httpAddr is empty,
 	// the proxy will only use tls-alpn-01 and tlsAddr must be reachable on
 	// port 443.
 	// See https://letsencrypt.org/docs/challenge-types/
-	HTTPAddr string `yaml:"httpAddr,omitempty"`
+	HTTPAddr *string `yaml:"httpAddr,omitempty"`
 	// TLSAddr is the address where the proxy will receive TLS connections
 	// and forward them to the backends.
-	TLSAddr string `yaml:"tlsAddr"`
+	TLSAddr *string `yaml:"tlsAddr"`
 	// EnableQUIC specifies whether the QUIC protocol should be enabled.
 	// The default is true if the binary is compiled with QUIC support.
 	EnableQUIC *bool `yaml:"enableQUIC,omitempty"`
@@ -130,13 +134,13 @@ type Config struct {
 	//
 	// This option cannot be changed without manually deleting the cache
 	// directory.
-	HWBacked bool `yaml:"hwBacked,omitempty"`
+	HWBacked *bool `yaml:"hwBacked,omitempty"`
 	// CacheDir is the directory where the proxy stores its data, e.g. TLS
 	// certificates, OCSP responses, etc.
-	CacheDir string `yaml:"cacheDir,omitempty"`
+	CacheDir *string `yaml:"cacheDir,omitempty"`
 	// DefaultServerName is the server name to use when the TLS client
 	// doesn't use the Server Name Indication (SNI) extension.
-	DefaultServerName string `yaml:"defaultServerName,omitempty"`
+	DefaultServerName *string `yaml:"defaultServerName,omitempty"`
 	// LogFilter specifies what gets logged for this backend. Values can
 	// be overridden on a per-backend basis.
 	LogFilter LogFilter `yaml:"logFilter,omitempty"`
@@ -144,16 +148,16 @@ type Config struct {
 	Backends []*Backend `yaml:"backends"`
 	// Email is optionally sent to Let's Encrypt when registering a new
 	// account.
-	Email string `yaml:"email,omitempty"`
+	Email *string `yaml:"email,omitempty"`
 	// RevokeUnusedCertificates indicates that unused certificates
 	// should be revoked. The default is true.
 	// See https://letsencrypt.org/docs/revoking/
 	RevokeUnusedCertificates *bool `yaml:"revokeUnusedCertificates,omitempty"`
 	// MaxOpen is the maximum number of open incoming connections.
-	MaxOpen int `yaml:"maxOpen,omitempty"`
+	MaxOpen *int `yaml:"maxOpen,omitempty"`
 	// AcceptTOS indicates acceptance of the Let's Encrypt Terms of Service.
 	// See https://letsencrypt.org/repository/
-	AcceptTOS bool `yaml:"acceptTOS"`
+	AcceptTOS *bool `yaml:"acceptTOS"`
 	// OIDCProviders is the list of OIDC providers.
 	OIDCProviders []*ConfigOIDC `yaml:"oidc,omitempty"`
 	// SAMLProviders is the list of SAML providers.
@@ -845,22 +849,31 @@ func (cfg *Config) clone() *Config {
 // initializes internal data structures.
 func (cfg *Config) Check() error {
 	cfg.Definitions = nil
-	if cfg.CacheDir == "" {
+	if cfg.CacheDir == nil {
+		cfg.CacheDir = new(string)
+	}
+	if *cfg.CacheDir == "" {
 		d, err := os.UserCacheDir()
 		if err != nil {
 			return errors.New("CacheDir must be set in config")
 		}
-		cfg.CacheDir = filepath.Join(d, "tlsproxy", "letsencrypt")
+		*cfg.CacheDir = filepath.Join(d, "tlsproxy", "letsencrypt")
 	}
-	if cfg.TLSAddr == "" {
-		cfg.TLSAddr = ":10443"
+	if cfg.TLSAddr == nil {
+		cfg.TLSAddr = new(string)
 	}
-	if cfg.MaxOpen == 0 {
+	if *cfg.TLSAddr == "" {
+		*cfg.TLSAddr = ":10443"
+	}
+	if cfg.MaxOpen == nil {
+		cfg.MaxOpen = new(int)
+	}
+	if *cfg.MaxOpen == 0 {
 		n, err := openFileLimit()
 		if err != nil {
 			return errors.New("MaxOpen: value must be set")
 		}
-		cfg.MaxOpen = n/2 - 100
+		*cfg.MaxOpen = n/2 - 100
 	}
 	if cfg.EnableQUIC == nil {
 		v := quicIsEnabled
@@ -878,7 +891,9 @@ func (cfg *Config) Check() error {
 		cfg.acceptProxyHeaderFrom[i] = n
 	}
 
-	cfg.DefaultServerName = idnaToASCII(cfg.DefaultServerName)
+	if cfg.DefaultServerName != nil {
+		*cfg.DefaultServerName = idnaToASCII(*cfg.DefaultServerName)
+	}
 
 	identityProviders := make(map[string]bool)
 	for i, oi := range cfg.OIDCProviders {
@@ -1259,7 +1274,7 @@ func (cfg *Config) Check() error {
 			po.proxyProtocolVersion = ver
 		}
 	}
-	return os.MkdirAll(cfg.CacheDir, 0o700)
+	return os.MkdirAll(*cfg.CacheDir, 0o700)
 }
 
 func validateProxyProtoVersion(s string) (byte, error) {
@@ -1278,20 +1293,123 @@ func validateProxyProtoVersion(s string) (byte, error) {
 
 // ReadConfig reads and validates a YAML config file.
 func ReadConfig(filename string) (*Config, error) {
-	f, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	dec := yaml.NewDecoder(f)
-	dec.KnownFields(true)
 	var cfg Config
-	if err := dec.Decode(&cfg); err != nil {
+	if err := mergeConfig(&cfg, nil, filename); err != nil {
 		return nil, err
 	}
 	if err := cfg.Check(); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+func mergeConfig(cfg *Config, seen map[string]bool, filename string) error {
+	if seen == nil {
+		seen = make(map[string]bool)
+	}
+	if filename = filepath.Clean(filename); !filepath.IsAbs(filename) {
+		pwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		filename = filepath.Join(pwd, filename)
+	}
+
+	if seen[filename] {
+		return nil
+	}
+	seen[filename] = true
+	f, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+
+	var cfg2 Config
+	dec := yaml.NewDecoder(f)
+	dec.KnownFields(true)
+	err = dec.Decode(&cfg2)
+	f.Close()
+	if err != nil {
+		return err
+	}
+	if err := reflectMerge(reflect.ValueOf(cfg), reflect.ValueOf(&cfg2)); err != nil {
+		return err
+	}
+	cfg.Include = nil
+	cfg.Definitions = nil
+
+	parent := filepath.Dir(filename)
+
+	for _, glob := range cfg2.Include {
+		if !filepath.IsAbs(glob) {
+			glob = filepath.Join(parent, glob)
+		}
+		if seen[glob] {
+			continue
+		}
+		seen[glob] = true
+		m, err := filepath.Glob(glob)
+		if err != nil {
+			return fmt.Errorf("include %q: %w", glob, err)
+		}
+		slices.Sort(m)
+		for _, f := range m {
+			if err := mergeConfig(cfg, seen, f); err != nil {
+				return fmt.Errorf("include %q: %w", f, err)
+			}
+		}
+	}
+	return nil
+}
+
+// reflectMerge merges v2 into v1
+func reflectMerge(v1, v2 reflect.Value) error {
+	if t1, t2 := v1.Type(), v2.Type(); t1 != t2 {
+		return fmt.Errorf("type mismatch %v != %v", t1, t2)
+	}
+
+	switch v1.Kind() {
+	case reflect.Struct:
+		for i := 0; i < v1.NumField(); i++ {
+			if err := reflectMerge(v1.Field(i), v2.Field(i)); err != nil {
+				return err
+			}
+		}
+		return nil
+	case reflect.Slice:
+		if v1.CanSet() && !v2.IsNil() {
+			if v1.IsNil() {
+				v1.Set(reflect.MakeSlice(v1.Type(), 0, 0))
+			}
+			v1.Grow(v2.Len())
+			v1.Set(reflect.AppendSlice(v1, v2))
+		}
+		return nil
+	case reflect.Map:
+		if v1.CanSet() && !v2.IsNil() {
+			iter := v2.MapRange()
+			for iter.Next() {
+				v1.SetMapIndex(iter.Key(), iter.Value())
+			}
+		}
+		return nil
+	case reflect.Pointer:
+		if !v2.IsNil() {
+			if v1.IsNil() {
+				if v1.CanSet() {
+					v1.Set(v2)
+				}
+			} else {
+				if err := reflectMerge(v1.Elem(), v2.Elem()); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	default:
+		if v1.CanSet() {
+			v1.Set(v2)
+		}
+		return nil
+	}
 }

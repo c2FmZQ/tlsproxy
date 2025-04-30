@@ -74,11 +74,11 @@ func TestSSOEnforceOIDC(t *testing.T) {
 
 			proxy := newTestProxy(
 				&Config{
-					HTTPAddr: "localhost:0",
-					TLSAddr:  "localhost:0",
-					CacheDir: t.TempDir(),
-					MaxOpen:  100,
-					HWBacked: tc.hwBacked,
+					HTTPAddr: newPtr("localhost:0"),
+					TLSAddr:  newPtr("localhost:0"),
+					CacheDir: newPtr(t.TempDir()),
+					MaxOpen:  newPtr(100),
+					HWBacked: newPtr(tc.hwBacked),
 					OIDCProviders: []*ConfigOIDC{
 						{
 							Name:          "test-idp",
@@ -249,11 +249,11 @@ func TestSSOEnforcePasskey(t *testing.T) {
 
 			proxy := newTestProxy(
 				&Config{
-					HTTPAddr: "localhost:0",
-					TLSAddr:  "localhost:0",
-					CacheDir: t.TempDir(),
-					MaxOpen:  100,
-					HWBacked: tc.hwBacked,
+					HTTPAddr: newPtr("localhost:0"),
+					TLSAddr:  newPtr("localhost:0"),
+					CacheDir: newPtr(t.TempDir()),
+					MaxOpen:  newPtr(100),
+					HWBacked: newPtr(tc.hwBacked),
 					OIDCProviders: []*ConfigOIDC{
 						{
 							Name:          "test-idp",

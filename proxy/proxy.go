@@ -183,7 +183,7 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 		crypto.WithLogger(p.extLogger()),
 	}
 	var pTPM *tpm.TPM
-	if cfg.HWBacked {
+	if cfg.HWBacked != nil && *cfg.HWBacked {
 		t, err := tpm.New(tpm.WithObjectAuth(passphrase))
 		if err != nil {
 			return nil, err
@@ -193,7 +193,7 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 	} else {
 		opts = append(opts, crypto.WithAlgo(crypto.PickFastest))
 	}
-	mkFile := filepath.Join(cfg.CacheDir, "masterkey")
+	mkFile := filepath.Join(*cfg.CacheDir, "masterkey")
 	mk, err := crypto.ReadMasterKey(passphrase, mkFile, opts...)
 	if errors.Is(err, os.ErrNotExist) {
 		if mk, err = crypto.CreateMasterKey(opts...); err != nil {
@@ -204,7 +204,7 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", mkFile, err)
 	}
-	store := storage.New(cfg.CacheDir, mk)
+	store := storage.New(*cfg.CacheDir, mk)
 	tm, err := tokenmanager.New(store, pTPM, p.extLogger())
 	if err != nil {
 		return nil, err
@@ -216,9 +216,9 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 			return false
 		},
 		Cache: autocertcache.New("autocert", store),
-		Email: cfg.Email,
+		Email: *cfg.Email,
 	}
-	if cfg.AcceptTOS {
+	if cfg.AcceptTOS != nil && *cfg.AcceptTOS {
 		p.certManager.(*autocert.Manager).Prompt = autocert.AcceptTOS
 	}
 	p.tpm = pTPM
@@ -252,7 +252,7 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 		crypto.WithAlgo(crypto.PickFastest),
 		crypto.WithLogger(p.extLogger()),
 	}
-	mkFile := filepath.Join(cfg.CacheDir, "test", "masterkey")
+	mkFile := filepath.Join(*cfg.CacheDir, "test", "masterkey")
 	mk, err := crypto.ReadMasterKey(passphrase, mkFile, opts...)
 	if errors.Is(err, os.ErrNotExist) {
 		if mk, err = crypto.CreateMasterKey(opts...); err != nil {
@@ -263,7 +263,7 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 	if err != nil {
 		return nil, fmt.Errorf("masterkey: %w", err)
 	}
-	store := storage.New(filepath.Join(cfg.CacheDir, "test"), mk)
+	store := storage.New(filepath.Join(*cfg.CacheDir, "test"), mk)
 	tm, err := tokenmanager.New(store, nil, p.extLogger())
 	if err != nil {
 		return nil, err
@@ -859,7 +859,9 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			be.close(p.ctx)
 		}
 	}
-	p.defServerName = cfg.DefaultServerName
+	if cfg.DefaultServerName != nil {
+		p.defServerName = *cfg.DefaultServerName
+	}
 	p.backends = backends
 	p.pkis = pkis
 	p.cfg = cfg
@@ -955,11 +957,11 @@ func (p *Proxy) Start(ctx context.Context) error {
 	p.startTime = time.Now()
 	p.connClosed = sync.NewCond(&p.mu)
 	var httpServer *http.Server
-	if p.cfg.HTTPAddr != "" {
+	if p.cfg.HTTPAddr != nil && *p.cfg.HTTPAddr != "" {
 		httpServer = &http.Server{
 			Handler: p.certManager.HTTPHandler(nil),
 		}
-		httpListener, err := net.Listen("tcp", p.cfg.HTTPAddr)
+		httpListener, err := net.Listen("tcp", *p.cfg.HTTPAddr)
 		if err != nil {
 			return err
 		}
@@ -973,7 +975,7 @@ func (p *Proxy) Start(ctx context.Context) error {
 			return err
 		}
 	}
-	listener, err := netw.Listen("tcp", p.cfg.TLSAddr)
+	listener, err := netw.Listen("tcp", *p.cfg.TLSAddr)
 	if err != nil {
 		return err
 	}
@@ -1110,7 +1112,7 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 			return cert, nil
 		}
 		// Get a cert from Let's Encrypt.
-		if !p.cfg.AcceptTOS {
+		if p.cfg.AcceptTOS == nil || !*p.cfg.AcceptTOS {
 			if _, ok := p.certManager.(*autocert.Manager); ok {
 				return nil, errors.New("AcceptTOS must be set to true")
 			}
@@ -1220,9 +1222,9 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		}
 		p.connClosed.Broadcast()
 	})
-	if numOpen >= p.cfg.MaxOpen {
+	if numOpen >= *p.cfg.MaxOpen {
 		p.recordEvent("too many open connections")
-		p.logErrorF("ERR [-] %s: too many open connections: %d >= %d", conn.RemoteAddr(), numOpen, p.cfg.MaxOpen)
+		p.logErrorF("ERR [-] %s: too many open connections: %d >= %d", conn.RemoteAddr(), numOpen, *p.cfg.MaxOpen)
 		sendCloseNotify(conn)
 		return
 	}

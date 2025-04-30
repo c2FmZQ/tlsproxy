@@ -76,10 +76,10 @@ func TestProxyBackends(t *testing.T) {
 
 	proxy := newTestProxy(
 		&Config{
-			HTTPAddr: "localhost:0",
-			TLSAddr:  "localhost:0",
-			CacheDir: t.TempDir(),
-			MaxOpen:  100,
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
 			PKI: []*ConfigPKI{
 				{Name: "TEST CA"},
 			},
@@ -121,11 +121,11 @@ func TestProxyBackends(t *testing.T) {
 	h2Value := "h2"
 
 	cfg := &Config{
-		MaxOpen: 100,
+		MaxOpen: newPtr(100),
 		PKI: []*ConfigPKI{
 			{Name: "TEST CA"},
 		},
-		DefaultServerName: "http.example.com",
+		DefaultServerName: newPtr("http.example.com"),
 		Backends: []*Backend{
 			// Plaintext backends.
 			{
@@ -447,10 +447,10 @@ func TestAuthnAuthz(t *testing.T) {
 		t.Fatalf("certmanager.New: %v", err)
 	}
 	cfg := &Config{
-		HTTPAddr: "localhost:0",
-		TLSAddr:  "localhost:0",
-		CacheDir: t.TempDir(),
-		MaxOpen:  100,
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(100),
 		PKI: []*ConfigPKI{
 			{Name: "TEST CA"},
 		},
@@ -644,10 +644,10 @@ func TestLocalTLSCerts(t *testing.T) {
 
 	proxy := newTestProxy(
 		&Config{
-			HTTPAddr: "localhost:0",
-			TLSAddr:  "localhost:0",
-			CacheDir: t.TempDir(),
-			MaxOpen:  100,
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
 			TLSCertificates: []*TLSCertificate{
 				{
 					ServerNames: []string{"http.example.com"},
@@ -734,10 +734,10 @@ func TestConcurrency(t *testing.T) {
 
 	proxy := newTestProxy(
 		&Config{
-			HTTPAddr: "localhost:0",
-			TLSAddr:  "localhost:0",
-			CacheDir: t.TempDir(),
-			MaxOpen:  5000,
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(5000),
 			Backends: []*Backend{
 				{
 					ServerNames: []string{
@@ -878,10 +878,10 @@ func TestBackendHTTPHeaders(t *testing.T) {
 
 	proxy := newTestProxy(
 		&Config{
-			HTTPAddr: "localhost:0",
-			TLSAddr:  "localhost:0",
-			CacheDir: t.TempDir(),
-			MaxOpen:  100,
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
 			Backends: []*Backend{
 				// HTTP
 				{
@@ -931,10 +931,10 @@ func TestBandwidthLimit(t *testing.T) {
 
 	proxy := newTestProxy(
 		&Config{
-			HTTPAddr: "localhost:0",
-			TLSAddr:  "localhost:0",
-			CacheDir: t.TempDir(),
-			MaxOpen:  2000,
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(2000),
 			BWLimits: []*BWLimit{
 				{
 					Name:    "slowingress",
@@ -1035,10 +1035,10 @@ func TestIncomingProxyProto(t *testing.T) {
 
 	proxy := newTestProxy(
 		&Config{
-			HTTPAddr: "localhost:0",
-			TLSAddr:  "localhost:0",
-			CacheDir: t.TempDir(),
-			MaxOpen:  100,
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
 			AcceptProxyHeaderFrom: []string{
 				"127.0.0.1/32",
 				"::1/128",
@@ -1083,10 +1083,10 @@ func TestProxyProtoIsolation(t *testing.T) {
 
 	proxy := newTestProxy(
 		&Config{
-			HTTPAddr: "localhost:0",
-			TLSAddr:  "localhost:0",
-			CacheDir: t.TempDir(),
-			MaxOpen:  100,
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
 			Backends: []*Backend{
 				{
 					ServerNames: []string{
@@ -1130,11 +1130,11 @@ func TestProxyTPM(t *testing.T) {
 	be1 := newHTTPServer(t, ctx, "backend1", nil)
 	dir := t.TempDir()
 	cfg := &Config{
-		HTTPAddr: "localhost:0",
-		TLSAddr:  "localhost:0",
-		CacheDir: dir,
-		HWBacked: true,
-		MaxOpen:  100,
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(dir),
+		HWBacked: newPtr(true),
+		MaxOpen:  newPtr(100),
 		Backends: []*Backend{
 			{
 				ServerNames: []string{
@@ -1166,10 +1166,10 @@ func TestProxyTPM(t *testing.T) {
 
 func TestCheckIP(t *testing.T) {
 	cfg := &Config{
-		HTTPAddr: "localhost:0",
-		TLSAddr:  "localhost:0",
-		CacheDir: t.TempDir(),
-		MaxOpen:  100,
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(100),
 		Backends: []*Backend{
 			{
 				ServerNames: []string{"example.com"},
@@ -1261,7 +1261,7 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 		crypto.WithStrictWipe(false),
 	}
 	var tpmSim *tpm.TPM
-	if cfg.HWBacked {
+	if cfg.HWBacked != nil && *cfg.HWBacked {
 		rwc, err := simulator.Get()
 		if err != nil {
 			panic(err)
@@ -1277,7 +1277,7 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 	if err != nil {
 		panic(err)
 	}
-	store := storage.New(filepath.Join(cfg.CacheDir, "test"), mk)
+	store := storage.New(filepath.Join(*cfg.CacheDir, "test"), mk)
 	tm, err := tokenmanager.New(store, tpmSim, nil)
 	if err != nil {
 		panic(err)
@@ -1649,4 +1649,8 @@ func (c *pkiCert) TLSConfig() *tls.Config {
 	return &tls.Config{
 		Certificates: []tls.Certificate{c.cert},
 	}
+}
+
+func newPtr[T any](v T) *T {
+	return &v
 }
