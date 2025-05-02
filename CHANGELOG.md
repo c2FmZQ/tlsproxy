@@ -1,5 +1,14 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Update go dependencies:
+  * upgraded github.com/google/go-tpm v0.9.3 => v0.9.4
+  * upgraded github.com/google/pprof v0.0.0-20250418163039-24c5476c6587 => v0.0.0-20250501235452-c0086092b71a
+  * upgraded go.uber.org/mock v0.5.1 => v0.5.2
+
 ## v0.15.8
 
 ### :wrench: Misc
