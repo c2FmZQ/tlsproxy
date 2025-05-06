@@ -1,5 +1,22 @@
 # TLSPROXY Release Notes
 
+## v0.15.9
+
+### :wrench: Misc
+
+* Update go: 1.24.3
+* Update go dependencies:
+  * upgraded github.com/google/go-tpm v0.9.3 => v0.9.4
+  * upgraded github.com/google/pprof v0.0.0-20250418163039-24c5476c6587 => v0.0.0-20250501235452-c0086092b71a
+  * upgraded github.com/pires/go-proxyproto v0.8.0 => v0.8.1
+  * upgraded go.uber.org/mock v0.5.1 => v0.5.2
+  * upgraded golang.org/x/crypto v0.37.0 => v0.38.0
+  * upgraded golang.org/x/net v0.39.0 => v0.40.0
+  * upgraded golang.org/x/sync v0.13.0 => v0.14.0
+  * upgraded golang.org/x/sys v0.32.0 => v0.33.0
+  * upgraded golang.org/x/text v0.24.0 => v0.25.0
+  * upgraded golang.org/x/tools v0.32.0 => v0.33.0
+
 ## v0.15.8
 
 ### :wrench: Misc
