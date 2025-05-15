@@ -1129,14 +1129,16 @@ func (p *Proxy) baseTLSConfig() *tls.Config {
 			}
 			cert.Leaf = c
 		}
-		issuer, err := x509.ParseCertificate(cert.Certificate[1])
-		if err != nil {
-			return nil, err
-		}
-		if ocspResp, err := p.ocspCache.Response(p.ctx, cert.Leaf, issuer, time.Hour); err == nil && ocspResp.Status == ocsp.Good {
-			cert.OCSPStaple = ocspResp.Raw
-		} else {
-			p.recordEvent("ocsp staple error for " + idnaToUnicode(hello.ServerName))
+		if len(cert.Leaf.OCSPServer) > 0 {
+			issuer, err := x509.ParseCertificate(cert.Certificate[1])
+			if err != nil {
+				return nil, err
+			}
+			if ocspResp, err := p.ocspCache.Response(p.ctx, cert.Leaf, issuer, time.Hour); err == nil && ocspResp != nil && ocspResp.Status == ocsp.Good {
+				cert.OCSPStaple = ocspResp.Raw
+			} else {
+				p.recordEvent("ocsp staple error for " + idnaToUnicode(hello.ServerName))
+			}
 		}
 		return cert, nil
 	}
