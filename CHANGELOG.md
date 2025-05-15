@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Bug Fix
+
+* [Let's Encrypt is removing support for OCSP](https://letsencrypt.org/2024/12/05/ending-ocsp/). This change broke some assumptions in TLSPROXY which resulted in failed requests and some crashes. This release fixes that problem. OCSP stapling will only be enabled when the certificate authority supports it.
+
 ## v0.15.9
 
 ### :wrench: Misc

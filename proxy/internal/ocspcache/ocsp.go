@@ -192,6 +192,9 @@ func certHash(b []byte) string {
 }
 
 func (c *OCSPCache) Response(ctx context.Context, cert, issuer *x509.Certificate, margin time.Duration) (*ocsp.Response, error) {
+	if len(cert.OCSPServer) == 0 {
+		return nil, nil
+	}
 	hash := certHash(cert.Raw)
 	if resp, ok := c.cache.Get(hash); ok && time.Now().Add(margin).Before(resp.NextUpdate) {
 		return resp, nil
