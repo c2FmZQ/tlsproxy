@@ -6,10 +6,10 @@ toolchain go1.24.0
 
 require (
 	github.com/blend/go-sdk v1.20240719.1
-	github.com/c2FmZQ/tlsproxy v0.15.8
+	github.com/c2FmZQ/tlsproxy v0.15.10
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/lestrrat-go/jwx v1.2.31
-	github.com/quic-go/quic-go v0.51.0
+	github.com/quic-go/quic-go v0.52.0
 )
 
 require (

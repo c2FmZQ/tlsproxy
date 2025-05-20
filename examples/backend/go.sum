@@ -1,7 +1,7 @@
 github.com/blend/go-sdk v1.20240719.1 h1:eyispDP9DzQuNE+y7j1xSqwRm6ndMS4jgwlOQU4BTGY=
 github.com/blend/go-sdk v1.20240719.1/go.mod h1:aTw/exIbMHDYcJLTiqeWMMVhUs9+72BDe26AA0A6jno=
-github.com/c2FmZQ/tlsproxy v0.15.8 h1:IhrgEPAHi/4z0WfeZG8EOGuiSEBkMxY30U3iaqBWFrg=
-github.com/c2FmZQ/tlsproxy v0.15.8/go.mod h1:J3Lo46hFoXHYUklJqvRyIvD0MGoMVDnxIjTj9botYc0=
+github.com/c2FmZQ/tlsproxy v0.15.10 h1:YlaHXkDE3Ln+EytMgdP8J4PHCr7PAChov6bEghyvUMQ=
+github.com/c2FmZQ/tlsproxy v0.15.10/go.mod h1:hEBFGLO03ALVNqeBd0wtEctVzsjiLipf5etIFeVxR1w=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -50,8 +50,8 @@ github.com/prashantv/gostub v1.1.0 h1:BTyx3RfQjRHnUWaGF9oQos79AlQ5k8WNktv7VGvVH4
 github.com/prashantv/gostub v1.1.0/go.mod h1:A5zLQHz7ieHGG7is6LLXLz7I8+3LZzsrV0P1IAHhP5U=
 github.com/quic-go/qpack v0.5.1 h1:giqksBPnT/HDtZ6VhtFKgoLOWmlyo9Ei6u9PqzIMbhI=
 github.com/quic-go/qpack v0.5.1/go.mod h1:+PC4XFrEskIVkcLzpEkbLqq1uCoxPhQuvK5rH1ZgaEg=
-github.com/quic-go/quic-go v0.51.0 h1:K8exxe9zXxeRKxaXxi/GpUqYiTrtdiWP8bo1KFya6Wc=
-github.com/quic-go/quic-go v0.51.0/go.mod h1:MFlGGpcpJqRAfmYi6NC2cptDPSxRWTOGNuP4wqrWmzQ=
+github.com/quic-go/quic-go v0.52.0 h1:/SlHrCRElyaU6MaEPKqKr9z83sBg2v4FLLvWM+Z47pA=
+github.com/quic-go/quic-go v0.52.0/go.mod h1:MFlGGpcpJqRAfmYi6NC2cptDPSxRWTOGNuP4wqrWmzQ=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.6.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.7.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
