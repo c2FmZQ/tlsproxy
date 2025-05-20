@@ -1,5 +1,13 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Update go dependencies:
+  * upgraded github.com/google/go-tpm v0.9.4 => v0.9.5
+  * upgraded github.com/quic-go/quic-go v0.51.0 => v0.52.0
+
 ## v0.15.10
 
 ### :wrench: Bug Fix

@@ -17,7 +17,7 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.7
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/pires/go-proxyproto v0.8.1
-	github.com/quic-go/quic-go v0.51.0
+	github.com/quic-go/quic-go v0.52.0
 	github.com/russellhaering/goxmldsig v1.5.0
 	golang.org/x/crypto v0.38.0
 	golang.org/x/net v0.40.0
@@ -29,7 +29,7 @@ require (
 
 require (
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
-	github.com/google/go-tpm v0.9.4 // indirect
+	github.com/google/go-tpm v0.9.5 // indirect
 	github.com/google/pprof v0.0.0-20250501235452-c0086092b71a // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
