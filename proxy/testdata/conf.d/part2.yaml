@@ -1,7 +1,5 @@
 backends:
-- serverNames:
-  - other.example.com
+- serverNames: other.example.com
   mode: https
-  addresses:
-  - 192.168.1.100:443
+  addresses: 192.168.1.100:443
   insecureSkipVerify: true
