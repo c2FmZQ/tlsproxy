@@ -210,13 +210,17 @@ func New(cfg *Config, passphrase []byte) (*Proxy, error) {
 		return nil, err
 	}
 
+	var email string
+	if cfg.Email != nil {
+		email = *cfg.Email
+	}
 	p.certManager = &autocert.Manager{
 		Prompt: func(string) bool {
 			p.logError("AcceptTOS must be set in the config")
 			return false
 		},
 		Cache: autocertcache.New("autocert", store),
-		Email: *cfg.Email,
+		Email: email,
 	}
 	if cfg.AcceptTOS != nil && *cfg.AcceptTOS {
 		p.certManager.(*autocert.Manager).Prompt = autocert.AcceptTOS

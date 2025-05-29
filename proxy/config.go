@@ -113,10 +113,7 @@ func (s *Strings) UnmarshalYAML(value *yaml.Node) error {
 		*s = []string{ss}
 		return nil
 	}
-	if err := value.Decode((*[]string)(s)); err != nil {
-		return err
-	}
-	return nil
+	return value.Decode((*[]string)(s))
 }
 
 // Config is the TLS proxy configuration.
