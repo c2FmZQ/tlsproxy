@@ -737,7 +737,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 
 			if h.isCallback && be.SSO != nil {
 				if m, ok := be.SSO.p.(*passkeys.Manager); ok {
-					m.SetACL(be.SSO.ACL)
+					m.SetACL((*[]string)(be.SSO.ACL))
 				}
 			}
 		}

@@ -87,13 +87,37 @@ var (
 		"dns",
 	}
 	// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-	defaultALPNProtos       = &[]string{"h2", "http/1.1"}
-	defaultALPNProtosPlusH3 = &[]string{"h3", "h2", "http/1.1"}
+	defaultALPNProtos       = &Strings{"h2", "http/1.1"}
+	defaultALPNProtosPlusH3 = &Strings{"h3", "h2", "http/1.1"}
 
 	quicOnlyProtocols = map[string]bool{
 		"h3": true,
 	}
 )
+
+// Strings can be decoded from yaml as a scalar or a sequence. These two forms
+// are equivalent:
+//
+//	foo: bar
+//
+//	foo:
+//	- bar
+type Strings []string
+
+func (s *Strings) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		var ss string
+		if err := value.Decode(&ss); err != nil {
+			return err
+		}
+		*s = []string{ss}
+		return nil
+	}
+	if err := value.Decode((*[]string)(s)); err != nil {
+		return err
+	}
+	return nil
+}
 
 // Config is the TLS proxy configuration.
 type Config struct {
@@ -103,7 +127,7 @@ type Config struct {
 
 	// Include is a list of configuration files to read. They can be glob
 	// patterns.
-	Include []string `yaml:"include,omitempty"`
+	Include Strings `yaml:"include,omitempty"`
 	// HTTPAddr must be reachable from the internet via port 80 for the
 	// letsencrypt ACME http-01 challenge to work. If the httpAddr is empty,
 	// the proxy will only use tls-alpn-01 and tlsAddr must be reachable on
@@ -126,7 +150,7 @@ type Config struct {
 	// within one of these CIDRs. By default, the proxy protocol is not
 	// enabled for incoming connections.
 	// See https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt
-	AcceptProxyHeaderFrom []string `yaml:"acceptProxyHeaderFrom,omitempty"`
+	AcceptProxyHeaderFrom Strings `yaml:"acceptProxyHeaderFrom,omitempty"`
 	// HWBacked indicates that local data should be encrypted using
 	// hardware-backed encryption keys, e.g. with a Trusted Platform Module
 	// (TPM). When this option is true, the local data cannot be used or
@@ -202,15 +226,15 @@ type ECH struct {
 	// A list of WebHooks to call when the ECH config is updated. There is
 	// no payload other than the URLs themselves. The receipient should
 	// fetch the ECH endpoint (above) to get the current ConfigList.
-	WebHooks []string `yaml:"webhooks,omitempty"`
+	WebHooks Strings `yaml:"webhooks,omitempty"`
 	// The cloudflare DNS records to update when the ECH ConfigList changes.
 	Cloudflare []*Cloudflare `yaml:"cloudflare,omitempty"`
 }
 
 type Cloudflare struct {
-	Token string   `yaml:"token"`
-	Zone  string   `yaml:"zone"`
-	Names []string `yaml:"names"`
+	Token string  `yaml:"token"`
+	Zone  string  `yaml:"zone"`
+	Names Strings `yaml:"names"`
 }
 
 // BWLimit is a named bandwidth limit configuration.
@@ -238,7 +262,7 @@ type LogFilter struct {
 type TLSCertificate struct {
 	// ServerNames is a list of server names for which this certificate
 	// should be used.
-	ServerNames []string `yaml:"serverNames"`
+	ServerNames Strings `yaml:"serverNames"`
 	// KeyFile is the name of the file that contains the private key.
 	KeyFile string `yaml:"key"`
 	// CertFile is the name of the file that contains the X.509 certificate
@@ -258,7 +282,7 @@ type Backend struct {
 	// e.g. example.com, www.example.com.
 	// Internationalized names are converted to ascii using the IDNA2008
 	// lookup standard as implemented by golang.org/x/net/idna.
-	ServerNames []string `yaml:"serverNames"`
+	ServerNames Strings `yaml:"serverNames"`
 	// ClientAuth specifies that the TLS client's identity must be verified.
 	ClientAuth *ClientAuth `yaml:"clientAuth,omitempty"`
 	// AllowIPs specifies a list of IP network addresses to allow, in CIDR
@@ -272,10 +296,10 @@ type Backend struct {
 	//
 	// If an IP address is blocked, the client receives a TLS "unrecognized
 	// name" alert, as if it connected to an unknown server name.
-	AllowIPs *[]string `yaml:"allowIPs,omitempty"`
+	AllowIPs *Strings `yaml:"allowIPs,omitempty"`
 	// DenyIPs specifies a list of IP network addresses to deny, in CIDR
 	// format, e.g. 192.168.0.0/24. See AllowIPs.
-	DenyIPs *[]string `yaml:"denyIPs,omitempty"`
+	DenyIPs *Strings `yaml:"denyIPs,omitempty"`
 	// SSO indicates that the backend requires user authentication, and
 	// specifies which identity provider to use and who's allowed to
 	// connect.
@@ -296,7 +320,7 @@ type Backend struct {
 	// The negotiated protocol is forwarded to the backends that use TLS.
 	//
 	// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-	ALPNProtos *[]string `yaml:"alpnProtos,flow,omitempty"`
+	ALPNProtos *Strings `yaml:"alpnProtos,flow,omitempty"`
 	// BackendProto specifies which protocol to use when forwarding an HTTPS
 	// request to the backend. This field is only valid in modes HTTP and
 	// HTTPS.
@@ -365,7 +389,7 @@ type Backend struct {
 	// Addresses is a list of server addresses where requests are forwarded.
 	// When more than one address are specified, requests are distributed
 	// using a simple round robin.
-	Addresses []string `yaml:"addresses,omitempty"`
+	Addresses Strings `yaml:"addresses,omitempty"`
 	// UseDoH specifies that DNS-over-HTTPS should be used to resolve the
 	// backend addresses. The value is the URL of the DoH server to use,
 	// e.g. https://1.1.1.1/dns-query. An empty value indicates that the
@@ -387,7 +411,7 @@ type Backend struct {
 	// - CA names defined in the PKI section,
 	// - File names that contain PEM-encoded certificates, or
 	// - PEM-encoded certificates.
-	ForwardRootCAs []string `yaml:"forwardRootCAs,omitempty"`
+	ForwardRootCAs Strings `yaml:"forwardRootCAs,omitempty"`
 	// ForwardTimeout is the connection timeout to backend servers. If
 	// Addresses contains multiple addresses, this timeout indicates how
 	// long to wait before trying the next address in the list. The default
@@ -512,16 +536,16 @@ type ClientAuth struct {
 	// any valid client certificate. Otherwise, the value is a slice of
 	// Subject or Subject Alternate Name strings from the client X509
 	// certificate, e.g. SUBJECT:CN=Bob or EMAIL:bob@example.com
-	ACL *[]string `yaml:"acl,omitempty"`
+	ACL *Strings `yaml:"acl,omitempty"`
 	// RootCAs a list of:
 	// - CA names defined in the PKI section,
 	// - File names that contain PEM-encoded certificates, or
 	// - PEM-encoded certificates.
-	RootCAs []string `yaml:"rootCAs,omitempty"`
+	RootCAs Strings `yaml:"rootCAs,omitempty"`
 	// AddClientCertHeader indicates which fields of the HTTP
 	// X-Forwarded-Client-Cert header should be added to the request when
 	// Mode is HTTP or HTTPS.
-	AddClientCertHeader []string `yaml:"addClientCertHeader,omitempty"`
+	AddClientCertHeader Strings `yaml:"addClientCertHeader,omitempty"`
 }
 
 // ConfigOIDC contains the parameters of an OIDC provider.
@@ -540,7 +564,7 @@ type ConfigOIDC struct {
 	// google, or the "public_profile" scope with facebook, i.e.
 	// {"openid", "email", "profile"} or {"openid", "email",
 	// "public_profile"}.
-	Scopes []string `yaml:"scopes,flow,omitempty"`
+	Scopes Strings `yaml:"scopes,flow,omitempty"`
 	// HostedDomain specifies that the HD param should be used.
 	// This parameter is used by Google is restrict the login process to
 	// one hosted domain, e.g. example.com. An empty or unspecified value
@@ -613,21 +637,21 @@ type ConfigPKI struct {
 	KeyType string `yaml:"keyType,omitempty"`
 	// IssuingCertificateURLs is a list of URLs that return the X509
 	// certificate of the CA.
-	IssuingCertificateURLs []string `yaml:"issuingCertificateUrls,omitempty"`
+	IssuingCertificateURLs Strings `yaml:"issuingCertificateUrls,omitempty"`
 	// CRLDistributionPoints is a list of URLs that return the Certificate
 	// Revocation List for this CA.
-	CRLDistributionPoints []string `yaml:"crlDistributionPoints,omitempty"`
+	CRLDistributionPoints Strings `yaml:"crlDistributionPoints,omitempty"`
 	// OCSPServer is a list of URLs that serve the Online Certificate Status
 	// Protocol (OCSP) for this CA.
 	// https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol
-	OCSPServer []string `yaml:"ocspServers,omitempty"`
+	OCSPServer Strings `yaml:"ocspServers,omitempty"`
 	// Endpoint is the URL where users can manage their certificates. It
 	// should be on a backend with restricted access and/or forceReAuth
 	// enabled.
 	Endpoint string `yaml:"endpoint"`
 	// Admins is a list of users who are allowed to perform administrative
 	// tasks on the CA, e.g. revoke any certificate.
-	Admins []string `yaml:"admins"`
+	Admins Strings `yaml:"admins"`
 }
 
 // ConfigSSHCertificateAuthority defines a certificate authority.
@@ -659,13 +683,13 @@ type BackendSSO struct {
 	// "@example.com"
 	// If ACL is nil, all identities are allowed. If ACL is an empty list,
 	// nobody is allowed.
-	ACL *[]string `yaml:"acl,omitempty"`
+	ACL *Strings `yaml:"acl,omitempty"`
 	// Paths lists the path prefixes for which this policy will be enforced.
 	// If Paths is empty, the policy applies to all paths.
-	Paths []string `yaml:"paths,omitempty"`
+	Paths Strings `yaml:"paths,omitempty"`
 	// Exceptions is a list of path prefixes that are exempt from SSO
 	// enforcement, e.g. /app.webmanifest or /favicon.png
-	Exceptions []string `yaml:"exceptions,omitempty"`
+	Exceptions Strings `yaml:"exceptions,omitempty"`
 	// HTMLMessage is displayed on the permission denied screen. The value
 	// is HTML and will be used as it is without escaping.
 	HTMLMessage string `yaml:"htmlMessage,omitempty"`
@@ -708,11 +732,11 @@ type BackendECH struct {
 // PathOverride specifies different backend parameters for some path prefixes.
 type PathOverride struct {
 	// Paths is the list of path prefixes for which these parameters apply.
-	Paths []string `yaml:"paths"`
+	Paths Strings `yaml:"paths"`
 	// Addresses is a list of server addresses where requests are forwarded.
 	// When more than one address are specified, requests are distributed
 	// using a simple round robin.
-	Addresses []string `yaml:"addresses,omitempty"`
+	Addresses Strings `yaml:"addresses,omitempty"`
 	// Mode is either HTTP or HTTPS.
 	Mode string `yaml:"mode"`
 	// DocumentRoot indicates local files should be served from this
@@ -737,7 +761,7 @@ type PathOverride struct {
 	// - CA names defined in the PKI section,
 	// - File names that contain PEM-encoded certificates, or
 	// - PEM-encoded certificates.
-	ForwardRootCAs []string `yaml:"forwardRootCAs,omitempty"`
+	ForwardRootCAs Strings `yaml:"forwardRootCAs,omitempty"`
 	// ForwardTimeout is the connection timeout to backend servers. If
 	// Addresses contains multiple addresses, this timeout indicates how
 	// long to wait before trying the next address in the list. The default
@@ -805,7 +829,7 @@ type LocalOIDCClient struct {
 	Secret string `yaml:"secret"`
 	// RedirectURI is where the authorization endpoint will redirect the
 	// user once the authorization code has been granted.
-	RedirectURI []string `yaml:"redirectUri"`
+	RedirectURI Strings `yaml:"redirectUri"`
 }
 
 // LocalOIDCRewriteRule define how to rewrite existing claims or create new

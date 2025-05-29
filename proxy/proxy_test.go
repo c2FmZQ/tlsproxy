@@ -129,84 +129,84 @@ func TestProxyBackends(t *testing.T) {
 		Backends: []*Backend{
 			// Plaintext backends.
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"example.com",
 					"www.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be1.listener.Addr().String(),
 					be2.listener.Addr().String(),
 				},
 			},
 			// TLS backends.
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"øäåé©©.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be3.listener.Addr().String(),
 				},
 				Mode:              "TLS",
-				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+				ForwardRootCAs:    Strings{intCA.RootCAPEM()},
 				ForwardServerName: "øäåé©©-internal.example.com",
 			},
 			// TLS backends, require clients to present a certificate.
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"secure.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be4.listener.Addr().String(),
 				},
 				Mode:              "TLS",
-				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+				ForwardRootCAs:    Strings{intCA.RootCAPEM()},
 				ForwardServerName: "secure-internal.example.com",
 				ClientAuth: &ClientAuth{
-					RootCAs: []string{intCA.RootCAPEM()},
+					RootCAs: Strings{intCA.RootCAPEM()},
 				},
 			},
 			// TLS backend with imap proto.
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"secure.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be5.listener.Addr().String(),
 				},
 				Mode:              "TLS",
-				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+				ForwardRootCAs:    Strings{intCA.RootCAPEM()},
 				ForwardServerName: "imap-internal.example.com",
-				ALPNProtos:        &[]string{"imap"},
+				ALPNProtos:        &Strings{"imap"},
 			},
 			// TLS backend without ALPN.
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"noproto.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be6.listener.Addr().String(),
 				},
 				Mode:              "TLS",
-				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+				ForwardRootCAs:    Strings{intCA.RootCAPEM()},
 				ForwardServerName: "noproto-internal.example.com",
-				ALPNProtos:        &[]string{},
+				ALPNProtos:        &Strings{},
 			},
 			// TLS passthrough
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"passthrough.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be7.listener.Addr().String(),
 				},
 				Mode: "TLSPASSTHROUGH",
 			},
 			// HTTP
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"http.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be8.String(),
 				},
 				Mode: "HTTP",
@@ -215,28 +215,28 @@ func TestProxyBackends(t *testing.T) {
 				},
 				PathOverrides: []*PathOverride{
 					{
-						Paths: []string{
+						Paths: Strings{
 							"/foo/",
 						},
-						Addresses: []string{
+						Addresses: Strings{
 							be9.String(),
 						},
 						Mode:              "HTTPS",
-						ForwardRootCAs:    []string{intCA.RootCAPEM()},
+						ForwardRootCAs:    Strings{intCA.RootCAPEM()},
 						ForwardServerName: "https-internal.example.com",
 						ForwardHTTPHeaders: &map[string]string{
 							"x-test": "bar",
 						},
 					},
 					{
-						Paths: []string{
+						Paths: Strings{
 							"/bar/",
 						},
-						Addresses: []string{
+						Addresses: Strings{
 							be9.String(),
 						},
 						Mode:              "HTTPS",
-						ForwardRootCAs:    []string{intCA.RootCAPEM()},
+						ForwardRootCAs:    Strings{intCA.RootCAPEM()},
 						ForwardServerName: "https-internal.example.com",
 						SanitizePath:      &trueValue,
 					},
@@ -245,10 +245,10 @@ func TestProxyBackends(t *testing.T) {
 			},
 			// HTTP H2C
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"h2c.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be8.String(),
 				},
 				Mode:         "HTTP",
@@ -256,41 +256,41 @@ func TestProxyBackends(t *testing.T) {
 			},
 			// HTTPS
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"https.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be9.String(),
 				},
 				Mode:              "HTTPS",
-				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+				ForwardRootCAs:    Strings{intCA.RootCAPEM()},
 				ForwardServerName: "https-internal.example.com",
 				ClientAuth: &ClientAuth{
-					RootCAs:             []string{intCA.RootCAPEM()},
-					AddClientCertHeader: []string{"cert", "dns", "subject", "hash"},
+					RootCAs:             Strings{intCA.RootCAPEM()},
+					AddClientCertHeader: Strings{"cert", "dns", "subject", "hash"},
 				},
 			},
 			// TLS backend w/ PKI
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"tls-pki.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be10.listener.Addr().String(),
 				},
 				Mode:              "TLS",
-				ForwardRootCAs:    []string{"TEST CA"},
+				ForwardRootCAs:    Strings{"TEST CA"},
 				ForwardServerName: "tls-pki-internal.example.com",
 				ClientAuth: &ClientAuth{
-					RootCAs: []string{intCA.RootCAPEM()},
+					RootCAs: Strings{intCA.RootCAPEM()},
 				},
 			},
 			// HTTP + PROXY Protocol
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"http-proxy.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be11.String(),
 				},
 				Mode:                 "HTTP",
@@ -298,23 +298,23 @@ func TestProxyBackends(t *testing.T) {
 			},
 			// HTTPS + PROXY Protocol
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"https-proxy.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be12.String(),
 				},
 				Mode:                 "HTTPS",
 				ProxyProtocolVersion: "v2",
-				ForwardRootCAs:       []string{intCA.RootCAPEM()},
+				ForwardRootCAs:       Strings{intCA.RootCAPEM()},
 				ForwardServerName:    "https-proxy-internal.example.com",
 			},
 			// TCP + PROXY Protocol
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"tcp-proxy.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be13.listener.Addr().String(),
 				},
 				Mode:                 "TCP",
@@ -322,14 +322,14 @@ func TestProxyBackends(t *testing.T) {
 			},
 			// HTTPS loop
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"loop.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					proxy.listener.Addr().String(),
 				},
 				Mode:              "HTTPS",
-				ForwardRootCAs:    []string{extCA.RootCAPEM()},
+				ForwardRootCAs:    Strings{extCA.RootCAPEM()},
 				ForwardServerName: "loop.example.com",
 			},
 		},
@@ -456,45 +456,45 @@ func TestAuthnAuthz(t *testing.T) {
 		},
 		Backends: []*Backend{
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"noacl.example.com",
 				},
 				Mode: "CONSOLE",
 				ClientAuth: &ClientAuth{
-					RootCAs: []string{intCA.RootCAPEM()},
+					RootCAs: Strings{intCA.RootCAPEM()},
 				},
 			},
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"emptyacl.example.com",
 				},
 				Mode: "CONSOLE",
 				ClientAuth: &ClientAuth{
-					RootCAs: []string{intCA.RootCAPEM()},
-					ACL:     &[]string{},
+					RootCAs: Strings{intCA.RootCAPEM()},
+					ACL:     &Strings{},
 				},
 			},
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"acl.example.com",
 				},
 				Mode: "CONSOLE",
 				ClientAuth: &ClientAuth{
-					RootCAs: []string{intCA.RootCAPEM()},
-					ACL: &[]string{
+					RootCAs: Strings{intCA.RootCAPEM()},
+					ACL: &Strings{
 						"CN=client1",
 						"DNS:client2",
 					},
 				},
 			},
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"pkitest.example.com",
 				},
 				Mode: "CONSOLE",
 				ClientAuth: &ClientAuth{
-					RootCAs: []string{"TEST CA"},
-					ACL: &[]string{
+					RootCAs: Strings{"TEST CA"},
+					ACL: &Strings{
 						"EMAIL:bob@example.com",
 					},
 				},
@@ -650,17 +650,17 @@ func TestLocalTLSCerts(t *testing.T) {
 			MaxOpen:  newPtr(100),
 			TLSCertificates: []*TLSCertificate{
 				{
-					ServerNames: []string{"http.example.com"},
+					ServerNames: Strings{"http.example.com"},
 					KeyFile:     "BADFILE",
 					CertFile:    "BADFILE",
 				},
 				{
-					ServerNames: []string{"http2.example.com", "http3.example.com"},
+					ServerNames: Strings{"http2.example.com", "http3.example.com"},
 					KeyFile:     keyFile,
 					CertFile:    certFile,
 				},
 				{
-					ServerNames: []string{"*.example.com"},
+					ServerNames: Strings{"*.example.com"},
 					KeyFile:     keyFile,
 					CertFile:    certFile,
 				},
@@ -668,14 +668,14 @@ func TestLocalTLSCerts(t *testing.T) {
 			Backends: []*Backend{
 				// HTTP
 				{
-					ServerNames: []string{
+					ServerNames: Strings{
 						"http.example.com",
 						"http2.example.com",
 						"http3.example.com",
 						"foo.example.com",
 						"bar.example.ORG",
 					},
-					Addresses: []string{
+					Addresses: Strings{
 						be.String(),
 					},
 					Mode: "HTTP",
@@ -740,57 +740,57 @@ func TestConcurrency(t *testing.T) {
 			MaxOpen:  newPtr(5000),
 			Backends: []*Backend{
 				{
-					ServerNames: []string{
+					ServerNames: Strings{
 						"http.example.com",
 					},
 					Mode: "HTTP",
-					Addresses: []string{
+					Addresses: Strings{
 						be1.String(),
 					},
 					ForwardRateLimit: 1000,
 				},
 				{
-					ServerNames: []string{
+					ServerNames: Strings{
 						"https.example.com",
 					},
 					Mode: "HTTPS",
-					Addresses: []string{
+					Addresses: Strings{
 						be2.String(),
 					},
 					ForwardRateLimit:  1000,
-					ForwardRootCAs:    []string{ca.RootCAPEM()},
+					ForwardRootCAs:    Strings{ca.RootCAPEM()},
 					ForwardServerName: "https-server",
 				},
 				{
-					ServerNames: []string{
+					ServerNames: Strings{
 						"tcp.example.com",
 					},
 					Mode:       "TCP",
-					ALPNProtos: &[]string{},
-					Addresses: []string{
+					ALPNProtos: &Strings{},
+					Addresses: Strings{
 						be3.String(),
 					},
 					ForwardRateLimit: 1000,
 				},
 				{
-					ServerNames: []string{
+					ServerNames: Strings{
 						"tls.example.com",
 					},
 					Mode:       "TLS",
-					ALPNProtos: &[]string{},
-					Addresses: []string{
+					ALPNProtos: &Strings{},
+					Addresses: Strings{
 						be4.String(),
 					},
 					ForwardRateLimit:  1000,
-					ForwardRootCAs:    []string{ca.RootCAPEM()},
+					ForwardRootCAs:    Strings{ca.RootCAPEM()},
 					ForwardServerName: "tls-server",
 				},
 				{
-					ServerNames: []string{
+					ServerNames: Strings{
 						"passthru.example.com",
 					},
 					Mode: "TLSPASSTHROUGH",
-					Addresses: []string{
+					Addresses: Strings{
 						be5.String(),
 					},
 					ForwardRateLimit: 1000,
@@ -885,10 +885,10 @@ func TestBackendHTTPHeaders(t *testing.T) {
 			Backends: []*Backend{
 				// HTTP
 				{
-					ServerNames: []string{
+					ServerNames: Strings{
 						"www.example.com",
 					},
-					Addresses: []string{
+					Addresses: Strings{
 						be.String(),
 					},
 					Mode: "HTTP",
@@ -949,22 +949,22 @@ func TestBandwidthLimit(t *testing.T) {
 			},
 			Backends: []*Backend{
 				{
-					ServerNames: []string{
+					ServerNames: Strings{
 						"slowingress.example.com",
 					},
 					Mode: "HTTP",
-					Addresses: []string{
+					Addresses: Strings{
 						be.String(),
 					},
 					BWLimit:          "slowingress",
 					ForwardRateLimit: 1000,
 				},
 				{
-					ServerNames: []string{
+					ServerNames: Strings{
 						"slowegress.example.com",
 					},
 					Mode: "HTTP",
-					Addresses: []string{
+					Addresses: Strings{
 						be.String(),
 					},
 					BWLimit:          "slowegress",
@@ -1039,16 +1039,16 @@ func TestIncomingProxyProto(t *testing.T) {
 			TLSAddr:  newPtr("localhost:0"),
 			CacheDir: newPtr(t.TempDir()),
 			MaxOpen:  newPtr(100),
-			AcceptProxyHeaderFrom: []string{
+			AcceptProxyHeaderFrom: Strings{
 				"127.0.0.1/32",
 				"::1/128",
 			},
 			Backends: []*Backend{
 				{
-					ServerNames: []string{
+					ServerNames: Strings{
 						"example.com",
 					},
-					Addresses: []string{
+					Addresses: Strings{
 						be1.listener.Addr().String(),
 					},
 					ProxyProtocolVersion: "v2",
@@ -1089,10 +1089,10 @@ func TestProxyProtoIsolation(t *testing.T) {
 			MaxOpen:  newPtr(100),
 			Backends: []*Backend{
 				{
-					ServerNames: []string{
+					ServerNames: Strings{
 						"www.example.com",
 					},
-					Addresses: []string{
+					Addresses: Strings{
 						be1.String(),
 					},
 					Mode:                 "HTTP",
@@ -1137,10 +1137,10 @@ func TestProxyTPM(t *testing.T) {
 		MaxOpen:  newPtr(100),
 		Backends: []*Backend{
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"www.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be1.String(),
 				},
 				Mode: "HTTP",
@@ -1172,26 +1172,26 @@ func TestCheckIP(t *testing.T) {
 		MaxOpen:  newPtr(100),
 		Backends: []*Backend{
 			{
-				ServerNames: []string{"example.com"},
-				Addresses:   []string{"192.168.0.1:80"},
-				AllowIPs: &[]string{
+				ServerNames: Strings{"example.com"},
+				Addresses:   Strings{"192.168.0.1:80"},
+				AllowIPs: &Strings{
 					"192.168.10.0/24",
 				},
-				DenyIPs: &[]string{
+				DenyIPs: &Strings{
 					"192.168.10.1/32",
 				},
 			},
 			{
-				ServerNames: []string{"www.example.com"},
-				Addresses:   []string{"192.168.0.2:80"},
-				AllowIPs: &[]string{
+				ServerNames: Strings{"www.example.com"},
+				Addresses:   Strings{"192.168.0.2:80"},
+				AllowIPs: &Strings{
 					"192.168.20.0/24",
 				},
 			},
 			{
-				ServerNames: []string{"foo.example.com"},
-				Addresses:   []string{"192.168.0.3:80"},
-				DenyIPs: &[]string{
+				ServerNames: Strings{"foo.example.com"},
+				Addresses:   Strings{"192.168.0.3:80"},
+				DenyIPs: &Strings{
 					"192.168.30.0/24",
 				},
 			},
