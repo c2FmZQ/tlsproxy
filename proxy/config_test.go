@@ -58,8 +58,8 @@ func TestReadConfig(t *testing.T) {
 	}
 
 	want := &Config{
-		HTTPAddr: ":10080",
-		TLSAddr:  ":10443",
+		HTTPAddr: newPtr(":10080"),
+		TLSAddr:  newPtr(":10443"),
 		CacheDir: got.CacheDir,
 		MaxOpen:  got.MaxOpen,
 		Backends: []*Backend{
@@ -75,70 +75,128 @@ func TestReadConfig(t *testing.T) {
 				},
 				ForwardRateLimit: 5,
 				Mode:             "HTTP",
-				ALPNProtos:       &[]string{"h2", "http/1.1"},
+				ALPNProtos:       &Strings{"h2", "http/1.1"},
 				ForwardTimeout:   30 * time.Second,
 			},
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"other.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					"192.168.1.100:443",
 				},
 				ForwardRateLimit:   5,
 				Mode:               "HTTPS",
-				ALPNProtos:         &[]string{"h2", "http/1.1"},
+				ALPNProtos:         &Strings{"h2", "http/1.1"},
 				InsecureSkipVerify: true,
 				ForwardTimeout:     30 * time.Second,
 			},
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"secure.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					"192.168.2.200:443",
 				},
 				ForwardRateLimit: 5,
 				Mode:             "TLS",
-				ALPNProtos:       &[]string{"h2", "http/1.1"},
+				ALPNProtos:       &Strings{"h2", "http/1.1"},
 				ClientAuth: &ClientAuth{
-					RootCAs: []string{demoCert},
+					RootCAs: Strings{demoCert},
 				},
 				ForwardServerName: "secure-internal.example.com",
-				ForwardRootCAs:    []string{demoCert},
+				ForwardRootCAs:    Strings{demoCert},
 				ForwardTimeout:    30 * time.Second,
 			},
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"ssh.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					"192.168.8.20:22",
 				},
 				ForwardRateLimit: 5,
 				Mode:             "TCP",
-				ALPNProtos:       &[]string{"h2", "http/1.1"},
+				ALPNProtos:       &Strings{"h2", "http/1.1"},
 				ClientAuth: &ClientAuth{
-					RootCAs: []string{demoCert},
+					RootCAs: Strings{demoCert},
 				},
 				ForwardTimeout: 30 * time.Second,
 			},
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"c2fmzq-server.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					"192.168.3.30:5443",
 				},
 				ForwardRateLimit: 5,
 				Mode:             "TLSPASSTHROUGH",
-				ALPNProtos:       &[]string{"h2", "http/1.1"},
+				ALPNProtos:       &Strings{"h2", "http/1.1"},
 				ForwardTimeout:   30 * time.Second,
 			},
 		},
 	}
-	v := quicIsEnabled
-	want.EnableQUIC = &v
+	want.EnableQUIC = newPtr(quicIsEnabled)
+	if quicIsEnabled {
+		for _, be := range want.Backends {
+			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS {
+				be.ALPNProtos = defaultALPNProtosPlusH3
+			}
+		}
+	}
+
+	if diff := deep.Equal(want, got); diff != nil {
+		t.Errorf("ReadConfig() = %#v, want %#v", got, want)
+		for _, d := range diff {
+			t.Logf("  %s", d)
+		}
+	}
+}
+
+func TestReadSplitConfig(t *testing.T) {
+	got, err := ReadConfig("testdata/testconfig.yaml")
+	if err != nil {
+		t.Fatalf("ReadConfig: %v", err)
+	}
+
+	want := &Config{
+		HTTPAddr: newPtr(":10080"),
+		TLSAddr:  newPtr(":10443"),
+		CacheDir: got.CacheDir,
+		MaxOpen:  got.MaxOpen,
+		Backends: []*Backend{
+			{
+				ServerNames: Strings{
+					"example.com",
+					"www.example.com",
+				},
+				Addresses: Strings{
+					"192.168.0.10:80",
+					"192.168.0.11:80",
+					"192.168.0.12:80",
+				},
+				ForwardRateLimit: 5,
+				Mode:             "HTTP",
+				ALPNProtos:       &Strings{"h2", "http/1.1"},
+				ForwardTimeout:   30 * time.Second,
+			},
+			{
+				ServerNames: Strings{
+					"other.example.com",
+				},
+				Addresses: Strings{
+					"192.168.1.100:443",
+				},
+				ForwardRateLimit:   5,
+				Mode:               "HTTPS",
+				ALPNProtos:         &Strings{"h2", "http/1.1"},
+				InsecureSkipVerify: true,
+				ForwardTimeout:     30 * time.Second,
+			},
+		},
+	}
+	want.EnableQUIC = newPtr(quicIsEnabled)
 	if quicIsEnabled {
 		for _, be := range want.Backends {
 			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS {

@@ -2,6 +2,27 @@
 
 ## next
 
+### :star2: New features
+
+* Config options that accept multiple values can now be specified on one line if there is only one value, e.g.
+  ```
+  addresses: 192.168.0.1:80
+  ```
+  is equivalent to:
+  ```
+  addresses:
+    - 192.168.0.1:80
+  ```
+* The config file can now be split across multiple files or directories with the 'include' directive, e.g.
+  ```
+  include: "conf/*.yaml"
+  ```
+  or
+  ```
+  include:
+    - "conf/*.yaml"
+  ```
+
 ### :wrench: Misc
 
 * Update go dependencies:

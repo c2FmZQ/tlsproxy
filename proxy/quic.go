@@ -71,7 +71,7 @@ func (p *Proxy) startQUIC(ctx context.Context) error {
 			return err
 		}
 	}
-	qt, err := netw.NewQUIC(p.cfg.TLSAddr, statelessResetKey)
+	qt, err := netw.NewQUIC(*p.cfg.TLSAddr, statelessResetKey)
 	if err != nil {
 		return err
 	}
@@ -184,9 +184,9 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 	qc.SetAnnotation(backendKey, be)
 	p.setCounters(qc, cs.ServerName)
 
-	if numOpen >= p.cfg.MaxOpen {
+	if numOpen >= *p.cfg.MaxOpen {
 		p.recordEvent("too many open connections")
-		be.logErrorF("ERR [%s] %s:%s: too many open connections: %d >= %d", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), numOpen, p.cfg.MaxOpen)
+		be.logErrorF("ERR [%s] %s:%s: too many open connections: %d >= %d", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), numOpen, *p.cfg.MaxOpen)
 		return
 	}
 

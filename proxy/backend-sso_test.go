@@ -136,7 +136,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 	}
 
 	// bob not allowed.
-	proxy.cfg.Backends[0].SSO.ACL = &[]string{
+	proxy.cfg.Backends[0].SSO.ACL = &Strings{
 		"alice@example.org",
 	}
 	w = httptest.NewRecorder()
@@ -148,7 +148,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 	}
 
 	// bob is allowed.
-	proxy.cfg.Backends[0].SSO.ACL = &[]string{
+	proxy.cfg.Backends[0].SSO.ACL = &Strings{
 		"alice@example.org",
 		"bob@example.org",
 	}
@@ -161,7 +161,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 	}
 
 	// bob's domain is allowed.
-	proxy.cfg.Backends[0].SSO.ACL = &[]string{
+	proxy.cfg.Backends[0].SSO.ACL = &Strings{
 		"@example.org",
 	}
 	w = httptest.NewRecorder()
@@ -202,10 +202,10 @@ func TestEnforceSSOPolicy(t *testing.T) {
 func newBackendSSOTestProxy(t *testing.T) *Proxy {
 	return newTestProxy(
 		&Config{
-			HTTPAddr: "localhost:0",
-			TLSAddr:  "localhost:0",
-			CacheDir: t.TempDir(),
-			MaxOpen:  100,
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
 			OIDCProviders: []*ConfigOIDC{
 				{
 					Name:          "test-idp",

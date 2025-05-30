@@ -53,11 +53,11 @@ func TestECH(t *testing.T) {
 	}
 	proxy := newTestProxy(
 		&Config{
-			HTTPAddr: "localhost:0",
-			TLSAddr:  "localhost:0",
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
 			ECH:      &ECH{PublicName: "https.example.com"},
-			CacheDir: t.TempDir(),
-			MaxOpen:  100,
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
 		},
 		extCA,
 	)
@@ -83,62 +83,62 @@ func TestECH(t *testing.T) {
 
 	cfg := &Config{
 		ECH:     &ECH{PublicName: "https.example.com"},
-		MaxOpen: 100,
+		MaxOpen: newPtr(100),
 		Backends: []*Backend{
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"https.example.com",
 				},
-				ALPNProtos: &[]string{"foo"},
-				Addresses: []string{
+				ALPNProtos: &Strings{"foo"},
+				Addresses: Strings{
 					be1.listener.Addr().String(),
 				},
 				Mode:              "TLS",
 				ForwardServerName: "blah",
-				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+				ForwardRootCAs:    Strings{intCA.RootCAPEM()},
 			},
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"require-ech.example.com",
 				},
-				ALPNProtos: &[]string{"foo"},
-				Addresses: []string{
+				ALPNProtos: &Strings{"foo"},
+				Addresses: Strings{
 					be1.listener.Addr().String(),
 				},
 				Mode:              "TLS",
 				ForwardServerName: "blah",
-				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+				ForwardRootCAs:    Strings{intCA.RootCAPEM()},
 				ForwardECH: &BackendECH{
 					RequireECH: &truev,
 				},
 			},
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"be-publicname.example.com",
 				},
-				ALPNProtos: &[]string{"foo"},
-				Addresses: []string{
+				ALPNProtos: &Strings{"foo"},
+				Addresses: Strings{
 					be1.listener.Addr().String(),
 				},
 				Mode:              "TLS",
 				ForwardServerName: "blah",
-				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+				ForwardRootCAs:    Strings{intCA.RootCAPEM()},
 				ForwardECH: &BackendECH{
 					RequireECH:    &truev,
 					ECHPublicName: &pubname,
 				},
 			},
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"static-ech.example.com",
 				},
-				ALPNProtos: &[]string{"foo"},
-				Addresses: []string{
+				ALPNProtos: &Strings{"foo"},
+				Addresses: Strings{
 					be1.listener.Addr().String(),
 				},
 				Mode:              "TLS",
 				ForwardServerName: "blah",
-				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+				ForwardRootCAs:    Strings{intCA.RootCAPEM()},
 				ForwardECH: &BackendECH{
 					RequireECH:    &truev,
 					ECHConfigList: &configList,
