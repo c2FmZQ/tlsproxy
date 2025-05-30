@@ -1360,10 +1360,6 @@ func mergeConfig(cfg *Config, seen map[string]bool, filename string) error {
 		if !filepath.IsAbs(glob) {
 			glob = filepath.Join(parent, glob)
 		}
-		if seen[glob] {
-			continue
-		}
-		seen[glob] = true
 		m, err := filepath.Glob(glob)
 		if err != nil {
 			return fmt.Errorf("include %q: %w", glob, err)
