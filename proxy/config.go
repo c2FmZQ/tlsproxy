@@ -1353,11 +1353,6 @@ func mergeConfig(cfg *Config, seen map[string]bool, filename string) error {
 	if err != nil {
 		return err
 	}
-	if err := reflectMerge(reflect.ValueOf(cfg), reflect.ValueOf(&cfg2)); err != nil {
-		return err
-	}
-	cfg.Include = nil
-	cfg.Definitions = nil
 
 	parent := filepath.Dir(filename)
 
@@ -1380,6 +1375,12 @@ func mergeConfig(cfg *Config, seen map[string]bool, filename string) error {
 			}
 		}
 	}
+
+	if err := reflectMerge(reflect.ValueOf(cfg), reflect.ValueOf(&cfg2)); err != nil {
+		return err
+	}
+	cfg.Include = nil
+	cfg.Definitions = nil
 	return nil
 }
 
