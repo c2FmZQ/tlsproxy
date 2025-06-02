@@ -1,0 +1,12 @@
+httpAddr: ":10080"
+tlsAddr: ":10443"
+
+backends:
+- serverNames: 
+  - example.com
+  - www.example.com
+  mode: http
+  addresses: 
+  - 192.168.0.10:80
+  - 192.168.0.11:80
+  - 192.168.0.12:80

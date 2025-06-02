@@ -71,21 +71,21 @@ func TestQUICConnections(t *testing.T) {
 	h2Value := "h2"
 
 	cfg := &Config{
-		HTTPAddr: "localhost:0",
-		TLSAddr:  "localhost:0",
-		CacheDir: t.TempDir(),
-		MaxOpen:  1000,
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(1000),
 		Backends: []*Backend{
 			// TCP backend
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"tcp.example.com",
 				},
 				Mode: "TCP",
-				Addresses: []string{
+				Addresses: Strings{
 					be1.listener.Addr().String(),
 				},
-				ALPNProtos: &[]string{
+				ALPNProtos: &Strings{
 					"h2",
 					"http/1.1",
 				},
@@ -93,40 +93,40 @@ func TestQUICConnections(t *testing.T) {
 			},
 			// QUIC backend
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"quic.example.com",
 				},
 				Mode: "QUIC",
-				Addresses: []string{
+				Addresses: Strings{
 					be2.listener.Addr().String(),
 				},
-				ALPNProtos: &[]string{
+				ALPNProtos: &Strings{
 					"h3",
 					"imap",
 				},
-				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+				ForwardRootCAs:    Strings{intCA.RootCAPEM()},
 				ForwardServerName: "quic-internal.example.com",
 				ForwardRateLimit:  1000,
 			},
 			// HTTPS backend
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"https.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be3.String(),
 				},
 				Mode:              "HTTPS",
 				BackendProto:      &h2Value,
-				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+				ForwardRootCAs:    Strings{intCA.RootCAPEM()},
 				ForwardServerName: "https-internal.example.com",
 			},
 			// HTTP backend
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"http.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be4.String(),
 				},
 				Mode:         "HTTP",
@@ -134,11 +134,11 @@ func TestQUICConnections(t *testing.T) {
 			},
 			// Local backend
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"local.example.com",
 				},
 				Mode: "LOCAL",
-				ALPNProtos: &[]string{
+				ALPNProtos: &Strings{
 					"h3",
 				},
 				DocumentRoot: ".",
@@ -215,10 +215,10 @@ func TestReverseProxyGetPost(t *testing.T) {
 
 	proxy := newTestProxy(
 		&Config{
-			HTTPAddr: "localhost:0",
-			TLSAddr:  "localhost:0",
-			CacheDir: t.TempDir(),
-			MaxOpen:  100,
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
 		},
 		extCA,
 	)
@@ -233,24 +233,24 @@ func TestReverseProxyGetPost(t *testing.T) {
 	h2Value := "h2"
 
 	cfg := &Config{
-		MaxOpen: 100,
+		MaxOpen: newPtr(100),
 		Backends: []*Backend{
 			// HTTP
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"http.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be1.String(),
 				},
 				Mode: "HTTP",
 			},
 			// HTTP H2C
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"h2c.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be1.String(),
 				},
 				Mode:         "HTTP",
@@ -258,14 +258,14 @@ func TestReverseProxyGetPost(t *testing.T) {
 			},
 			// HTTPS
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"https.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					be2.String(),
 				},
 				Mode:              "HTTPS",
-				ForwardRootCAs:    []string{intCA.RootCAPEM()},
+				ForwardRootCAs:    Strings{intCA.RootCAPEM()},
 				ForwardServerName: "https-internal.example.com",
 			},
 		},
@@ -435,23 +435,23 @@ func TestQUICMultiStream(t *testing.T) {
 	}()
 
 	cfg := &Config{
-		HTTPAddr: "localhost:0",
-		TLSAddr:  "localhost:0",
-		CacheDir: t.TempDir(),
-		MaxOpen:  1000,
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(1000),
 		Backends: []*Backend{
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"quic.example.com",
 				},
 				Mode: "QUIC",
-				Addresses: []string{
+				Addresses: Strings{
 					ln.Addr().String(),
 				},
-				ALPNProtos: &[]string{
+				ALPNProtos: &Strings{
 					"foo",
 				},
-				ForwardRootCAs:    []string{ca.RootCAPEM()},
+				ForwardRootCAs:    Strings{ca.RootCAPEM()},
 				ForwardServerName: "quic-internal.example.com",
 				ForwardRateLimit:  1000,
 			},

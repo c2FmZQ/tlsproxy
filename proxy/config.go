@@ -37,6 +37,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -86,13 +87,34 @@ var (
 		"dns",
 	}
 	// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-	defaultALPNProtos       = &[]string{"h2", "http/1.1"}
-	defaultALPNProtosPlusH3 = &[]string{"h3", "h2", "http/1.1"}
+	defaultALPNProtos       = &Strings{"h2", "http/1.1"}
+	defaultALPNProtosPlusH3 = &Strings{"h3", "h2", "http/1.1"}
 
 	quicOnlyProtocols = map[string]bool{
 		"h3": true,
 	}
 )
+
+// Strings can be decoded from yaml as a scalar or a sequence. These two forms
+// are equivalent:
+//
+//	foo: bar
+//
+//	foo:
+//	- bar
+type Strings []string
+
+func (s *Strings) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		var ss string
+		if err := value.Decode(&ss); err != nil {
+			return err
+		}
+		*s = []string{ss}
+		return nil
+	}
+	return value.Decode((*[]string)(s))
+}
 
 // Config is the TLS proxy configuration.
 type Config struct {
@@ -100,15 +122,18 @@ type Config struct {
 	// otherwise ignored by the proxy.
 	Definitions any `yaml:"definitions,omitempty"`
 
+	// Include is a list of configuration files to read. They can be glob
+	// patterns.
+	Include Strings `yaml:"include,omitempty"`
 	// HTTPAddr must be reachable from the internet via port 80 for the
 	// letsencrypt ACME http-01 challenge to work. If the httpAddr is empty,
 	// the proxy will only use tls-alpn-01 and tlsAddr must be reachable on
 	// port 443.
 	// See https://letsencrypt.org/docs/challenge-types/
-	HTTPAddr string `yaml:"httpAddr,omitempty"`
+	HTTPAddr *string `yaml:"httpAddr,omitempty"`
 	// TLSAddr is the address where the proxy will receive TLS connections
 	// and forward them to the backends.
-	TLSAddr string `yaml:"tlsAddr"`
+	TLSAddr *string `yaml:"tlsAddr"`
 	// EnableQUIC specifies whether the QUIC protocol should be enabled.
 	// The default is true if the binary is compiled with QUIC support.
 	EnableQUIC *bool `yaml:"enableQUIC,omitempty"`
@@ -122,7 +147,7 @@ type Config struct {
 	// within one of these CIDRs. By default, the proxy protocol is not
 	// enabled for incoming connections.
 	// See https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt
-	AcceptProxyHeaderFrom []string `yaml:"acceptProxyHeaderFrom,omitempty"`
+	AcceptProxyHeaderFrom Strings `yaml:"acceptProxyHeaderFrom,omitempty"`
 	// HWBacked indicates that local data should be encrypted using
 	// hardware-backed encryption keys, e.g. with a Trusted Platform Module
 	// (TPM). When this option is true, the local data cannot be used or
@@ -130,13 +155,13 @@ type Config struct {
 	//
 	// This option cannot be changed without manually deleting the cache
 	// directory.
-	HWBacked bool `yaml:"hwBacked,omitempty"`
+	HWBacked *bool `yaml:"hwBacked,omitempty"`
 	// CacheDir is the directory where the proxy stores its data, e.g. TLS
 	// certificates, OCSP responses, etc.
-	CacheDir string `yaml:"cacheDir,omitempty"`
+	CacheDir *string `yaml:"cacheDir,omitempty"`
 	// DefaultServerName is the server name to use when the TLS client
 	// doesn't use the Server Name Indication (SNI) extension.
-	DefaultServerName string `yaml:"defaultServerName,omitempty"`
+	DefaultServerName *string `yaml:"defaultServerName,omitempty"`
 	// LogFilter specifies what gets logged for this backend. Values can
 	// be overridden on a per-backend basis.
 	LogFilter LogFilter `yaml:"logFilter,omitempty"`
@@ -144,16 +169,16 @@ type Config struct {
 	Backends []*Backend `yaml:"backends"`
 	// Email is optionally sent to Let's Encrypt when registering a new
 	// account.
-	Email string `yaml:"email,omitempty"`
+	Email *string `yaml:"email,omitempty"`
 	// RevokeUnusedCertificates indicates that unused certificates
 	// should be revoked. The default is true.
 	// See https://letsencrypt.org/docs/revoking/
 	RevokeUnusedCertificates *bool `yaml:"revokeUnusedCertificates,omitempty"`
 	// MaxOpen is the maximum number of open incoming connections.
-	MaxOpen int `yaml:"maxOpen,omitempty"`
+	MaxOpen *int `yaml:"maxOpen,omitempty"`
 	// AcceptTOS indicates acceptance of the Let's Encrypt Terms of Service.
 	// See https://letsencrypt.org/repository/
-	AcceptTOS bool `yaml:"acceptTOS"`
+	AcceptTOS *bool `yaml:"acceptTOS"`
 	// OIDCProviders is the list of OIDC providers.
 	OIDCProviders []*ConfigOIDC `yaml:"oidc,omitempty"`
 	// SAMLProviders is the list of SAML providers.
@@ -198,15 +223,15 @@ type ECH struct {
 	// A list of WebHooks to call when the ECH config is updated. There is
 	// no payload other than the URLs themselves. The receipient should
 	// fetch the ECH endpoint (above) to get the current ConfigList.
-	WebHooks []string `yaml:"webhooks,omitempty"`
+	WebHooks Strings `yaml:"webhooks,omitempty"`
 	// The cloudflare DNS records to update when the ECH ConfigList changes.
 	Cloudflare []*Cloudflare `yaml:"cloudflare,omitempty"`
 }
 
 type Cloudflare struct {
-	Token string   `yaml:"token"`
-	Zone  string   `yaml:"zone"`
-	Names []string `yaml:"names"`
+	Token string  `yaml:"token"`
+	Zone  string  `yaml:"zone"`
+	Names Strings `yaml:"names"`
 }
 
 // BWLimit is a named bandwidth limit configuration.
@@ -234,7 +259,7 @@ type LogFilter struct {
 type TLSCertificate struct {
 	// ServerNames is a list of server names for which this certificate
 	// should be used.
-	ServerNames []string `yaml:"serverNames"`
+	ServerNames Strings `yaml:"serverNames"`
 	// KeyFile is the name of the file that contains the private key.
 	KeyFile string `yaml:"key"`
 	// CertFile is the name of the file that contains the X.509 certificate
@@ -254,7 +279,7 @@ type Backend struct {
 	// e.g. example.com, www.example.com.
 	// Internationalized names are converted to ascii using the IDNA2008
 	// lookup standard as implemented by golang.org/x/net/idna.
-	ServerNames []string `yaml:"serverNames"`
+	ServerNames Strings `yaml:"serverNames"`
 	// ClientAuth specifies that the TLS client's identity must be verified.
 	ClientAuth *ClientAuth `yaml:"clientAuth,omitempty"`
 	// AllowIPs specifies a list of IP network addresses to allow, in CIDR
@@ -268,10 +293,10 @@ type Backend struct {
 	//
 	// If an IP address is blocked, the client receives a TLS "unrecognized
 	// name" alert, as if it connected to an unknown server name.
-	AllowIPs *[]string `yaml:"allowIPs,omitempty"`
+	AllowIPs *Strings `yaml:"allowIPs,omitempty"`
 	// DenyIPs specifies a list of IP network addresses to deny, in CIDR
 	// format, e.g. 192.168.0.0/24. See AllowIPs.
-	DenyIPs *[]string `yaml:"denyIPs,omitempty"`
+	DenyIPs *Strings `yaml:"denyIPs,omitempty"`
 	// SSO indicates that the backend requires user authentication, and
 	// specifies which identity provider to use and who's allowed to
 	// connect.
@@ -292,7 +317,7 @@ type Backend struct {
 	// The negotiated protocol is forwarded to the backends that use TLS.
 	//
 	// https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-	ALPNProtos *[]string `yaml:"alpnProtos,flow,omitempty"`
+	ALPNProtos *Strings `yaml:"alpnProtos,flow,omitempty"`
 	// BackendProto specifies which protocol to use when forwarding an HTTPS
 	// request to the backend. This field is only valid in modes HTTP and
 	// HTTPS.
@@ -361,7 +386,7 @@ type Backend struct {
 	// Addresses is a list of server addresses where requests are forwarded.
 	// When more than one address are specified, requests are distributed
 	// using a simple round robin.
-	Addresses []string `yaml:"addresses,omitempty"`
+	Addresses Strings `yaml:"addresses,omitempty"`
 	// UseDoH specifies that DNS-over-HTTPS should be used to resolve the
 	// backend addresses. The value is the URL of the DoH server to use,
 	// e.g. https://1.1.1.1/dns-query. An empty value indicates that the
@@ -383,7 +408,7 @@ type Backend struct {
 	// - CA names defined in the PKI section,
 	// - File names that contain PEM-encoded certificates, or
 	// - PEM-encoded certificates.
-	ForwardRootCAs []string `yaml:"forwardRootCAs,omitempty"`
+	ForwardRootCAs Strings `yaml:"forwardRootCAs,omitempty"`
 	// ForwardTimeout is the connection timeout to backend servers. If
 	// Addresses contains multiple addresses, this timeout indicates how
 	// long to wait before trying the next address in the list. The default
@@ -508,16 +533,16 @@ type ClientAuth struct {
 	// any valid client certificate. Otherwise, the value is a slice of
 	// Subject or Subject Alternate Name strings from the client X509
 	// certificate, e.g. SUBJECT:CN=Bob or EMAIL:bob@example.com
-	ACL *[]string `yaml:"acl,omitempty"`
+	ACL *Strings `yaml:"acl,omitempty"`
 	// RootCAs a list of:
 	// - CA names defined in the PKI section,
 	// - File names that contain PEM-encoded certificates, or
 	// - PEM-encoded certificates.
-	RootCAs []string `yaml:"rootCAs,omitempty"`
+	RootCAs Strings `yaml:"rootCAs,omitempty"`
 	// AddClientCertHeader indicates which fields of the HTTP
 	// X-Forwarded-Client-Cert header should be added to the request when
 	// Mode is HTTP or HTTPS.
-	AddClientCertHeader []string `yaml:"addClientCertHeader,omitempty"`
+	AddClientCertHeader Strings `yaml:"addClientCertHeader,omitempty"`
 }
 
 // ConfigOIDC contains the parameters of an OIDC provider.
@@ -536,7 +561,7 @@ type ConfigOIDC struct {
 	// google, or the "public_profile" scope with facebook, i.e.
 	// {"openid", "email", "profile"} or {"openid", "email",
 	// "public_profile"}.
-	Scopes []string `yaml:"scopes,flow,omitempty"`
+	Scopes Strings `yaml:"scopes,flow,omitempty"`
 	// HostedDomain specifies that the HD param should be used.
 	// This parameter is used by Google is restrict the login process to
 	// one hosted domain, e.g. example.com. An empty or unspecified value
@@ -609,21 +634,21 @@ type ConfigPKI struct {
 	KeyType string `yaml:"keyType,omitempty"`
 	// IssuingCertificateURLs is a list of URLs that return the X509
 	// certificate of the CA.
-	IssuingCertificateURLs []string `yaml:"issuingCertificateUrls,omitempty"`
+	IssuingCertificateURLs Strings `yaml:"issuingCertificateUrls,omitempty"`
 	// CRLDistributionPoints is a list of URLs that return the Certificate
 	// Revocation List for this CA.
-	CRLDistributionPoints []string `yaml:"crlDistributionPoints,omitempty"`
+	CRLDistributionPoints Strings `yaml:"crlDistributionPoints,omitempty"`
 	// OCSPServer is a list of URLs that serve the Online Certificate Status
 	// Protocol (OCSP) for this CA.
 	// https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol
-	OCSPServer []string `yaml:"ocspServers,omitempty"`
+	OCSPServer Strings `yaml:"ocspServers,omitempty"`
 	// Endpoint is the URL where users can manage their certificates. It
 	// should be on a backend with restricted access and/or forceReAuth
 	// enabled.
 	Endpoint string `yaml:"endpoint"`
 	// Admins is a list of users who are allowed to perform administrative
 	// tasks on the CA, e.g. revoke any certificate.
-	Admins []string `yaml:"admins"`
+	Admins Strings `yaml:"admins"`
 }
 
 // ConfigSSHCertificateAuthority defines a certificate authority.
@@ -655,13 +680,13 @@ type BackendSSO struct {
 	// "@example.com"
 	// If ACL is nil, all identities are allowed. If ACL is an empty list,
 	// nobody is allowed.
-	ACL *[]string `yaml:"acl,omitempty"`
+	ACL *Strings `yaml:"acl,omitempty"`
 	// Paths lists the path prefixes for which this policy will be enforced.
 	// If Paths is empty, the policy applies to all paths.
-	Paths []string `yaml:"paths,omitempty"`
+	Paths Strings `yaml:"paths,omitempty"`
 	// Exceptions is a list of path prefixes that are exempt from SSO
 	// enforcement, e.g. /app.webmanifest or /favicon.png
-	Exceptions []string `yaml:"exceptions,omitempty"`
+	Exceptions Strings `yaml:"exceptions,omitempty"`
 	// HTMLMessage is displayed on the permission denied screen. The value
 	// is HTML and will be used as it is without escaping.
 	HTMLMessage string `yaml:"htmlMessage,omitempty"`
@@ -704,11 +729,11 @@ type BackendECH struct {
 // PathOverride specifies different backend parameters for some path prefixes.
 type PathOverride struct {
 	// Paths is the list of path prefixes for which these parameters apply.
-	Paths []string `yaml:"paths"`
+	Paths Strings `yaml:"paths"`
 	// Addresses is a list of server addresses where requests are forwarded.
 	// When more than one address are specified, requests are distributed
 	// using a simple round robin.
-	Addresses []string `yaml:"addresses,omitempty"`
+	Addresses Strings `yaml:"addresses,omitempty"`
 	// Mode is either HTTP or HTTPS.
 	Mode string `yaml:"mode"`
 	// DocumentRoot indicates local files should be served from this
@@ -733,7 +758,7 @@ type PathOverride struct {
 	// - CA names defined in the PKI section,
 	// - File names that contain PEM-encoded certificates, or
 	// - PEM-encoded certificates.
-	ForwardRootCAs []string `yaml:"forwardRootCAs,omitempty"`
+	ForwardRootCAs Strings `yaml:"forwardRootCAs,omitempty"`
 	// ForwardTimeout is the connection timeout to backend servers. If
 	// Addresses contains multiple addresses, this timeout indicates how
 	// long to wait before trying the next address in the list. The default
@@ -801,7 +826,7 @@ type LocalOIDCClient struct {
 	Secret string `yaml:"secret"`
 	// RedirectURI is where the authorization endpoint will redirect the
 	// user once the authorization code has been granted.
-	RedirectURI []string `yaml:"redirectUri"`
+	RedirectURI Strings `yaml:"redirectUri"`
 }
 
 // LocalOIDCRewriteRule define how to rewrite existing claims or create new
@@ -845,22 +870,31 @@ func (cfg *Config) clone() *Config {
 // initializes internal data structures.
 func (cfg *Config) Check() error {
 	cfg.Definitions = nil
-	if cfg.CacheDir == "" {
+	if cfg.CacheDir == nil {
+		cfg.CacheDir = new(string)
+	}
+	if *cfg.CacheDir == "" {
 		d, err := os.UserCacheDir()
 		if err != nil {
 			return errors.New("CacheDir must be set in config")
 		}
-		cfg.CacheDir = filepath.Join(d, "tlsproxy", "letsencrypt")
+		*cfg.CacheDir = filepath.Join(d, "tlsproxy", "letsencrypt")
 	}
-	if cfg.TLSAddr == "" {
-		cfg.TLSAddr = ":10443"
+	if cfg.TLSAddr == nil {
+		cfg.TLSAddr = new(string)
 	}
-	if cfg.MaxOpen == 0 {
+	if *cfg.TLSAddr == "" {
+		*cfg.TLSAddr = ":10443"
+	}
+	if cfg.MaxOpen == nil {
+		cfg.MaxOpen = new(int)
+	}
+	if *cfg.MaxOpen == 0 {
 		n, err := openFileLimit()
 		if err != nil {
 			return errors.New("MaxOpen: value must be set")
 		}
-		cfg.MaxOpen = n/2 - 100
+		*cfg.MaxOpen = n/2 - 100
 	}
 	if cfg.EnableQUIC == nil {
 		v := quicIsEnabled
@@ -878,7 +912,9 @@ func (cfg *Config) Check() error {
 		cfg.acceptProxyHeaderFrom[i] = n
 	}
 
-	cfg.DefaultServerName = idnaToASCII(cfg.DefaultServerName)
+	if cfg.DefaultServerName != nil {
+		*cfg.DefaultServerName = idnaToASCII(*cfg.DefaultServerName)
+	}
 
 	identityProviders := make(map[string]bool)
 	for i, oi := range cfg.OIDCProviders {
@@ -1259,7 +1295,7 @@ func (cfg *Config) Check() error {
 			po.proxyProtocolVersion = ver
 		}
 	}
-	return os.MkdirAll(cfg.CacheDir, 0o700)
+	return os.MkdirAll(*cfg.CacheDir, 0o700)
 }
 
 func validateProxyProtoVersion(s string) (byte, error) {
@@ -1278,20 +1314,120 @@ func validateProxyProtoVersion(s string) (byte, error) {
 
 // ReadConfig reads and validates a YAML config file.
 func ReadConfig(filename string) (*Config, error) {
-	f, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	dec := yaml.NewDecoder(f)
-	dec.KnownFields(true)
 	var cfg Config
-	if err := dec.Decode(&cfg); err != nil {
+	if err := mergeConfig(&cfg, nil, filename); err != nil {
 		return nil, err
 	}
 	if err := cfg.Check(); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+func mergeConfig(cfg *Config, seen map[string]bool, filename string) error {
+	if seen == nil {
+		seen = make(map[string]bool)
+	}
+	if filename = filepath.Clean(filename); !filepath.IsAbs(filename) {
+		pwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		filename = filepath.Join(pwd, filename)
+	}
+
+	if seen[filename] {
+		return nil
+	}
+	seen[filename] = true
+	f, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+
+	var cfg2 Config
+	dec := yaml.NewDecoder(f)
+	dec.KnownFields(true)
+	err = dec.Decode(&cfg2)
+	f.Close()
+	if err != nil {
+		return err
+	}
+
+	parent := filepath.Dir(filename)
+
+	for _, glob := range cfg2.Include {
+		if !filepath.IsAbs(glob) {
+			glob = filepath.Join(parent, glob)
+		}
+		m, err := filepath.Glob(glob)
+		if err != nil {
+			return fmt.Errorf("include %q: %w", glob, err)
+		}
+		slices.Sort(m)
+		for _, f := range m {
+			if err := mergeConfig(cfg, seen, f); err != nil {
+				return fmt.Errorf("include %q: %w", f, err)
+			}
+		}
+	}
+
+	if err := reflectMerge(reflect.ValueOf(cfg), reflect.ValueOf(&cfg2)); err != nil {
+		return err
+	}
+	cfg.Include = nil
+	cfg.Definitions = nil
+	return nil
+}
+
+// reflectMerge merges v2 into v1
+func reflectMerge(v1, v2 reflect.Value) error {
+	if t1, t2 := v1.Type(), v2.Type(); t1 != t2 {
+		return fmt.Errorf("type mismatch %v != %v", t1, t2)
+	}
+
+	switch v1.Kind() {
+	case reflect.Struct:
+		for i := 0; i < v1.NumField(); i++ {
+			if err := reflectMerge(v1.Field(i), v2.Field(i)); err != nil {
+				return err
+			}
+		}
+		return nil
+	case reflect.Slice:
+		if v1.CanSet() && !v2.IsNil() {
+			if v1.IsNil() {
+				v1.Set(reflect.MakeSlice(v1.Type(), 0, 0))
+			}
+			v1.Grow(v2.Len())
+			v1.Set(reflect.AppendSlice(v1, v2))
+		}
+		return nil
+	case reflect.Map:
+		if v1.CanSet() && !v2.IsNil() {
+			iter := v2.MapRange()
+			for iter.Next() {
+				v1.SetMapIndex(iter.Key(), iter.Value())
+			}
+		}
+		return nil
+	case reflect.Pointer:
+		if !v2.IsNil() {
+			if v1.IsNil() {
+				if v1.CanSet() {
+					v1.Set(v2)
+				}
+			} else {
+				if err := reflectMerge(v1.Elem(), v2.Elem()); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	default:
+		if v1.CanSet() {
+			v1.Set(v2)
+		}
+		return nil
+	}
 }
