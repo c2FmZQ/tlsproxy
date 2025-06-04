@@ -56,6 +56,7 @@ func main() {
 	echPublicName := flag.String("publicname", "", "Use this ECH Public Name to retrieve the ECH ConfigList.")
 	useQUIC := flag.Bool("quic", false, "Use QUIC.")
 	verifyOCSP := flag.Bool("ocsp", false, "Require stapled OCSP response.")
+	insecureDNS := flag.Bool("insecuredns", false, "Use insecure DNS.")
 	serverName := flag.String("servername", "", "The expected server name.")
 	flag.Parse()
 
@@ -129,6 +130,11 @@ func main() {
 		tc.EncryptedClientHelloConfigList = configList
 	}
 
+	resolver := ech.DefaultResolver
+	if *insecureDNS {
+		resolver = ech.InsecureGoResolver()
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -136,6 +142,7 @@ func main() {
 		dialer := quic.NewDialer(nil)
 		dialer.RequireECH = *echFlag != "" || *echPublicName != ""
 		dialer.PublicName = *echPublicName
+		dialer.Resolver = resolver
 		conn, err := dialer.Dial(ctx, "udp", target, tc)
 		if err != nil {
 			log.Fatalf("ERR Dial: %v", err)
@@ -161,6 +168,7 @@ func main() {
 	dialer := ech.NewDialer()
 	dialer.RequireECH = *echFlag != "" || *echPublicName != ""
 	dialer.PublicName = *echPublicName
+	dialer.Resolver = resolver
 	conn, err := dialer.Dial(ctx, "tcp", target, tc)
 	if err != nil {
 		log.Fatalf("ERR Dial: %v", err)

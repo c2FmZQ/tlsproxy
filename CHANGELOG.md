@@ -22,6 +22,7 @@
   include:
     - "conf/*.yaml"
   ```
+* tlsclient: New flag `--insecuredns` to use the default go resolver.
 
 ### :wrench: Misc
 
