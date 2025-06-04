@@ -9,7 +9,8 @@ jobs:
     name: Check for updates
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+      pull-requests: write
     steps:
     - name: Checkout
       # https://github.com/actions/checkout/tree/v4.1.1
