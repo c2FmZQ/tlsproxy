@@ -19,6 +19,8 @@ jobs:
     name: Build & run tests
     if: github.ref_type == 'branch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
     - name: Checkout
       # https://github.com/actions/checkout/tree/v4.1.1

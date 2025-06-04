@@ -8,6 +8,8 @@ jobs:
   build-and-run-tests:
     name: Build & run tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
     - name: Checkout
       # https://github.com/actions/checkout/tree/v4.1.1
@@ -44,6 +46,8 @@ jobs:
     name: Create release
     needs: build-and-run-tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
     - name: Checkout

@@ -8,6 +8,9 @@ jobs:
   build-and-run-tests:
     name: Check for updates
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
     - name: Checkout
       # https://github.com/actions/checkout/tree/v4.1.1
