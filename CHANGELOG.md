@@ -26,9 +26,18 @@
 
 ### :wrench: Misc
 
+* Update go: 1.24.4
 * Update go dependencies:
+  * upgraded github.com/c2FmZQ/storage v0.2.4 => v0.2.5
+  * upgraded github.com/c2FmZQ/tpm v0.4.0 => v0.4.1
   * upgraded github.com/google/go-tpm v0.9.4 => v0.9.5
+  * upgraded github.com/google/go-tpm-tools v0.4.4 => v0.4.5
+  * upgraded github.com/google/pprof v0.0.0-20250501235452-c0086092b71a => v0.0.0-20250602020802-c6617b811d0e
   * upgraded github.com/quic-go/quic-go v0.51.0 => v0.52.0
+  * upgraded golang.org/x/mod v0.24.0 => v0.25.0
+  * upgraded golang.org/x/sync v0.14.0 => v0.15.0
+  * upgraded golang.org/x/text v0.25.0 => v0.26.0
+  * upgraded golang.org/x/time v0.11.0 => v0.12.0
 
 ## v0.15.10
 
