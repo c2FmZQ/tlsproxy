@@ -29,8 +29,8 @@ jobs:
       id: goversion
       run: echo "goversion=$(<.goversion)" > "${GITHUB_OUTPUT}"
     - name: Set up Go
-      # https://github.com/actions/setup-go/tree/v5.2.0
-      uses: actions/setup-go@3041bf56c941b39c61721a86cd11f3bb1338122a
+      # https://github.com/actions/setup-go/tree/v5.5.0
+      uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
       with:
         go-version: ${{steps.goversion.outputs.goversion}}
     - name: Generate files
