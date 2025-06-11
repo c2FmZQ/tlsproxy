@@ -9,6 +9,7 @@ on:
       - '**.sh'
       - '**.js'
       - '**.html'
+      - '.goversion'
       - 'examples/example-config.yaml'
   push:
     branches:
