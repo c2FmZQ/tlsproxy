@@ -44,7 +44,7 @@ import (
 	"time"
 
 	"github.com/c2FmZQ/quic-go-api"
-	"github.com/c2FmZQ/quic-go-api/api"
+	quicapi "github.com/c2FmZQ/quic-go-api/api"
 	"github.com/c2FmZQ/quic-go-api/http3"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
@@ -415,7 +415,7 @@ func TestQUICMultiStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListenAddr: %v", err)
 	}
-	ln := &api.ListenerWrapper{Base: l}
+	ln := &quicapi.ListenerWrapper{Base: l}
 	defer ln.Close()
 	t.Logf("QUIC LISTENER: %s", ln.Addr())
 
@@ -481,7 +481,7 @@ func TestQUICMultiStream(t *testing.T) {
 			t.Fatalf("Dial: %v", err)
 		}
 		t.Logf("Dialed connection to %s", dest)
-		client.run(&api.ConnWrapper{Base: conn})
+		client.run(&quicapi.ConnWrapper{Base: conn})
 		<-ch
 		conn.CloseWithError(0, "done")
 
@@ -545,7 +545,7 @@ func h3Op(name, addr, path, method string, body io.ReadCloser, rootCA *certmanag
 			RootCAs:            rootCA.RootCACertPool(),
 			NextProtos:         []string{"h3"},
 		},
-		Dial: func(ctx context.Context, _ string, tc *tls.Config, qc *quic.Config) (api.Conn, error) {
+		Dial: func(ctx context.Context, _ string, tc *tls.Config, qc *quic.Config) (quicapi.Conn, error) {
 			a, err := net.ResolveUDPAddr("udp", addr)
 			if err != nil {
 				return nil, err
@@ -554,7 +554,7 @@ func h3Op(name, addr, path, method string, body io.ReadCloser, rootCA *certmanag
 			if err != nil {
 				return nil, err
 			}
-			return &api.ConnWrapper{Base: c}, nil
+			return &quicapi.ConnWrapper{Base: c}, nil
 		},
 	}
 	defer roundTripper.Close()
@@ -612,7 +612,7 @@ func quicDatagram(name, addr, msg string, rootCA *certmanager.CertManager, proto
 
 type quicServer struct {
 	t        *testing.T
-	listener api.Listener
+	listener quicapi.Listener
 }
 
 func newQUICServer(t *testing.T, ctx context.Context, name string, protos []string, ca tcProvider) *quicServer {
@@ -622,7 +622,7 @@ func newQUICServer(t *testing.T, ctx context.Context, name string, protos []stri
 	if err != nil {
 		t.Fatalf("[%s] ListenAddr: %v", name, err)
 	}
-	ln := &api.ListenerWrapper{Base: l}
+	ln := &quicapi.ListenerWrapper{Base: l}
 	go func() {
 		for {
 			conn, err := ln.Accept(ctx)
@@ -641,7 +641,7 @@ func newQUICServer(t *testing.T, ctx context.Context, name string, protos []stri
 						conn.CloseWithError(0x11, err.Error())
 						break
 					}
-					go func(s api.Stream) {
+					go func(s quicapi.Stream) {
 						fmt.Fprintf(s, "Hello from %s\n", name)
 						s.CancelRead(0)
 						s.Close()
@@ -655,7 +655,7 @@ func newQUICServer(t *testing.T, ctx context.Context, name string, protos []stri
 						conn.CloseWithError(0x11, err.Error())
 						break
 					}
-					go func(s api.ReceiveStream) {
+					go func(s quicapi.ReceiveStream) {
 						if _, err := io.ReadAll(s); err != nil {
 							t.Logf("[%s] ReadAll: %v", name, err)
 						}
@@ -702,7 +702,7 @@ func (n *quicNode) reset() {
 	n.received = nil
 }
 
-func (n *quicNode) send(stream api.SendStream, format string, args ...any) error {
+func (n *quicNode) send(stream quicapi.SendStream, format string, args ...any) error {
 	m := fmt.Sprintf(format, args...)
 	if _, err := stream.Write([]byte(m)); err != nil {
 		n.t.Errorf("[%s] Write: %v", n.name, err)
@@ -718,7 +718,7 @@ func (n *quicNode) send(stream api.SendStream, format string, args ...any) error
 	return nil
 }
 
-func (n *quicNode) recv(stream api.ReceiveStream) error {
+func (n *quicNode) recv(stream quicapi.ReceiveStream) error {
 	b, err := io.ReadAll(stream)
 	if err != nil {
 		n.t.Errorf("[%s] ReadAll: %v", n.name, err)
@@ -730,7 +730,7 @@ func (n *quicNode) recv(stream api.ReceiveStream) error {
 	return nil
 }
 
-func (n *quicNode) run(conn api.Conn) {
+func (n *quicNode) run(conn quicapi.Conn) {
 	n.t.Logf("MultiStreamNode[%s]", n.name)
 	var wg sync.WaitGroup
 	wg.Add(1)

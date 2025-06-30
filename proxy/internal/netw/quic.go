@@ -38,7 +38,7 @@ import (
 	"time"
 
 	"github.com/c2FmZQ/quic-go-api"
-	api "github.com/c2FmZQ/quic-go-api/api"
+	quicapi "github.com/c2FmZQ/quic-go-api/api"
 	"golang.org/x/time/rate"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
@@ -65,17 +65,17 @@ func NewQUIC(addr string, statelessResetKey quic.StatelessResetKey) (*QUICTransp
 		StatelessResetKey: &statelessResetKey,
 	}
 	return &QUICTransport{
-		qt: &api.TransportWrapper{Base: tr},
+		qt: &quicapi.TransportWrapper{Base: tr},
 	}, nil
 }
 
 // QUICTransport is a wrapper around quic.Transport.
 type QUICTransport struct {
-	qt api.Transport
+	qt quicapi.Transport
 }
 
 func (t *QUICTransport) Addr() net.Addr {
-	return t.qt.(*api.TransportWrapper).Base.Conn.LocalAddr()
+	return t.qt.(*quicapi.TransportWrapper).Base.Conn.LocalAddr()
 }
 
 func (t *QUICTransport) Close() error {
@@ -110,7 +110,7 @@ func (t *QUICTransport) DialEarly(ctx context.Context, addr net.Addr, tc *tls.Co
 
 // QUICListener is a wrapper around quic.Listener.
 type QUICListener struct {
-	ln api.Listener
+	ln quicapi.Listener
 }
 
 func (l *QUICListener) Accept(ctx context.Context) (*QUICConn, error) {
@@ -130,9 +130,9 @@ func (l *QUICListener) Close() error {
 }
 
 var _ net.Conn = (*QUICConn)(nil)
-var _ api.Conn = (*QUICConn)(nil)
+var _ quicapi.Conn = (*QUICConn)(nil)
 
-func newQUICConn(qc api.Conn) *QUICConn {
+func newQUICConn(qc quicapi.Conn) *QUICConn {
 	return &QUICConn{
 		qc:            qc,
 		bytesSent:     newCounter(),
@@ -142,7 +142,7 @@ func newQUICConn(qc api.Conn) *QUICConn {
 
 // QUICConn is a wrapper around quic.Connection.
 type QUICConn struct {
-	qc api.Conn
+	qc quicapi.Conn
 
 	ingressLimiter *rate.Limiter
 	egressLimiter  *rate.Limiter
@@ -231,7 +231,7 @@ func (c *QUICConn) HandshakeComplete() <-chan struct{} {
 	return c.HandshakeComplete()
 }
 
-func (c *QUICConn) NextConnection(ctx context.Context) (api.Conn, error) {
+func (c *QUICConn) NextConnection(ctx context.Context) (quicapi.Conn, error) {
 	return c.NextConnection(ctx)
 }
 
@@ -283,7 +283,7 @@ func (c *QUICConn) SetWriteDeadline(t time.Time) error {
 }
 
 func (c *QUICConn) WrapConn(s any) *Conn {
-	var stream api.Stream
+	var stream quicapi.Stream
 	switch v := s.(type) {
 	case *Conn:
 		return v
@@ -299,11 +299,11 @@ func (c *QUICConn) WrapConn(s any) *Conn {
 		maps.Copy(cc.annotations, c.annotations)
 		c.mu.Unlock()
 		return cc
-	case api.Stream:
+	case quicapi.Stream:
 		stream = v
-	case api.SendStream:
+	case quicapi.SendStream:
 		stream = &SendOnlyStream{v, c.Context()}
-	case api.ReceiveStream:
+	case quicapi.ReceiveStream:
 		stream = &ReceiveOnlyStream{v, c.Context()}
 	default:
 		log.Panicf("PANIC WrapConn called with %T", v)
@@ -336,11 +336,11 @@ func (c *QUICConn) ConnectionState() quic.ConnectionState {
 	return c.qc.ConnectionState()
 }
 
-func (c *QUICConn) AddPath(t api.Transport) (api.Path, error) {
+func (c *QUICConn) AddPath(t quicapi.Transport) (quicapi.Path, error) {
 	return c.qc.AddPath(t)
 }
 
-func (c *QUICConn) AcceptStream(ctx context.Context) (api.Stream, error) {
+func (c *QUICConn) AcceptStream(ctx context.Context) (quicapi.Stream, error) {
 	s, err := c.qc.AcceptStream(ctx)
 	if err != nil {
 		return nil, err
@@ -355,7 +355,7 @@ func (c *QUICConn) AcceptStream(ctx context.Context) (api.Stream, error) {
 	return qs, nil
 }
 
-func (c *QUICConn) AcceptUniStream(ctx context.Context) (api.ReceiveStream, error) {
+func (c *QUICConn) AcceptUniStream(ctx context.Context) (quicapi.ReceiveStream, error) {
 	s, err := c.qc.AcceptUniStream(ctx)
 	if err != nil {
 		return nil, err
@@ -370,7 +370,7 @@ func (c *QUICConn) AcceptUniStream(ctx context.Context) (api.ReceiveStream, erro
 	return qs, nil
 }
 
-func (c *QUICConn) OpenStream() (api.Stream, error) {
+func (c *QUICConn) OpenStream() (quicapi.Stream, error) {
 	s, err := c.qc.OpenStream()
 	if err != nil {
 		return nil, err
@@ -385,7 +385,7 @@ func (c *QUICConn) OpenStream() (api.Stream, error) {
 	return qs, nil
 }
 
-func (c *QUICConn) OpenStreamSync(ctx context.Context) (api.Stream, error) {
+func (c *QUICConn) OpenStreamSync(ctx context.Context) (quicapi.Stream, error) {
 	s, err := c.qc.OpenStreamSync(ctx)
 	if err != nil {
 		return nil, err
@@ -400,7 +400,7 @@ func (c *QUICConn) OpenStreamSync(ctx context.Context) (api.Stream, error) {
 	return qs, nil
 }
 
-func (c *QUICConn) OpenUniStream() (api.SendStream, error) {
+func (c *QUICConn) OpenUniStream() (quicapi.SendStream, error) {
 	s, err := c.qc.OpenUniStream()
 	if err != nil {
 		return nil, err
@@ -415,7 +415,7 @@ func (c *QUICConn) OpenUniStream() (api.SendStream, error) {
 	return qs, nil
 }
 
-func (c *QUICConn) OpenUniStreamSync(ctx context.Context) (api.SendStream, error) {
+func (c *QUICConn) OpenUniStreamSync(ctx context.Context) (quicapi.SendStream, error) {
 	s, err := c.qc.OpenUniStreamSync(ctx)
 	if err != nil {
 		return nil, err
@@ -446,12 +446,12 @@ func (c *QUICConn) ReceiveDatagram(ctx context.Context) ([]byte, error) {
 	return c.qc.ReceiveDatagram(ctx)
 }
 
-var _ api.Stream = (*SendOnlyStream)(nil)
-var _ api.Stream = (*ReceiveOnlyStream)(nil)
-var _ api.Stream = (*QUICStream)(nil)
+var _ quicapi.Stream = (*SendOnlyStream)(nil)
+var _ quicapi.Stream = (*ReceiveOnlyStream)(nil)
+var _ quicapi.Stream = (*QUICStream)(nil)
 
 type SendOnlyStream struct {
-	api.SendStream
+	quicapi.SendStream
 	ctx context.Context
 }
 
@@ -471,7 +471,7 @@ func (s *SendOnlyStream) SetDeadline(t time.Time) error {
 }
 
 type ReceiveOnlyStream struct {
-	api.ReceiveStream
+	quicapi.ReceiveStream
 	ctx context.Context
 }
 
@@ -503,7 +503,7 @@ var _ net.Conn = (*QUICStream)(nil)
 // QUICStream is a wrapper around quic.Stream that implements the net.Conn
 // interface.
 type QUICStream struct {
-	api.Stream
+	quicapi.Stream
 	qc *QUICConn
 
 	mu         sync.Mutex
