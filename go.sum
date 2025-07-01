@@ -6,6 +6,8 @@ github.com/c2FmZQ/ech/publish v0.1.1 h1:NRrLalLZfQgEET3cqsiaR2Y5oB2V/do5ErAQ2boW
 github.com/c2FmZQ/ech/publish v0.1.1/go.mod h1:sUZW3FxGqL6optTBmmFgtwekpC86RkOC261wA/HUcK4=
 github.com/c2FmZQ/ech/quic v0.3.5 h1:a5hHKWO6Aa4+9F9PfrD10MRS7qsXEcfZJpFQIVZ5MLA=
 github.com/c2FmZQ/ech/quic v0.3.5/go.mod h1:I+FtUpJy6HW4tfCvFvdfIpeG3q5UteJx3Y+I0PhbPZg=
+github.com/c2FmZQ/quic-go-api v0.53.0 h1:9iDasyVw2QDiPk1wHTeBFmVca0+Izx3zvrev9Tf+Vsc=
+github.com/c2FmZQ/quic-go-api v0.53.0/go.mod h1:nCdJaRnlXDrFeT2KuyW2BZnmctBG5yxzDa1VyiYdG0I=
 github.com/c2FmZQ/storage v0.2.5 h1:IUEym8AoEgS+wTisGUxFfcUEv5x/dBYJgm0OxSNwYCM=
 github.com/c2FmZQ/storage v0.2.5/go.mod h1:v4l4SdJGhg1dh+vxwPbgdhL1nG2ZZYxr9aaRwhNd6Ck=
 github.com/c2FmZQ/tpm v0.4.1 h1:CTEEsdcpEoymUeBj4RIkoImx3+DVSCWqTCDtc5IqFyE=
