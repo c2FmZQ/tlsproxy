@@ -43,9 +43,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/quic-go/quic-go"
-	quicapi "github.com/quic-go/quic-go/api"
-	"github.com/quic-go/quic-go/http3"
+	"github.com/c2FmZQ/quic-go-api"
+	quicapi "github.com/c2FmZQ/quic-go-api/api"
+	"github.com/c2FmZQ/quic-go-api/http3"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"

@@ -2,16 +2,12 @@ module github.com/c2FmZQ/tlsproxy
 
 go 1.24
 
-replace (
-	github.com/quic-go/quic-go => github.com/c2FmZQ/quic-go-api v0.53.0
-)
-
 require (
 	github.com/beevik/etree v1.5.1
 	github.com/c2FmZQ/ech v0.3.5
 	github.com/c2FmZQ/ech/publish v0.1.1
 	github.com/c2FmZQ/ech/quic v0.3.5
-	github.com/quic-go/quic-go v0.53.0
+	github.com/c2FmZQ/quic-go-api v0.53.0
 	github.com/c2FmZQ/storage v0.2.5
 	github.com/c2FmZQ/tpm v0.4.1
 	github.com/fxamacker/cbor/v2 v2.8.0
@@ -38,6 +34,8 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/onsi/ginkgo/v2 v2.23.4 // indirect
+	github.com/quic-go/qpack v0.5.1 // indirect
+	github.com/quic-go/quic-go v0.52.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/automaxprocs v1.6.0 // indirect
 	go.uber.org/mock v0.5.2 // indirect

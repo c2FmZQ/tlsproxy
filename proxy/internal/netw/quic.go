@@ -37,8 +37,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/quic-go/quic-go"
-	quicapi "github.com/quic-go/quic-go/api"
+	"github.com/c2FmZQ/quic-go-api"
+	quicapi "github.com/c2FmZQ/quic-go-api/api"
 	"golang.org/x/time/rate"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
