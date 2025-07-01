@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Switched to a [quic-go fork](https://github.com/c2FmZQ/quic-go-api/tree/v0.53.0) to workaround an API change that broke the integration with TLSPROXY. See https://github.com/c2FmZQ/tlsproxy/issues/211
+
 ## v0.16.0
 
 ### :star2: New features
