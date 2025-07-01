@@ -42,8 +42,9 @@ import (
 	"time"
 
 	"github.com/c2FmZQ/ech"
-	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/http3"
+	"github.com/c2FmZQ/quic-go-api"
+	quicapi "github.com/c2FmZQ/quic-go-api/api"
+	"github.com/c2FmZQ/quic-go-api/http3"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
@@ -614,7 +615,7 @@ func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUI
 func (be *Backend) http3Transport() http.RoundTripper {
 	return &http3.Transport{
 		DisableCompression: true,
-		Dial: func(ctx context.Context, _ string, _ *tls.Config, _ *quic.Config) (quic.EarlyConnection, error) {
+		Dial: func(ctx context.Context, _ string, _ *tls.Config, _ *quic.Config) (quicapi.Conn, error) {
 			conn, err := be.dialQUICBackend(ctx, "h3")
 			if err != nil {
 				return nil, err
@@ -627,7 +628,7 @@ func (be *Backend) http3Transport() http.RoundTripper {
 func http3Server(handler http.Handler) *http3.Server {
 	return &http3.Server{
 		Handler: handler,
-		ConnContext: func(ctx context.Context, c quic.Connection) context.Context {
+		ConnContext: func(ctx context.Context, c quicapi.Conn) context.Context {
 			if _, ok := c.(*netw.QUICConn); !ok {
 				panic(fmt.Sprintf("http3.Server.ConnContext called with: %#v", c))
 			}
