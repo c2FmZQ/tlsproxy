@@ -1,10 +1,20 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.16.1
 
 ### :wrench: Misc
 
-* Switched to a [quic-go fork](https://github.com/c2FmZQ/quic-go-api/tree/v0.53.0) to workaround an API change that broke the integration with TLSPROXY. See https://github.com/c2FmZQ/tlsproxy/issues/211
+* TLSPROXY now uses a [quic-go fork](https://github.com/c2FmZQ/quic-go-api/tree/v0.53.0) to workaround an API change that broke integration (https://github.com/c2FmZQ/tlsproxy/issues/211).
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/ech v0.3.6
+  * upgraded github.com/c2FmZQ/ech/publish v0.1.2
+  * upgraded github.com/c2FmZQ/ech/quic v0.3.6
+  * upgraded github.com/google/pprof v0.0.0-20250602020802-c6617b811d0e => v0.0.0-20250630185457-6e76a2b096b5
+  * upgraded github.com/hashicorp/go-retryablehttp v0.7.7 => v0.7.8
+  * upgraded github.com/quic-go/quic-go v0.52.0 => v0.53.0
+  * upgraded golang.org/x/crypto v0.38.0 => v0.39.0
+  * upgraded golang.org/x/net v0.40.0 => v0.41.0
+  * upgraded golang.org/x/tools v0.33.0 => v0.34.0
 
 ## v0.16.0
 
