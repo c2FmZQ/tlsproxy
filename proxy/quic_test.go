@@ -411,11 +411,10 @@ func TestQUICMultiStream(t *testing.T) {
 	tc := ca.TLSConfig()
 	tc.NextProtos = []string{"foo"}
 
-	l, err := quic.ListenAddr("localhost:0", tc, &quic.Config{})
+	ln, err := quicapi.ListenAddr("localhost:0", tc, &quic.Config{})
 	if err != nil {
 		t.Fatalf("ListenAddr: %v", err)
 	}
-	ln := &quicapi.ListenerWrapper{Base: l}
 	defer ln.Close()
 	t.Logf("QUIC LISTENER: %s", ln.Addr())
 
@@ -476,12 +475,12 @@ func TestQUICMultiStream(t *testing.T) {
 	}
 
 	for _, dest := range dests {
-		conn, err := quic.DialAddr(ctx, dest, clientTC, &quic.Config{})
+		conn, err := quicapi.DialAddr(ctx, dest, clientTC, &quic.Config{})
 		if err != nil {
 			t.Fatalf("Dial: %v", err)
 		}
 		t.Logf("Dialed connection to %s", dest)
-		client.run(&quicapi.ConnWrapper{Base: conn})
+		client.run(conn)
 		<-ch
 		conn.CloseWithError(0, "done")
 
@@ -505,7 +504,7 @@ func quicGet(name, addr, msg string, rootCA *certmanager.CertManager, protos []s
 		NextProtos: protos,
 	}
 
-	conn, err := quic.DialAddr(ctx, addr, tc, &quic.Config{})
+	conn, err := quicapi.DialAddr(ctx, addr, tc, &quic.Config{})
 	if err != nil {
 		return "", err
 	}
@@ -535,8 +534,10 @@ func h3Op(name, addr, path, method string, body io.ReadCloser, rootCA *certmanag
 	if err != nil {
 		return "", err
 	}
-	tr := &quic.Transport{
-		Conn: conn,
+	tr := &quicapi.TransportWrapper{
+		Base: &quic.Transport{
+			Conn: conn,
+		},
 	}
 	roundTripper := &http3.Transport{
 		TLSClientConfig: &tls.Config{
@@ -554,7 +555,7 @@ func h3Op(name, addr, path, method string, body io.ReadCloser, rootCA *certmanag
 			if err != nil {
 				return nil, err
 			}
-			return &quicapi.ConnWrapper{Base: c}, nil
+			return c, nil
 		},
 	}
 	defer roundTripper.Close()
@@ -589,7 +590,7 @@ func quicDatagram(name, addr, msg string, rootCA *certmanager.CertManager, proto
 		NextProtos: protos,
 	}
 
-	conn, err := quic.DialAddr(ctx, addr, tc, &quic.Config{EnableDatagrams: true})
+	conn, err := quicapi.DialAddr(ctx, addr, tc, &quic.Config{EnableDatagrams: true})
 	if err != nil {
 		return "", err
 	}
@@ -618,11 +619,10 @@ type quicServer struct {
 func newQUICServer(t *testing.T, ctx context.Context, name string, protos []string, ca tcProvider) *quicServer {
 	tc := ca.TLSConfig()
 	tc.NextProtos = protos
-	l, err := quic.ListenAddr("localhost:0", tc, &quic.Config{EnableDatagrams: true})
+	ln, err := quicapi.ListenAddr("localhost:0", tc, &quic.Config{EnableDatagrams: true})
 	if err != nil {
 		t.Fatalf("[%s] ListenAddr: %v", name, err)
 	}
-	ln := &quicapi.ListenerWrapper{Base: l}
 	go func() {
 		for {
 			conn, err := ln.Accept(ctx)

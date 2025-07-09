@@ -1,5 +1,14 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* :warning: This version includes a change to the storage library that makes it very difficult to rollback to an earlier version after upgrading to this version without losing data.
+* Update go: 1.24.5
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/storage v0.2.5 => v0.3.0
+
 ## v0.16.1
 
 ### :wrench: Misc
