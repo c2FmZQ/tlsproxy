@@ -1,5 +1,15 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Replace github.com/c2FmZQ/quic-go-api with github.com/c2FmZQ/quic-api and github.com/c2FmZQ/http3-go, which allows a cleaner integration with the mainline quic-go library.
+* Update go dependencies:
+  * upgraded golang.org/x/crypto v0.39.0 => v0.40.0
+  * upgraded golang.org/x/net v0.41.0 => v0.42.0
+  * upgraded golang.org/x/sys v0.33.0 => v0.34.0
+
 ## v0.16.2
 
 ### :wrench: Misc
