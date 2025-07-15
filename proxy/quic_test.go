@@ -43,9 +43,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/c2FmZQ/quic-go-api"
-	quicapi "github.com/c2FmZQ/quic-go-api/api"
-	"github.com/c2FmZQ/quic-go-api/http3"
+	"github.com/c2FmZQ/http3-go"
+	quicapi "github.com/c2FmZQ/quic-api"
+	"github.com/quic-go/quic-go"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
@@ -534,11 +534,7 @@ func h3Op(name, addr, path, method string, body io.ReadCloser, rootCA *certmanag
 	if err != nil {
 		return "", err
 	}
-	tr := &quicapi.TransportWrapper{
-		Base: &quic.Transport{
-			Conn: conn,
-		},
-	}
+	tr := quicapi.WrapTransport(&quic.Transport{Conn: conn})
 	roundTripper := &http3.Transport{
 		TLSClientConfig: &tls.Config{
 			ServerName:         name,

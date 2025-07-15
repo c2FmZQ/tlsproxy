@@ -42,9 +42,9 @@ import (
 	"time"
 
 	"github.com/c2FmZQ/ech"
-	"github.com/c2FmZQ/quic-go-api"
-	quicapi "github.com/c2FmZQ/quic-go-api/api"
-	"github.com/c2FmZQ/quic-go-api/http3"
+	"github.com/c2FmZQ/http3-go"
+	quicapi "github.com/c2FmZQ/quic-api"
+	"github.com/quic-go/quic-go"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
