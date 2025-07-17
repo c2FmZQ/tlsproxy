@@ -34,7 +34,7 @@ import (
 	"testing"
 
 	"github.com/c2FmZQ/ech"
-	"github.com/c2FmZQ/quic-go-api"
+	"github.com/quic-go/quic-go"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
