@@ -37,8 +37,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/c2FmZQ/quic-go-api"
-	quicapi "github.com/c2FmZQ/quic-go-api/api"
+	quicapi "github.com/c2FmZQ/quic-api"
+	"github.com/quic-go/quic-go"
 	"golang.org/x/time/rate"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
@@ -65,7 +65,7 @@ func NewQUIC(addr string, statelessResetKey quic.StatelessResetKey) (*QUICTransp
 		StatelessResetKey: &statelessResetKey,
 	}
 	return &QUICTransport{
-		qt: &quicapi.TransportWrapper{Base: tr},
+		qt: quicapi.WrapTransport(tr),
 	}, nil
 }
 
@@ -75,7 +75,7 @@ type QUICTransport struct {
 }
 
 func (t *QUICTransport) Addr() net.Addr {
-	return t.qt.(*quicapi.TransportWrapper).Base.Conn.LocalAddr()
+	return t.qt.(quicapi.TransportUnwrapper).Unwrap().Conn.LocalAddr()
 }
 
 func (t *QUICTransport) Close() error {
@@ -336,7 +336,7 @@ func (c *QUICConn) ConnectionState() quic.ConnectionState {
 	return c.qc.ConnectionState()
 }
 
-func (c *QUICConn) AddPath(t quicapi.Transport) (quicapi.Path, error) {
+func (c *QUICConn) AddPath(t quicapi.TransportUnwrapper) (quicapi.Path, error) {
 	return c.qc.AddPath(t)
 }
 
