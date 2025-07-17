@@ -7,8 +7,8 @@ require (
 	github.com/c2FmZQ/ech v0.3.6
 	github.com/c2FmZQ/ech/publish v0.1.2
 	github.com/c2FmZQ/ech/quic v0.3.6
-	github.com/c2FmZQ/http3-go v0.53.0-rc1
-	github.com/c2FmZQ/quic-api v0.0.0-20250715192448-63f5ccb9786a
+	github.com/c2FmZQ/http3-go v0.53.0
+	github.com/c2FmZQ/quic-api v0.53.0
 	github.com/c2FmZQ/storage v0.3.0
 	github.com/c2FmZQ/tpm v0.4.1
 	github.com/fxamacker/cbor/v2 v2.8.0

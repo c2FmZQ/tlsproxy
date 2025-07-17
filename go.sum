@@ -6,10 +6,10 @@ github.com/c2FmZQ/ech/publish v0.1.2 h1:/p6F5KyFAbo8nPzMljq1GSX1h57jwevvnLFSRQRw
 github.com/c2FmZQ/ech/publish v0.1.2/go.mod h1:8uOVlif4TIxVckVu+XTjS/GWOEFANLKUkHA1VloARvo=
 github.com/c2FmZQ/ech/quic v0.3.6 h1:aPt+6cJVqevh5xwAh/k7soU9YwIOiGe0ZAJdVZm0kno=
 github.com/c2FmZQ/ech/quic v0.3.6/go.mod h1:XOW/3511vgbVcy+LNE+nmLZoYRRfTt4lT6j+TUwZCNM=
-github.com/c2FmZQ/http3-go v0.53.0-rc1 h1:PrnSzhuB4JO4MN9sy6AEL94ZWilkt0nY09Vmknoseok=
-github.com/c2FmZQ/http3-go v0.53.0-rc1/go.mod h1:Q85i9MLGyAWo6nuuZxOiLCTXPYUwsR9Iuxmui3SA0wU=
-github.com/c2FmZQ/quic-api v0.0.0-20250715192448-63f5ccb9786a h1:LaZu2GZmGiphN2XiQqcmQWdVLG5BIcI1ymQMBHef09I=
-github.com/c2FmZQ/quic-api v0.0.0-20250715192448-63f5ccb9786a/go.mod h1:5baPwdqRoDQRTcnLmqco6+jT4HJXsB1284mVD1bMz0s=
+github.com/c2FmZQ/http3-go v0.53.0 h1:HUo2JoDIE1UZ84z+Qi9qjOdt6zm63452KSiMFHrlTsY=
+github.com/c2FmZQ/http3-go v0.53.0/go.mod h1:4AgeROAGAqubVGHeqBo0Ehq5x+n7JKA05DAJoJmpZ5I=
+github.com/c2FmZQ/quic-api v0.53.0 h1:1wiUeRxAJ3AJrcvFZlJkpkPA0MzvOeZkAquiVyc9tF0=
+github.com/c2FmZQ/quic-api v0.53.0/go.mod h1:5baPwdqRoDQRTcnLmqco6+jT4HJXsB1284mVD1bMz0s=
 github.com/c2FmZQ/storage v0.3.0 h1:0jlP1hV9v2mD/Cx3u82oFxrh3z5AbJwZnndmL9KEJ7c=
 github.com/c2FmZQ/storage v0.3.0/go.mod h1:8uXO/kJQ6UuvaB9QC7IoctLBShhhXL5gOF5ndHRUbos=
 github.com/c2FmZQ/tpm v0.4.1 h1:CTEEsdcpEoymUeBj4RIkoImx3+DVSCWqTCDtc5IqFyE=
