@@ -334,7 +334,11 @@ func (be *Backend) bridgeConns(client, server net.Conn) error {
 }
 
 func forward(out net.Conn, in net.Conn, closeWhenDone bool, halfClosedTimeout time.Duration) error {
-	if _, err := io.Copy(out, in); err != nil || closeWhenDone {
+	_, err := io.Copy(out, in)
+	if stream, ok := quicStream(out); ok {
+		stream.SetReliableBoundary()
+	}
+	if err != nil || closeWhenDone {
 		out.Close()
 		in.Close()
 		return err

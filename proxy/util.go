@@ -196,3 +196,14 @@ func localNetConn(c anyConn) net.Conn {
 		panic(cc)
 	}
 }
+
+func quicStream(c anyConn) (*netw.QUICStream, bool) {
+	switch cc := c.(type) {
+	case *netw.Conn:
+		return quicStream(cc.Conn)
+	case *netw.QUICStream:
+		return cc, true
+	default:
+		return nil, false
+	}
+}
