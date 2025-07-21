@@ -608,3 +608,9 @@ func (s *QUICStream) CloseRead() error {
 func (s *QUICStream) CloseWrite() error {
 	return s.Close()
 }
+
+func (s *QUICStream) SetReliableBoundary() {
+	if ss, ok := s.Stream.(quicapi.SendStream); ok {
+		ss.SetReliableBoundary()
+	}
+}

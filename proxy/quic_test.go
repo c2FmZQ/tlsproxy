@@ -698,7 +698,7 @@ func (n *quicNode) reset() {
 	n.received = nil
 }
 
-func (n *quicNode) send(stream quicapi.SendStream, format string, args ...any) error {
+func (n *quicNode) send(stream io.WriteCloser, format string, args ...any) error {
 	m := fmt.Sprintf(format, args...)
 	if _, err := stream.Write([]byte(m)); err != nil {
 		n.t.Errorf("[%s] Write: %v", n.name, err)
