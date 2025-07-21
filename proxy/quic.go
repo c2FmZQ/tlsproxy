@@ -496,10 +496,13 @@ func (be *Backend) dialQUIC(ctx context.Context, addr string, tc *tls.Config) (*
 		return nil, err
 	}
 	var enableDatagrams bool
+	var enableStreamResetPartialDelivery bool
 	if cc, ok := ctx.Value(connCtxKey).(*netw.QUICConn); ok {
-		enableDatagrams = cc.ConnectionState().SupportsDatagrams
+		cs := cc.ConnectionState()
+		enableDatagrams = cs.SupportsDatagrams
+		enableStreamResetPartialDelivery = cs.SupportsStreamResetPartialDelivery
 	}
-	return qt.DialEarly(ctx, udpAddr, tc, enableDatagrams)
+	return qt.DialEarly(ctx, udpAddr, tc, enableDatagrams, enableStreamResetPartialDelivery)
 }
 
 func (be *Backend) dialQUICStream(ctx context.Context, addr string, tc *tls.Config) (net.Conn, error) {
