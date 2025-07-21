@@ -411,7 +411,7 @@ func TestQUICMultiStream(t *testing.T) {
 	tc := ca.TLSConfig()
 	tc.NextProtos = []string{"foo"}
 
-	ln, err := quicapi.ListenAddr("localhost:0", tc, &quic.Config{})
+	ln, err := quicapi.ListenAddr("localhost:0", tc, &quic.Config{EnableStreamResetPartialDelivery: true})
 	if err != nil {
 		t.Fatalf("ListenAddr: %v", err)
 	}
@@ -475,7 +475,7 @@ func TestQUICMultiStream(t *testing.T) {
 	}
 
 	for _, dest := range dests {
-		conn, err := quicapi.DialAddr(ctx, dest, clientTC, &quic.Config{})
+		conn, err := quicapi.DialAddr(ctx, dest, clientTC, &quic.Config{EnableStreamResetPartialDelivery: true})
 		if err != nil {
 			t.Fatalf("Dial: %v", err)
 		}
@@ -494,6 +494,13 @@ func TestQUICMultiStream(t *testing.T) {
 		client.reset()
 		server.reset()
 	}
+}
+
+func isCancel999(err error) bool {
+	if e, ok := err.(*quic.StreamError); ok && e.ErrorCode == 999 {
+		return true
+	}
+	return false
 }
 
 func quicGet(name, addr, msg string, rootCA *certmanager.CertManager, protos []string) (string, error) {
@@ -518,7 +525,7 @@ func quicGet(name, addr, msg string, rootCA *certmanager.CertManager, protos []s
 		return "", err
 	}
 	b, err := io.ReadAll(stream)
-	if err != nil {
+	if err != nil && !isCancel999(err) {
 		return "", err
 	}
 	return string(b), nil
@@ -571,7 +578,7 @@ func h3Op(name, addr, path, method string, body io.ReadCloser, rootCA *certmanag
 	}
 	defer resp.Body.Close()
 	b, err := io.ReadAll(resp.Body)
-	if err != nil {
+	if err != nil && !isCancel999(err) {
 		return "", err
 	}
 	return resp.Proto + " " + resp.Status + "\n" + string(b), nil
@@ -716,7 +723,7 @@ func (n *quicNode) send(stream io.WriteCloser, format string, args ...any) error
 
 func (n *quicNode) recv(stream quicapi.ReceiveStream) error {
 	b, err := io.ReadAll(stream)
-	if err != nil {
+	if err != nil && !isCancel999(err) {
 		n.t.Errorf("[%s] ReadAll: %v", n.name, err)
 		return err
 	}
@@ -785,6 +792,8 @@ func (n *quicNode) run(conn quicapi.Conn) {
 				break
 			}
 			n.send(stream, "Hello open uni stream %02d from %s", i+1, n.name)
+			stream.SetReliableBoundary()
+			stream.CancelWrite(999)
 		}
 	}()
 	wg.Wait()
