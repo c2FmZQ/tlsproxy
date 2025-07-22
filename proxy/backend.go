@@ -334,8 +334,25 @@ func (be *Backend) bridgeConns(client, server net.Conn) error {
 }
 
 func forward(out net.Conn, in net.Conn, closeWhenDone bool, halfClosedTimeout time.Duration) error {
-	_, err := io.Copy(out, in)
-	quicEndCopy(out, err)
+	buf := make([]byte, 8192)
+	var err, readErr, writeErr error
+	for {
+		var n int
+		n, readErr = in.Read(buf)
+		if n > 0 {
+			if _, writeErr = out.Write(buf[:n]); writeErr != nil {
+				err = writeErr
+				break
+			}
+		}
+		if readErr != nil {
+			if readErr != io.EOF {
+				err = readErr
+			}
+			break
+		}
+	}
+	quicEndCopy(out, in, writeErr, readErr)
 	if err != nil || closeWhenDone {
 		out.Close()
 		in.Close()

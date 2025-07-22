@@ -58,5 +58,5 @@ func http3Server(http.Handler) io.Closer {
 	return nil
 }
 
-func quicEndCopy(out net.Conn, err error) {
+func quicEndCopy(out, in net.Conn, writeErr, readErr error) {
 }
