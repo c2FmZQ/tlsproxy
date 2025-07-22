@@ -408,91 +408,109 @@ func TestQUICMultiStream(t *testing.T) {
 		t.Fatalf("certmanager.New: %v", err)
 	}
 
-	tc := ca.TLSConfig()
-	tc.NextProtos = []string{"foo"}
+	for _, testCase := range []struct {
+		name            string
+		partialDelivery bool
+	}{
+		{"WithoutPartialDelivery", false},
+		{"WithPartialDelivery", true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			server := &quicNode{t: t, name: "SERVER", useCancelWrite: testCase.partialDelivery}
+			client := &quicNode{t: t, name: "CLIENT", useCancelWrite: testCase.partialDelivery}
 
-	ln, err := quicapi.ListenAddr("localhost:0", tc, &quic.Config{EnableStreamResetPartialDelivery: true})
-	if err != nil {
-		t.Fatalf("ListenAddr: %v", err)
-	}
-	defer ln.Close()
-	t.Logf("QUIC LISTENER: %s", ln.Addr())
+			tc := ca.TLSConfig()
+			tc.NextProtos = []string{"foo"}
 
-	server := &quicNode{t: t, name: "SERVER"}
-	client := &quicNode{t: t, name: "CLIENT"}
-
-	ch := make(chan struct{})
-	go func() {
-		for {
-			conn, err := ln.Accept(ctx)
+			ln, err := quicapi.ListenAddr("localhost:0", tc, &quic.Config{EnableStreamResetPartialDelivery: testCase.partialDelivery})
 			if err != nil {
-				t.Logf("Accept: %v", err)
-				return
+				t.Fatalf("ListenAddr: %v", err)
 			}
-			t.Logf("Accepted connection")
-			server.run(conn)
-			ch <- struct{}{}
-		}
-	}()
+			defer ln.Close()
+			t.Logf("QUIC LISTENER: %s", ln.Addr())
 
-	cfg := &Config{
-		HTTPAddr: newPtr("localhost:0"),
-		TLSAddr:  newPtr("localhost:0"),
-		CacheDir: newPtr(t.TempDir()),
-		MaxOpen:  newPtr(1000),
-		Backends: []*Backend{
-			{
-				ServerNames: Strings{
-					"quic.example.com",
+			ch := make(chan struct{})
+			go func() {
+				for {
+					conn, err := ln.Accept(ctx)
+					if err != nil {
+						t.Logf("Accept: %v", err)
+						return
+					}
+					t.Logf("Accepted connection")
+					server.run(conn)
+					ch <- struct{}{}
+				}
+			}()
+
+			cfg := &Config{
+				HTTPAddr: newPtr("localhost:0"),
+				TLSAddr:  newPtr("localhost:0"),
+				CacheDir: newPtr(t.TempDir()),
+				MaxOpen:  newPtr(1000),
+				Backends: []*Backend{
+					{
+						ServerNames: Strings{
+							"quic.example.com",
+						},
+						Mode: "QUIC",
+						Addresses: Strings{
+							ln.Addr().String(),
+						},
+						ALPNProtos: &Strings{
+							"foo",
+						},
+						ForwardRootCAs:    Strings{ca.RootCAPEM()},
+						ForwardServerName: "quic-internal.example.com",
+						ForwardRateLimit:  1000,
+					},
 				},
-				Mode: "QUIC",
-				Addresses: Strings{
-					ln.Addr().String(),
-				},
-				ALPNProtos: &Strings{
-					"foo",
-				},
-				ForwardRootCAs:    Strings{ca.RootCAPEM()},
-				ForwardServerName: "quic-internal.example.com",
-				ForwardRateLimit:  1000,
-			},
-		},
-	}
-	proxy := newTestProxy(cfg, ca)
-	if err := proxy.Start(ctx); err != nil {
-		t.Fatalf("proxy.Start: %v", err)
-	}
+			}
+			proxy := newTestProxy(cfg, ca)
+			if err := proxy.Start(ctx); err != nil {
+				t.Fatalf("proxy.Start: %v", err)
+			}
 
-	clientTC := &tls.Config{
-		ServerName: "quic.example.com",
-		RootCAs:    ca.RootCACertPool(),
-		NextProtos: []string{"foo"},
-	}
+			clientTC := &tls.Config{
+				ServerName: "quic.example.com",
+				RootCAs:    ca.RootCACertPool(),
+				NextProtos: []string{"foo"},
+			}
 
-	dests := []string{
-		ln.Addr().String(),
-		proxy.quicTransport.(*netw.QUICTransport).Addr().String(),
-	}
+			dests := []struct {
+				name string
+				addr string
+			}{
+				{"direct", ln.Addr().String()},
+				{"proxy", proxy.quicTransport.(*netw.QUICTransport).Addr().String()},
+			}
 
-	for _, dest := range dests {
-		conn, err := quicapi.DialAddr(ctx, dest, clientTC, &quic.Config{EnableStreamResetPartialDelivery: true})
-		if err != nil {
-			t.Fatalf("Dial: %v", err)
-		}
-		t.Logf("Dialed connection to %s", dest)
-		client.run(conn)
-		<-ch
-		conn.CloseWithError(0, "done")
+			for _, dest := range dests {
+				t.Run(dest.name, func(t *testing.T) {
+					conn, err := quicapi.DialAddr(ctx, dest.addr, clientTC, &quic.Config{EnableStreamResetPartialDelivery: testCase.partialDelivery})
+					if err != nil {
+						t.Fatalf("Dial: %v", err)
+					}
+					t.Logf("Dialed connection to %s (%s)", dest.name, dest.addr)
+					client.run(conn)
+					<-ch
+					conn.CloseWithError(0, "done")
 
-		if got, want := client.received, server.sent; !reflect.DeepEqual(got, want) {
-			t.Errorf("Client received = %#v, want %#v", got, want)
-		}
-		if got, want := server.received, client.sent; !reflect.DeepEqual(got, want) {
-			t.Errorf("Server received = %#v, want %#v", got, want)
-		}
+					if got, want := client.received, server.sent; !reflect.DeepEqual(got, want) {
+						t.Errorf("Client received = %#v, want %#v", got, want)
+					}
+					if got, want := server.received, client.sent; !reflect.DeepEqual(got, want) {
+						t.Errorf("Server received = %#v, want %#v", got, want)
+					}
+					if testCase.partialDelivery && (client.numCancel == 0 || server.numCancel == 0) {
+						t.Error("Unexpected number of canceled streams")
+					}
 
-		client.reset()
-		server.reset()
+					client.reset()
+					server.reset()
+				})
+			}
+		})
 	}
 }
 
@@ -525,7 +543,7 @@ func quicGet(name, addr, msg string, rootCA *certmanager.CertManager, protos []s
 		return "", err
 	}
 	b, err := io.ReadAll(stream)
-	if err != nil && !isCancel999(err) {
+	if err != nil {
 		return "", err
 	}
 	return string(b), nil
@@ -578,7 +596,7 @@ func h3Op(name, addr, path, method string, body io.ReadCloser, rootCA *certmanag
 	}
 	defer resp.Body.Close()
 	b, err := io.ReadAll(resp.Body)
-	if err != nil && !isCancel999(err) {
+	if err != nil {
 		return "", err
 	}
 	return resp.Proto + " " + resp.Status + "\n" + string(b), nil
@@ -691,11 +709,13 @@ func newQUICServer(t *testing.T, ctx context.Context, name string, protos []stri
 }
 
 type quicNode struct {
-	t        *testing.T
-	name     string
-	mu       sync.Mutex
-	sent     []string
-	received []string
+	t              *testing.T
+	name           string
+	useCancelWrite bool
+	mu             sync.Mutex
+	sent           []string
+	received       []string
+	numCancel      int
 }
 
 func (n *quicNode) reset() {
@@ -703,6 +723,7 @@ func (n *quicNode) reset() {
 	defer n.mu.Unlock()
 	n.sent = nil
 	n.received = nil
+	n.numCancel = 0
 }
 
 func (n *quicNode) send(stream io.WriteCloser, format string, args ...any) error {
@@ -711,7 +732,10 @@ func (n *quicNode) send(stream io.WriteCloser, format string, args ...any) error
 		n.t.Errorf("[%s] Write: %v", n.name, err)
 		return err
 	}
-	if err := stream.Close(); err != nil {
+	if ss, ok := stream.(quicapi.SendStream); ok && n.useCancelWrite {
+		ss.SetReliableBoundary()
+		ss.CancelWrite(999)
+	} else if err := stream.Close(); err != nil {
 		n.t.Errorf("[%s] Close: %v", n.name, err)
 		return err
 	}
@@ -723,13 +747,17 @@ func (n *quicNode) send(stream io.WriteCloser, format string, args ...any) error
 
 func (n *quicNode) recv(stream quicapi.ReceiveStream) error {
 	b, err := io.ReadAll(stream)
-	if err != nil && !isCancel999(err) {
+	isCancel := isCancel999(err)
+	if err != nil && !isCancel {
 		n.t.Errorf("[%s] ReadAll: %v", n.name, err)
 		return err
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.received = append(n.received, string(b))
+	if isCancel {
+		n.numCancel++
+	}
 	return nil
 }
 
@@ -792,8 +820,6 @@ func (n *quicNode) run(conn quicapi.Conn) {
 				break
 			}
 			n.send(stream, "Hello open uni stream %02d from %s", i+1, n.name)
-			stream.SetReliableBoundary()
-			stream.CancelWrite(999)
 		}
 	}()
 	wg.Wait()

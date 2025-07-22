@@ -5,6 +5,7 @@
 ### :wrench: Misc
 
 * Enable QUIC Stream Resets with Partial Delivery.
+* Forward QUIC stream errors.
 * Update go dependencies:
   * upgraded github.com/c2FmZQ/http3-go v0.53.0 => v0.54.0
   * upgraded github.com/c2FmZQ/quic-api v0.53.0 => v0.54.0

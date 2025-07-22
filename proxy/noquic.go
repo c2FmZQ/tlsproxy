@@ -57,3 +57,6 @@ func (be *Backend) http3Transport() http.RoundTripper {
 func http3Server(http.Handler) io.Closer {
 	return nil
 }
+
+func quicEndCopy(out net.Conn, err error) {
+}

@@ -640,3 +640,14 @@ func http3Server(handler http.Handler) *http3.Server {
 		EnableDatagrams: false,
 	}
 }
+
+func quicEndCopy(out net.Conn, err error) {
+	stream, ok := quicStream(out)
+	if !ok {
+		return
+	}
+	stream.SetReliableBoundary()
+	if e, ok := err.(*quic.StreamError); ok && e.Remote {
+		stream.CancelWrite(e.ErrorCode)
+	}
+}
