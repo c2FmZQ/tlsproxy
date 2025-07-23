@@ -641,16 +641,22 @@ func http3Server(handler http.Handler) *http3.Server {
 	}
 }
 
-func quicEndCopy(out, in net.Conn, writeErr, readErr error) {
+func quicEndCopy(out, in net.Conn, writeErr, readErr *error) (bool, bool) {
+	var writeCanceled, readCanceled bool
 	if stream, ok := quicStream(out); ok {
 		stream.SetReliableBoundary()
-		if err, ok := readErr.(*quic.StreamError); ok && err.Remote {
+		if err, ok := (*readErr).(*quic.StreamError); ok && err.Remote {
 			stream.CancelWrite(err.ErrorCode)
+			writeCanceled = true
+			*readErr = nil
 		}
 	}
 	if stream, ok := quicStream(in); ok {
-		if err, ok := writeErr.(*quic.StreamError); ok && err.Remote {
+		if err, ok := (*writeErr).(*quic.StreamError); ok && err.Remote {
 			stream.CancelRead(err.ErrorCode)
+			readCanceled = true
+			*writeErr = nil
 		}
 	}
+	return writeCanceled, readCanceled
 }

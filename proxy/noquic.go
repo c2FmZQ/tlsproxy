@@ -58,5 +58,6 @@ func http3Server(http.Handler) io.Closer {
 	return nil
 }
 
-func quicEndCopy(out, in net.Conn, writeErr, readErr error) {
+func quicEndCopy(out, in net.Conn, writeErr, readErr *error) (bool, bool) {
+	return false, false
 }

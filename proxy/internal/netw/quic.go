@@ -286,6 +286,7 @@ func (c *QUICConn) SetWriteDeadline(t time.Time) error {
 
 func (c *QUICConn) WrapConn(s any) *Conn {
 	var stream quicapi.Stream
+	var readDone, writeDone bool
 	switch v := s.(type) {
 	case *Conn:
 		return v
@@ -305,16 +306,20 @@ func (c *QUICConn) WrapConn(s any) *Conn {
 		stream = v
 	case quicapi.SendStream:
 		stream = &SendOnlyStream{v, c.Context()}
+		readDone = true
 	case quicapi.ReceiveStream:
 		stream = &ReceiveOnlyStream{v, c.Context()}
+		writeDone = true
 	default:
 		log.Panicf("PANIC WrapConn called with %T", v)
 	}
 	ctx, cancel := context.WithCancel(c.Context())
 	cc := &Conn{
 		Conn: &QUICStream{
-			Stream: stream,
-			qc:     c,
+			Stream:    stream,
+			qc:        c,
+			readDone:  readDone,
+			writeDone: writeDone,
 		},
 		ctx:         ctx,
 		cancel:      cancel,
