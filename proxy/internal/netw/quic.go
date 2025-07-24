@@ -45,8 +45,9 @@ import (
 )
 
 var quicConfig = &quic.Config{
-	MaxIdleTimeout:  30 * time.Second,
-	EnableDatagrams: true,
+	MaxIdleTimeout:                   30 * time.Second,
+	EnableDatagrams:                  true,
+	EnableStreamResetPartialDelivery: true,
 }
 
 // NewQUIC returns a wrapper around a quic.Transport to keep track of metrics
@@ -98,9 +99,10 @@ func (t *QUICTransport) Dial(ctx context.Context, addr net.Addr, tc *tls.Config)
 	return newQUICConn(conn), nil
 }
 
-func (t *QUICTransport) DialEarly(ctx context.Context, addr net.Addr, tc *tls.Config, enableDatagrams bool) (*QUICConn, error) {
+func (t *QUICTransport) DialEarly(ctx context.Context, addr net.Addr, tc *tls.Config, enableDatagrams, enableStreamResetPartialDelivery bool) (*QUICConn, error) {
 	cfg := quicConfig.Clone()
 	cfg.EnableDatagrams = enableDatagrams
+	cfg.EnableStreamResetPartialDelivery = enableStreamResetPartialDelivery
 	conn, err := t.qt.Dial(ctx, addr, tc, cfg)
 	if err != nil {
 		return nil, err
@@ -284,6 +286,7 @@ func (c *QUICConn) SetWriteDeadline(t time.Time) error {
 
 func (c *QUICConn) WrapConn(s any) *Conn {
 	var stream quicapi.Stream
+	var readDone, writeDone bool
 	switch v := s.(type) {
 	case *Conn:
 		return v
@@ -303,16 +306,20 @@ func (c *QUICConn) WrapConn(s any) *Conn {
 		stream = v
 	case quicapi.SendStream:
 		stream = &SendOnlyStream{v, c.Context()}
+		readDone = true
 	case quicapi.ReceiveStream:
 		stream = &ReceiveOnlyStream{v, c.Context()}
+		writeDone = true
 	default:
 		log.Panicf("PANIC WrapConn called with %T", v)
 	}
 	ctx, cancel := context.WithCancel(c.Context())
 	cc := &Conn{
 		Conn: &QUICStream{
-			Stream: stream,
-			qc:     c,
+			Stream:    stream,
+			qc:        c,
+			readDone:  readDone,
+			writeDone: writeDone,
 		},
 		ctx:         ctx,
 		cancel:      cancel,
@@ -607,4 +614,10 @@ func (s *QUICStream) CloseRead() error {
 
 func (s *QUICStream) CloseWrite() error {
 	return s.Close()
+}
+
+func (s *QUICStream) SetReliableBoundary() {
+	if ss, ok := s.Stream.(quicapi.SendStream); ok {
+		ss.SetReliableBoundary()
+	}
 }
