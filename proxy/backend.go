@@ -334,20 +334,48 @@ func (be *Backend) bridgeConns(client, server net.Conn) error {
 }
 
 func forward(out net.Conn, in net.Conn, closeWhenDone bool, halfClosedTimeout time.Duration) error {
-	if _, err := io.Copy(out, in); err != nil || closeWhenDone {
-		out.Close()
-		in.Close()
+	buf := make([]byte, 8192)
+	var readErr, writeErr error
+	for {
+		var n int
+		n, readErr = in.Read(buf)
+		if n > 0 {
+			if _, writeErr = out.Write(buf[:n]); writeErr != nil {
+				break
+			}
+		}
+		if readErr != nil {
+			break
+		}
+	}
+	writeCanceled, readCanceled := quicEndCopy(out, in, &writeErr, &readErr)
+	closeAll := func() {
+		if !writeCanceled {
+			out.Close()
+		}
+		if !readCanceled {
+			in.Close()
+		}
+	}
+	err := writeErr
+	if readErr != nil && readErr != io.EOF {
+		err = readErr
+	}
+	if err != nil || closeWhenDone {
+		closeAll()
 		return err
 	}
-	if err := closeWrite(out); err != nil {
-		out.Close()
-		in.Close()
-		return nil
+	if !writeCanceled {
+		if err := closeWrite(out); err != nil {
+			closeAll()
+			return nil
+		}
 	}
-	if err := closeRead(in); err != nil {
-		out.Close()
-		in.Close()
-		return nil
+	if !readCanceled {
+		if err := closeRead(in); err != nil {
+			closeAll()
+			return nil
+		}
 	}
 	// At this point, the connection is either half closed, or fully closed.
 	// If it is half closed, the remote end will get an EOF on the next

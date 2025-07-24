@@ -38,6 +38,9 @@ func (*QUICStream) BridgeAddr() string {
 	return ""
 }
 
+func (*QUICStream) SetReliableBoundary() {
+}
+
 type QUICConn struct {
 	net.Conn
 }

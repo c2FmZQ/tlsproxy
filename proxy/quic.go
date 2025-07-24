@@ -496,10 +496,13 @@ func (be *Backend) dialQUIC(ctx context.Context, addr string, tc *tls.Config) (*
 		return nil, err
 	}
 	var enableDatagrams bool
+	var enableStreamResetPartialDelivery bool
 	if cc, ok := ctx.Value(connCtxKey).(*netw.QUICConn); ok {
-		enableDatagrams = cc.ConnectionState().SupportsDatagrams
+		cs := cc.ConnectionState()
+		enableDatagrams = cs.SupportsDatagrams
+		enableStreamResetPartialDelivery = cs.SupportsStreamResetPartialDelivery
 	}
-	return qt.DialEarly(ctx, udpAddr, tc, enableDatagrams)
+	return qt.DialEarly(ctx, udpAddr, tc, enableDatagrams, enableStreamResetPartialDelivery)
 }
 
 func (be *Backend) dialQUICStream(ctx context.Context, addr string, tc *tls.Config) (net.Conn, error) {
@@ -636,4 +639,24 @@ func http3Server(handler http.Handler) *http3.Server {
 		},
 		EnableDatagrams: false,
 	}
+}
+
+func quicEndCopy(out, in net.Conn, writeErr, readErr *error) (bool, bool) {
+	var writeCanceled, readCanceled bool
+	if stream, ok := quicStream(out); ok {
+		stream.SetReliableBoundary()
+		if err, ok := (*readErr).(*quic.StreamError); ok && err.Remote {
+			stream.CancelWrite(err.ErrorCode)
+			writeCanceled = true
+			*readErr = nil
+		}
+	}
+	if stream, ok := quicStream(in); ok {
+		if err, ok := (*writeErr).(*quic.StreamError); ok && err.Remote {
+			stream.CancelRead(err.ErrorCode)
+			readCanceled = true
+			*writeErr = nil
+		}
+	}
+	return writeCanceled, readCanceled
 }
