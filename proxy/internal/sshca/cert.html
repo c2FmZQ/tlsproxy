@@ -36,7 +36,7 @@ function onClick() {
 {{ end }}
 <div id="message" style="text-align: left;">
 <p>Enter your SSH <em>Public</em> Key to receive a Certificate with principal: [<b>{{.Email}}</b>] signed by <b>{{.Name}}</b>. It will be valid for <b>{{.TTL}}</b>.</p>
-<p>To allow this Certificate, add this line to your <code>$HOME/.ssh/authorized_keys</code> file.</p>
+<p>To trust this Certificate Authority, add this line to your <code>$HOME/.ssh/authorized_keys</code> file.</p>
 <div style="margin: 1rem; word-break: break-all; user-select: all;">
 cert-authority,principals="{{.Email}}" {{.CA}}
 </div>
