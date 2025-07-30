@@ -289,9 +289,11 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 
 		data := struct {
 			Email string
+			Name  string
 			CA    string
 		}{
 			Email: email,
+			Name:  ca.opts.Name,
 			CA:    string(ssh.MarshalAuthorizedKey(ca.signer.PublicKey())),
 		}
 		if err := certTemplate.Execute(w, data); err != nil {

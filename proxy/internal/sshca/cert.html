@@ -35,8 +35,8 @@ function onClick() {
 </div>
 {{ end }}
 <div id="message" style="text-align: left;">
-<p>Enter your SSH <em>Public</em> Key to receive a Certificate with principal: [<b>{{.Email}}</b>] signed by this CA:</p>
-<div style="margin: 1rem; word-break: break-all; user-select: all; text-align: left;">
+<p>Enter your SSH <em>Public</em> Key to receive a Certificate with principal: [<b>{{.Email}}</b>] signed by <b>{{.Name}}</b> with public key:</p>
+<div style="margin: 1rem; word-break: break-all; user-select: all;">
 {{.CA}}
 </div>
 <textarea id="key" style="height: 5em; width: 50vw;" placeholder="Enter your SSH Public Key"></textarea>
