@@ -291,10 +291,12 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 			Email string
 			Name  string
 			CA    string
+			TTL   string
 		}{
 			Email: email,
 			Name:  ca.opts.Name,
 			CA:    string(ssh.MarshalAuthorizedKey(ca.signer.PublicKey())),
+			TTL:   issuedCertsLifetime.String(),
 		}
 		if err := certTemplate.Execute(w, data); err != nil {
 			ca.opts.Logger.Errorf("ERR cert.html: %v", err)
