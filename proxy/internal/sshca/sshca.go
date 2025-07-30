@@ -25,6 +25,7 @@
 package sshca
 
 import (
+	"bytes"
 	"context"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -38,6 +39,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -51,7 +53,8 @@ import (
 )
 
 const (
-	issuedCertsLifetime = 10 * time.Minute
+	defaultCertsLifetime = 10 * time.Minute
+	maxCertsLifetime     = 24 * time.Hour
 )
 
 //go:embed cert.html
@@ -291,12 +294,10 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 			Email string
 			Name  string
 			CA    string
-			TTL   string
 		}{
 			Email: email,
 			Name:  ca.opts.Name,
 			CA:    string(ssh.MarshalAuthorizedKey(ca.signer.PublicKey())),
-			TTL:   issuedCertsLifetime.String(),
 		}
 		if err := certTemplate.Execute(w, data); err != nil {
 			ca.opts.Logger.Errorf("ERR cert.html: %v", err)
@@ -325,7 +326,26 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	pub, _, _, _, err := ssh.ParseAuthorizedKey(body)
+	ttl := defaultCertsLifetime
+	key, query, ok := bytes.Cut(body, []byte{'\n'})
+	if ok {
+		v, err := url.ParseQuery(string(query))
+		if err != nil {
+			ca.opts.Logger.Errorf("ERR form: %v", err)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		if t := v.Get("ttl"); t != "" {
+			tt, err := strconv.Atoi(t)
+			if err != nil {
+				ca.opts.Logger.Errorf("ERR ttl: %v", err)
+				http.Error(w, "invalid request", http.StatusBadRequest)
+				return
+			}
+			ttl = min(maxCertsLifetime, time.Second*time.Duration(tt))
+		}
+	}
+	pub, _, _, _, err := ssh.ParseAuthorizedKey(key)
 	if err != nil {
 		ca.opts.Logger.Errorf("ERR body: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -345,7 +365,7 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		KeyId:           email,
 		ValidPrincipals: []string{email},
 		ValidAfter:      uint64(now.Add(-5 * time.Minute).Unix()),
-		ValidBefore:     uint64(now.Add(issuedCertsLifetime).Unix()),
+		ValidBefore:     uint64(now.Add(ttl).Unix()),
 		Permissions: ssh.Permissions{
 			Extensions: map[string]string{
 				"permit-X11-forwarding":   "",
