@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Add a simple html form to facilitate acquiring SSH certificates outside of the sshterm app. The form is served from `certificateEndpoint` when the http method is GET.
+
 ## v0.17.0
 
 ### :wrench: Misc

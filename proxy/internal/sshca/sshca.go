@@ -33,6 +33,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"html/template"
 	"io"
 	"log"
 	"net/http"
@@ -54,7 +55,12 @@ const (
 )
 
 //go:embed cert.html
-var certHTML []byte
+var certHTML string
+var certTemplate *template.Template
+
+func init() {
+	certTemplate = template.Must(template.New("ssh-cert").Parse(certHTML))
+}
 
 type defaultLogger struct{}
 
@@ -280,9 +286,16 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 	if req.Method == http.MethodGet || req.Method == http.MethodHead {
 		w.Header().Set("cache-control", "private")
 		w.Header().Set("content-type", "text/html")
-		w.Header().Set("content-length", fmt.Sprintf("%d", len(certHTML)))
-		if req.Method != http.MethodHead {
-			w.Write(certHTML)
+
+		data := struct {
+			Email string
+			CA    string
+		}{
+			Email: email,
+			CA:    string(ssh.MarshalAuthorizedKey(ca.signer.PublicKey())),
+		}
+		if err := certTemplate.Execute(w, data); err != nil {
+			ca.opts.Logger.Errorf("ERR cert.html: %v", err)
 		}
 		return
 	}
