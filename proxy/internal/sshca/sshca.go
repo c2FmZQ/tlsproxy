@@ -29,6 +29,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	_ "embed"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -51,6 +52,9 @@ import (
 const (
 	issuedCertsLifetime = 10 * time.Minute
 )
+
+//go:embed cert.html
+var certHTML []byte
 
 type defaultLogger struct{}
 
@@ -273,6 +277,15 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if req.Method == http.MethodGet || req.Method == http.MethodHead {
+		w.Header().Set("cache-control", "private")
+		w.Header().Set("content-type", "text/html")
+		w.Header().Set("content-length", fmt.Sprintf("%d", len(certHTML)))
+		if req.Method != http.MethodHead {
+			w.Write(certHTML)
+		}
+		return
+	}
 	if req.Method != http.MethodPost {
 		ca.opts.Logger.Errorf("ERR method: %v", req.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -298,7 +311,7 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 	pub, _, _, _, err := ssh.ParseAuthorizedKey(body)
 	if err != nil {
 		ca.opts.Logger.Errorf("ERR body: %v", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	rnd := make([]byte, 8)
