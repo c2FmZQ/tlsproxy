@@ -351,8 +351,18 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if c, ok := pub.(*ssh.Certificate); ok {
+		pub = c.Key
+	}
 	switch kt := pub.Type(); kt {
-	case ssh.KeyAlgoRSA, ssh.KeyAlgoDSA, ssh.KeyAlgoECDSA256, ssh.KeyAlgoSKECDSA256, ssh.KeyAlgoECDSA384, ssh.KeyAlgoECDSA521, ssh.KeyAlgoED25519, ssh.KeyAlgoSKED25519:
+	case ssh.KeyAlgoRSA:
+	case ssh.KeyAlgoDSA:
+	case ssh.KeyAlgoECDSA256:
+	case ssh.KeyAlgoSKECDSA256:
+	case ssh.KeyAlgoECDSA384:
+	case ssh.KeyAlgoECDSA521:
+	case ssh.KeyAlgoED25519:
+	case ssh.KeyAlgoSKED25519:
 	default:
 		ca.opts.Logger.Errorf("ERR unexpected ssh key type: %v", kt)
 		http.Error(w, "unexpected key type", http.StatusInternalServerError)
