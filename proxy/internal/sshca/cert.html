@@ -115,7 +115,7 @@ function closeErr() {
 </div>
 {{ end }}
 <div id="message" style="text-align: left;">
-  <p>Enter or upload your SSH <em>Public</em> Key to receive a Certificate with principal: [<b>{{.Email}}</b>] signed by <b>{{.Name}}</b>.</p>
+  <p>Enter or select your SSH <em>Public</em> Key to receive a Certificate with principal: [<b>{{.Email}}</b>] signed by <b>{{.Name}}</b>.</p>
   <p>To trust this Certificate Authority, add this line to your <code>$HOME/.ssh/authorized_keys</code> file.</p>
   <div id="ca">cert-authority,principals="{{.Email}}" {{.CA}}</div>
   <input id="filepicker" type="file" accept=".pub" style="opacity: 0;" onchange="receiveFile(this);"><br />
@@ -129,7 +129,7 @@ function closeErr() {
     <option value="86400">24 hours</option>
   </select><br />
   <textarea id="key" placeholder="SSH Public Key"></textarea>
-  <a class="button" onclick="pickFile();">Upload Public Key</a>
+  <a class="button" onclick="pickFile();">Select Public Key</a>
   <a class="button" onclick="getCert();">Get Certificate</a>
   <div id="err" style="display: none; margin: 1em;"></div>
 </div>
