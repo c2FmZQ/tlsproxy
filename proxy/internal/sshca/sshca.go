@@ -54,7 +54,7 @@ import (
 
 const (
 	defaultCertsLifetime = 10 * time.Minute
-	maxCertsLifetime     = 24 * time.Hour
+	maxCertsLifetime     = 7 * 24 * time.Hour
 )
 
 //go:embed cert.html

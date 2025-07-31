@@ -24,8 +24,19 @@
   height: 5em;
   width: 75vw;
 }
-#err {
+#errdiv {
   display: none;
+  position: fixed;
+  left: 50vw;
+  top: 50vh;
+  transform: translate(-50%, -50%);
+  max-height: 80vh;
+  overflow: scroll;
+  background-color: lightgray;
+  z-index: 1;
+  border: 2px solid black;
+}
+#err {
   color: red;
   margin: 1em;
 }
@@ -73,9 +84,8 @@ function getCert() {
     if (resp.status !== 200) {
       resp.text().then(t => {
         closeCert();
-        const err = document.getElementById('err');
-        err.textContent = resp.status + ': ' + t;
-        err.style.display = 'block';
+        document.getElementById('err').textContent = resp.status + ': ' + t;
+        document.getElementById('errdiv').style.display = 'block';
       });
       throw resp.status;
     }
@@ -105,7 +115,7 @@ function closeCert() {
   document.getElementById('certdiv').style.display = 'none';
 }
 function closeErr() {
-  document.getElementById('err').style.display = 'none';
+  document.getElementById('errdiv').style.display = 'none';
 }
 </script>
 </head>
@@ -116,7 +126,7 @@ function closeErr() {
 </div>
 {{ end }}
 <div id="message" style="text-align: left;">
-  <p>Enter or select your SSH <em>Public</em> Key to receive a Certificate with principal: [<b>{{.Email}}</b>] signed by <b>{{.Name}}</b>.</p>
+  <p>Enter your SSH <em>Public</em> Key to receive a Certificate with principal: [<b>{{.Email}}</b>] signed by <b>{{.Name}}</b>.</p>
   <p>To trust this Certificate Authority, add this line to your <code>$HOME/.ssh/authorized_keys</code> file.</p>
   <div id="ca">cert-authority,principals="{{.Email}}" {{.CA}}</div>
   <input id="filepicker" type="file" accept=".pub" style="opacity: 0;" onchange="receiveFile(this);"><br />
@@ -128,11 +138,15 @@ function closeErr() {
     <option value="21600">6 hours</option>
     <option value="43200">12 hours</option>
     <option value="86400">24 hours</option>
+    <option value="604800">1 week</option>
   </select><br />
   <textarea id="key" placeholder="SSH Public Key"></textarea>
-  <a class="button" onclick="pickFile();">Select Public Key</a>
+  <a class="button" onclick="pickFile();">Open File</a>
   <a class="button" onclick="getCert();">Get Certificate</a>
-  <div id="err" style="display: none; margin: 1em;"></div>
+</div>
+<div id="errdiv" style="display: none;" onclick="closeErr();">
+<span style="position: fixed; right: 2px; top: 2px; cursor: pointer;">✖</span>
+<div id="err"></div>
 </div>
 <div id="certdiv">
   Certificate:
