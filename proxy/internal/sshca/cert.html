@@ -7,6 +7,50 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="icon" href="/.sso/favicon.ico" />
 <link rel="stylesheet" type="text/css" href="/.sso/style.css" />
+<style>
+#buttons {
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
+}
+#ca {
+  margin: 1rem;
+  word-break: break-all;
+  user-select: all;
+  padding: 0.5em;
+  border: 1px solid black;
+}
+#key {
+  height: 5em;
+  width: 75vw;
+}
+#err {
+  display: none;
+  color: red;
+  margin: 1em;
+}
+#certdiv {
+  display: none;
+  margin: 1em;
+  position: fixed;
+  left: 50vw;
+  top: 50vh;
+  transform: translate(-50%, -50%);
+  padding: 1rem;
+  max-height: 80vh;
+  overflow: scroll;
+  background-color: lightblue;
+  z-index: 1;
+  border: 2px solid black;
+}
+#cert {
+  margin: 1rem;
+  word-break: break-all;
+  user-select: all;
+  padding: 0.5em;
+  border: 1px solid black;
+}
+</style>
 <script>
 let filename = 'XXXXXXX';
 function getCert() {
@@ -27,7 +71,7 @@ function getCert() {
   .then(resp => {
     if (resp.status !== 200) {
       resp.text().then(t => {
-        document.getElementById('certdiv').style.display = 'none';
+        closeCert();
         const err = document.getElementById('err');
         err.textContent = resp.status + ': ' + t;
         err.style.display = 'block';
@@ -37,7 +81,7 @@ function getCert() {
     return resp.text();
   })
   .then(cert => {
-    document.getElementById('err').style.display = 'none';
+    closeErr();
     document.getElementById('cert').textContent = cert;
     const download = document.getElementById('download');
     download.href = 'data:text/plain;base64,'+window.btoa(cert);
@@ -50,44 +94,50 @@ function pickFile() {
   document.getElementById('filepicker').click();
 }
 function receiveFile(elem) {
+  closeErr();
   if (elem.files.length === 1) {
     elem.files[0].text().then(t => document.getElementById('key').value = t);
     filename = elem.files[0].name.replace('-cert.pub', '').replace('.pub', '');
   }
 }
+function closeCert() {
+  document.getElementById('certdiv').style.display = 'none';
+}
+function closeErr() {
+  document.getElementById('err').style.display = 'none';
+}
 </script>
 </head>
 <body>
 {{ if ne .Email "" }}
-<div style="position: absolute; right: 1rem; top: 1rem;">
-{{.Email}} <a href="/.sso/logout" class="button">Logout</a>
+<div id="buttons">
+  {{.Email}} <a href="/.sso/logout" class="button">Logout</a>
 </div>
 {{ end }}
 <div id="message" style="text-align: left;">
-<p>Enter or upload your SSH <em>Public</em> Key to receive a Certificate with principal: [<b>{{.Email}}</b>] signed by <b>{{.Name}}</b>.</p>
-<p>To trust this Certificate Authority, add this line to your <code>$HOME/.ssh/authorized_keys</code> file.</p>
-<div style="margin: 1rem; word-break: break-all; user-select: all; padding: 0.5em; border: 1px solid black;">
-cert-authority,principals="{{.Email}}" {{.CA}}
+  <p>Enter or upload your SSH <em>Public</em> Key to receive a Certificate with principal: [<b>{{.Email}}</b>] signed by <b>{{.Name}}</b>.</p>
+  <p>To trust this Certificate Authority, add this line to your <code>$HOME/.ssh/authorized_keys</code> file.</p>
+  <div id="ca">cert-authority,principals="{{.Email}}" {{.CA}}</div>
+  <input id="filepicker" type="file" accept=".pub" style="opacity: 0;" onchange="receiveFile(this);"><br />
+  <label for="ttl">Expiration:</label><select id="ttl">
+    <option value="300">5 min</option>
+    <option value="600">10 min</option>
+    <option value="1800">30 min</option>
+    <option value="3600" selected>1 hour</option>
+    <option value="21600">6 hours</option>
+    <option value="43200">12 hours</option>
+    <option value="86400">24 hours</option>
+  </select><br />
+  <textarea id="key" placeholder="SSH Public Key"></textarea>
+  <a class="button" onclick="pickFile();">Upload Public Key</a>
+  <a class="button" onclick="getCert();">Get Certificate</a>
+  <div id="err" style="display: none; margin: 1em;"></div>
 </div>
-<input id="filepicker" type="file" accept=".pub" style="opacity: 0;" onchange="receiveFile(this);"><br />
-<label for="ttl">Expiration:</label><select id="ttl">
-<option value="300">5 min</option>
-<option value="600">10 min</option>
-<option value="1800">30 min</option>
-<option value="3600" selected>1 hour</option>
-<option value="21600">6 hours</option>
-<option value="43200">12 hours</option>
-<option value="86400">24 hours</option>
-</select><br />
-<textarea id="key" style="height: 5em; width: 75vw;" placeholder="SSH Public Key"></textarea>
-<a class="button" onclick="pickFile();">Upload Public Key</a>
-<a class="button" onclick="getCert();">Get Certificate</a>
-<div id="err" style="display: none; margin: 1em;"></div>
-<div id="certdiv" style="display: none; margin: 1em;">
-Certificate:
-<div id="cert" style="margin: 1rem; word-break: break-all; user-select: all; padding: 0.5em; border: 1px solid black;"></div>
-<a id="download" class="button">Download ⤓</a>
-</div>
-</div>
+<div id="certdiv">
+  Certificate:
+  <div id="cert"></div>
+  <a id="download" class="button">Download ⤓</a>
+  <a class="button" onclick="closeCert();">Close</a>
+  </div>
 </body>
 </html>
