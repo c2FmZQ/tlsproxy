@@ -8,10 +8,31 @@
 <link rel="icon" href="/.sso/favicon.ico" />
 <link rel="stylesheet" type="text/css" href="/.sso/style.css" />
 <style>
+#header {
+  padding: 1rem;
+  opacity: 0.1;
+  font-weight: bold;
+  font-size: 250%;
+  width: fit-content;
+  z-index: -1;
+}
 #buttons {
   position: absolute;
   right: 1rem;
   top: 1rem;
+}
+#cadiv {
+  display: none;
+  position: fixed;
+  left: 50vw;
+  top: 50vh;
+  transform: translate(-50%, -50%);
+  max-height: 80vh;
+  overflow: scroll;
+  background-color: lightblue;
+  z-index: 1;
+  border: 2px solid black;
+  padding: 0.5em;
 }
 #ca {
   margin: 1rem;
@@ -80,14 +101,11 @@ function getCert() {
     },
     body: body,
   })
-  .then(resp => {
+  .then(async resp => {
     if (resp.status !== 200) {
-      resp.text().then(t => {
-        closeCert();
-        document.getElementById('err').textContent = resp.status + ': ' + t;
-        document.getElementById('errdiv').style.display = 'block';
-      });
-      throw resp.status;
+      closeCert();
+      const t = await resp.text();
+      throw new Error(resp.status + ': ' + t);
     }
     return resp.text();
   })
@@ -95,11 +113,14 @@ function getCert() {
     closeErr();
     document.getElementById('cert').textContent = cert;
     const download = document.getElementById('download');
-    download.href = 'data:text/plain;base64,'+window.btoa(cert);
+    download.href = 'data:text/plain;base64,' + window.btoa(cert);
     download.setAttribute('download', filename + '-cert.pub');
-    document.getElementById('certdiv').style.display = 'block';
+    show('certdiv');
   })
-  .catch(e => console.log('ERR:', e));
+  .catch(e => {
+    document.getElementById('err').textContent = e;
+    show('errdiv');
+  });
 }
 function pickFile() {
   document.getElementById('filepicker').click();
@@ -111,24 +132,29 @@ function receiveFile(elem) {
     filename = elem.files[0].name.replace('-cert.pub', '').replace('.pub', '');
   }
 }
+function show(id) {
+  document.getElementById(id).style.display = 'block';
+}
+function hide(id) {
+  document.getElementById(id).style.display = 'none';
+}
 function closeCert() {
-  document.getElementById('certdiv').style.display = 'none';
+  hide('certdiv');
 }
 function closeErr() {
-  document.getElementById('errdiv').style.display = 'none';
+  hide('errdiv');
 }
 </script>
 </head>
 <body>
+<div id="header">{{.Name}}</div>
 {{ if ne .Email "" }}
 <div id="buttons">
   {{.Email}} <a href="/.sso/logout" class="button">Logout</a>
 </div>
 {{ end }}
 <div id="message" style="text-align: left;">
-  <p>Enter your SSH <em>Public</em> Key to receive a Certificate with principal: [<b>{{.Email}}</b>] signed by <b>{{.Name}}</b>.</p>
-  <p>To trust this Certificate Authority, add this line to your <code>$HOME/.ssh/authorized_keys</code> file.</p>
-  <div id="ca">cert-authority,principals="{{.Email}}" {{.CA}}</div>
+  <p>Enter your SSH <em>Public</em> Key to receive a Certificate with principal: [<b>{{.Email}}</b>] signed by <b>{{.Name}}</b>.<a onclick="show('cadiv');")>🛈</a></p>
   <input id="filepicker" type="file" accept=".pub" style="opacity: 0;" onchange="receiveFile(this);"><br />
   <label for="ttl">Expiration:</label><select id="ttl">
     <option value="300">5 min</option>
@@ -143,6 +169,11 @@ function closeErr() {
   <textarea id="key" placeholder="SSH Public Key"></textarea>
   <a class="button" onclick="pickFile();">Open File</a>
   <a class="button" onclick="getCert();">Get Certificate</a>
+</div>
+<div id="cadiv">
+  <span style="position: fixed; right: 2px; top: 2px; cursor: pointer;" onclick="hide('cadiv');">✖</span>
+  <p>To trust this Certificate Authority, add this line to your <code>$HOME/.ssh/authorized_keys</code> file.</p>
+  <div id="ca">cert-authority,principals="{{.Email}}" {{.CA}}</div>
 </div>
 <div id="errdiv" style="display: none;" onclick="closeErr();">
 <span style="position: fixed; right: 2px; top: 2px; cursor: pointer;">✖</span>
