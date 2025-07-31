@@ -9,7 +9,7 @@
 <link rel="stylesheet" type="text/css" href="/.sso/style.css" />
 <script>
 let filename = 'XXXXXXX';
-function onClick() {
+function getCert() {
   let body = document.getElementById('key').value;
   const ttl = document.getElementById('ttl');
   const ttlValue = ttl.options[ttl.selectedIndex].value;
@@ -81,7 +81,7 @@ cert-authority,principals="{{.Email}}" {{.CA}}
 </select><br />
 <textarea id="key" style="height: 5em; width: 75vw;" placeholder="SSH Public Key"></textarea>
 <a class="button" onclick="pickFile();">Upload Public Key</a>
-<a class="button" onclick="onClick();">Get Certificate</a>
+<a class="button" onclick="getCert();">Get Certificate</a>
 <div id="err" style="display: none; margin: 1em;"></div>
 <div id="certdiv" style="display: none; margin: 1em;">
 Certificate:
