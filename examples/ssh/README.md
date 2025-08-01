@@ -2,7 +2,7 @@
 
 TLSPROXY can facilate remote access with SSH in a variety of ways.
 
-* It can proxy SSH connections over HTTPS. See [tlsclient](https://github.com/c2FmZQ/tlsproxy/tree/main/tlsclient#readme).
+* It can proxy SSH connections over TLS. See [tlsclient](https://github.com/c2FmZQ/tlsproxy/tree/main/tlsclient#readme).
 * It can run a SSH client in a web browser. See [sshterm](https://github.com/c2FmZQ/sshterm#readme).
 * It can issue SSH Certificates with SSO credentials.
 
