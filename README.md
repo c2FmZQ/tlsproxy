@@ -21,7 +21,7 @@ Overview of features:
 * [x] Support for the [PROXY protocol](https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt) defined by HAProxy. (not on QUIC or HTTP/3 backends)
 * [x] TLS client authentication & authorization (when the proxy terminates the TLS connections).
 * [x] Built-in [Certificate Authority](https://github.com/c2FmZQ/tlsproxy/tree/main/examples/pki#readme) for managing client and backend server TLS certificates.
-* [x] Built-in [Certificate Authority](https://github.com/c2FmZQ/tlsproxy/tree/main/examples/ssh#readme) for issuing SSH Certificates..
+* [x] Built-in [Certificate Authority](https://github.com/c2FmZQ/tlsproxy/tree/main/examples/ssh#readme) for issuing SSH user certificates..
 * [x] User authentication with OpenID Connect, SAML, and/or passkeys (for HTTP and HTTPS connections). Optionally issue JSON Web Tokens (JWT) to authenticated users to use with the backend services and/or run a local OpenID Connect server for backend services.
 * [x] Access control by IP address.
 * [x] Routing based on Server Name Indication (SNI), with optional default route when SNI isn't used.
