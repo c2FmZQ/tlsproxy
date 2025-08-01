@@ -117,10 +117,7 @@ function getCert() {
     download.setAttribute('download', filename + '-cert.pub');
     show('certdiv');
   })
-  .catch(e => {
-    document.getElementById('err').textContent = e;
-    show('errdiv');
-  });
+  .catch(showErr);
 }
 function pickFile() {
   document.getElementById('filepicker').click();
@@ -128,8 +125,17 @@ function pickFile() {
 function receiveFile(elem) {
   closeErr();
   if (elem.files.length === 1) {
+    if (elem.files[0].size > 10240) {
+      showErr(new Error('file too large'));
+      return;
+    }
+    const fn = elem.files[0].name.toLowerCase();
+    if (!fn.endsWith('.pub')) {
+      showErr(new Error('file name should have a .pub extension'));
+      return;
+    }
     elem.files[0].text().then(t => document.getElementById('key').value = t);
-    filename = elem.files[0].name.replace('-cert.pub', '').replace('.pub', '');
+    filename = fn.replace('-cert.pub', '').replace('.pub', '');
   }
 }
 function show(id) {
@@ -140,6 +146,10 @@ function hide(id) {
 }
 function closeCert() {
   hide('certdiv');
+}
+function showErr(e) {
+  document.getElementById('err').textContent = e;
+  show('errdiv');
 }
 function closeErr() {
   hide('errdiv');
