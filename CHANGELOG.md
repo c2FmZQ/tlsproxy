@@ -2,9 +2,16 @@
 
 ## next
 
-### :wrench: Misc
+### :star: Feature improvement
 
 * Add a simple html form to facilitate acquiring SSH certificates outside of the sshterm app. The form is served from `certificateEndpoint` when the http method is GET.
+
+### :wrench: Misc
+
+* Update go dependencies:
+  * upgraded github.com/fxamacker/cbor/v2 v2.8.0 => v2.9.0
+  * upgraded github.com/golang-jwt/jwt/v5 v5.2.2 => v5.3.0
+  * upgraded software.sslmate.com/src/go-pkcs12 v0.5.0 => v0.6.0
 
 ## v0.17.0
 
