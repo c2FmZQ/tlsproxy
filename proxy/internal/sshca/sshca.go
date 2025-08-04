@@ -25,17 +25,21 @@
 package sshca
 
 import (
+	"bytes"
 	"context"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	_ "embed"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"html/template"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -49,8 +53,17 @@ import (
 )
 
 const (
-	issuedCertsLifetime = 10 * time.Minute
+	defaultCertsLifetime = 10 * time.Minute
+	maxCertsLifetime     = 7 * 24 * time.Hour
 )
+
+//go:embed cert.html
+var certHTML string
+var certTemplate *template.Template
+
+func init() {
+	certTemplate = template.Must(template.New("ssh-cert").Parse(certHTML))
+}
 
 type defaultLogger struct{}
 
@@ -273,6 +286,24 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if req.Method == http.MethodGet || req.Method == http.MethodHead {
+		w.Header().Set("cache-control", "private")
+		w.Header().Set("content-type", "text/html")
+
+		data := struct {
+			Email string
+			Name  string
+			CA    string
+		}{
+			Email: email,
+			Name:  ca.opts.Name,
+			CA:    string(ssh.MarshalAuthorizedKey(ca.signer.PublicKey())),
+		}
+		if err := certTemplate.Execute(w, data); err != nil {
+			ca.opts.Logger.Errorf("ERR cert.html: %v", err)
+		}
+		return
+	}
 	if req.Method != http.MethodPost {
 		ca.opts.Logger.Errorf("ERR method: %v", req.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -295,10 +326,46 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	pub, _, _, _, err := ssh.ParseAuthorizedKey(body)
+	ttl := defaultCertsLifetime
+	key, query, ok := bytes.Cut(body, []byte{'\n'})
+	if ok {
+		v, err := url.ParseQuery(string(query))
+		if err != nil {
+			ca.opts.Logger.Errorf("ERR form: %v", err)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		if t := v.Get("ttl"); t != "" {
+			tt, err := strconv.Atoi(t)
+			if err != nil {
+				ca.opts.Logger.Errorf("ERR ttl: %v", err)
+				http.Error(w, "invalid request", http.StatusBadRequest)
+				return
+			}
+			ttl = min(maxCertsLifetime, time.Second*time.Duration(tt))
+		}
+	}
+	pub, _, _, _, err := ssh.ParseAuthorizedKey(key)
 	if err != nil {
 		ca.opts.Logger.Errorf("ERR body: %v", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if c, ok := pub.(*ssh.Certificate); ok {
+		pub = c.Key
+	}
+	switch kt := pub.Type(); kt {
+	case ssh.KeyAlgoRSA:
+	case ssh.KeyAlgoDSA:
+	case ssh.KeyAlgoECDSA256:
+	case ssh.KeyAlgoSKECDSA256:
+	case ssh.KeyAlgoECDSA384:
+	case ssh.KeyAlgoECDSA521:
+	case ssh.KeyAlgoED25519:
+	case ssh.KeyAlgoSKED25519:
+	default:
+		ca.opts.Logger.Errorf("ERR unexpected ssh key type: %v", kt)
+		http.Error(w, "unexpected key type", http.StatusInternalServerError)
 		return
 	}
 	rnd := make([]byte, 8)
@@ -315,7 +382,7 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		KeyId:           email,
 		ValidPrincipals: []string{email},
 		ValidAfter:      uint64(now.Add(-5 * time.Minute).Unix()),
-		ValidBefore:     uint64(now.Add(issuedCertsLifetime).Unix()),
+		ValidBefore:     uint64(now.Add(ttl).Unix()),
 		Permissions: ssh.Permissions{
 			Extensions: map[string]string{
 				"permit-X11-forwarding":   "",

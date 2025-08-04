@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>SSH Cert</title>
+<meta http-equiv="content-security-policy" content="default-src 'self'; style-src 'unsafe-inline' 'self'; script-src 'unsafe-inline';" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="/.sso/favicon.ico" />
+<link rel="stylesheet" type="text/css" href="/.sso/style.css" />
+<style>
+#header {
+  padding: 1rem;
+  opacity: 0.1;
+  font-weight: bold;
+  font-size: 250%;
+  width: fit-content;
+  z-index: -1;
+}
+#buttons {
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
+}
+#cadiv {
+  display: none;
+  position: fixed;
+  left: 50vw;
+  top: 50vh;
+  transform: translate(-50%, -50%);
+  max-height: 80vh;
+  overflow: scroll;
+  background-color: lightblue;
+  z-index: 1;
+  border: 2px solid black;
+  padding: 0.5em;
+}
+#ca {
+  margin: 1rem;
+  word-break: break-all;
+  user-select: all;
+  padding: 0.5em;
+  border: 1px solid black;
+}
+#key {
+  height: 5em;
+  width: 75vw;
+}
+#errdiv {
+  display: none;
+  position: fixed;
+  left: 50vw;
+  top: 50vh;
+  transform: translate(-50%, -50%);
+  max-height: 80vh;
+  overflow: scroll;
+  background-color: lightgray;
+  z-index: 1;
+  border: 2px solid black;
+}
+#err {
+  color: red;
+  margin: 1em;
+}
+#certdiv {
+  display: none;
+  margin: 1em;
+  position: fixed;
+  left: 50vw;
+  top: 50vh;
+  transform: translate(-50%, -50%);
+  padding: 1rem;
+  max-height: 80vh;
+  overflow: scroll;
+  background-color: lightblue;
+  z-index: 1;
+  border: 2px solid black;
+}
+#cert {
+  margin: 1rem;
+  word-break: break-all;
+  user-select: all;
+  padding: 0.5em;
+  border: 1px solid black;
+  width: 80vw;
+}
+</style>
+<script>
+let filename = 'XXXXXXX';
+function getCert() {
+  let body = document.getElementById('key').value;
+  const ttl = document.getElementById('ttl');
+  const ttlValue = ttl.options[ttl.selectedIndex].value;
+  if (ttlValue !== '') {
+    body += '\nttl=' + encodeURIComponent(ttlValue);
+  }
+  fetch(window.location, {
+    method: 'POST',
+    headers: {
+      'x-csrf-check': 1,
+      'content-type': 'text/plain',
+    },
+    body: body,
+  })
+  .then(async resp => {
+    if (resp.status !== 200) {
+      closeCert();
+      const t = await resp.text();
+      throw new Error(resp.status + ': ' + t);
+    }
+    return resp.text();
+  })
+  .then(cert => {
+    closeErr();
+    document.getElementById('cert').textContent = cert;
+    const download = document.getElementById('download');
+    download.href = 'data:text/plain;base64,' + window.btoa(cert);
+    download.setAttribute('download', filename + '-cert.pub');
+    show('certdiv');
+  })
+  .catch(showErr);
+}
+function pickFile() {
+  document.getElementById('filepicker').click();
+}
+function receiveFile(elem) {
+  closeErr();
+  if (elem.files.length === 1) {
+    if (elem.files[0].size > 10240) {
+      showErr(new Error('file too large'));
+      return;
+    }
+    const fn = elem.files[0].name.toLowerCase();
+    if (!fn.endsWith('.pub')) {
+      showErr(new Error('file name should have a .pub extension'));
+      return;
+    }
+    elem.files[0].text().then(t => document.getElementById('key').value = t);
+    filename = fn.replace('-cert.pub', '').replace('.pub', '');
+  }
+}
+function show(id) {
+  document.getElementById(id).style.display = 'block';
+}
+function hide(id) {
+  document.getElementById(id).style.display = 'none';
+}
+function closeCert() {
+  hide('certdiv');
+}
+function showErr(e) {
+  document.getElementById('err').textContent = e;
+  show('errdiv');
+}
+function closeErr() {
+  hide('errdiv');
+}
+function onKeydown(e) {
+  if (e.key === 'Escape') {
+    e.stopPropagation();
+    closeCert();
+    closeErr();
+    hide('cadiv');
+   }
+};
+addEventListener('keydown', onKeydown);
+</script>
+</head>
+<body>
+<div id="header">{{.Name}}</div>
+<div id="buttons">
+  {{.Email}} <a href="/.sso/logout" class="button">Logout</a>
+</div>
+<div id="message" style="text-align: left;">
+  <p>Enter your SSH <em>Public</em> Key to receive a Certificate with principal: [<b>{{.Email}}</b>] signed by <b>{{.Name}}</b>.<a onclick="show('cadiv');")>&#9432;</a></p>
+  <input id="filepicker" type="file" accept=".pub" style="opacity: 0;" onchange="receiveFile(this);"><br />
+  <label for="ttl">Expiration:</label><select id="ttl">
+    <option value="300">5 min</option>
+    <option value="600">10 min</option>
+    <option value="1800">30 min</option>
+    <option value="3600" selected>1 hour</option>
+    <option value="21600">6 hours</option>
+    <option value="43200">12 hours</option>
+    <option value="86400">24 hours</option>
+    <option value="604800">1 week</option>
+  </select><br />
+  <textarea id="key" placeholder="SSH Public Key"></textarea>
+  <a class="button" onclick="pickFile();">Open File</a>
+  <a class="button" onclick="getCert();">Get Certificate</a>
+</div>
+<div id="cadiv">
+  <span style="position: fixed; right: 2px; top: 2px; cursor: pointer;" onclick="hide('cadiv');">✖</span>
+  <p>To trust this Certificate Authority, add this line to your <code>$HOME/.ssh/authorized_keys</code> file.</p>
+  <div id="ca">cert-authority,principals="{{.Email}}" {{.CA}}</div>
+</div>
+<div id="errdiv" style="display: none;" onclick="closeErr();">
+<span style="position: fixed; right: 2px; top: 2px; cursor: pointer;">✖</span>
+<div id="err"></div>
+</div>
+<div id="certdiv">
+  Certificate:
+  <div id="cert"></div>
+  <a id="download" class="button">Download ⤓</a>
+  <a class="button" onclick="closeCert();">Close</a>
+  </div>
+</body>
+</html>
