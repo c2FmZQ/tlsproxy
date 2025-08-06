@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Update go: 1.24.6
+
 ## v0.18.0
 
 ### :star: Feature improvement
