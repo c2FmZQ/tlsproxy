@@ -411,7 +411,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 			Mode: be.Mode,
 		}
 		if be.SSO != nil {
-			paths := make([]string, 0)
+			var paths []string
 			for _, r := range be.SSO.Rules {
 				paths = append(paths, r.Paths...)
 			}

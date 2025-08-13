@@ -693,24 +693,35 @@ type BackendSSO struct {
 	Provider string `yaml:"provider"`
 
 	// Rules are matched against the requested path of each request. The
-	// one that matches is used.
-	Rules       []*SSORule `yaml:"rules,omitempty"`
-	LegacyPaths Strings    `yaml:"paths,omitempty"`
-	// Exceptions is a list of path prefixes that are exempt from SSO
+	// one that matches first is used.
+	// Rules replace the deprecated LegacyPaths, LegacyExceptions,
+	// LegacyForceReAuth, and LegacyACL fields.
+	Rules []*SSORule `yaml:"rules,omitempty"`
+
+	// LegacyPaths lists the path prefixes for which this policy will be enforced.
+	// If Paths is empty, the policy applies to all paths.
+	//
+	// Deprecated: use Rules instead
+	LegacyPaths Strings `yaml:"paths,omitempty"`
+	// LegacyExceptions is a list of path prefixes that are exempt from SSO
 	// enforcement, e.g. /app.webmanifest or /favicon.png
+	//
+	// Deprecated: use Rules instead
 	LegacyExceptions Strings `yaml:"exceptions,omitempty"`
-	// ForceReAuth is the time duration after which the user has to
+	// LegacyForceReAuth is the time duration after which the user has to
 	// authenticate again. By default, users don't have to authenticate
 	// again until their token expires.
+	//
+	// Deprecated: use Rules instead
 	LegacyForceReAuth time.Duration `yaml:"forceReAuth,omitempty"`
-	// ACL restricts which user identity can access this backend. It is a
+	// LegacyACL restricts which user identity can access this backend. It is a
 	// list of email addresses and/or domains, e.g. "bob@example.com", or
 	// "@example.com"
 	// If ACL is nil, all identities are allowed. If ACL is an empty list,
 	// nobody is allowed.
+	//
+	// Deprecated: use Rules instead
 	LegacyACL *Strings `yaml:"acl,omitempty"`
-	// Paths lists the path prefixes for which this policy will be enforced.
-	// If Paths is empty, the policy applies to all paths.
 	// HTMLMessage is displayed on the permission denied screen. The value
 	// is HTML and will be used as it is without escaping.
 
