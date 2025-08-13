@@ -411,7 +411,11 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 			Mode: be.Mode,
 		}
 		if be.SSO != nil {
-			backend.SSO = fmt.Sprintf(" SSO %s %s", be.SSO.Provider, strings.Join(be.SSO.Paths, ","))
+			paths := make([]string, 0)
+			for _, r := range be.SSO.Rules {
+				paths = append(paths, r.Paths...)
+			}
+			backend.SSO = fmt.Sprintf(" SSO %s %s", be.SSO.Provider, strings.Join(paths, ","))
 		}
 		if be.ClientAuth != nil {
 			backend.ClientAuth = " TLS ClientAuth"

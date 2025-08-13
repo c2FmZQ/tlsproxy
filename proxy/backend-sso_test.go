@@ -126,7 +126,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 	req = req.WithContext(ctx)
 
 	// No ACL
-	proxy.cfg.Backends[0].SSO.ACL = nil
+	proxy.cfg.Backends[0].SSO.Rules[0].ACL = nil
 	w := httptest.NewRecorder()
 	if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, req), true; got != want {
 		t.Fatalf("encorceSSOPolicy() = %v, want %v", got, want)
@@ -136,7 +136,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 	}
 
 	// bob not allowed.
-	proxy.cfg.Backends[0].SSO.ACL = &Strings{
+	proxy.cfg.Backends[0].SSO.Rules[0].ACL = &Strings{
 		"alice@example.org",
 	}
 	w = httptest.NewRecorder()
@@ -148,7 +148,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 	}
 
 	// bob is allowed.
-	proxy.cfg.Backends[0].SSO.ACL = &Strings{
+	proxy.cfg.Backends[0].SSO.Rules[0].ACL = &Strings{
 		"alice@example.org",
 		"bob@example.org",
 	}
@@ -161,7 +161,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 	}
 
 	// bob's domain is allowed.
-	proxy.cfg.Backends[0].SSO.ACL = &Strings{
+	proxy.cfg.Backends[0].SSO.Rules[0].ACL = &Strings{
 		"@example.org",
 	}
 	w = httptest.NewRecorder()
@@ -173,7 +173,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 	}
 
 	// ForceReAuth fail
-	proxy.cfg.Backends[0].SSO.ForceReAuth = 5 * time.Minute
+	proxy.cfg.Backends[0].SSO.Rules[0].ForceReAuth = 5 * time.Minute
 	w = httptest.NewRecorder()
 	if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, req), false; got != want {
 		t.Fatalf("encorceSSOPolicy() = %v, want %v", got, want)

@@ -666,11 +666,14 @@ type ConfigSSHCertificateAuthority struct {
 	CertificateEndpoint string `yaml:"certificateEndpoint"`
 }
 
-// BackendSSO specifies the identity parameters to use for a backend.
-type BackendSSO struct {
-	// Provider is the the name of an identity provider defined in
-	// Config.OIDCProviders.
-	Provider string `yaml:"provider"`
+// SSORule represents a path matching rule for SSO enforcement.
+type SSORule struct {
+	// Paths lists the path prefixes for which this policy will be enforced.
+	// If Paths is empty, the policy applies to all paths.
+	Paths Strings `yaml:"paths,omitempty"`
+	// Exceptions is a list of path prefixes that are exempt from this SSO
+	// rule, e.g. /app.webmanifest or /favicon.png
+	Exceptions Strings `yaml:"exceptions,omitempty"`
 	// ForceReAuth is the time duration after which the user has to
 	// authenticate again. By default, users don't have to authenticate
 	// again until their token expires.
@@ -681,14 +684,36 @@ type BackendSSO struct {
 	// If ACL is nil, all identities are allowed. If ACL is an empty list,
 	// nobody is allowed.
 	ACL *Strings `yaml:"acl,omitempty"`
-	// Paths lists the path prefixes for which this policy will be enforced.
-	// If Paths is empty, the policy applies to all paths.
-	Paths Strings `yaml:"paths,omitempty"`
+}
+
+// BackendSSO specifies the identity parameters to use for a backend.
+type BackendSSO struct {
+	// Provider is the the name of an identity provider defined in
+	// Config.OIDCProviders.
+	Provider string `yaml:"provider"`
+
+	// Rules are matched against the requested path of each request. The
+	// one that matches is used.
+	Rules       []*SSORule `yaml:"rules,omitempty"`
+	LegacyPaths Strings    `yaml:"paths,omitempty"`
 	// Exceptions is a list of path prefixes that are exempt from SSO
 	// enforcement, e.g. /app.webmanifest or /favicon.png
-	Exceptions Strings `yaml:"exceptions,omitempty"`
+	LegacyExceptions Strings `yaml:"exceptions,omitempty"`
+	// ForceReAuth is the time duration after which the user has to
+	// authenticate again. By default, users don't have to authenticate
+	// again until their token expires.
+	LegacyForceReAuth time.Duration `yaml:"forceReAuth,omitempty"`
+	// ACL restricts which user identity can access this backend. It is a
+	// list of email addresses and/or domains, e.g. "bob@example.com", or
+	// "@example.com"
+	// If ACL is nil, all identities are allowed. If ACL is an empty list,
+	// nobody is allowed.
+	LegacyACL *Strings `yaml:"acl,omitempty"`
+	// Paths lists the path prefixes for which this policy will be enforced.
+	// If Paths is empty, the policy applies to all paths.
 	// HTMLMessage is displayed on the permission denied screen. The value
 	// is HTML and will be used as it is without escaping.
+
 	HTMLMessage string `yaml:"htmlMessage,omitempty"`
 	// SetUserIDHeader indicates that the x-tlsproxy-user-id header should
 	// be set with the email address of the user.
@@ -1169,6 +1194,24 @@ func (cfg *Config) Check() error {
 			if !identityProviders[be.SSO.Provider] {
 				return fmt.Errorf("backend[%d].SSO.Provider: unknown provider %q", i, be.SSO.Provider)
 			}
+			if len(be.SSO.Rules) > 0 && (be.SSO.LegacyPaths != nil || be.SSO.LegacyExceptions != nil || be.SSO.LegacyForceReAuth != 0 || be.SSO.LegacyACL != nil) {
+				return fmt.Errorf("backend[%d].SSO.Rules cannot be set with LegacyPaths, LegacyExceptions, LegacyForceReAuth, or LegacyACL", i)
+			}
+			if len(be.SSO.Rules) == 0 {
+				be.SSO.Rules = []*SSORule{
+					{
+						Paths:       be.SSO.LegacyPaths,
+						Exceptions:  be.SSO.LegacyExceptions,
+						ForceReAuth: be.SSO.LegacyForceReAuth,
+						ACL:         be.SSO.LegacyACL,
+					},
+				}
+				be.SSO.LegacyPaths = nil
+				be.SSO.LegacyExceptions = nil
+				be.SSO.LegacyForceReAuth = 0
+				be.SSO.LegacyACL = nil
+			}
+
 			if be.SSO.LocalOIDCServer != nil {
 				for j, client := range be.SSO.LocalOIDCServer.Clients {
 					if client.ID == "" {
