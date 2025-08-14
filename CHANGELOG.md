@@ -1,6 +1,6 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.19.0
 
 ### :star: Feature improvement
 
@@ -34,6 +34,8 @@ Now:
 The first rule with matching `paths` (and not matching `exceptions`) is the one that's used for the request.
 
 As before, if `acl:` is not specified, all authenticated requests are allowed. If `acl:` is set to an empty list, i.e. `acl: []`, nothing is allowed.
+
+The old syntax still works, but is now deprecated and will be removed eventually.
 
 ### :wrench: Misc
 
