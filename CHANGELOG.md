@@ -2,6 +2,13 @@
 
 ## next
 
+### :star: Feature improvement
+
+* Backends can now have different SSO ACLs for different paths. The `paths:`,
+  `exceptions:`, `acl:`, and `forceReAuth:` options are moving to `rules:`
+  where each rule has its own `paths:`, `exceptions:`, `acl:`, and
+  `forceReAuth:` options.
+
 ### :wrench: Misc
 
 * Update go: 1.25.0
