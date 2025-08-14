@@ -32,10 +32,11 @@ backends:
   - 192.168.1.1:80
   sso:
     provider: google
-    acl:
-      - alice@EXAMPLE.COM
-      - bob@EXAMPLE.COM
-      - "@EXAMPLE.COM"   <--- allows anyone from EXAMPLE.COM
+    rules:
+      - acl:
+        - alice@EXAMPLE.COM
+        - bob@EXAMPLE.COM
+        - "@EXAMPLE.COM"   <--- allows anyone from EXAMPLE.COM
 ```
 
 ## Facebook OpenID Connect
@@ -64,10 +65,11 @@ backends:
   - 192.168.1.1:80
   sso:
     provider: facebook
-    acl:
-      - alice@EXAMPLE.COM
-      - bob@EXAMPLE.COM
-      - "@EXAMPLE.COM"   <--- allows anyone from EXAMPLE.COM
+    rules:
+      - acl:
+        - alice@EXAMPLE.COM
+        - bob@EXAMPLE.COM
+        - "@EXAMPLE.COM"   <--- allows anyone from EXAMPLE.COM
 ```
 
 ## SimpleLogin OpenID Connect (SIWSL)
@@ -96,10 +98,11 @@ backends:
   - 192.168.1.1:80
   sso:
     provider: siwsl
-    acl:
-      - alice@EXAMPLE.COM
-      - bob@EXAMPLE.COM
-      - "@EXAMPLE.COM"   <--- allows anyone from EXAMPLE.COM
+    rules:
+      - acl:
+        - alice@EXAMPLE.COM
+        - bob@EXAMPLE.COM
+        - "@EXAMPLE.COM"   <--- allows anyone from EXAMPLE.COM
 ```
 
 ## GitHub OAuth2
@@ -133,10 +136,11 @@ backends:
   - 192.168.1.1:80
   sso:
     provider: github
-    acl:
-      - alice@EXAMPLE.COM
-      - bob@EXAMPLE.COM
-      - "@EXAMPLE.COM"   <--- allows anyone from EXAMPLE.COM
+    rules:
+      - acl:
+        - alice@EXAMPLE.COM
+        - bob@EXAMPLE.COM
+        - "@EXAMPLE.COM"   <--- allows anyone from EXAMPLE.COM
 ```
 
 ## Google Workspace SAML SSO
@@ -167,10 +171,11 @@ backends:
   - 192.168.1.1:80
   sso:
     provider: google-saml
-    acl:
-      - alice@EXAMPLE.COM
-      - bob@EXAMPLE.COM
-      - "@EXAMPLE.COM"   <--- allows anyone from EXAMPLE.COM
+    rules:
+      - acl:
+        - alice@EXAMPLE.COM
+        - bob@EXAMPLE.COM
+        - "@EXAMPLE.COM"   <--- allows anyone from EXAMPLE.COM
 ```
 
 ## Passkeys with initial authentication with Google OpenID Connect
@@ -203,9 +208,10 @@ backends:
   - 192.168.1.1:80
   sso:
     provider: passkey
-    acl:
-      - alice@EXAMPLE.COM
-      - bob@EXAMPLE.COM
-      - "@EXAMPLE.COM"   <--- allows anyone from EXAMPLE.COM
+    rules:
+      - acl:
+        - alice@EXAMPLE.COM
+        - bob@EXAMPLE.COM
+        - "@EXAMPLE.COM"   <--- allows anyone from EXAMPLE.COM
 ```
 

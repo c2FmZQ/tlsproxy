@@ -35,12 +35,15 @@ backends:
   - 192.168.0.0/24
   sso:
     provider: sso-provider # definition omitted for this example
-    forceReAuth: 1h
-    # The ACL controls who has access to issue and revoke certificates for
-    # themselves.
-    acl:
-    - alice@example.com
-    - bob@example.com
+    rules:
+    - paths:
+      - /certs
+      forceReAuth: 1h
+      # The ACL controls who has access to issue and revoke certificates for
+      # themselves.
+      acl:
+      - alice@example.com
+      - bob@example.com
 
 # Then use EXAMPLE CA to authenticate and authorize TLS clients.
 - serverNames:

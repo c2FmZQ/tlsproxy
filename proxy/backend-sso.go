@@ -272,7 +272,17 @@ func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Reques
 }
 
 func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bool {
-	if be.SSO == nil || !pathMatches(be.SSO.Paths, req.URL.Path) || (len(be.SSO.Exceptions) > 0 && pathMatches(be.SSO.Exceptions, req.URL.Path)) {
+	if be.SSO == nil {
+		return true
+	}
+	var rule *SSORule
+	for _, r := range be.SSO.Rules {
+		if pathMatches(r.Paths, req.URL.Path) && (len(r.Exceptions) == 0 || !pathMatches(r.Exceptions, req.URL.Path)) {
+			rule = r
+			break
+		}
+	}
+	if rule == nil {
 		return true
 	}
 	claims := claimsFromCtx(req.Context())
@@ -287,7 +297,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 	// * the user isn't logged in, or
 	// * the backend has ForceReAuth set, and the last authentication
 	//   either on a different host, or too long ago.
-	if claims == nil || (be.SSO.ForceReAuth != 0 && (claims["hhash"] != hex.EncodeToString(hh[:]) || time.Since(iat) > be.SSO.ForceReAuth)) {
+	if claims == nil || (rule.ForceReAuth != 0 && (claims["hhash"] != hex.EncodeToString(hh[:]) || time.Since(iat) > rule.ForceReAuth)) {
 		if req.Method != http.MethodGet {
 			be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (SSO) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden, userAgent(req))
 			http.Error(w, "authentication required", http.StatusForbidden)
@@ -337,7 +347,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 	userID, _ := claims["email"].(string)
 	host := connServerName(req.Context().Value(connCtxKey).(anyConn))
 	_, userDomain, _ := strings.Cut(userID, "@")
-	if be.SSO.ACL != nil && !slices.Contains(*be.SSO.ACL, userID) && !slices.Contains(*be.SSO.ACL, "@"+userDomain) {
+	if rule.ACL != nil && !slices.Contains(*rule.ACL, userID) && !slices.Contains(*rule.ACL, "@"+userDomain) {
 		be.recordEvent(fmt.Sprintf("deny SSO %s to %s", userID, idnaToUnicode(host)))
 		be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (SSO) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden, userAgent(req))
 		be.servePermissionDenied(w, req)
