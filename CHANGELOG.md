@@ -4,10 +4,36 @@
 
 ### :star: Feature improvement
 
-* Backends can now have different SSO ACLs for different paths. The `paths:`,
-  `exceptions:`, `acl:`, and `forceReAuth:` options are moving to `rules:`
-  where each rule has its own `paths:`, `exceptions:`, `acl:`, and
-  `forceReAuth:` options.
+Backends can now have different SSO ACLs for different paths. The `paths:`, `exceptions:`, `acl:`, and `forceReAuth:` options are moving to `rules:` where each rule has its own `paths:`, `exceptions:`, `acl:`, and `forceReAuth:` options.
+
+Before:
+```yaml
+   sso:
+     provider: <provider>
+     paths:
+       - /foo
+     forceReAuth: 1h
+     acl:
+       - alice@example.com
+       - bob@example.com
+```
+
+Now:
+```yaml
+   sso:
+     provider: <provider>
+     rules:
+       - paths:
+           - /foo
+         forceReAuth: 1h
+         acl:
+           - alice@example.com
+           - bob@example.com
+```
+
+The first rule with matching `paths` (and not matching `exceptions`) is the one that's used for the request.
+
+As before, if `acl:` is not specified, all authenticated requests are allowed. If `acl:` is set to an empty list, i.e. `acl: []`, nothing is allowed.
 
 ### :wrench: Misc
 
