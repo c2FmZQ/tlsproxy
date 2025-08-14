@@ -1,5 +1,18 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Update go: 1.25.0
+* Update go dependencies:
+  * upgraded golang.org/x/crypto v0.40.0 => v0.41.0
+  * upgraded golang.org/x/mod v0.26.0 => v0.27.0
+  * upgraded golang.org/x/net v0.42.0 => v0.43.0
+  * upgraded golang.org/x/sys v0.34.0 => v0.35.0
+  * upgraded golang.org/x/text v0.27.0 => v0.28.0
+  * upgraded golang.org/x/tools v0.35.0 => v0.36.0
+
 ## v0.18.1
 
 ### :wrench: Misc

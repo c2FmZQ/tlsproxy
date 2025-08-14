@@ -456,19 +456,30 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 
 	getFunc := func(stack [32]uintptr, n int) string {
 		var out []string
+		runtimeOnly := n > 1
 		for i := 0; i < n && stack[i] != 0; i++ {
 			fn := runtime.FuncForPC(stack[i])
 			fnName := fn.Name()
-			out = append(out, fmt.Sprintf("%s+0x%x", fnName, stack[i]-fn.Entry()))
-			if !strings.HasPrefix(fnName, "runtime.") && !strings.HasPrefix(fnName, "sync.") {
-				break
+			if !strings.HasPrefix(fnName, "runtime.") {
+				runtimeOnly = false
 			}
+			out = append(out, fmt.Sprintf("%s+0x%x", fnName, stack[i]-fn.Entry()))
+		}
+		if runtimeOnly {
+			return "Misc Runtime"
 		}
 		slices.Reverse(out)
-		if len(out) <= 2 {
-			return strings.Join(out, " -> ")
+		for len(out) > 1 {
+			if d, s := strings.Index(out[0], "."), strings.Index(out[0], "/"); d == -1 || s == -1 || s < d {
+				out = out[1:]
+				continue
+			}
+			break
 		}
-		return out[0] + " -> ... -> " + out[len(out)-1]
+		if len(out) > 5 {
+			return strings.Join(out[:4], " -> ") + " -> ... -> " + out[len(out)-1]
+		}
+		return strings.Join(out, " -> ")
 	}
 	memProfSize, _ := runtime.MemProfile(nil, false)
 	memProf := make([]runtime.MemProfileRecord, memProfSize+100)
@@ -507,7 +518,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	if n, ok := runtime.MutexProfile(mutexProfile); ok {
 		itemMap := make(map[string]mutexProf)
 		for _, p := range mutexProfile[:n] {
-			key := getFunc(p.Stack0, 5)
+			key := getFunc(p.Stack0, 32)
 			it, ok := itemMap[key]
 			if !ok {
 				it = mutexProf{Func: key}
