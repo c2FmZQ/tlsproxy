@@ -44,7 +44,6 @@ import (
 	"net/url"
 	"reflect"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -113,6 +112,7 @@ type Config struct {
 	OtherCookieManager *cookiemanager.CookieManager
 	TokenManager       *tokenmanager.TokenManager
 	ClaimsFromCtx      func(context.Context) jwt.MapClaims
+	ACLMatcher         func(group, email string) bool
 	Logger             interface {
 		Errorf(format string, args ...any)
 	}
@@ -717,8 +717,9 @@ func (m *Manager) subjectIsAllowed(email string) bool {
 	if m.acl == nil {
 		return true
 	}
-	_, subDomain, _ := strings.Cut(email, "@")
-	return slices.Contains(*m.acl, email) || slices.Contains(*m.acl, "@"+subDomain)
+	v := slices.ContainsFunc(*m.acl, func(v string) bool { return m.cfg.ACLMatcher(v, email) })
+	m.cfg.Logger.Errorf("XXXX subjectIsAllowed(%q): %v  (%q)", email, v, *m.acl)
+	return v
 }
 
 func (m *Manager) subjectIsRegistered(email string) bool {

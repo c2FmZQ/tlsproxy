@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :star: Feature improvement
+
+* Add groups for access control. Groups can have user login and x509 credentials. They can be used in ACLs.
+
 ## v0.19.0
 
 ### :star: Feature improvement

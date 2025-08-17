@@ -215,3 +215,51 @@ backends:
         - "@EXAMPLE.COM"   <--- allows anyone from EXAMPLE.COM
 ```
 
+## Groups
+
+Groups can be used in ACLs to avoid repeating the same user lists multiple times.
+
+```yaml
+groups:
+- name: admins
+  members:
+  - email: alice@EXAMPLE.COM
+- name: users
+  members:
+  - email: bob@EXAMPLE.COM
+  - email: carol@EXAMPLE.COM
+  - group: admins    <-- includes all members of the admins group
+
+backends:
+- serverNames:
+  - www.EXAMPLE.COM
+  mode: http
+  addresses:
+  - 192.168.1.1:80
+  sso:
+    provider: <provider>
+    rules:
+      - acl:
+        - users      <--- allows members of the users group
+```
+
+Groups can also be used for TLS Client Authorization.
+
+```yaml
+groups:
+- name: admins
+  members:
+  - x509: "SUBJECT:CN=alice"
+- name: users
+  members:
+  - x509: "EMAIL:bob@example.com"
+  - x509: "DNS:carol.example.com"
+  - group: "admins"    <-- includes all members of the admins group
+
+backends:
+- serverNames:
+  - www.example.com
+  clientAuth:
+  - acl:
+    - users
+```
