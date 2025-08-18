@@ -30,7 +30,7 @@ import (
 )
 
 func TestGroups(t *testing.T) {
-	matcher := &ACLMatcher{
+	matcher := &aclMatcher{
 		groups: []*Group{
 			{
 				Name: "group1",

@@ -371,7 +371,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		}
 	}
 
-	aclMatcher := &ACLMatcher{groups: cfg.Groups}
+	aclMatcher := &aclMatcher{groups: cfg.Groups}
 
 	for _, pp := range cfg.PasskeyProviders {
 		other, ok := identityProviders[pp.IdentityProvider]

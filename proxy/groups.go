@@ -30,19 +30,19 @@ import (
 	"strings"
 )
 
-type ACLMatcher struct {
+type aclMatcher struct {
 	groups []*Group
 }
 
-func (m *ACLMatcher) EmailMatches(acl []string, email string) bool {
+func (m *aclMatcher) EmailMatches(acl []string, email string) bool {
 	return slices.ContainsFunc(acl, func(g string) bool {
 		return m.emailMatchesOne(g, email)
 	})
 }
 
-func (m *ACLMatcher) emailMatchesOne(group, email string) bool {
+func (m *aclMatcher) emailMatchesOne(group, email string) bool {
 	_, userDomain, ok := strings.Cut(email, "@")
-	if group == email || group == "@"+userDomain {
+	if group == email || (ok && group == "@"+userDomain) {
 		return true
 	}
 
@@ -54,13 +54,13 @@ func (m *ACLMatcher) emailMatchesOne(group, email string) bool {
 	return false
 }
 
-func (m *ACLMatcher) CertMatches(acl []string, cert *x509.Certificate) bool {
+func (m *aclMatcher) CertMatches(acl []string, cert *x509.Certificate) bool {
 	return slices.ContainsFunc(acl, func(g string) bool {
 		return m.certMatchesOne(g, cert)
 	})
 }
 
-func (m *ACLMatcher) certMatchesOne(group string, cert *x509.Certificate) bool {
+func (m *aclMatcher) certMatchesOne(group string, cert *x509.Certificate) bool {
 	match := func(member string) bool {
 		if subject := cert.Subject.String(); (member != "" && member == subject) || member == "SUBJECT:"+subject {
 			return true
@@ -93,18 +93,18 @@ func (m *ACLMatcher) certMatchesOne(group string, cert *x509.Certificate) bool {
 	return false
 }
 
-func (m *ACLMatcher) findGroup(group string) *Group {
+func (m *aclMatcher) findGroup(group string) *Group {
 	if i := slices.IndexFunc(m.groups, func(g *Group) bool { return g.Name == group }); i >= 0 {
 		return m.groups[i]
 	}
 	return nil
 }
 
-func (m *ACLMatcher) walkGroup(group string) iter.Seq[*Member] {
-	seen := map[string]bool{group: true}
-	queue := []string{group}
-
+func (m *aclMatcher) walkGroup(group string) iter.Seq[*Member] {
 	return func(yield func(*Member) bool) {
+		seen := map[string]bool{group: true}
+		queue := []string{group}
+
 		for len(queue) > 0 {
 			name := queue[0]
 			queue = queue[1:]

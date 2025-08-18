@@ -510,7 +510,7 @@ type Backend struct {
 	proxyProtocolVersion byte
 	resolver             *ech.Resolver
 
-	aclMatcher *ACLMatcher
+	aclMatcher *aclMatcher
 
 	allowIPs *[]*net.IPNet
 	denyIPs  *[]*net.IPNet
