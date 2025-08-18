@@ -121,12 +121,12 @@ func TestGroups(t *testing.T) {
 		{name: "certMike not in group4", group: "group4", cert: certMike, expected: false},
 	} {
 		if tc.email != "" {
-			if got, want := matcher.EmailMatches(tc.group, tc.email), tc.expected; got != want {
+			if got, want := matcher.EmailMatches([]string{tc.group}, tc.email), tc.expected; got != want {
 				t.Errorf("[%s] EmailMatches(%q, %q) = %v, want %v", tc.name, tc.group, tc.email, got, want)
 			}
 		}
 		if tc.cert != nil {
-			if got, want := matcher.CertMatches(tc.group, tc.cert), tc.expected; got != want {
+			if got, want := matcher.CertMatches([]string{tc.group}, tc.cert), tc.expected; got != want {
 				t.Errorf("[%s] CertMatches(%q, %q) = %v, want %v", tc.name, tc.group, tc.cert.Subject, got, want)
 			}
 		}

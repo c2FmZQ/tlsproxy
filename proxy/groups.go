@@ -34,7 +34,13 @@ type ACLMatcher struct {
 	groups []*Group
 }
 
-func (m *ACLMatcher) EmailMatches(group, email string) bool {
+func (m *ACLMatcher) EmailMatches(acl []string, email string) bool {
+	return slices.ContainsFunc(acl, func(g string) bool {
+		return m.emailMatchesOne(g, email)
+	})
+}
+
+func (m *ACLMatcher) emailMatchesOne(group, email string) bool {
 	_, userDomain, ok := strings.Cut(email, "@")
 	if group == email || group == "@"+userDomain {
 		return true
@@ -48,7 +54,13 @@ func (m *ACLMatcher) EmailMatches(group, email string) bool {
 	return false
 }
 
-func (m *ACLMatcher) CertMatches(group string, cert *x509.Certificate) bool {
+func (m *ACLMatcher) CertMatches(acl []string, cert *x509.Certificate) bool {
+	return slices.ContainsFunc(acl, func(g string) bool {
+		return m.certMatchesOne(g, cert)
+	})
+}
+
+func (m *ACLMatcher) certMatchesOne(group string, cert *x509.Certificate) bool {
 	match := func(member string) bool {
 		if subject := cert.Subject.String(); (member != "" && member == subject) || member == "SUBJECT:"+subject {
 			return true

@@ -346,7 +346,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 	}
 	userID, _ := claims["email"].(string)
 	host := connServerName(req.Context().Value(connCtxKey).(anyConn))
-	if rule.ACL != nil && !slices.ContainsFunc(*rule.ACL, func(g string) bool { return be.aclMatcher.EmailMatches(g, userID) }) {
+	if rule.ACL != nil && !be.aclMatcher.EmailMatches(*rule.ACL, userID) {
 		be.recordEvent(fmt.Sprintf("deny SSO %s to %s", userID, idnaToUnicode(host)))
 		be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (SSO) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden, userAgent(req))
 		be.servePermissionDenied(w, req)

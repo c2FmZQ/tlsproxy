@@ -194,7 +194,7 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 		return
 	}
 	email, _ := claims["email"].(string)
-	isAdmin := slices.ContainsFunc(m.opts.Admins, func(v string) bool { return m.opts.AdminMatcher(v, email) })
+	isAdmin := m.opts.AdminMatcher(m.opts.Admins, email)
 
 	mode := req.Form.Get("get")
 	switch mode {

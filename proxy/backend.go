@@ -257,7 +257,7 @@ func (be *Backend) authorize(cert *x509.Certificate) error {
 	if be.ClientAuth == nil || be.ClientAuth.ACL == nil {
 		return nil
 	}
-	if slices.ContainsFunc(*be.ClientAuth.ACL, func(v string) bool { return be.aclMatcher.CertMatches(v, cert) }) {
+	if be.aclMatcher.CertMatches(*be.ClientAuth.ACL, cert) {
 		return nil
 	}
 	return tlsAccessDenied
