@@ -35,18 +35,14 @@ type aclMatcher struct {
 }
 
 func (m *aclMatcher) EmailMatches(acl []string, email string) bool {
-	return slices.ContainsFunc(acl, func(g string) bool {
-		return m.emailMatchesOne(g, email)
-	})
-}
-
-func (m *aclMatcher) emailMatchesOne(group, email string) bool {
 	_, userDomain, ok := strings.Cut(email, "@")
-	if group == email || (ok && group == "@"+userDomain) {
+	if slices.ContainsFunc(acl, func(group string) bool {
+		return group == email || (ok && group == "@"+userDomain)
+	}) {
 		return true
 	}
 
-	for member := range m.walkGroup(group) {
+	for member := range m.walkGroups(acl) {
 		if member.Email != "" && (member.Email == email || (ok && member.Email == "@"+userDomain)) {
 			return true
 		}
@@ -55,12 +51,6 @@ func (m *aclMatcher) emailMatchesOne(group, email string) bool {
 }
 
 func (m *aclMatcher) CertMatches(acl []string, cert *x509.Certificate) bool {
-	return slices.ContainsFunc(acl, func(g string) bool {
-		return m.certMatchesOne(g, cert)
-	})
-}
-
-func (m *aclMatcher) certMatchesOne(group string, cert *x509.Certificate) bool {
 	match := func(member string) bool {
 		if subject := cert.Subject.String(); (member != "" && member == subject) || member == "SUBJECT:"+subject {
 			return true
@@ -82,10 +72,10 @@ func (m *aclMatcher) certMatchesOne(group string, cert *x509.Certificate) bool {
 		}
 		return false
 	}
-	if match(group) {
+	if slices.ContainsFunc(acl, func(group string) bool { return match(group) }) {
 		return true
 	}
-	for member := range m.walkGroup(group) {
+	for member := range m.walkGroups(acl) {
 		if match(member.X509) {
 			return true
 		}
@@ -100,10 +90,18 @@ func (m *aclMatcher) findGroup(group string) *Group {
 	return nil
 }
 
-func (m *aclMatcher) walkGroup(group string) iter.Seq[*Member] {
+func (m *aclMatcher) walkGroups(groups []string) iter.Seq[*Member] {
 	return func(yield func(*Member) bool) {
-		seen := map[string]bool{group: true}
-		queue := []string{group}
+		var queue []string
+		seen := make(map[string]bool)
+
+		for _, group := range groups {
+			if seen[group] {
+				continue
+			}
+			seen[group] = true
+			queue = append(queue, group)
+		}
 
 		for len(queue) > 0 {
 			name := queue[0]
