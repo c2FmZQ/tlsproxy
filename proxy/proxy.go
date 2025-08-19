@@ -391,7 +391,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			OtherCookieManager: other.cm,
 			TokenManager:       p.tokenManager,
 			ClaimsFromCtx:      claimsFromCtx,
-			ACLMatcher:         aclMatcher.EmailMatches,
+			ACLMatcher:         aclMatcher.emailMatches,
 		}
 		provider, err := passkeys.NewManager(cfg)
 		if err != nil {
@@ -420,7 +420,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			Store:                 p.store,
 			EventRecorder:         er,
 			ClaimsFromCtx:         claimsFromCtx,
-			AdminMatcher:          aclMatcher.EmailMatches,
+			AdminMatcher:          aclMatcher.emailMatches,
 		}
 		m, err := pki.New(opts)
 		if err != nil {

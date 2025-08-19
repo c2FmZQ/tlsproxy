@@ -26,6 +26,7 @@ package proxy
 import (
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"reflect"
 	"testing"
 )
 
@@ -65,6 +66,21 @@ func TestGroups(t *testing.T) {
 				},
 			},
 		},
+	}
+
+	for _, tc := range []struct {
+		email  string
+		groups []string
+	}{
+		{email: "alice@example.com", groups: []string{"group1", "group3", "group4"}},
+		{email: "bob@example.com", groups: []string{"group1", "group2", "group3", "group4"}},
+		{email: "carol@example.com", groups: []string{"group3", "group4"}},
+		{email: "oscar@example.com", groups: []string{"group4"}},
+		{email: "mike@example.NET", groups: nil},
+	} {
+		if got, want := matcher.groupsForEmail(tc.email), tc.groups; !reflect.DeepEqual(got, want) {
+			t.Errorf("groupsForEmail(%q) = %v, want %v", tc.email, got, want)
+		}
 	}
 
 	certAlice := &x509.Certificate{
@@ -121,13 +137,13 @@ func TestGroups(t *testing.T) {
 		{name: "certMike not in group4", group: "group4", cert: certMike, expected: false},
 	} {
 		if tc.email != "" {
-			if got, want := matcher.EmailMatches([]string{tc.group}, tc.email), tc.expected; got != want {
-				t.Errorf("[%s] EmailMatches(%q, %q) = %v, want %v", tc.name, tc.group, tc.email, got, want)
+			if got, want := matcher.emailMatches([]string{tc.group}, tc.email), tc.expected; got != want {
+				t.Errorf("[%s] emailMatches(%q, %q) = %v, want %v", tc.name, tc.group, tc.email, got, want)
 			}
 		}
 		if tc.cert != nil {
-			if got, want := matcher.CertMatches([]string{tc.group}, tc.cert), tc.expected; got != want {
-				t.Errorf("[%s] CertMatches(%q, %q) = %v, want %v", tc.name, tc.group, tc.cert.Subject, got, want)
+			if got, want := matcher.certMatches([]string{tc.group}, tc.cert), tc.expected; got != want {
+				t.Errorf("[%s] certMatches(%q, %q) = %v, want %v", tc.name, tc.group, tc.cert.Subject, got, want)
 			}
 		}
 	}

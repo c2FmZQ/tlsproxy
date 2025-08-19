@@ -120,7 +120,8 @@ func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.M
 	if !ok {
 		return nil, true
 	}
-	if email, ok := authClaims["email"].(string); !ok || email == "" {
+	email, ok := authClaims["email"].(string)
+	if !ok || email == "" {
 		return nil, true
 	}
 
@@ -136,7 +137,7 @@ func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.M
 		// Token is already set, and is valid.
 		return authClaims, true
 	}
-	if err := be.SSO.cm.SetIDTokenCookie(w, req, authToken); err != nil {
+	if err := be.SSO.cm.SetIDTokenCookie(w, req, authToken, be.aclMatcher.groupsForEmail(email)); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return nil, false
 	}
@@ -174,6 +175,10 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 		Token    string
 		Claims   []kv
 		Passkeys bool
+	}
+	email, _ := claims["email"].(string)
+	if groups := be.aclMatcher.groupsForEmail(email); len(groups) > 0 {
+		data.Claims = append(data.Claims, kv{"groups", strings.Join(be.aclMatcher.groupsForEmail(email), ", ")})
 	}
 	for _, k := range keys {
 		if k == "iat" {
@@ -346,7 +351,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 	}
 	userID, _ := claims["email"].(string)
 	host := connServerName(req.Context().Value(connCtxKey).(anyConn))
-	if rule.ACL != nil && !be.aclMatcher.EmailMatches(*rule.ACL, userID) {
+	if rule.ACL != nil && !be.aclMatcher.emailMatches(*rule.ACL, userID) {
 		be.recordEvent(fmt.Sprintf("deny SSO %s to %s", userID, idnaToUnicode(host)))
 		be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (SSO) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden, userAgent(req))
 		be.servePermissionDenied(w, req)

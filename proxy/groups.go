@@ -27,6 +27,7 @@ import (
 	"crypto/x509"
 	"iter"
 	"slices"
+	"sort"
 	"strings"
 )
 
@@ -34,7 +35,18 @@ type aclMatcher struct {
 	groups []*Group
 }
 
-func (m *aclMatcher) EmailMatches(acl []string, email string) bool {
+func (m *aclMatcher) groupsForEmail(email string) []string {
+	var out []string
+	for _, g := range m.groups {
+		if m.emailMatches([]string{g.Name}, email) {
+			out = append(out, g.Name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (m *aclMatcher) emailMatches(acl []string, email string) bool {
 	_, userDomain, ok := strings.Cut(email, "@")
 	if slices.ContainsFunc(acl, func(group string) bool {
 		return group == email || (ok && group == "@"+userDomain)
@@ -50,7 +62,7 @@ func (m *aclMatcher) EmailMatches(acl []string, email string) bool {
 	return false
 }
 
-func (m *aclMatcher) CertMatches(acl []string, cert *x509.Certificate) bool {
+func (m *aclMatcher) certMatches(acl []string, cert *x509.Certificate) bool {
 	match := func(member string) bool {
 		if subject := cert.Subject.String(); (member != "" && member == subject) || member == "SUBJECT:"+subject {
 			return true
