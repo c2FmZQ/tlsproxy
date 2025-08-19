@@ -971,6 +971,14 @@ func (cfg *Config) Check() error {
 		*cfg.DefaultServerName = idnaToASCII(*cfg.DefaultServerName)
 	}
 
+	groups := make(map[string]bool)
+	for i, g := range cfg.Groups {
+		if groups[g.Name] {
+			return fmt.Errorf("groups[%d].Name: duplicate group name %q", i, g.Name)
+		}
+		groups[g.Name] = true
+	}
+
 	identityProviders := make(map[string]bool)
 	for i, oi := range cfg.OIDCProviders {
 		if identityProviders[oi.Name] {
