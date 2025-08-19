@@ -973,6 +973,9 @@ func (cfg *Config) Check() error {
 
 	groups := make(map[string]bool)
 	for i, g := range cfg.Groups {
+		if g.Name == "" {
+			return fmt.Errorf("groups[%d].Name: group name must be set", i)
+		}
 		if groups[g.Name] {
 			return fmt.Errorf("groups[%d].Name: duplicate group name %q", i, g.Name)
 		}
