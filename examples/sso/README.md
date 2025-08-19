@@ -217,7 +217,9 @@ backends:
 
 ## Groups
 
-Groups can be used in ACLs to avoid repeating the same user lists multiple times.
+Groups can be used to simplify authorization decisions. They can be used ACLs,
+and group memberships are included in the generated ID tokens sent to the
+backends.
 
 ```yaml
 groups:

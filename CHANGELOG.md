@@ -2,9 +2,9 @@
 
 ## next
 
-### :star: Feature improvement
+### :star2: New feature
 
-* Add groups for access control. Groups can have user login and x509 credentials. They can be used in ACLs.
+* Groups for access control. See [examples/sso](https://github.com/c2FmZQ/tlsproxy/tree/main/examples/sso#groups)
 
 ## v0.19.0
 
