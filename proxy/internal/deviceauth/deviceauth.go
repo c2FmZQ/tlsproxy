@@ -303,12 +303,12 @@ func (s *Server) ServeVerification(w http.ResponseWriter, req *http.Request) {
 func (s *Server) ServeToken(w http.ResponseWriter, req *http.Request) {
 	s.vacuum()
 	if req.Method != http.MethodPost {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		http.Error(w, "method not allowed ", http.StatusMethodNotAllowed)
 		return
 	}
 	req.ParseForm()
 	if gt := req.Form.Get("grant_type"); gt != "urn:ietf:params:oauth:grant-type:device_code" {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		http.Error(w, "invalid grant type", http.StatusBadRequest)
 		return
 	}
 	deviceCode := req.Form.Get("device_code")
@@ -319,10 +319,10 @@ func (s *Server) ServeToken(w http.ResponseWriter, req *http.Request) {
 	s.mu.Unlock()
 
 	var resp struct {
-		Error     string `json:"error,omitempty"`
-		IDToken   string `json:"id_token,omitempty"`
-		Scope     string `json:"scope,omitempty"`
-		TokenType string `json:"token_type,omitempty"`
+		Error       string `json:"error,omitempty"`
+		AccessToken string `json:"access_token,omitempty"`
+		Scope       string `json:"scope,omitempty"`
+		TokenType   string `json:"token_type,omitempty"`
 	}
 
 	status := http.StatusOK
@@ -334,7 +334,7 @@ func (s *Server) ServeToken(w http.ResponseWriter, req *http.Request) {
 		resp.Error = "invalid_client"
 		status = http.StatusBadRequest
 	case data.token != "":
-		resp.IDToken = data.token
+		resp.AccessToken = data.token
 		resp.Scope = "email"
 		resp.TokenType = "Bearer"
 		s.mu.Lock()
