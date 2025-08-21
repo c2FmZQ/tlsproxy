@@ -68,6 +68,7 @@ import (
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/deviceauth"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/idp"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
@@ -527,6 +528,42 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				)
 			}
 
+			if da := be.SSO.DeviceAuth; da != nil {
+				opts := deviceauth.Options{
+					TokenManager:  p.tokenManager,
+					PathPrefix:    da.PathPrefix,
+					Clients:       make([]deviceauth.Client, 0, len(da.Clients)),
+					ClaimsFromCtx: claimsFromCtx,
+					EventRecorder: er,
+					Logger:        be.extLogger(),
+				}
+				for _, client := range da.Clients {
+					opts.Clients = append(opts.Clients, deviceauth.Client{
+						ID: client.ID,
+					})
+				}
+				devAuthServer := deviceauth.NewServer(opts)
+				be.localHandlers = append(be.localHandlers,
+					localHandler{
+						desc:      "Device Auth Authorization Endpoint",
+						path:      da.PathPrefix + "/device/authorization",
+						handler:   logHandler(http.HandlerFunc(devAuthServer.ServeAuthorization)),
+						ssoBypass: true,
+					},
+					localHandler{
+						desc:    "Device Auth Verification Endpoint",
+						path:    da.PathPrefix + "/device/verification",
+						handler: logHandler(http.HandlerFunc(devAuthServer.ServeVerification)),
+					},
+					localHandler{
+						desc:      "Device Auth Token Endpoint",
+						path:      da.PathPrefix + "/device/token",
+						handler:   logHandler(http.HandlerFunc(devAuthServer.ServeToken)),
+						ssoBypass: true,
+					},
+				)
+			}
+
 			if ls := be.SSO.LocalOIDCServer; ls != nil && len(be.ServerNames) > 0 {
 				opts := oidc.ServerOptions{
 					TokenManager:  p.tokenManager,
@@ -553,12 +590,13 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 					})
 				}
 				oidcServer := oidc.NewServer(opts)
-				be.localHandlers = append(be.localHandlers, localHandler{
-					desc:      "OIDC Server Configuration",
-					path:      ls.PathPrefix + "/.well-known/openid-configuration",
-					handler:   logHandler(http.HandlerFunc(oidcServer.ServeConfig)),
-					ssoBypass: true,
-				},
+				be.localHandlers = append(be.localHandlers,
+					localHandler{
+						desc:      "OIDC Server Configuration",
+						path:      ls.PathPrefix + "/.well-known/openid-configuration",
+						handler:   logHandler(http.HandlerFunc(oidcServer.ServeConfig)),
+						ssoBypass: true,
+					},
 					localHandler{
 						desc:    "OIDC Server Authorization Endpoint",
 						path:    ls.PathPrefix + "/authorization",

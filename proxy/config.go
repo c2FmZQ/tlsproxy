@@ -756,6 +756,9 @@ type BackendSSO struct {
 	// GenerateIDTokens indicates that the proxy should generate ID tokens
 	// for authenticated users.
 	GenerateIDTokens bool `yaml:"generateIdTokens,omitempty"`
+	// DeviceAuth enables the device authentication flow for this backend.
+	// See RFC 8628.
+	DeviceAuth *DeviceAuth `yaml:"deviceAuth,omitempty"`
 	// LocalOIDCServer is used to configure a local OpenID Provider to
 	// authenticate users with backend services that support OpenID Connect.
 	LocalOIDCServer *LocalOIDCServer `yaml:"localOIDCServer,omitempty"`
@@ -846,6 +849,20 @@ type PathOverride struct {
 	forwardRootCAs       *x509.CertPool
 	proxyProtocolVersion byte
 	documentRoot         *os.Root
+}
+
+// DeviceAuth is used to configure the device authorization flow for a backend.
+// When this is enabled, tlsproxy will add three endpoints to this backend:
+// - <PathPrefix>/device/authorization
+// - <PathPrefix>/device/verification
+// - <PathPrefix>/device/token
+type DeviceAuth struct {
+	// PathPrefix specifies how the endpoint paths are constructed. It is
+	// generally fine to leave it empty.
+	PathPrefix string `yaml:"pathPrefix,omitempty"`
+	// Clients is the list of all authorized clients and their
+	// configurations. Only the Client ID is required.
+	Clients []*LocalOIDCClient `yaml:"clients,omitempty"`
 }
 
 // LocalOIDCServer is used to configure a local OpenID Provider to
