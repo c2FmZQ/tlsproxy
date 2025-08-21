@@ -187,10 +187,10 @@ func (s *Server) ServeAuthorization(w http.ResponseWriter, req *http.Request) {
 	out := struct {
 		DeviceCode              string `json:"device_code"`
 		UserCode                string `json:"user_code"`
-		VerificationURI         string `json:verification_uri"`
-		VerificationURIComplete string `json:verification_uri_complete"`
-		ExpiresIn               int    `json:expires_in"`
-		Interval                int    `json:interval"`
+		VerificationURI         string `json:"verification_uri"`
+		VerificationURIComplete string `json:"verification_uri_complete"`
+		ExpiresIn               int    `json:"expires_in"`
+		Interval                int    `json:"interval"`
 	}{
 		DeviceCode:              deviceCode,
 		UserCode:                userCode,
