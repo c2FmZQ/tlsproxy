@@ -257,23 +257,8 @@ func (be *Backend) authorize(cert *x509.Certificate) error {
 	if be.ClientAuth == nil || be.ClientAuth.ACL == nil {
 		return nil
 	}
-	if subject := cert.Subject.String(); subject != "" && (slices.Contains(*be.ClientAuth.ACL, subject) || slices.Contains(*be.ClientAuth.ACL, "SUBJECT:"+subject)) {
+	if be.aclMatcher.certMatches(*be.ClientAuth.ACL, cert) {
 		return nil
-	}
-	for _, v := range cert.DNSNames {
-		if slices.Contains(*be.ClientAuth.ACL, "DNS:"+v) {
-			return nil
-		}
-	}
-	for _, v := range cert.EmailAddresses {
-		if slices.Contains(*be.ClientAuth.ACL, "EMAIL:"+v) {
-			return nil
-		}
-	}
-	for _, v := range cert.URIs {
-		if slices.Contains(*be.ClientAuth.ACL, "URI:"+v.String()) {
-			return nil
-		}
 	}
 	return tlsAccessDenied
 }

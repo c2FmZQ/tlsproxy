@@ -49,11 +49,12 @@ import (
 )
 
 type userIdentity struct {
-	Name      string `json:"name"`
-	FirstName string `json:"firstname"`
-	LastName  string `json:"lastname"`
-	Email     string `json:"email"`
-	Picture   string `json:"picture"`
+	Name      string   `json:"name"`
+	FirstName string   `json:"firstname"`
+	LastName  string   `json:"lastname"`
+	Email     string   `json:"email"`
+	Picture   string   `json:"picture"`
+	Groups    []string `json:"groups"`
 	jwt.RegisteredClaims
 }
 
@@ -210,6 +211,10 @@ func (s *service) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	fmt.Fprintf(w, "  Issuer: %s\n", html.EscapeString(claims.Issuer))
 	fmt.Fprintf(w, "  Subject: %s\n", html.EscapeString(claims.Subject))
 	fmt.Fprintf(w, "  Audience: %s\n", html.EscapeString(strings.Join(claims.Audience, ",")))
+
+	if len(claims.Groups) > 0 {
+		fmt.Fprintf(w, "  Groups: %s\n", html.EscapeString(strings.Join(claims.Groups, ", ")))
+	}
 	if claims.ExpiresAt != nil {
 		fmt.Fprintf(w, "  ExpiresAt: %s\n", html.EscapeString(claims.ExpiresAt.String()))
 	}

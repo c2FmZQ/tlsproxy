@@ -370,6 +370,9 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			actualIDP:        guessIDP(pp.SSOURL),
 		}
 	}
+
+	aclMatcher := &aclMatcher{groups: cfg.Groups}
+
 	for _, pp := range cfg.PasskeyProviders {
 		other, ok := identityProviders[pp.IdentityProvider]
 		if !ok {
@@ -388,6 +391,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			OtherCookieManager: other.cm,
 			TokenManager:       p.tokenManager,
 			ClaimsFromCtx:      claimsFromCtx,
+			ACLMatcher:         aclMatcher.emailMatches,
 		}
 		provider, err := passkeys.NewManager(cfg)
 		if err != nil {
@@ -416,6 +420,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			Store:                 p.store,
 			EventRecorder:         er,
 			ClaimsFromCtx:         claimsFromCtx,
+			AdminMatcher:          aclMatcher.emailMatches,
 		}
 		m, err := pki.New(opts)
 		if err != nil {
@@ -442,6 +447,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 
 	backends := make(map[beKey]*Backend, len(cfg.Backends))
 	for _, be := range cfg.Backends {
+		be.aclMatcher = aclMatcher
 		be.recordEvent = p.recordEvent
 		be.tm = p.tokenManager
 		be.quicTransport = p.quicTransport

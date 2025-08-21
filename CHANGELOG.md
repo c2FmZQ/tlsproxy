@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :star2: New feature
+
+* Groups for access control. See [examples/sso](https://github.com/c2FmZQ/tlsproxy/tree/main/examples/sso#groups)
+
 ## v0.19.0
 
 ### :star: Feature improvement

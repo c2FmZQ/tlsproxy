@@ -194,7 +194,7 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 		return
 	}
 	email, _ := claims["email"].(string)
-	isAdmin := enableAdmin != "" && slices.Contains(m.opts.Admins, email)
+	isAdmin := m.opts.AdminMatcher(m.opts.Admins, email)
 
 	mode := req.Form.Get("get")
 	switch mode {
@@ -315,7 +315,7 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 			IsCA:           c.IsCA,
 			Status:         status,
 			UsedNow:        currentSN == ic.SerialNumber,
-			CanRevoke:      !c.IsCA && (isAdmin || slices.Contains(c.EmailAddresses, email)),
+			CanRevoke:      !c.IsCA && ((enableAdmin != "" && isAdmin) || slices.Contains(c.EmailAddresses, email)),
 		})
 	}
 	slices.Reverse(certs)

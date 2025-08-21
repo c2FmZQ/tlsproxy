@@ -105,7 +105,7 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, email
 	return nil
 }
 
-func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Request, authToken *jwt.Token) error {
+func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Request, authToken *jwt.Token, groups []string) error {
 	c, ok := authToken.Claims.(jwt.MapClaims)
 	if !ok {
 		return errors.New("internal error")
@@ -125,6 +125,9 @@ func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Reque
 	}
 	claims["iat"] = now.Unix()
 	claims["aud"] = audienceForToken(req)
+	if len(groups) > 0 {
+		claims["groups"] = groups
+	}
 	token, err := cm.tm.CreateToken(claims, "ES256")
 	if err != nil {
 		return err

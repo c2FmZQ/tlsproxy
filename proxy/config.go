@@ -165,6 +165,9 @@ type Config struct {
 	// LogFilter specifies what gets logged for this backend. Values can
 	// be overridden on a per-backend basis.
 	LogFilter LogFilter `yaml:"logFilter,omitempty"`
+
+	// Groups is the list of user groups used for access control.
+	Groups []*Group `yaml:"groups,omitempty"`
 	// Backends is the list of service backends.
 	Backends []*Backend `yaml:"backends"`
 	// Email is optionally sent to Let's Encrypt when registering a new
@@ -265,6 +268,20 @@ type TLSCertificate struct {
 	// CertFile is the name of the file that contains the X.509 certificate
 	// chain.
 	CertFile string `yaml:"cert"`
+}
+
+// Group is set that contains any number of user identities. It is used for
+// access control.
+type Group struct {
+	Name    string    `yaml:"name"`
+	Members []*Member `yaml:"members,omitempty"`
+}
+
+// Member is a representation of a group member.
+type Member struct {
+	Email string `yaml:"email,omitempty"`
+	X509  string `yaml:"x509,omitempty"`
+	Group string `yaml:"group,omitempty"`
 }
 
 // WebSocketConfig specifies a WebSocket endpoint.
@@ -492,6 +509,8 @@ type Backend struct {
 	connLimit            *rate.Limiter
 	proxyProtocolVersion byte
 	resolver             *ech.Resolver
+
+	aclMatcher *aclMatcher
 
 	allowIPs *[]*net.IPNet
 	denyIPs  *[]*net.IPNet
@@ -950,6 +969,17 @@ func (cfg *Config) Check() error {
 
 	if cfg.DefaultServerName != nil {
 		*cfg.DefaultServerName = idnaToASCII(*cfg.DefaultServerName)
+	}
+
+	groups := make(map[string]bool)
+	for i, g := range cfg.Groups {
+		if g.Name == "" {
+			return fmt.Errorf("groups[%d].Name: group name must be set", i)
+		}
+		if groups[g.Name] {
+			return fmt.Errorf("groups[%d].Name: duplicate group name %q", i, g.Name)
+		}
+		groups[g.Name] = true
 	}
 
 	identityProviders := make(map[string]bool)

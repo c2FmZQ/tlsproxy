@@ -121,6 +121,9 @@ type Options struct {
 	}
 	// ClaimsFromCtx returns jwt claims for the current user.
 	ClaimsFromCtx func(context.Context) jwt.MapClaims
+
+	// AdminMatcher returns true if group contains email.
+	AdminMatcher func(acl []string, email string) bool
 }
 
 // New returns a new initialized PKI manager. The Certificate Authority's key
