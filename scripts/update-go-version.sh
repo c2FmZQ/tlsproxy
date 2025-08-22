@@ -12,6 +12,7 @@ fi
 
 deps=$((go get -u ./... 2>&1 && go mod tidy) | grep upgrade | sed -re 's/go: //g')
 exdeps=$((cd examples/backend && go get -u ./... 2>&1 && go mod tidy) | grep upgrade | sed -re 's/go: //g')
+exdeps2=$((cd examples/deviceauth && go get -u ./... 2>&1 && go mod tidy) | grep upgrade | sed -re 's/go: //g')
 
 sed -n '1,2p' < CHANGELOG.md > CHANGELOG.md-new
 echo '## next' >> CHANGELOG.md-new
@@ -28,6 +29,10 @@ fi
 if [[ -n "${exdeps}" ]]; then
   echo "* Update go dependencies in examples/backend:"
   echo "${exdeps}" | sed -re 's/^/  * /g'
+fi
+if [[ -n "${exdeps2}" ]]; then
+  echo "* Update go dependencies in examples/deviceauth:"
+  echo "${exdeps2}" | sed -re 's/^/  * /g'
 fi
 echo >> CHANGELOG.md-new
 sed -n '3,$p' < CHANGELOG.md >> CHANGELOG.md-new

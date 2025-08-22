@@ -5,6 +5,12 @@
 ### :star2: New feature
 
 * Groups for access control. See [examples/sso](https://github.com/c2FmZQ/tlsproxy/tree/main/examples/sso#groups)
+* Device authorization flow (RFC 8628) to access backend services from non-browser environments, e.g. shell scripts.
+
+### :wrench: Misc
+
+* Update go dependencies:
+  * upgraded go.uber.org/mock v0.5.2 => v0.6.0
 
 ## v0.19.0
 
