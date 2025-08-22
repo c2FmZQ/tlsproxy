@@ -13,7 +13,6 @@ import (
 
 	"github.com/mdp/qrterminal/v3"
 	"golang.org/x/oauth2"
-	"rsc.io/qr"
 )
 
 var (
@@ -61,7 +60,7 @@ func main() {
 	if url == "" {
 		url = resp.VerificationURI
 	}
-	qrterminal.GenerateHalfBlock(url, qr.L, os.Stdout)
+	qrterminal.GenerateHalfBlock(url, qrterminal.L, os.Stdout)
 	fmt.Printf("URL: %s\n", url)
 	fmt.Printf("User Code: %s\n", resp.UserCode)
 
@@ -84,8 +83,8 @@ func main() {
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
 			log.Printf("Run: %v", err)
-			if e, ok := err.(*exec.ExitError); ok && e.ProcessState != nil {
-				os.Exit(e.ProcessState.ExitCode())
+			if ee, ok := err.(*exec.ExitError); ok && ee.ProcessState != nil {
+				os.Exit(ee.ProcessState.ExitCode())
 			}
 		}
 	}
