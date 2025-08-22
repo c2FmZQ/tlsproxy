@@ -232,6 +232,10 @@ func (s *Server) ServeVerification(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "no email", http.StatusInternalServerError)
 		return
 	}
+	if userClaims["proxyauth"] == nil {
+		http.Error(w, "invalid authentication method", http.StatusUnauthorized)
+		return
+	}
 	req.ParseForm()
 
 	if req.Method == http.MethodGet {
