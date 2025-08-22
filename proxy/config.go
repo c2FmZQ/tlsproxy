@@ -50,6 +50,7 @@ import (
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/deviceauth"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
@@ -765,6 +766,7 @@ type BackendSSO struct {
 
 	p         identityProvider
 	cm        *cookiemanager.CookieManager
+	da        *deviceauth.Server
 	actualIDP string
 }
 
@@ -860,9 +862,24 @@ type DeviceAuth struct {
 	// PathPrefix specifies how the endpoint paths are constructed. It is
 	// generally fine to leave it empty.
 	PathPrefix string `yaml:"pathPrefix,omitempty"`
+	// TokenLifetime specifies how long the device tokens are valid. If the
+	// is not set, the default is 10 minutes.
+	TokenLifetime time.Duration `yaml:"tokenLifetime,omitempty"`
 	// Clients is the list of all authorized clients and their
-	// configurations. Only the Client ID is required.
-	Clients []*LocalOIDCClient `yaml:"clients,omitempty"`
+	// configurations.
+	Clients []*DeviceAuthClient `yaml:"clients,omitempty"`
+}
+
+// DeviceAuthClient contains the parameters of one DeviceAuth client that is
+// allowed to connect to the proxy.
+type DeviceAuthClient struct {
+	// ID is the OAUTH2 client ID. It should a unique string that's hard to
+	// guess. See https://www.oauth.com/oauth2-servers/client-registration/client-id-secret/
+	ID string `yaml:"id"`
+	// ACL restricts which user identity can use this Client ID.
+	// If ACL is nil, all identities are allowed. If ACL is an empty list,
+	// nobody is allowed.
+	ACL *Strings `yaml:"acl,omitempty"`
 }
 
 // LocalOIDCServer is used to configure a local OpenID Provider to

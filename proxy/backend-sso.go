@@ -109,7 +109,15 @@ func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.M
 	// If a valid ID Token is in the authorization header, use it and
 	// ignore the cookies.
 	if tok, err := be.SSO.cm.ValidateAuthorizationHeader(req); err == nil {
-		return tok.Claims.(jwt.MapClaims), true
+		c := tok.Claims.(jwt.MapClaims)
+		// Check that device tokens are still valid.
+		if clientID, ok := c["device_client_id"].(string); ok {
+			if email, ok := c["email"].(string); !ok || !be.SSO.da.AuthorizeClient(clientID, email) {
+				w.WriteHeader(http.StatusForbidden)
+				return nil, false
+			}
+		}
+		return c, true
 	}
 
 	authToken, err := be.SSO.cm.ValidateAuthTokenCookie(req)

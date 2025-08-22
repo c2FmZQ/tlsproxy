@@ -69,6 +69,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("DeviceAccessToken: %v", err)
 	}
+	log.Print("Token received")
 
 	if *jsonOutput {
 		enc := json.NewEncoder(os.Stdout)

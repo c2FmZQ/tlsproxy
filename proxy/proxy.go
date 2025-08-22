@@ -533,32 +533,40 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 					TokenManager:  p.tokenManager,
 					PathPrefix:    da.PathPrefix,
 					Clients:       make([]deviceauth.Client, 0, len(da.Clients)),
+					TokenLifetime: da.TokenLifetime,
 					ClaimsFromCtx: claimsFromCtx,
+					ACLMatcher:    aclMatcher.emailMatches,
 					EventRecorder: er,
 					Logger:        be.extLogger(),
 				}
 				for _, client := range da.Clients {
+					var acl *[]string
+					if client.ACL != nil {
+						clone := slices.Clone(*client.ACL)
+						acl = (*[]string)(&clone)
+					}
 					opts.Clients = append(opts.Clients, deviceauth.Client{
-						ID: client.ID,
+						ID:  client.ID,
+						ACL: acl,
 					})
 				}
-				devAuthServer := deviceauth.NewServer(opts)
+				be.SSO.da = deviceauth.NewServer(opts)
 				be.localHandlers = append(be.localHandlers,
 					localHandler{
 						desc:      "Device Auth Authorization Endpoint",
 						path:      da.PathPrefix + "/device/authorization",
-						handler:   logHandler(http.HandlerFunc(devAuthServer.ServeAuthorization)),
+						handler:   logHandler(http.HandlerFunc(be.SSO.da.ServeAuthorization)),
 						ssoBypass: true,
 					},
 					localHandler{
 						desc:    "Device Auth Verification Endpoint",
 						path:    da.PathPrefix + "/device/verification",
-						handler: logHandler(http.HandlerFunc(devAuthServer.ServeVerification)),
+						handler: logHandler(http.HandlerFunc(be.SSO.da.ServeVerification)),
 					},
 					localHandler{
 						desc:      "Device Auth Token Endpoint",
 						path:      da.PathPrefix + "/device/token",
-						handler:   logHandler(http.HandlerFunc(devAuthServer.ServeToken)),
+						handler:   logHandler(http.HandlerFunc(be.SSO.da.ServeToken)),
 						ssoBypass: true,
 					},
 				)

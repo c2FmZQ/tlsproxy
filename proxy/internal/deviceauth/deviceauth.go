@@ -47,9 +47,9 @@ import (
 )
 
 const (
-	codeExpiration  = 10 * time.Minute
-	pollInterval    = 5 * time.Second
-	tokenExpiration = 1 * time.Hour
+	codeExpiration       = 10 * time.Minute
+	pollInterval         = 5 * time.Second
+	defaultTokenLifetime = 1 * time.Hour
 )
 
 //go:embed verify-template.html
@@ -82,8 +82,10 @@ type EventRecorder interface {
 type Options struct {
 	TokenManager  *tokenmanager.TokenManager
 	ClaimsFromCtx func(context.Context) jwt.MapClaims
+	ACLMatcher    func(acl []string, email string) bool
 	PathPrefix    string
 	Clients       []Client
+	TokenLifetime time.Duration
 
 	EventRecorder EventRecorder
 	Logger        interface {
@@ -119,7 +121,8 @@ type Server struct {
 }
 
 type Client struct {
-	ID string
+	ID  string
+	ACL *[]string
 }
 
 func (s *Server) vacuum() {
@@ -210,6 +213,12 @@ func (s *Server) ServeAuthorization(w http.ResponseWriter, req *http.Request) {
 	w.Write(content)
 }
 
+func (s *Server) AuthorizeClient(clientID, email string) bool {
+	return slices.ContainsFunc(s.opts.Clients, func(c Client) bool {
+		return c.ID == clientID && (c.ACL == nil || s.opts.ACLMatcher(*c.ACL, email))
+	})
+}
+
 func (s *Server) ServeVerification(w http.ResponseWriter, req *http.Request) {
 	s.vacuum()
 
@@ -261,6 +270,16 @@ func (s *Server) ServeVerification(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "request expired", http.StatusBadRequest)
 		return
 	}
+
+	if !s.AuthorizeClient(data.clientID, email) {
+		s.mu.Lock()
+		idToken.denied = true
+		s.mu.Unlock()
+		s.opts.EventRecorder.Record("device authorization denied by ACL for " + data.clientID)
+		http.Error(w, "operation not permitted", http.StatusForbidden)
+		return
+	}
+
 	if approve := req.Form.Get("approve"); approve != "true" {
 		s.mu.Lock()
 		idToken.denied = true
@@ -283,8 +302,12 @@ func (s *Server) ServeVerification(w http.ResponseWriter, req *http.Request) {
 		claims[k] = v
 	}
 	now := time.Now().UTC()
+	ttl := defaultTokenLifetime
+	if s.opts.TokenLifetime > 0 {
+		ttl = s.opts.TokenLifetime
+	}
 	claims["iat"] = now.Unix()
-	claims["exp"] = now.Add(tokenExpiration).Unix()
+	claims["exp"] = now.Add(ttl).Unix()
 	claims["aud"] = cookiemanager.AudienceForToken(req)
 	claims["device_client_id"] = data.clientID
 	tok, err := s.opts.TokenManager.CreateToken(claims, "ES256")
