@@ -289,6 +289,7 @@ type Member struct {
 type WebSocketConfig struct {
 	Endpoint string `yaml:"endpoint"`
 	Address  string `yaml:"address,omitempty"`
+	Scope    string `yaml:"scope,omitempty"`
 }
 
 // Backend encapsulates the data of one backend.
@@ -543,6 +544,7 @@ type localHandler struct {
 	ssoBypass   bool
 	matchPrefix bool
 	isCallback  bool
+	scope       string
 }
 
 // ClientAuth specifies how to authenticate and authorize the TLS client's

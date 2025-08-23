@@ -125,6 +125,7 @@ func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Reque
 	}
 	claims["iat"] = now.Unix()
 	claims["aud"] = AudienceForToken(req)
+	claims["scope"] = []string{"service"}
 	if len(groups) > 0 {
 		claims["groups"] = groups
 	}

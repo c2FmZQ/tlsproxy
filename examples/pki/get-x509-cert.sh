@@ -59,6 +59,7 @@ CURLCMD="curl -s -f                            \
 cd "$(dirname $0)/../deviceauth"
 go run github.com/c2FmZQ/tlsproxy/examples/deviceauth \
   --client-id="${CLIENTID}"                           \
+  --scopes=pki                                        \
   --auth-endpoint="${BASEURL}/device/authorization"   \
   --token-endpoint="${BASEURL}/device/token"          \
   --run="${CURLCMD}"

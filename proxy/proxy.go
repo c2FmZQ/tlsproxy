@@ -101,6 +101,14 @@ const (
 	tlsAccessDenied        = tls.AlertError(0x31)
 	tlsUnrecognizedName    = tls.AlertError(0x70)
 	tlsCertificateRequired = tls.AlertError(0x74)
+
+	scopeDeviceAuth = "deviceauth"
+	scopeMetrics    = "metrics"
+	scopeOIDCAuth   = "openid"
+	scopePasskeys   = "passkeys"
+	scopePKI        = "pki"
+	scopeService    = "service"
+	scopeSSH        = "ssh"
 )
 
 var (
@@ -518,6 +526,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						desc:    "Manage Passkeys",
 						path:    "/.sso/passkeys",
 						handler: logHandler(http.HandlerFunc(m.ManageKeys)),
+						scope:   scopePasskeys,
 					},
 					localHandler{
 						desc:      "List of Passkey Endpoints",
@@ -562,6 +571,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						desc:    "Device Auth Verification Endpoint",
 						path:    da.PathPrefix + "/device/verification",
 						handler: logHandler(http.HandlerFunc(be.SSO.da.ServeVerification)),
+						scope:   scopeDeviceAuth,
 					},
 					localHandler{
 						desc:      "Device Auth Token Endpoint",
@@ -609,6 +619,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						desc:    "OIDC Server Authorization Endpoint",
 						path:    ls.PathPrefix + "/authorization",
 						handler: logHandler(http.HandlerFunc(oidcServer.ServeAuthorization)),
+						scope:   scopeOIDCAuth,
 					},
 					localHandler{
 						desc:      "OIDC Server Token Endpoint",
@@ -748,8 +759,8 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		case ModeConsole:
 			be := be
 			be.localHandlers = append(be.localHandlers,
-				localHandler{desc: "Metrics", path: "/", handler: logHandler(http.HandlerFunc(p.metricsHandler))},
-				localHandler{desc: "Icon", path: "/favicon.ico", handler: logHandler(http.HandlerFunc(p.faviconHandler))},
+				localHandler{desc: "Metrics", path: "/", handler: logHandler(http.HandlerFunc(p.metricsHandler)), scope: scopeMetrics},
+				localHandler{desc: "Icon", path: "/favicon.ico", handler: logHandler(http.HandlerFunc(p.faviconHandler)), ssoBypass: true},
 			)
 			addPProfHandlers(&be.localHandlers)
 
@@ -854,6 +865,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			addLocalHandler(localHandler{
 				desc:    fmt.Sprintf("PKI Cert Management (%s)", pp.Name),
 				handler: logHandler(http.HandlerFunc(pkis[pp.Name].ServeCertificateManagement)),
+				scope:   scopePKI,
 			}, pp.Endpoint)
 		}
 	}
@@ -883,6 +895,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			addLocalHandler(localHandler{
 				desc:    fmt.Sprintf("SSH CA Certificate (%s)", pp.Name),
 				handler: logHandler(http.HandlerFunc(ca.ServeCertificate)),
+				scope:   scopeSSH,
 			}, pp.CertificateEndpoint)
 		}
 	}
@@ -894,6 +907,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		addLocalHandler(localHandler{
 			desc:    "WebSocket Endpoint",
 			handler: logHandler(p.webSocketHandler(*ws)),
+			scope:   ws.Scope,
 		}, ws.Endpoint)
 	}
 	for _, be := range backends {

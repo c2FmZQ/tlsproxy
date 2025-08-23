@@ -6,6 +6,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
 <link rel="stylesheet" type="text/css" href="/.sso/style.css" />
 <style>
+h1 {
+  font-size: 150%;
+}
 button {
   margin-top: 5rem;
   cursor: pointer;
@@ -56,7 +59,8 @@ function respond(answer) {
 {{.Email}} <a href="/.sso/logout" class="button">Logout</a>
 </div>
 <div id="message">
-<div>Device Authorization Request</div>
+<h1>Device Authorization Request</h1>
+<div>Please verify that the device requesting authorization is in your possession and that the User Code matches.</div>
 <div><input id="usercode" type="text" name="user_code" value="{{.UserCode}}" placeholder="User Code" /></div>
 <div><a class="button" onclick="respond(false);">Deny</a> <a class="button" onclick="respond(true);">Approve</a></div>
 </body>

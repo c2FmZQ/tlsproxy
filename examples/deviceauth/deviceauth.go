@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/mdp/qrterminal/v3"
@@ -17,6 +18,7 @@ import (
 
 var (
 	clientID      = flag.String("client-id", "", "The client ID")
+	scopes        = flag.String("scopes", "", "The scopes to request (comma separated)")
 	authEndpoint  = flag.String("auth-endpoint", "", "The authorization endpoint")
 	tokenEndpoint = flag.String("token-endpoint", "", "The token endpoint")
 	jsonOutput    = flag.Bool("json", false, "Show the token in JSON format")
@@ -42,12 +44,23 @@ func main() {
 		os.Exit(1)
 	}
 
+	var scopeList []string
+	if *scopes != "" {
+		for _, s := range strings.Split(*scopes, ",") {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			scopeList = append(scopeList, s)
+		}
+	}
 	c := &oauth2.Config{
 		ClientID: *clientID,
 		Endpoint: oauth2.Endpoint{
 			DeviceAuthURL: *authEndpoint,
 			TokenURL:      *tokenEndpoint,
 		},
+		Scopes: scopeList,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()

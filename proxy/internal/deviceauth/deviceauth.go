@@ -69,6 +69,7 @@ type codeData struct {
 type accessData struct {
 	created  time.Time
 	clientID string
+	scope    []string
 	token    string
 	denied   bool
 	ready    chan struct{}
@@ -150,6 +151,7 @@ func (s *Server) ServeAuthorization(w http.ResponseWriter, req *http.Request) {
 	}
 	req.ParseForm()
 	clientID := req.Form.Get("client_id")
+	scope := req.Form.Get("scope")
 	if !slices.ContainsFunc(s.opts.Clients, func(c Client) bool { return c.ID == clientID }) {
 		s.opts.Logger.Errorf("ERR ServeAuthorization: invalid client_id %q", clientID)
 		http.Error(w, "invalid request", http.StatusBadRequest)
@@ -169,6 +171,11 @@ func (s *Server) ServeAuthorization(w http.ResponseWriter, req *http.Request) {
 	}
 	userCode := fmt.Sprintf("%02X%02X-%02X%02X-%02X%02X", b[0], b[1], b[2], b[3], b[4], b[5])
 
+	if scope == "" {
+		scope = "service"
+	}
+	scopes := slices.DeleteFunc(strings.Split(scope, " "), func(s string) bool { return s == "" })
+
 	now := time.Now().UTC()
 	s.mu.Lock()
 	s.codes[userCode] = &codeData{
@@ -179,6 +186,7 @@ func (s *Server) ServeAuthorization(w http.ResponseWriter, req *http.Request) {
 	s.idTokens[deviceCode] = &accessData{
 		created:  now,
 		clientID: clientID,
+		scope:    scopes,
 		ready:    make(chan struct{}),
 	}
 	s.mu.Unlock()
@@ -313,6 +321,8 @@ func (s *Server) ServeVerification(w http.ResponseWriter, req *http.Request) {
 	claims["exp"] = now.Add(ttl).Unix()
 	claims["aud"] = cookiemanager.AudienceForToken(req)
 	claims["device_client_id"] = data.clientID
+	claims["scope"] = idToken.scope
+
 	tok, err := s.opts.TokenManager.CreateToken(claims, "ES256")
 	if err != nil {
 		s.opts.Logger.Errorf("ERR CreateToken: %v", err)
@@ -368,7 +378,7 @@ func (s *Server) ServeToken(w http.ResponseWriter, req *http.Request) {
 		status = http.StatusBadRequest
 	case data.token != "":
 		resp.AccessToken = data.token
-		resp.Scope = "email"
+		resp.Scope = strings.Join(data.scope, " ")
 		resp.TokenType = "Bearer"
 		delete(s.idTokens, deviceCode)
 	case data.denied:

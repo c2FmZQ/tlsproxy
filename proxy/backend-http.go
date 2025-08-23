@@ -413,6 +413,29 @@ func (be *Backend) setAltSvc(header http.Header, req *http.Request) {
 	}
 }
 
+func checkScope(want string, w http.ResponseWriter, req *http.Request) bool {
+	claims := claimsFromCtx(req.Context())
+	if claims == nil {
+		return true
+	}
+	scope := claims["scope"]
+	if scope == nil || want == "" {
+		return true // no restriction
+	}
+	scopes, ok := scope.([]any)
+	if !ok {
+		http.Error(w, "missing scope: "+want, http.StatusForbidden)
+		return false
+	}
+	for _, s := range scopes {
+		if s == want {
+			return true
+		}
+	}
+	http.Error(w, "missing scope: "+want, http.StatusForbidden)
+	return false
+}
+
 // handleLocalEndpointsAndAuthorize handles local endpoints and applies the SSO
 // authorization policy. It returns true if processing of the request should
 // continue.
@@ -426,7 +449,7 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 		return h.path == cleanPath || (h.matchPrefix && strings.HasPrefix(cleanPath, h.path+"/"))
 	})
 	if hi >= 0 {
-		if !be.localHandlers[hi].ssoBypass && !be.enforceSSOPolicy(w, req) {
+		if !be.localHandlers[hi].ssoBypass && (!be.enforceSSOPolicy(w, req) || !checkScope(be.localHandlers[hi].scope, w, req)) {
 			return false
 		}
 		if cleanPath != req.URL.Path {
@@ -437,7 +460,7 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 		be.localHandlers[hi].handler.ServeHTTP(w, req)
 		return false
 	}
-	if !be.enforceSSOPolicy(w, req) {
+	if !be.enforceSSOPolicy(w, req) || !checkScope(scopeService, w, req) {
 		return false
 	}
 	if hi < 0 {
