@@ -71,6 +71,7 @@ type accessData struct {
 	clientID string
 	token    string
 	denied   bool
+	ready    chan struct{}
 }
 
 // EventRecorder is used to record events.
@@ -155,7 +156,7 @@ func (s *Server) ServeAuthorization(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	b := make([]byte, 12)
+	b := make([]byte, 32)
 	if _, err := io.ReadFull(rand.Reader, b); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -178,6 +179,7 @@ func (s *Server) ServeAuthorization(w http.ResponseWriter, req *http.Request) {
 	s.idTokens[deviceCode] = &accessData{
 		created:  now,
 		clientID: clientID,
+		ready:    make(chan struct{}),
 	}
 	s.mu.Unlock()
 
@@ -261,33 +263,30 @@ func (s *Server) ServeVerification(w http.ResponseWriter, req *http.Request) {
 	}
 	userCode := strings.ToUpper(req.Form.Get("user_code"))
 
-	var idToken *accessData
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	data, ok := s.codes[userCode]
 	delete(s.codes, userCode)
+	var idToken *accessData
 	if ok {
 		idToken, ok = s.idTokens[data.deviceCode]
 	}
-	s.mu.Unlock()
-
 	if !ok {
 		http.Error(w, "request expired", http.StatusBadRequest)
 		return
 	}
+	defer close(idToken.ready)
 
 	if !s.AuthorizeClient(data.clientID, email) {
-		s.mu.Lock()
 		idToken.denied = true
-		s.mu.Unlock()
 		s.opts.EventRecorder.Record("device authorization denied by ACL for " + data.clientID)
 		http.Error(w, "operation not permitted", http.StatusForbidden)
 		return
 	}
 
 	if approve := req.Form.Get("approve"); approve != "true" {
-		s.mu.Lock()
 		idToken.denied = true
-		s.mu.Unlock()
 		s.opts.EventRecorder.Record("device authorization denied for " + data.clientID)
 		w.Write([]byte("denied\n"))
 		return
@@ -320,9 +319,7 @@ func (s *Server) ServeVerification(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	s.mu.Lock()
 	idToken.token = tok
-	s.mu.Unlock()
 	s.opts.EventRecorder.Record("device authorization granted for " + data.clientID)
 	w.Write([]byte("approved\n"))
 }
@@ -344,6 +341,16 @@ func (s *Server) ServeToken(w http.ResponseWriter, req *http.Request) {
 	s.mu.Lock()
 	data, ok := s.idTokens[deviceCode]
 	s.mu.Unlock()
+	if ok {
+		select {
+		case <-data.ready:
+		case <-req.Context().Done():
+		case <-time.After(20 * time.Second):
+		}
+	}
+	s.mu.Lock()
+	data, ok = s.idTokens[deviceCode]
+	defer s.mu.Unlock()
 
 	var resp struct {
 		Error       string `json:"error,omitempty"`
@@ -355,8 +362,7 @@ func (s *Server) ServeToken(w http.ResponseWriter, req *http.Request) {
 	status := http.StatusOK
 	switch {
 	case !ok:
-		resp.Error = "invalid_request"
-		status = http.StatusBadRequest
+		resp.Error = "expired_token"
 	case data.clientID != clientID:
 		resp.Error = "invalid_client"
 		status = http.StatusBadRequest
@@ -364,9 +370,7 @@ func (s *Server) ServeToken(w http.ResponseWriter, req *http.Request) {
 		resp.AccessToken = data.token
 		resp.Scope = "email"
 		resp.TokenType = "Bearer"
-		s.mu.Lock()
 		delete(s.idTokens, deviceCode)
-		s.mu.Unlock()
 	case data.denied:
 		resp.Error = "access_denied"
 	default:
