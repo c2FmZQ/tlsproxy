@@ -74,7 +74,7 @@ type codeData struct {
 	created     time.Time
 	clientID    string
 	token       string
-	scope       string
+	scope       []string
 	accessToken string
 }
 
@@ -279,18 +279,18 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		"iss":   s.opts.Issuer,
 		"aud":   clientID,
 		"sub":   sub,
-		"scope": "openid",
+		"scope": []string{"openid"},
 	}
 	if nonce := req.Form.Get("nonce"); nonce != "" {
 		claims["nonce"] = nonce
 	}
 
-	sc := "openid"
+	sc := []string{"openid"}
 	scopes := strings.Split(req.Form.Get("scope"), " ")
 	if slices.Contains(scopes, "email") {
 		claims["email"] = userClaims["email"]
 		claims["email_verified"] = true
-		sc += " email"
+		sc = append(sc, "email")
 	}
 	if slices.Contains(scopes, "profile") {
 		for _, v := range []string{"name", "family_name", "given_name", "middle_name", "nickname", "preferred_username", "profile", "picture", "website", "gender", "birthdate", "zoneinfo", "locale"} {
@@ -298,7 +298,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 				claims[v] = vv
 			}
 		}
-		sc += " profile"
+		sc = append(sc, "profile")
 	}
 	claims["scope"] = sc
 
@@ -328,7 +328,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	qs := ru.Query()
 	qs.Set("state", req.Form.Get("state"))
 	qs.Set("code", code)
-	qs.Set("scope", sc)
+	qs.Set("scope", strings.Join(sc, " "))
 	ru.RawQuery = qs.Encode()
 
 	s.opts.EventRecorder.Record("allow openid auth request for " + clientID)
@@ -383,7 +383,7 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 		AccessToken: data.accessToken,
 		ExpiresIn:   90,
 		IDToken:     data.token,
-		Scope:       data.scope,
+		Scope:       strings.Join(data.scope, " "),
 		TokenType:   "Bearer",
 	}
 

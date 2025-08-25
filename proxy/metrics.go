@@ -160,6 +160,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		Bypass   bool
 		HostPath string
 		Desc     string
+		Scope    string
 	}
 	type backend struct {
 		Mode         string
@@ -437,10 +438,15 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 			if h.host != "" {
 				host = h.host
 			}
+			var scope string
+			if len(h.scopes) > 0 {
+				scope = " [scope:" + strings.Join(h.scopes, ",") + "]"
+			}
 			backend.Handlers = append(backend.Handlers, handler{
 				Bypass:   h.ssoBypass,
 				HostPath: host + h.path,
 				Desc:     h.desc,
+				Scope:    scope,
 			})
 		}
 		data.Backends = append(data.Backends, backend)

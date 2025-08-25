@@ -110,6 +110,88 @@ func TestAuthenticateUser(t *testing.T) {
 	}
 }
 
+func TestAuthenticateDevice(t *testing.T) {
+	proxy := newBackendSSOTestProxy(t)
+
+	// No auth token.
+	req := httptest.NewRequest("GET", "https://example.com/", nil)
+	w := httptest.NewRecorder()
+
+	if cont := proxy.cfg.Backends[0].authenticateUser(w, &req); !cont {
+		t.Fatal("authenticateUser() = false")
+	}
+	if req.Header.Get("x-tlsproxy-user-id") != "" {
+		t.Fatalf("request has x-tlsproxy-user-id")
+	}
+	if c := claimsFromCtx(req.Context()); c != nil {
+		t.Fatalf("claimsFromCtx() = %v", c)
+	}
+
+	// Add a valid auth token.
+	req = httptest.NewRequest("GET", "https://example.com/", nil)
+	w = httptest.NewRecorder()
+	if err := setAuthHeader(req, "foo", "bob@", "example.com", "https://example.com/", proxy.tokenManager); err != nil {
+		t.Fatalf("setAuthHeader: %v", err)
+	}
+	if cont := proxy.cfg.Backends[0].authenticateUser(w, &req); !cont {
+		t.Fatal("authenticateUser() = false")
+	}
+	if c := claimsFromCtx(req.Context()); c == nil || c["email"] != "bob@" {
+		t.Fatalf("claimsFromCtx() = %v", c)
+	}
+	if got, want := w.Code, 200; got != want {
+		t.Errorf("response code = %d, want %d", got, want)
+	}
+
+	// Add a token with an invalid client id.
+	req = httptest.NewRequest("GET", "https://example.com/", nil)
+	w = httptest.NewRecorder()
+	if err := setAuthHeader(req, "invalid", "bob@", "example.com", "https://example.com/", proxy.tokenManager); err != nil {
+		t.Fatalf("setAuthHeader: %v", err)
+	}
+	if cont := proxy.cfg.Backends[0].authenticateUser(w, &req); cont {
+		t.Fatal("authenticateUser() = true")
+	}
+	if c := claimsFromCtx(req.Context()); c != nil {
+		t.Fatalf("claimsFromCtx() = %v", c)
+	}
+	if got, want := w.Code, 403; got != want {
+		t.Errorf("response code = %d, want %d", got, want)
+	}
+
+	// Add a token with an unauthorized email.
+	req = httptest.NewRequest("GET", "https://example.com/", nil)
+	w = httptest.NewRecorder()
+	if err := setAuthHeader(req, "bar", "bob@", "example.com", "https://example.com/", proxy.tokenManager); err != nil {
+		t.Fatalf("setAuthHeader: %v", err)
+	}
+	if cont := proxy.cfg.Backends[0].authenticateUser(w, &req); cont {
+		t.Fatal("authenticateUser() = true")
+	}
+	if c := claimsFromCtx(req.Context()); c != nil {
+		t.Fatalf("claimsFromCtx() = %v", c)
+	}
+	if got, want := w.Code, 403; got != want {
+		t.Errorf("response code = %d, want %d", got, want)
+	}
+
+	// Add a token with an authorized email.
+	req = httptest.NewRequest("GET", "https://example.com/", nil)
+	w = httptest.NewRecorder()
+	if err := setAuthHeader(req, "bar", "alice@", "example.com", "https://example.com/", proxy.tokenManager); err != nil {
+		t.Fatalf("setAuthHeader: %v", err)
+	}
+	if cont := proxy.cfg.Backends[0].authenticateUser(w, &req); !cont {
+		t.Fatal("authenticateUser() = false")
+	}
+	if c := claimsFromCtx(req.Context()); c == nil || c["email"] != "alice@" {
+		t.Fatalf("claimsFromCtx() = %v", c)
+	}
+	if got, want := w.Code, 200; got != want {
+		t.Errorf("response code = %d, want %d", got, want)
+	}
+}
+
 func TestEnforceSSOPolicy(t *testing.T) {
 	proxy := newBackendSSOTestProxy(t)
 
@@ -265,6 +347,12 @@ func newBackendSSOTestProxy(t *testing.T) *Proxy {
 						Provider:         "test-idp",
 						GenerateIDTokens: true,
 						SetUserIDHeader:  true,
+						DeviceAuth: &DeviceAuth{
+							Clients: []*DeviceAuthClient{
+								{ID: "foo"},
+								{ID: "bar", ACL: &Strings{"alice@"}},
+							},
+						},
 					},
 				},
 			},
@@ -301,6 +389,27 @@ func setAuthCookie(req *http.Request, email, host, issuer string, tm *tokenmanag
 		Secure:   true,
 		HttpOnly: true,
 	})
+	return nil
+}
+
+func setAuthHeader(req *http.Request, clientID, email, host, issuer string, tm *tokenmanager.TokenManager) error {
+	now := time.Now().UTC()
+	claims := jwt.MapClaims{
+		"iat":              now.Unix(),
+		"exp":              now.Add(20 * time.Hour).Unix(),
+		"iss":              issuer,
+		"aud":              "https://" + host + "/",
+		"sub":              "12345",
+		"email":            email,
+		"provider":         "test-idp",
+		"sid":              "abc123",
+		"device_client_id": clientID,
+	}
+	token, err := tm.CreateToken(claims, "" /* default */)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
 	return nil
 }
 

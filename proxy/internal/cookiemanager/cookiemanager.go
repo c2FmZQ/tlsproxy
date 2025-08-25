@@ -124,7 +124,7 @@ func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Reque
 		claims[k] = v
 	}
 	claims["iat"] = now.Unix()
-	claims["aud"] = audienceForToken(req)
+	claims["aud"] = AudienceForToken(req)
 	if len(groups) > 0 {
 		claims["groups"] = groups
 	}
@@ -266,7 +266,7 @@ func audienceFromReq(req *http.Request) string {
 	return "https://" + host + "/"
 }
 
-func audienceForToken(req *http.Request) any {
+func AudienceForToken(req *http.Request) any {
 	host := req.Host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h

@@ -50,6 +50,7 @@ import (
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/deviceauth"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
@@ -286,8 +287,9 @@ type Member struct {
 
 // WebSocketConfig specifies a WebSocket endpoint.
 type WebSocketConfig struct {
-	Endpoint string `yaml:"endpoint"`
-	Address  string `yaml:"address,omitempty"`
+	Endpoint string  `yaml:"endpoint"`
+	Address  string  `yaml:"address,omitempty"`
+	Scopes   Strings `yaml:"scopes,omitempty"`
 }
 
 // Backend encapsulates the data of one backend.
@@ -542,6 +544,7 @@ type localHandler struct {
 	ssoBypass   bool
 	matchPrefix bool
 	isCallback  bool
+	scopes      []string
 }
 
 // ClientAuth specifies how to authenticate and authorize the TLS client's
@@ -703,6 +706,9 @@ type SSORule struct {
 	// If ACL is nil, all identities are allowed. If ACL is an empty list,
 	// nobody is allowed.
 	ACL *Strings `yaml:"acl,omitempty"`
+	// Scopes restricts access to user identities that have at least one of
+	// these scopes. If empty, there are no scope restrictions.
+	Scopes Strings `yaml:"scopes,omitempty"`
 }
 
 // BackendSSO specifies the identity parameters to use for a backend.
@@ -756,12 +762,16 @@ type BackendSSO struct {
 	// GenerateIDTokens indicates that the proxy should generate ID tokens
 	// for authenticated users.
 	GenerateIDTokens bool `yaml:"generateIdTokens,omitempty"`
+	// DeviceAuth enables the device authentication flow for this backend.
+	// See RFC 8628.
+	DeviceAuth *DeviceAuth `yaml:"deviceAuth,omitempty"`
 	// LocalOIDCServer is used to configure a local OpenID Provider to
 	// authenticate users with backend services that support OpenID Connect.
 	LocalOIDCServer *LocalOIDCServer `yaml:"localOIDCServer,omitempty"`
 
 	p         identityProvider
 	cm        *cookiemanager.CookieManager
+	da        *deviceauth.Server
 	actualIDP string
 }
 
@@ -846,6 +856,35 @@ type PathOverride struct {
 	forwardRootCAs       *x509.CertPool
 	proxyProtocolVersion byte
 	documentRoot         *os.Root
+}
+
+// DeviceAuth is used to configure the device authorization flow for a backend.
+// When this is enabled, tlsproxy will add three endpoints to this backend:
+// - <PathPrefix>/device/authorization
+// - <PathPrefix>/device/verification
+// - <PathPrefix>/device/token
+type DeviceAuth struct {
+	// PathPrefix specifies how the endpoint paths are constructed. It is
+	// generally fine to leave it empty.
+	PathPrefix string `yaml:"pathPrefix,omitempty"`
+	// TokenLifetime specifies how long the device tokens are valid. If the
+	// is not set, the default is 10 minutes.
+	TokenLifetime time.Duration `yaml:"tokenLifetime,omitempty"`
+	// Clients is the list of all authorized clients and their
+	// configurations.
+	Clients []*DeviceAuthClient `yaml:"clients,omitempty"`
+}
+
+// DeviceAuthClient contains the parameters of one DeviceAuth client that is
+// allowed to connect to the proxy.
+type DeviceAuthClient struct {
+	// ID is the OAUTH2 client ID. It should a unique string that's hard to
+	// guess. See https://www.oauth.com/oauth2-servers/client-registration/client-id-secret/
+	ID string `yaml:"id"`
+	// ACL restricts which user identity can use this Client ID.
+	// If ACL is nil, all identities are allowed. If ACL is an empty list,
+	// nobody is allowed.
+	ACL *Strings `yaml:"acl,omitempty"`
 }
 
 // LocalOIDCServer is used to configure a local OpenID Provider to

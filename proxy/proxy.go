@@ -68,6 +68,7 @@ import (
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/deviceauth"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/idp"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
@@ -100,6 +101,14 @@ const (
 	tlsAccessDenied        = tls.AlertError(0x31)
 	tlsUnrecognizedName    = tls.AlertError(0x70)
 	tlsCertificateRequired = tls.AlertError(0x74)
+
+	scopeDeviceAuth = "deviceauth"
+	scopeMetrics    = "metrics"
+	scopeOIDCAuth   = "openid"
+	scopePasskeys   = "passkeys"
+	scopePKI        = "pki"
+	scopeService    = "service"
+	scopeSSH        = "ssh"
 )
 
 var (
@@ -517,11 +526,57 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						desc:    "Manage Passkeys",
 						path:    "/.sso/passkeys",
 						handler: logHandler(http.HandlerFunc(m.ManageKeys)),
+						scopes:  Strings{scopePasskeys},
 					},
 					localHandler{
 						desc:      "List of Passkey Endpoints",
 						path:      "/.well-known/passkey-endpoints",
 						handler:   logHandler(http.HandlerFunc(m.ServeWellKnown)),
+						ssoBypass: true,
+					},
+				)
+			}
+
+			if da := be.SSO.DeviceAuth; da != nil {
+				opts := deviceauth.Options{
+					TokenManager:  p.tokenManager,
+					PathPrefix:    da.PathPrefix,
+					Clients:       make([]deviceauth.Client, 0, len(da.Clients)),
+					TokenLifetime: da.TokenLifetime,
+					ClaimsFromCtx: claimsFromCtx,
+					ACLMatcher:    aclMatcher.emailMatches,
+					EventRecorder: er,
+					Logger:        be.extLogger(),
+				}
+				for _, client := range da.Clients {
+					var acl *[]string
+					if client.ACL != nil {
+						clone := slices.Clone(*client.ACL)
+						acl = (*[]string)(&clone)
+					}
+					opts.Clients = append(opts.Clients, deviceauth.Client{
+						ID:  client.ID,
+						ACL: acl,
+					})
+				}
+				be.SSO.da = deviceauth.NewServer(opts)
+				be.localHandlers = append(be.localHandlers,
+					localHandler{
+						desc:      "Device Auth Authorization Endpoint",
+						path:      da.PathPrefix + "/device/authorization",
+						handler:   logHandler(http.HandlerFunc(be.SSO.da.ServeAuthorization)),
+						ssoBypass: true,
+					},
+					localHandler{
+						desc:    "Device Auth Verification Endpoint",
+						path:    da.PathPrefix + "/device/verification",
+						handler: logHandler(http.HandlerFunc(be.SSO.da.ServeVerification)),
+						scopes:  Strings{scopeDeviceAuth},
+					},
+					localHandler{
+						desc:      "Device Auth Token Endpoint",
+						path:      da.PathPrefix + "/device/token",
+						handler:   logHandler(http.HandlerFunc(be.SSO.da.ServeToken)),
 						ssoBypass: true,
 					},
 				)
@@ -553,16 +608,18 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 					})
 				}
 				oidcServer := oidc.NewServer(opts)
-				be.localHandlers = append(be.localHandlers, localHandler{
-					desc:      "OIDC Server Configuration",
-					path:      ls.PathPrefix + "/.well-known/openid-configuration",
-					handler:   logHandler(http.HandlerFunc(oidcServer.ServeConfig)),
-					ssoBypass: true,
-				},
+				be.localHandlers = append(be.localHandlers,
+					localHandler{
+						desc:      "OIDC Server Configuration",
+						path:      ls.PathPrefix + "/.well-known/openid-configuration",
+						handler:   logHandler(http.HandlerFunc(oidcServer.ServeConfig)),
+						ssoBypass: true,
+					},
 					localHandler{
 						desc:    "OIDC Server Authorization Endpoint",
 						path:    ls.PathPrefix + "/authorization",
 						handler: logHandler(http.HandlerFunc(oidcServer.ServeAuthorization)),
+						scopes:  Strings{scopeOIDCAuth},
 					},
 					localHandler{
 						desc:      "OIDC Server Token Endpoint",
@@ -702,8 +759,8 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		case ModeConsole:
 			be := be
 			be.localHandlers = append(be.localHandlers,
-				localHandler{desc: "Metrics", path: "/", handler: logHandler(http.HandlerFunc(p.metricsHandler))},
-				localHandler{desc: "Icon", path: "/favicon.ico", handler: logHandler(http.HandlerFunc(p.faviconHandler))},
+				localHandler{desc: "Metrics", path: "/", handler: logHandler(http.HandlerFunc(p.metricsHandler)), scopes: Strings{scopeMetrics}},
+				localHandler{desc: "Icon", path: "/favicon.ico", handler: logHandler(http.HandlerFunc(p.faviconHandler)), ssoBypass: true},
 			)
 			addPProfHandlers(&be.localHandlers)
 
@@ -808,6 +865,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			addLocalHandler(localHandler{
 				desc:    fmt.Sprintf("PKI Cert Management (%s)", pp.Name),
 				handler: logHandler(http.HandlerFunc(pkis[pp.Name].ServeCertificateManagement)),
+				scopes:  Strings{scopePKI},
 			}, pp.Endpoint)
 		}
 	}
@@ -837,6 +895,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			addLocalHandler(localHandler{
 				desc:    fmt.Sprintf("SSH CA Certificate (%s)", pp.Name),
 				handler: logHandler(http.HandlerFunc(ca.ServeCertificate)),
+				scopes:  Strings{scopeSSH},
 			}, pp.CertificateEndpoint)
 		}
 	}
@@ -848,6 +907,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		addLocalHandler(localHandler{
 			desc:    "WebSocket Endpoint",
 			handler: logHandler(p.webSocketHandler(*ws)),
+			scopes:  ws.Scopes,
 		}, ws.Endpoint)
 	}
 	for _, be := range backends {
