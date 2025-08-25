@@ -284,17 +284,20 @@ func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Reques
 	}
 }
 
+func (be *Backend) findSSORule(req *http.Request) *SSORule {
+	for _, r := range be.SSO.Rules {
+		if pathMatches(r.Paths, req.URL.Path) && (len(r.Exceptions) == 0 || !pathMatches(r.Exceptions, req.URL.Path)) {
+			return r
+		}
+	}
+	return nil
+}
+
 func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bool {
 	if be.SSO == nil {
 		return true
 	}
-	var rule *SSORule
-	for _, r := range be.SSO.Rules {
-		if pathMatches(r.Paths, req.URL.Path) && (len(r.Exceptions) == 0 || !pathMatches(r.Exceptions, req.URL.Path)) {
-			rule = r
-			break
-		}
-	}
+	rule := be.findSSORule(req)
 	if rule == nil {
 		return true
 	}
@@ -363,6 +366,9 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 		be.recordEvent(fmt.Sprintf("deny SSO %s to %s", userID, idnaToUnicode(host)))
 		be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (SSO) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden, userAgent(req))
 		be.servePermissionDenied(w, req)
+		return false
+	}
+	if !be.checkScopes(rule.Scopes, w, req) {
 		return false
 	}
 	be.recordEvent(fmt.Sprintf("allow SSO %s to %s", userID, idnaToUnicode(host)))

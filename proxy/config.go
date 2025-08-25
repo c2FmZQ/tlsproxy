@@ -287,9 +287,9 @@ type Member struct {
 
 // WebSocketConfig specifies a WebSocket endpoint.
 type WebSocketConfig struct {
-	Endpoint string `yaml:"endpoint"`
-	Address  string `yaml:"address,omitempty"`
-	Scope    string `yaml:"scope,omitempty"`
+	Endpoint string  `yaml:"endpoint"`
+	Address  string  `yaml:"address,omitempty"`
+	Scopes   Strings `yaml:"scopes,omitempty"`
 }
 
 // Backend encapsulates the data of one backend.
@@ -544,7 +544,7 @@ type localHandler struct {
 	ssoBypass   bool
 	matchPrefix bool
 	isCallback  bool
-	scope       string
+	scopes      []string
 }
 
 // ClientAuth specifies how to authenticate and authorize the TLS client's
@@ -706,6 +706,9 @@ type SSORule struct {
 	// If ACL is nil, all identities are allowed. If ACL is an empty list,
 	// nobody is allowed.
 	ACL *Strings `yaml:"acl,omitempty"`
+	// Scopes restricts access to user identities that have at least one of
+	// these scopes. If empty, there are no scope restrictions.
+	Scopes Strings `yaml:"scopes,omitempty"`
 }
 
 // BackendSSO specifies the identity parameters to use for a backend.

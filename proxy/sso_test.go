@@ -296,6 +296,7 @@ func TestSSOEnforceOIDC(t *testing.T) {
 
 			var jar []string
 			for k, v := range cookies {
+				t.Logf("COOKIE: %s=%s", k, v)
 				jar = append(jar, k+"="+v)
 			}
 			hdr = http.Header{

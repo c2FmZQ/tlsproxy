@@ -526,7 +526,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						desc:    "Manage Passkeys",
 						path:    "/.sso/passkeys",
 						handler: logHandler(http.HandlerFunc(m.ManageKeys)),
-						scope:   scopePasskeys,
+						scopes:  Strings{scopePasskeys},
 					},
 					localHandler{
 						desc:      "List of Passkey Endpoints",
@@ -571,7 +571,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						desc:    "Device Auth Verification Endpoint",
 						path:    da.PathPrefix + "/device/verification",
 						handler: logHandler(http.HandlerFunc(be.SSO.da.ServeVerification)),
-						scope:   scopeDeviceAuth,
+						scopes:  Strings{scopeDeviceAuth},
 					},
 					localHandler{
 						desc:      "Device Auth Token Endpoint",
@@ -619,7 +619,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						desc:    "OIDC Server Authorization Endpoint",
 						path:    ls.PathPrefix + "/authorization",
 						handler: logHandler(http.HandlerFunc(oidcServer.ServeAuthorization)),
-						scope:   scopeOIDCAuth,
+						scopes:  Strings{scopeOIDCAuth},
 					},
 					localHandler{
 						desc:      "OIDC Server Token Endpoint",
@@ -759,7 +759,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		case ModeConsole:
 			be := be
 			be.localHandlers = append(be.localHandlers,
-				localHandler{desc: "Metrics", path: "/", handler: logHandler(http.HandlerFunc(p.metricsHandler)), scope: scopeMetrics},
+				localHandler{desc: "Metrics", path: "/", handler: logHandler(http.HandlerFunc(p.metricsHandler)), scopes: Strings{scopeMetrics}},
 				localHandler{desc: "Icon", path: "/favicon.ico", handler: logHandler(http.HandlerFunc(p.faviconHandler)), ssoBypass: true},
 			)
 			addPProfHandlers(&be.localHandlers)
@@ -865,7 +865,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			addLocalHandler(localHandler{
 				desc:    fmt.Sprintf("PKI Cert Management (%s)", pp.Name),
 				handler: logHandler(http.HandlerFunc(pkis[pp.Name].ServeCertificateManagement)),
-				scope:   scopePKI,
+				scopes:  Strings{scopePKI},
 			}, pp.Endpoint)
 		}
 	}
@@ -895,7 +895,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			addLocalHandler(localHandler{
 				desc:    fmt.Sprintf("SSH CA Certificate (%s)", pp.Name),
 				handler: logHandler(http.HandlerFunc(ca.ServeCertificate)),
-				scope:   scopeSSH,
+				scopes:  Strings{scopeSSH},
 			}, pp.CertificateEndpoint)
 		}
 	}
@@ -907,7 +907,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		addLocalHandler(localHandler{
 			desc:    "WebSocket Endpoint",
 			handler: logHandler(p.webSocketHandler(*ws)),
-			scope:   ws.Scope,
+			scopes:  ws.Scopes,
 		}, ws.Endpoint)
 	}
 	for _, be := range backends {

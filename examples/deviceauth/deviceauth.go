@@ -76,6 +76,9 @@ func main() {
 	qrterminal.GenerateHalfBlock(url, qrterminal.L, os.Stdout)
 	fmt.Printf("URL: %s\n", url)
 	fmt.Printf("User Code: %s\n", resp.UserCode)
+	if len(scopeList) > 0 {
+		fmt.Printf("Scopes: %s\n", strings.Join(scopeList, ","))
+	}
 
 	token, err := c.DeviceAccessToken(ctx, resp)
 	if err != nil {

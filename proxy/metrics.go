@@ -439,8 +439,8 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 				host = h.host
 			}
 			var scope string
-			if h.scope != "" {
-				scope = " [scope:" + h.scope + "]"
+			if len(h.scopes) > 0 {
+				scope = " [scope:" + strings.Join(h.scopes, ",") + "]"
 			}
 			backend.Handlers = append(backend.Handlers, handler{
 				Bypass:   h.ssoBypass,

@@ -242,10 +242,6 @@ func (s *Server) ServeVerification(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "no email", http.StatusInternalServerError)
 		return
 	}
-	if userClaims["proxyauth"] == nil {
-		http.Error(w, "invalid authentication method", http.StatusUnauthorized)
-		return
-	}
 	req.ParseForm()
 
 	if req.Method == http.MethodGet {
@@ -321,6 +317,18 @@ func (s *Server) ServeVerification(w http.ResponseWriter, req *http.Request) {
 	claims["exp"] = now.Add(ttl).Unix()
 	claims["aud"] = cookiemanager.AudienceForToken(req)
 	claims["device_client_id"] = data.clientID
+
+	// Remove any scopes that the user doesn't have.
+	if userClaims["scope"] != nil {
+		userScopes, ok := userClaims["scope"].([]any)
+		if !ok {
+			http.Error(w, "invalid user scopes", http.StatusBadRequest)
+			return
+		}
+		idToken.scope = slices.DeleteFunc(idToken.scope, func(s string) bool {
+			return !slices.Contains(userScopes, any(s))
+		})
+	}
 	claims["scope"] = idToken.scope
 
 	tok, err := s.opts.TokenManager.CreateToken(claims, "ES256")
