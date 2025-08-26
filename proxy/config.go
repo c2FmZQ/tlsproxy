@@ -50,8 +50,8 @@ import (
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/deviceauth"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/oidc"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
@@ -762,17 +762,14 @@ type BackendSSO struct {
 	// GenerateIDTokens indicates that the proxy should generate ID tokens
 	// for authenticated users.
 	GenerateIDTokens bool `yaml:"generateIdTokens,omitempty"`
-	// DeviceAuth enables the device authentication flow for this backend.
-	// See RFC 8628.
-	DeviceAuth *DeviceAuth `yaml:"deviceAuth,omitempty"`
 	// LocalOIDCServer is used to configure a local OpenID Provider to
 	// authenticate users with backend services that support OpenID Connect.
 	LocalOIDCServer *LocalOIDCServer `yaml:"localOIDCServer,omitempty"`
 
-	p         identityProvider
-	cm        *cookiemanager.CookieManager
-	da        *deviceauth.Server
-	actualIDP string
+	p          identityProvider
+	cm         *cookiemanager.CookieManager
+	oidcServer *oidc.ProviderServer
+	actualIDP  string
 }
 
 // BackendECH contains Encrypted Client Hello parameters for connecting to the
@@ -858,35 +855,6 @@ type PathOverride struct {
 	documentRoot         *os.Root
 }
 
-// DeviceAuth is used to configure the device authorization flow for a backend.
-// When this is enabled, tlsproxy will add three endpoints to this backend:
-// - <PathPrefix>/device/authorization
-// - <PathPrefix>/device/verification
-// - <PathPrefix>/device/token
-type DeviceAuth struct {
-	// PathPrefix specifies how the endpoint paths are constructed. It is
-	// generally fine to leave it empty.
-	PathPrefix string `yaml:"pathPrefix,omitempty"`
-	// TokenLifetime specifies how long the device tokens are valid. If the
-	// is not set, the default is 10 minutes.
-	TokenLifetime time.Duration `yaml:"tokenLifetime,omitempty"`
-	// Clients is the list of all authorized clients and their
-	// configurations.
-	Clients []*DeviceAuthClient `yaml:"clients,omitempty"`
-}
-
-// DeviceAuthClient contains the parameters of one DeviceAuth client that is
-// allowed to connect to the proxy.
-type DeviceAuthClient struct {
-	// ID is the OAUTH2 client ID. It should a unique string that's hard to
-	// guess. See https://www.oauth.com/oauth2-servers/client-registration/client-id-secret/
-	ID string `yaml:"id"`
-	// ACL restricts which user identity can use this Client ID.
-	// If ACL is nil, all identities are allowed. If ACL is an empty list,
-	// nobody is allowed.
-	ACL *Strings `yaml:"acl,omitempty"`
-}
-
 // LocalOIDCServer is used to configure a local OpenID Provider to
 // authenticate users with backend services that support OpenID Connect.
 // When this is enabled, tlsproxy will add a few endpoints to this
@@ -895,10 +863,16 @@ type DeviceAuthClient struct {
 // - <PathPrefix>/authorization
 // - <PathPrefix>/token
 // - <PathPrefix>/jwks
+// - <PathPrefix>/device/authorization
+// - <PathPrefix>/device/verification
+// - <PathPrefix>/device/token
 type LocalOIDCServer struct {
 	// PathPrefix specifies how the endpoint paths are constructed. It is
 	// generally fine to leave it empty.
 	PathPrefix string `yaml:"pathPrefix,omitempty"`
+	// TokenLifetime specifies how long the device tokens are valid. If the
+	// is not set, the default is 10 minutes.
+	TokenLifetime time.Duration `yaml:"tokenLifetime,omitempty"`
 	// Clients is the list of all authorized clients and their
 	// configurations.
 	Clients []*LocalOIDCClient `yaml:"clients,omitempty"`
@@ -921,6 +895,10 @@ type LocalOIDCClient struct {
 	// RedirectURI is where the authorization endpoint will redirect the
 	// user once the authorization code has been granted.
 	RedirectURI Strings `yaml:"redirectUri"`
+	// ACL restricts which user identity can use this Client ID.
+	// If ACL is nil, all identities are allowed. If ACL is an empty list,
+	// nobody is allowed.
+	ACL *Strings `yaml:"acl,omitempty"`
 }
 
 // LocalOIDCRewriteRule define how to rewrite existing claims or create new
@@ -1296,12 +1274,6 @@ func (cfg *Config) Check() error {
 				for j, client := range be.SSO.LocalOIDCServer.Clients {
 					if client.ID == "" {
 						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.Clients[%d].ID must be set", i, j)
-					}
-					if client.Secret == "" {
-						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.Clients[%d].Secret must be set", i, j)
-					}
-					if len(client.RedirectURI) == 0 {
-						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.Clients[%d].RedirectURI must be set", i, j)
 					}
 				}
 				for j, rr := range be.SSO.LocalOIDCServer.RewriteRules {

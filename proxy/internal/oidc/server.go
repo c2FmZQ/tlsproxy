@@ -55,6 +55,10 @@ const (
 	tokenPath                        = "/token"
 	userInfoPath                     = "/userinfo"
 	jwksPath                         = "/jwks"
+
+	defaultTokenLifetime = time.Hour
+	codeExpiration       = 10 * time.Minute
+	pollInterval         = 5 * time.Second
 )
 
 type openIDConfiguration struct {
@@ -71,17 +75,10 @@ type openIDConfiguration struct {
 }
 
 type codeData struct {
-	created     time.Time
-	clientID    string
-	token       string
-	scope       []string
-	accessToken string
-}
-
-type accessData struct {
 	created  time.Time
 	clientID string
-	claims   jwt.MapClaims
+	token    string
+	scope    []string
 }
 
 // ServerOptions contains the parameters needed to configure a ProviderServer.
@@ -89,7 +86,9 @@ type ServerOptions struct {
 	TokenManager  *tokenmanager.TokenManager
 	Issuer        string
 	PathPrefix    string
+	TokenLifetime time.Duration
 	ClaimsFromCtx func(context.Context) jwt.MapClaims
+	ACLMatcher    func(acl []string, email string) bool
 	Clients       []Client
 	RewriteRules  []RewriteRule
 
@@ -120,9 +119,10 @@ func NewServer(opts ServerOptions) *ProviderServer {
 		opts.Logger = defaultLogger{}
 	}
 	return &ProviderServer{
-		opts:         opts,
-		codes:        make(map[string]*codeData),
-		accessTokens: make(map[string]*accessData),
+		opts:           opts,
+		codes:          make(map[string]*codeData),
+		deviceCodes:    make(map[string]*deviceCodeData),
+		deviceIDTokens: make(map[string]*deviceAccessData),
 	}
 }
 
@@ -132,15 +132,17 @@ func NewServer(opts ServerOptions) *ProviderServer {
 type ProviderServer struct {
 	opts ServerOptions
 
-	mu           sync.Mutex
-	codes        map[string]*codeData
-	accessTokens map[string]*accessData
+	mu             sync.Mutex
+	codes          map[string]*codeData
+	deviceCodes    map[string]*deviceCodeData
+	deviceIDTokens map[string]*deviceAccessData
 }
 
 type Client struct {
 	ID          string
 	Secret      string
 	RedirectURI []string
+	ACL         *[]string
 }
 
 func (s *ProviderServer) vacuum() {
@@ -152,9 +154,14 @@ func (s *ProviderServer) vacuum() {
 			delete(s.codes, k)
 		}
 	}
-	for k, v := range s.accessTokens {
-		if v.created.Add(2 * time.Minute).Before(now) {
-			delete(s.accessTokens, k)
+	for k, v := range s.deviceCodes {
+		if v.created.Add(codeExpiration).Before(now) {
+			delete(s.deviceCodes, k)
+		}
+	}
+	for k, v := range s.deviceIDTokens {
+		if v.created.Add(codeExpiration).Before(now) {
+			delete(s.deviceIDTokens, k)
 		}
 	}
 }
@@ -229,6 +236,11 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		http.Error(w, "not logged in", http.StatusUnauthorized)
 		return
 	}
+	email, ok := userClaims["email"].(string)
+	if !ok || email == "" {
+		http.Error(w, "no email", http.StatusInternalServerError)
+		return
+	}
 	req.ParseForm()
 	if rt := req.Form.Get("response_type"); rt != "code" {
 		s.opts.Logger.Errorf("ERR ServeAuthorization: invalid response_type %q", rt)
@@ -239,7 +251,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	redirectURI := req.Form.Get("redirect_uri")
 	var found bool
 	for _, client := range s.opts.Clients {
-		if client.ID == clientID && slices.Contains(client.RedirectURI, redirectURI) {
+		if client.ID == clientID && redirectURI != "" && slices.Contains(client.RedirectURI, redirectURI) {
 			found = true
 			break
 		}
@@ -247,6 +259,11 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	if !found {
 		s.opts.Logger.Errorf("ERR ServeAuthorization: invalid client_id %q or redirect_uri %q", clientID, redirectURI)
 		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if !s.AuthorizeClient(clientID, email) {
+		s.opts.EventRecorder.Record("oidc authorization denied by ACL for " + clientID)
+		http.Error(w, "operation not permitted", http.StatusForbidden)
 		return
 	}
 
@@ -263,44 +280,53 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		return
 	}
 	code := base64.StdEncoding.EncodeToString(b)
-	b = make([]byte, 12)
-	if _, err := io.ReadFull(rand.Reader, b); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	accessToken := base64.StdEncoding.EncodeToString(b)
 
 	sub, _ := userClaims.GetSubject()
 
 	now := time.Now().UTC()
+	ttl := s.opts.TokenLifetime
+	if ttl == 0 {
+		ttl = defaultTokenLifetime
+	}
 	claims := jwt.MapClaims{
-		"iat":   now.Unix(),
-		"exp":   now.Add(5 * time.Minute).Unix(),
-		"iss":   s.opts.Issuer,
-		"aud":   clientID,
-		"sub":   sub,
-		"scope": []string{"openid"},
+		"iat": now.Unix(),
+		"exp": now.Add(ttl).Unix(),
+		"iss": s.opts.Issuer,
+		"aud": clientID,
+		"sub": sub,
 	}
 	if nonce := req.Form.Get("nonce"); nonce != "" {
 		claims["nonce"] = nonce
 	}
 
-	sc := []string{"openid"}
-	scopes := strings.Split(req.Form.Get("scope"), " ")
-	if slices.Contains(scopes, "email") {
-		claims["email"] = userClaims["email"]
-		claims["email_verified"] = true
-		sc = append(sc, "email")
+	scopes := slices.DeleteFunc(strings.Split(req.Form.Get("scope"), " "), func(s string) bool { return s == "" })
+
+	// Remove any scopes that the user doesn't have.
+	if userClaims["scope"] != nil {
+		userScopes, ok := userClaims["scope"].([]any)
+		if !ok {
+			http.Error(w, "invalid user scopes", http.StatusBadRequest)
+			return
+		}
+		scopes = slices.DeleteFunc(scopes, func(s string) bool {
+			return !slices.Contains(userScopes, any(s))
+		})
 	}
+	if len(scopes) == 0 {
+		scopes = []string{"openid"}
+	}
+	claims["scope"] = scopes
+
+	claims["email"] = userClaims["email"]
+	claims["email_verified"] = true
+
 	if slices.Contains(scopes, "profile") {
 		for _, v := range []string{"name", "family_name", "given_name", "middle_name", "nickname", "preferred_username", "profile", "picture", "website", "gender", "birthdate", "zoneinfo", "locale"} {
 			if vv := userClaims[v]; vv != nil {
 				claims[v] = vv
 			}
 		}
-		sc = append(sc, "profile")
 	}
-	claims["scope"] = sc
 
 	s.applyRewriteRules(s.opts.RewriteRules, userClaims, claims)
 
@@ -312,23 +338,17 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 
 	s.mu.Lock()
 	s.codes[code] = &codeData{
-		created:     now,
-		clientID:    clientID,
-		token:       token,
-		scope:       sc,
-		accessToken: accessToken,
-	}
-	s.accessTokens[accessToken] = &accessData{
 		created:  now,
 		clientID: clientID,
-		claims:   claims,
+		token:    token,
+		scope:    scopes,
 	}
 	s.mu.Unlock()
 
 	qs := ru.Query()
 	qs.Set("state", req.Form.Get("state"))
 	qs.Set("code", code)
-	qs.Set("scope", strings.Join(sc, " "))
+	qs.Set("scope", strings.Join(scopes, " "))
 	ru.RawQuery = qs.Encode()
 
 	s.opts.EventRecorder.Record("allow openid auth request for " + clientID)
@@ -353,7 +373,7 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 
 	var found bool
 	for _, client := range s.opts.Clients {
-		if client.ID == clientID && client.Secret == clientSecret && slices.Contains(client.RedirectURI, redirectURI) {
+		if client.ID == clientID && client.Secret != "" && client.Secret == clientSecret && redirectURI != "" && slices.Contains(client.RedirectURI, redirectURI) {
 			found = true
 			break
 		}
@@ -380,7 +400,7 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 		Scope       string `json:"scope"`
 		TokenType   string `json:"token_type"`
 	}{
-		AccessToken: data.accessToken,
+		AccessToken: data.token,
 		ExpiresIn:   90,
 		IDToken:     data.token,
 		Scope:       strings.Join(data.scope, " "),
@@ -405,19 +425,9 @@ func (s *ProviderServer) ServeUserInfo(w http.ResponseWriter, req *http.Request)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	accessToken := req.Header.Get("Authorization")
-	if len(accessToken) < 7 || strings.ToLower(accessToken[:7]) != "bearer " {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-	accessToken = accessToken[7:]
-
-	s.mu.Lock()
-	data, ok := s.accessTokens[accessToken]
-	delete(s.accessTokens, accessToken)
-	s.mu.Unlock()
-	if !ok {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+	userClaims := s.opts.ClaimsFromCtx(req.Context())
+	if userClaims == nil {
+		http.Error(w, "not logged in", http.StatusUnauthorized)
 		return
 	}
 
@@ -432,13 +442,12 @@ func (s *ProviderServer) ServeUserInfo(w http.ResponseWriter, req *http.Request)
 		"nonce": true,
 	}
 	out := make(map[string]interface{})
-	for k, v := range data.claims {
+	for k, v := range userClaims {
 		if !filter[k] {
 			out[k] = v
 		}
 	}
 
-	s.opts.EventRecorder.Record("allow openid userinfo request for " + data.clientID)
 	content, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)

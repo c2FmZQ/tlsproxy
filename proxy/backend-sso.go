@@ -112,7 +112,7 @@ func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.M
 		c := tok.Claims.(jwt.MapClaims)
 		// Check that device tokens are still valid.
 		if clientID, ok := c["device_client_id"].(string); ok {
-			if email, ok := c["email"].(string); !ok || !be.SSO.da.AuthorizeClient(clientID, email) {
+			if email, ok := c["email"].(string); !ok || be.SSO.oidcServer == nil || !be.SSO.oidcServer.AuthorizeClient(clientID, email) {
 				w.WriteHeader(http.StatusForbidden)
 				return nil, false
 			}

@@ -21,10 +21,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package deviceauth
+package oidc
 
 import (
-	"context"
 	"crypto/rand"
 	_ "embed"
 	"encoding/hex"
@@ -32,24 +31,15 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
-)
-
-const (
-	codeExpiration       = 10 * time.Minute
-	pollInterval         = 5 * time.Second
-	defaultTokenLifetime = 1 * time.Hour
 )
 
 //go:embed verify-template.html
@@ -60,13 +50,13 @@ func init() {
 	verifyTemplate = template.Must(template.New("verify-template").Parse(verifyEmbed))
 }
 
-type codeData struct {
+type deviceCodeData struct {
 	created    time.Time
 	clientID   string
 	deviceCode string
 }
 
-type accessData struct {
+type deviceAccessData struct {
 	created  time.Time
 	clientID string
 	scope    []string
@@ -75,75 +65,7 @@ type accessData struct {
 	ready    chan struct{}
 }
 
-// EventRecorder is used to record events.
-type EventRecorder interface {
-	Record(string)
-}
-
-// Options contains the parameters needed to configure a Server.
-type Options struct {
-	TokenManager  *tokenmanager.TokenManager
-	ClaimsFromCtx func(context.Context) jwt.MapClaims
-	ACLMatcher    func(acl []string, email string) bool
-	PathPrefix    string
-	Clients       []Client
-	TokenLifetime time.Duration
-
-	EventRecorder EventRecorder
-	Logger        interface {
-		Errorf(string, ...any)
-	}
-}
-
-type defaultLogger struct{}
-
-func (defaultLogger) Errorf(format string, args ...any) {
-	log.Printf(format, args...)
-}
-
-// NewServer returns a new Server.
-func NewServer(opts Options) *Server {
-	if opts.Logger == nil {
-		opts.Logger = defaultLogger{}
-	}
-	return &Server{
-		opts:     opts,
-		codes:    make(map[string]*codeData),
-		idTokens: make(map[string]*accessData),
-	}
-}
-
-// Server is a device authorization implementation. RFC 8628
-type Server struct {
-	opts Options
-
-	mu       sync.Mutex
-	codes    map[string]*codeData
-	idTokens map[string]*accessData
-}
-
-type Client struct {
-	ID  string
-	ACL *[]string
-}
-
-func (s *Server) vacuum() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now().UTC()
-	for k, v := range s.codes {
-		if v.created.Add(codeExpiration).Before(now) {
-			delete(s.codes, k)
-		}
-	}
-	for k, v := range s.idTokens {
-		if v.created.Add(codeExpiration).Before(now) {
-			delete(s.idTokens, k)
-		}
-	}
-}
-
-func (s *Server) ServeAuthorization(w http.ResponseWriter, req *http.Request) {
+func (s *ProviderServer) ServeDeviceAuthorization(w http.ResponseWriter, req *http.Request) {
 	s.vacuum()
 	if req.Method != http.MethodPost {
 		http.Error(w, "invalid request", http.StatusBadRequest)
@@ -178,12 +100,12 @@ func (s *Server) ServeAuthorization(w http.ResponseWriter, req *http.Request) {
 
 	now := time.Now().UTC()
 	s.mu.Lock()
-	s.codes[userCode] = &codeData{
+	s.deviceCodes[userCode] = &deviceCodeData{
 		created:    now,
 		clientID:   clientID,
 		deviceCode: deviceCode,
 	}
-	s.idTokens[deviceCode] = &accessData{
+	s.deviceIDTokens[deviceCode] = &deviceAccessData{
 		created:  now,
 		clientID: clientID,
 		scope:    scopes,
@@ -223,13 +145,13 @@ func (s *Server) ServeAuthorization(w http.ResponseWriter, req *http.Request) {
 	w.Write(content)
 }
 
-func (s *Server) AuthorizeClient(clientID, email string) bool {
+func (s *ProviderServer) AuthorizeClient(clientID, email string) bool {
 	return slices.ContainsFunc(s.opts.Clients, func(c Client) bool {
 		return c.ID == clientID && (c.ACL == nil || s.opts.ACLMatcher(*c.ACL, email))
 	})
 }
 
-func (s *Server) ServeVerification(w http.ResponseWriter, req *http.Request) {
+func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *http.Request) {
 	s.vacuum()
 
 	userClaims := s.opts.ClaimsFromCtx(req.Context())
@@ -270,11 +192,11 @@ func (s *Server) ServeVerification(w http.ResponseWriter, req *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	data, ok := s.codes[userCode]
-	delete(s.codes, userCode)
-	var idToken *accessData
+	data, ok := s.deviceCodes[userCode]
+	delete(s.deviceCodes, userCode)
+	var idToken *deviceAccessData
 	if ok {
-		idToken, ok = s.idTokens[data.deviceCode]
+		idToken, ok = s.deviceIDTokens[data.deviceCode]
 	}
 	if !ok {
 		http.Error(w, "request expired", http.StatusBadRequest)
@@ -342,7 +264,7 @@ func (s *Server) ServeVerification(w http.ResponseWriter, req *http.Request) {
 	w.Write([]byte("approved\n"))
 }
 
-func (s *Server) ServeToken(w http.ResponseWriter, req *http.Request) {
+func (s *ProviderServer) ServeDeviceToken(w http.ResponseWriter, req *http.Request) {
 	s.vacuum()
 	if req.Method != http.MethodPost {
 		http.Error(w, "method not allowed ", http.StatusMethodNotAllowed)
@@ -357,7 +279,7 @@ func (s *Server) ServeToken(w http.ResponseWriter, req *http.Request) {
 	clientID := req.Form.Get("client_id")
 
 	s.mu.Lock()
-	data, ok := s.idTokens[deviceCode]
+	data, ok := s.deviceIDTokens[deviceCode]
 	s.mu.Unlock()
 	if ok {
 		select {
@@ -367,7 +289,7 @@ func (s *Server) ServeToken(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 	s.mu.Lock()
-	data, ok = s.idTokens[deviceCode]
+	data, ok = s.deviceIDTokens[deviceCode]
 	defer s.mu.Unlock()
 
 	var resp struct {
@@ -388,7 +310,7 @@ func (s *Server) ServeToken(w http.ResponseWriter, req *http.Request) {
 		resp.AccessToken = data.token
 		resp.Scope = strings.Join(data.scope, " ")
 		resp.TokenType = "Bearer"
-		delete(s.idTokens, deviceCode)
+		delete(s.deviceIDTokens, deviceCode)
 	case data.denied:
 		resp.Error = "access_denied"
 	default:

@@ -68,7 +68,6 @@ import (
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/deviceauth"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/idp"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
@@ -102,13 +101,12 @@ const (
 	tlsUnrecognizedName    = tls.AlertError(0x70)
 	tlsCertificateRequired = tls.AlertError(0x74)
 
-	scopeDeviceAuth = "deviceauth"
-	scopeMetrics    = "metrics"
-	scopeOIDCAuth   = "openid"
-	scopePasskeys   = "passkeys"
-	scopePKI        = "pki"
-	scopeService    = "service"
-	scopeSSH        = "ssh"
+	scopeMetrics  = "metrics"
+	scopeOIDCAuth = "oidcauth"
+	scopePasskeys = "passkeys"
+	scopePKI      = "pki"
+	scopeService  = "service"
+	scopeSSH      = "ssh"
 )
 
 var (
@@ -537,66 +535,29 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				)
 			}
 
-			if da := be.SSO.DeviceAuth; da != nil {
-				opts := deviceauth.Options{
-					TokenManager:  p.tokenManager,
-					PathPrefix:    da.PathPrefix,
-					Clients:       make([]deviceauth.Client, 0, len(da.Clients)),
-					TokenLifetime: da.TokenLifetime,
-					ClaimsFromCtx: claimsFromCtx,
-					ACLMatcher:    aclMatcher.emailMatches,
-					EventRecorder: er,
-					Logger:        be.extLogger(),
-				}
-				for _, client := range da.Clients {
-					var acl *[]string
-					if client.ACL != nil {
-						clone := slices.Clone(*client.ACL)
-						acl = (*[]string)(&clone)
-					}
-					opts.Clients = append(opts.Clients, deviceauth.Client{
-						ID:  client.ID,
-						ACL: acl,
-					})
-				}
-				be.SSO.da = deviceauth.NewServer(opts)
-				be.localHandlers = append(be.localHandlers,
-					localHandler{
-						desc:      "Device Auth Authorization Endpoint",
-						path:      da.PathPrefix + "/device/authorization",
-						handler:   logHandler(http.HandlerFunc(be.SSO.da.ServeAuthorization)),
-						ssoBypass: true,
-					},
-					localHandler{
-						desc:    "Device Auth Verification Endpoint",
-						path:    da.PathPrefix + "/device/verification",
-						handler: logHandler(http.HandlerFunc(be.SSO.da.ServeVerification)),
-						scopes:  Strings{scopeDeviceAuth},
-					},
-					localHandler{
-						desc:      "Device Auth Token Endpoint",
-						path:      da.PathPrefix + "/device/token",
-						handler:   logHandler(http.HandlerFunc(be.SSO.da.ServeToken)),
-						ssoBypass: true,
-					},
-				)
-			}
-
 			if ls := be.SSO.LocalOIDCServer; ls != nil && len(be.ServerNames) > 0 {
 				opts := oidc.ServerOptions{
 					TokenManager:  p.tokenManager,
 					Issuer:        "https://" + be.ServerNames[0] + ls.PathPrefix,
 					PathPrefix:    ls.PathPrefix,
+					TokenLifetime: ls.TokenLifetime,
 					ClaimsFromCtx: claimsFromCtx,
+					ACLMatcher:    aclMatcher.emailMatches,
 					Clients:       make([]oidc.Client, 0, len(ls.Clients)),
 					EventRecorder: er,
 					Logger:        be.extLogger(),
 				}
 				for _, client := range ls.Clients {
+					var acl *[]string
+					if client.ACL != nil {
+						clone := slices.Clone(*client.ACL)
+						acl = (*[]string)(&clone)
+					}
 					opts.Clients = append(opts.Clients, oidc.Client{
 						ID:          client.ID,
 						Secret:      client.Secret,
 						RedirectURI: client.RedirectURI,
+						ACL:         acl,
 					})
 				}
 				for _, rr := range ls.RewriteRules {
@@ -607,36 +568,53 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						Value:       rr.Value,
 					})
 				}
-				oidcServer := oidc.NewServer(opts)
+				be.SSO.oidcServer = oidc.NewServer(opts)
 				be.localHandlers = append(be.localHandlers,
 					localHandler{
 						desc:      "OIDC Server Configuration",
 						path:      ls.PathPrefix + "/.well-known/openid-configuration",
-						handler:   logHandler(http.HandlerFunc(oidcServer.ServeConfig)),
+						handler:   logHandler(http.HandlerFunc(be.SSO.oidcServer.ServeConfig)),
 						ssoBypass: true,
 					},
 					localHandler{
 						desc:    "OIDC Server Authorization Endpoint",
 						path:    ls.PathPrefix + "/authorization",
-						handler: logHandler(http.HandlerFunc(oidcServer.ServeAuthorization)),
+						handler: logHandler(http.HandlerFunc(be.SSO.oidcServer.ServeAuthorization)),
 						scopes:  Strings{scopeOIDCAuth},
 					},
 					localHandler{
 						desc:      "OIDC Server Token Endpoint",
 						path:      ls.PathPrefix + "/token",
-						handler:   logHandler(http.HandlerFunc(oidcServer.ServeToken)),
+						handler:   logHandler(http.HandlerFunc(be.SSO.oidcServer.ServeToken)),
 						ssoBypass: true,
 					},
 					localHandler{
-						desc:      "OIDC Server Userinfo Endpoint",
-						path:      ls.PathPrefix + "/userinfo",
-						handler:   logHandler(http.HandlerFunc(oidcServer.ServeUserInfo)),
-						ssoBypass: true,
+						desc:    "OIDC Server Userinfo Endpoint",
+						path:    ls.PathPrefix + "/userinfo",
+						handler: logHandler(http.HandlerFunc(be.SSO.oidcServer.ServeUserInfo)),
 					},
 					localHandler{
 						desc:      "OIDC Server JWKS Endpoint",
 						path:      ls.PathPrefix + "/jwks",
 						handler:   logHandler(http.HandlerFunc(p.tokenManager.ServeJWKS)),
+						ssoBypass: true,
+					},
+					localHandler{
+						desc:      "OIDC Server Device Authorization Endpoint",
+						path:      ls.PathPrefix + "/device/authorization",
+						handler:   logHandler(http.HandlerFunc(be.SSO.oidcServer.ServeDeviceAuthorization)),
+						ssoBypass: true,
+					},
+					localHandler{
+						desc:    "OIDC Server Device Verification Endpoint",
+						path:    ls.PathPrefix + "/device/verification",
+						handler: logHandler(http.HandlerFunc(be.SSO.oidcServer.ServeDeviceVerification)),
+						scopes:  Strings{scopeOIDCAuth},
+					},
+					localHandler{
+						desc:      "OIDC Server Device Token Endpoint",
+						path:      ls.PathPrefix + "/device/token",
+						handler:   logHandler(http.HandlerFunc(be.SSO.oidcServer.ServeDeviceToken)),
 						ssoBypass: true,
 					},
 				)

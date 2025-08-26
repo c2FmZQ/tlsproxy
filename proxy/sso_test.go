@@ -129,8 +129,8 @@ func TestSSOEnforceOIDC(t *testing.T) {
 							ForwardRateLimit: 1000,
 							SSO: &BackendSSO{
 								Provider: "test-idp",
-								DeviceAuth: &DeviceAuth{
-									Clients: []*DeviceAuthClient{
+								LocalOIDCServer: &LocalOIDCServer{
+									Clients: []*LocalOIDCClient{
 										{ID: "clientid", ACL: &Strings{"bob@example.com"}},
 									},
 								},

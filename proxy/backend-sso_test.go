@@ -347,8 +347,8 @@ func newBackendSSOTestProxy(t *testing.T) *Proxy {
 						Provider:         "test-idp",
 						GenerateIDTokens: true,
 						SetUserIDHeader:  true,
-						DeviceAuth: &DeviceAuth{
-							Clients: []*DeviceAuthClient{
+						LocalOIDCServer: &LocalOIDCServer{
+							Clients: []*LocalOIDCClient{
 								{ID: "foo"},
 								{ID: "bar", ACL: &Strings{"alice@"}},
 							},

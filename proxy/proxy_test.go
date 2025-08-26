@@ -1293,7 +1293,9 @@ func newTestProxy(cfg *Config, cm *certmanager.CertManager) *Proxy {
 		outConns:     newConnTracker(),
 	}
 	p.ocspCache = ocspcache.New(store, p.extLogger())
-	p.Reconfigure(cfg)
+	if err := p.Reconfigure(cfg); err != nil {
+		panic(err)
+	}
 	return p
 }
 
