@@ -107,6 +107,7 @@ const (
 	scopePKI      = "pki"
 	scopeService  = "service"
 	scopeSSH      = "ssh"
+	scopeSSO      = "sso"
 )
 
 var (
@@ -543,6 +544,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 					ClaimsFromCtx: claimsFromCtx,
 					ACLMatcher:    aclMatcher.emailMatches,
 					Clients:       make([]oidc.Client, 0, len(ls.Clients)),
+					Scopes:        ls.Scopes,
 					EventRecorder: er,
 					Logger:        be.extLogger(),
 				}

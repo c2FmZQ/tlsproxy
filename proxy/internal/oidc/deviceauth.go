@@ -73,7 +73,6 @@ func (s *ProviderServer) ServeDeviceAuthorization(w http.ResponseWriter, req *ht
 	}
 	req.ParseForm()
 	clientID := req.Form.Get("client_id")
-	scope := req.Form.Get("scope")
 	if !slices.ContainsFunc(s.opts.Clients, func(c Client) bool { return c.ID == clientID }) {
 		s.opts.Logger.Errorf("ERR ServeAuthorization: invalid client_id %q", clientID)
 		http.Error(w, "invalid request", http.StatusBadRequest)
@@ -93,10 +92,9 @@ func (s *ProviderServer) ServeDeviceAuthorization(w http.ResponseWriter, req *ht
 	}
 	userCode := fmt.Sprintf("%02X%02X-%02X%02X-%02X%02X", b[0], b[1], b[2], b[3], b[4], b[5])
 
-	if scope == "" {
-		scope = "service"
-	}
-	scopes := slices.DeleteFunc(strings.Split(scope, " "), func(s string) bool { return s == "" })
+	scopes := slices.DeleteFunc(strings.Split(req.Form.Get("scope"), " "), func(scope string) bool {
+		return !slices.Contains(s.opts.Scopes, scope)
+	})
 
 	now := time.Now().UTC()
 	s.mu.Lock()

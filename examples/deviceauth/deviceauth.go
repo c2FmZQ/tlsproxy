@@ -98,9 +98,10 @@ func main() {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
-			log.Printf("Run: %v", err)
 			if ee, ok := err.(*exec.ExitError); ok && ee.ProcessState != nil {
 				os.Exit(ee.ProcessState.ExitCode())
+			} else {
+				log.Printf("Run: %v", err)
 			}
 		}
 	}

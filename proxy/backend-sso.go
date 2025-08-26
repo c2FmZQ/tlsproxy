@@ -293,7 +293,7 @@ func (be *Backend) findSSORule(req *http.Request) *SSORule {
 	return nil
 }
 
-func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bool {
+func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request, overrideScopes Strings) bool {
 	if be.SSO == nil {
 		return true
 	}
@@ -368,7 +368,13 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 		be.servePermissionDenied(w, req)
 		return false
 	}
-	if !be.checkScopes(rule.Scopes, w, req) {
+	scopes := rule.Scopes
+	if overrideScopes != nil {
+		scopes = overrideScopes
+	} else if len(scopes) == 0 {
+		scopes = Strings{scopeSSO}
+	}
+	if !be.checkScopes(scopes, w, req) {
 		return false
 	}
 	be.recordEvent(fmt.Sprintf("allow SSO %s to %s", userID, idnaToUnicode(host)))

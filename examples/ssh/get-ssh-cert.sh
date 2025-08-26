@@ -22,6 +22,8 @@
 #     sso:
 #       provider: sso-provider # definition omitted for this example
 #       localOIDCServer:
+#         scopes:
+#         - ssh
 #         clients:
 #         - id: myclientid123
 
@@ -34,12 +36,27 @@ CLIENTID="$1"
 BASEURL="$(echo $2 | sed -re 's:/+$::')" # remove trailing /
 PUBKEY="$3"
 CERTFILE="${PUBKEY/.pub/}-cert.pub"
+TMPFILE="$(mktemp)"
 
-CURLCMD="curl -s -f --data-binary @${PUBKEY} -o ${CERTFILE} \
-  -H \"Content-Type: text/plain\"                           \
-  -H \"x-csrf-check: 1\"                                    \
-  -H \"Authorization: Bearer \${TOKEN}\"                    \
-  \"${BASEURL}/cert\""
+export BASEURL PUBKEY CERTFILE TMPFILE
+
+CURLCMD="$(cat <<"eof"
+  if curl -s --fail-with-body                   \
+      --data-binary "@${PUBKEY}"                \
+      -o "${TMPFILE}"                           \
+      -H "Content-Type: text/plain"             \
+      -H "x-csrf-check: 1"                      \
+      -H "Authorization: Bearer ${TOKEN}"       \
+      "${BASEURL}/cert"; then
+    mv -f "${TMPFILE}" "${CERTFILE}"
+  else
+    echo "Error fetching ${BASEURL}/cert"
+    cat "${TMPFILE}"
+    rm "${TMPFILE}"
+    exit 1
+  fi
+eof
+)"
 
 cd "$(dirname $0)/../deviceauth"
 go run github.com/c2FmZQ/tlsproxy/examples/deviceauth \

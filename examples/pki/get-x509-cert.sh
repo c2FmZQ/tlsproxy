@@ -24,6 +24,8 @@
 #     sso:
 #       provider: sso-provider # definition omitted for this example
 #       localOIDCServer:
+#         scopes:
+#         - pki
 #         clients:
 #         - id: myclientid123
 
@@ -44,15 +46,29 @@ openssl req -newkey                                                             
   -out "${KEYNAME}.csr"                                                          \
   -noenc     # remove -noenc if you want the private key to be encrypted
 
+
+TMPFILE="$(mktemp)"
+export BASEURL KEYNAME TMPFILE
+
 # This is the command to fetch the certificate. The TOKEN is provided by the
 # deviceauth command.
-CURLCMD="curl -s -f                            \
-  --data-binary \"@${KEYNAME}.csr\"            \
-  -o \"${KEYNAME}.cert.json\"                  \
-  -H \"Content-Type: application/x-pem-file\"  \
-  -H \"x-csrf-check: 1\"                       \
-  -H \"Authorization: Bearer \${TOKEN}\"       \
-  \"${BASEURL}/pki?get=requestCert\""
+CURLCMD="$(cat <<"eof"
+  if curl -s --fail-with-body                    \
+      --data-binary "@${KEYNAME}.csr"            \
+      -o "${TMPFILE}"                            \
+      -H "Content-Type: application/x-pem-file"  \
+      -H "x-csrf-check: 1"                       \
+      -H "Authorization: Bearer ${TOKEN}"        \
+      "${BASEURL}/pki?get=requestCert"; then
+    mv -f "${TMPFILE}" "${KEYNAME}.cert.json"
+  else
+    echo "Error fetching ${BASEURL}/pki"
+    cat "${TMPFILE}"
+    rm "${TMPFILE}"
+    exit 1
+  fi
+eof
+)"
 
 # Run the deviceauth command to get the access token required to reach the
 # PKI endpoint, and run the curl command to get the x509 certificate.

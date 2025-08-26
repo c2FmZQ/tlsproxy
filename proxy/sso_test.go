@@ -53,6 +53,8 @@ import (
 )
 
 func TestSSOEnforceOIDC(t *testing.T) {
+	oidc.AutoApproveForTests = true
+
 	for _, tc := range []struct {
 		name     string
 		hwBacked bool
@@ -104,6 +106,10 @@ func TestSSOEnforceOIDC(t *testing.T) {
 							ForwardRateLimit:  1000,
 							ForwardRootCAs:    []string{ca.RootCAPEM()},
 							SSO: &BackendSSO{
+								Rules: []*SSORule{
+									{Paths: []string{"/openid/"}, Scopes: Strings{"openid"}},
+									{},
+								},
 								Provider:         "test-idp",
 								GenerateIDTokens: true,
 							},
@@ -261,10 +267,14 @@ func TestSSOEnforceOIDC(t *testing.T) {
 			hdr := http.Header{}
 			hdr.Set("Authorization", "Bearer "+cookies["TLSPROXYIDTOKEN"])
 			code, body, cookies = get("https://https.example.com/blah", hdr)
+			if got, want := code, 403; got != want {
+				t.Errorf("Code = %v, want %v", got, want)
+			}
+			code, body, cookies = get("https://https.example.com/openid/blah", hdr)
 			if got, want := code, 200; got != want {
 				t.Errorf("Code = %v, want %v", got, want)
 			}
-			if got, want := body, "[https-server] /blah\n"; got != want {
+			if got, want := body, "[https-server] /openid/blah\n"; got != want {
 				t.Errorf("Body = %v, want %v", got, want)
 			}
 			if got, want := len(cookies), 0; got != want {
@@ -272,11 +282,11 @@ func TestSSOEnforceOIDC(t *testing.T) {
 			}
 
 			hdr.Set("Authorization", "Bearer "+cookies["TLSPROXYIDTOKEN"])
-			code, body, cookies = get("https://https.example.com/?header=x-test", hdr)
+			code, body, cookies = get("https://https.example.com/openid/?header=x-test", hdr)
 			if got, want := code, 200; got != want {
 				t.Errorf("Code = %v, want %v", got, want)
 			}
-			if got, want := body, "[https-server] /?header=x-test\nx-test=FOO https.example.com tcp // bob@example.com\n"; got != want {
+			if got, want := body, "[https-server] /openid/?header=x-test\nx-test=FOO https.example.com tcp // bob@example.com\n"; got != want {
 				t.Errorf("Body = %v, want %v", got, want)
 			}
 
@@ -336,6 +346,8 @@ func TestSSOEnforceOIDC(t *testing.T) {
 }
 
 func TestSSOEnforcePasskey(t *testing.T) {
+	oidc.AutoApproveForTests = true
+
 	for _, tc := range []struct {
 		name     string
 		hwBacked bool

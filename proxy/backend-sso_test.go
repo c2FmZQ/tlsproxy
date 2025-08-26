@@ -210,7 +210,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 	// No ACL
 	proxy.cfg.Backends[0].SSO.Rules = []*SSORule{{}}
 	w := httptest.NewRecorder()
-	if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, req), true; got != want {
+	if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, req, nil), true; got != want {
 		t.Fatalf("encorceSSOPolicy() = %v, want %v", got, want)
 	}
 	if got, want := w.Code, 200; got != want {
@@ -222,7 +222,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 		ACL: &Strings{"alice@example.org"},
 	}}
 	w = httptest.NewRecorder()
-	if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, req), false; got != want {
+	if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, req, nil), false; got != want {
 		t.Fatalf("encorceSSOPolicy() = %v, want %v", got, want)
 	}
 	if got, want := w.Code, 403; got != want {
@@ -234,7 +234,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 		ACL: &Strings{"alice@example.org", "bob@example.org"},
 	}}
 	w = httptest.NewRecorder()
-	if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, req), true; got != want {
+	if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, req, nil), true; got != want {
 		t.Fatalf("encorceSSOPolicy() = %v, want %v", got, want)
 	}
 	if got, want := w.Code, 200; got != want {
@@ -252,7 +252,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 		},
 	}
 	w = httptest.NewRecorder()
-	if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, req), false; got != want {
+	if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, req, nil), false; got != want {
 		t.Fatalf("encorceSSOPolicy() = %v, want %v", got, want)
 	}
 	if got, want := w.Code, 403; got != want {
@@ -271,7 +271,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 		},
 	}
 	w = httptest.NewRecorder()
-	if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, req), true; got != want {
+	if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, req, nil), true; got != want {
 		t.Fatalf("encorceSSOPolicy() = %v, want %v", got, want)
 	}
 	if got, want := w.Code, 200; got != want {
@@ -283,7 +283,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 		ACL: &Strings{"@example.org"},
 	}}
 	w = httptest.NewRecorder()
-	if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, req), true; got != want {
+	if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, req, nil), true; got != want {
 		t.Fatalf("encorceSSOPolicy() = %v, want %v", got, want)
 	}
 	if got, want := w.Code, 200; got != want {
@@ -295,7 +295,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 		ForceReAuth: 5 * time.Minute,
 	}}
 	w = httptest.NewRecorder()
-	if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, req), false; got != want {
+	if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, req, nil), false; got != want {
 		t.Fatalf("encorceSSOPolicy() = %v, want %v", got, want)
 	}
 	if got, want := w.Code, 403; got != want {
@@ -311,7 +311,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 	})
 	req = req.WithContext(ctx)
 	w = httptest.NewRecorder()
-	if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, req), true; got != want {
+	if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, req, nil), true; got != want {
 		t.Errorf("encorceSSOPolicy() = %v, want %v", got, want)
 	}
 	if got, want := w.Code, 200; got != want {

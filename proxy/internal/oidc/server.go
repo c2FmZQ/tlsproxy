@@ -27,10 +27,12 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
 	"log"
 	"maps"
@@ -61,6 +63,18 @@ const (
 	pollInterval         = 5 * time.Second
 )
 
+var (
+	AutoApproveForTests = false
+
+	//go:embed authorize-template.html
+	authorizeEmbed    string
+	authorizeTemplate *template.Template
+)
+
+func init() {
+	authorizeTemplate = template.Must(template.New("authorize-template").Parse(authorizeEmbed))
+}
+
 type openIDConfiguration struct {
 	Issuer                           string   `json:"issuer"`
 	AuthorizationEndpoint            string   `json:"authorization_endpoint"`
@@ -76,10 +90,14 @@ type openIDConfiguration struct {
 
 type codeData struct {
 	created     time.Time
+	requestID   string
 	clientID    string
+	redirectURI *url.URL
+	nonce       string
+	state       string
+	scopes      []string
 	accessToken string
 	idToken     string
-	scope       []string
 }
 
 // ServerOptions contains the parameters needed to configure a ProviderServer.
@@ -90,6 +108,7 @@ type ServerOptions struct {
 	ClaimsFromCtx func(context.Context) jwt.MapClaims
 	ACLMatcher    func(acl []string, email string) bool
 	Clients       []Client
+	Scopes        []string
 	RewriteRules  []RewriteRule
 
 	EventRecorder EventRecorder
@@ -150,7 +169,7 @@ func (s *ProviderServer) vacuum() {
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
 	for k, v := range s.codes {
-		if v.created.Add(2 * time.Minute).Before(now) {
+		if v.created.Add(codeExpiration).Before(now) {
 			delete(s.codes, k)
 		}
 	}
@@ -187,11 +206,7 @@ func (s *ProviderServer) ServeConfig(w http.ResponseWriter, req *http.Request) {
 			"RS256",
 			"ES256",
 		},
-		ScopesSupported: []string{
-			"openid",
-			"email",
-			"profile",
-		},
+		ScopesSupported: s.opts.Scopes,
 		ClaimsSupported: []string{
 			"aud",
 			"email",
@@ -242,6 +257,104 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		return
 	}
 	req.ParseForm()
+
+	handlePost := func(requestID string) (redirect string) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		var code string
+		var data *codeData
+		for k, v := range s.codes {
+			if v.requestID == requestID {
+				code = k
+				data = v
+				break
+			}
+		}
+		if data == nil {
+			http.Error(w, "request expired", http.StatusBadRequest)
+			return
+		}
+		if req.Form.Get("approve") != "true" && !AutoApproveForTests {
+			s.opts.EventRecorder.Record("denied openid auth request for " + data.clientID)
+			http.Error(w, "request was denied", http.StatusForbidden)
+			return
+		}
+
+		ttl := s.opts.TokenLifetime
+		if ttl == 0 {
+			ttl = defaultTokenLifetime
+		}
+
+		claims := jwt.MapClaims{
+			"email":          userClaims["email"],
+			"email_verified": true,
+			"sub":            userClaims["sub"],
+			"client_id":      data.clientID,
+			"scope":          data.scopes,
+		}
+		if data.nonce != "" {
+			claims["nonce"] = data.nonce
+		}
+
+		if slices.Contains(data.scopes, "profile") {
+			for _, v := range []string{"name", "family_name", "given_name", "middle_name", "nickname", "preferred_username", "profile", "picture", "website", "gender", "birthdate", "zoneinfo", "locale"} {
+				if vv := userClaims[v]; vv != nil {
+					claims[v] = vv
+				}
+			}
+		}
+
+		s.applyRewriteRules(s.opts.RewriteRules, userClaims, claims)
+
+		accessToken, err := s.opts.CookieManager.MintToken(claims, ttl, cookiemanager.AudienceForToken(req), "ES256")
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		claims["scope"] = []string{}
+		idToken, err := s.opts.CookieManager.MintToken(claims, ttl, data.clientID, "RS256")
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		data.accessToken = accessToken
+		data.idToken = idToken
+
+		qs := data.redirectURI.Query()
+		qs.Set("state", data.state)
+		qs.Set("code", code)
+		qs.Set("scope", strings.Join(data.scopes, " "))
+		data.redirectURI.RawQuery = qs.Encode()
+
+		s.opts.EventRecorder.Record("allow openid auth request for " + data.clientID)
+
+		redirect = data.redirectURI.String()
+		if AutoApproveForTests {
+			return
+		}
+
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		enc.Encode(map[string]any{
+			"redirect": redirect,
+		})
+		return
+	}
+
+	if req.Method == http.MethodPost {
+		if v := req.Header.Get("x-csrf-check"); v != "1" {
+			s.opts.Logger.Errorf("ERR x-csrf-check: %v", v)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		handlePost(req.Form.Get("request_id"))
+		return
+	}
+
+	// GET
 	if rt := req.Form.Get("response_type"); rt != "code" {
 		s.opts.Logger.Errorf("ERR ServeAuthorization: invalid response_type %q", rt)
 		http.Error(w, "invalid request", http.StatusBadRequest)
@@ -280,8 +393,17 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		return
 	}
 	code := base64.StdEncoding.EncodeToString(b)
+	b = make([]byte, 12)
+	if _, err := io.ReadFull(rand.Reader, b); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	requestID := base64.StdEncoding.EncodeToString(b)
 
-	scopes := slices.DeleteFunc(strings.Split(req.Form.Get("scope"), " "), func(s string) bool { return s == "" })
+	// Remove any scopes that are not allowed in the config.
+	scopes := slices.DeleteFunc(strings.Split(req.Form.Get("scope"), " "), func(scope string) bool {
+		return !slices.Contains(s.opts.Scopes, scope)
+	})
 
 	// Remove any scopes that the user doesn't have.
 	if userClaims["scope"] != nil {
@@ -295,66 +417,42 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		})
 	}
 	if len(scopes) == 0 {
-		scopes = []string{"openid"}
-	}
-
-	ttl := s.opts.TokenLifetime
-	if ttl == 0 {
-		ttl = defaultTokenLifetime
-	}
-
-	claims := jwt.MapClaims{
-		"email":          userClaims["email"],
-		"email_verified": true,
-		"sub":            userClaims["sub"],
-		"client_id":      clientID,
-		"scope":          scopes,
-	}
-	if nonce := req.Form.Get("nonce"); nonce != "" {
-		claims["nonce"] = nonce
-	}
-
-	if slices.Contains(scopes, "profile") {
-		for _, v := range []string{"name", "family_name", "given_name", "middle_name", "nickname", "preferred_username", "profile", "picture", "website", "gender", "birthdate", "zoneinfo", "locale"} {
-			if vv := userClaims[v]; vv != nil {
-				claims[v] = vv
-			}
-		}
-	}
-
-	s.applyRewriteRules(s.opts.RewriteRules, userClaims, claims)
-
-	accessToken, err := s.opts.CookieManager.MintToken(claims, ttl, cookiemanager.AudienceForToken(req), "ES256")
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	claims["scope"] = []string{"openid"}
-	idToken, err := s.opts.CookieManager.MintToken(claims, ttl, clientID, "RS256")
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+		// we don't want it to be nil
+		scopes = []string{}
 	}
 
 	s.mu.Lock()
 	s.codes[code] = &codeData{
 		created:     time.Now().UTC(),
 		clientID:    clientID,
-		accessToken: accessToken,
-		idToken:     idToken,
-		scope:       scopes,
+		requestID:   requestID,
+		redirectURI: ru,
+		state:       req.Form.Get("state"),
+		nonce:       req.Form.Get("nonce"),
+		scopes:      scopes,
 	}
 	s.mu.Unlock()
 
-	qs := ru.Query()
-	qs.Set("state", req.Form.Get("state"))
-	qs.Set("code", code)
-	qs.Set("scope", strings.Join(scopes, " "))
-	ru.RawQuery = qs.Encode()
-
-	s.opts.EventRecorder.Record("allow openid auth request for " + clientID)
-	http.Redirect(w, req, ru.String(), http.StatusFound)
+	if AutoApproveForTests {
+		if redirect := handlePost(requestID); redirect != "" {
+			http.Redirect(w, req, redirect, http.StatusFound)
+		}
+		return
+	}
+	data := struct {
+		Email     string
+		Host      string
+		RequestID string
+		Scopes    string
+	}{
+		Email:     email,
+		Host:      ru.Hostname(),
+		RequestID: requestID,
+		Scopes:    strings.Join(scopes, ","),
+	}
+	w.Header().Set("content-type", "text/html; charset=utf-8")
+	verifyTemplate.Execute(w, data)
+	return
 }
 
 func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
@@ -405,7 +503,7 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 		AccessToken: data.accessToken,
 		ExpiresIn:   90,
 		IDToken:     data.idToken,
-		Scope:       strings.Join(data.scope, " "),
+		Scope:       strings.Join(data.scopes, " "),
 		TokenType:   "Bearer",
 	}
 

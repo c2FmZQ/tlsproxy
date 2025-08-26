@@ -450,7 +450,7 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 		return h.path == cleanPath || (h.matchPrefix && strings.HasPrefix(cleanPath, h.path+"/"))
 	})
 	if hi >= 0 {
-		if !be.localHandlers[hi].ssoBypass && (!be.enforceSSOPolicy(w, req) || !be.checkScopes(be.localHandlers[hi].scopes, w, req)) {
+		if !be.localHandlers[hi].ssoBypass && (!be.enforceSSOPolicy(w, req, be.localHandlers[hi].scopes)) {
 			return false
 		}
 		if cleanPath != req.URL.Path {
@@ -461,7 +461,7 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 		be.localHandlers[hi].handler.ServeHTTP(w, req)
 		return false
 	}
-	if !be.enforceSSOPolicy(w, req) {
+	if !be.enforceSSOPolicy(w, req, nil) {
 		return false
 	}
 	if hi < 0 {

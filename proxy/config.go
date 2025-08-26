@@ -879,6 +879,8 @@ type LocalOIDCServer struct {
 	// RewriteRules are used to rewrite existing claims or create new claims
 	// from existing ones.
 	RewriteRules []*LocalOIDCRewriteRule `yaml:"rewriteRules,omitempty"`
+	// Scopes is a list of scopes that may be requested by clients.
+	Scopes Strings `yaml:"scopes,omitempty"`
 }
 
 // LocalOIDCClient contains the parameters of one OIDC client that is allowed
