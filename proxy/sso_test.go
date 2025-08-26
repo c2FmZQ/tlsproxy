@@ -46,6 +46,7 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/oidc"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/passkeys"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
@@ -647,9 +648,9 @@ func newIDPServer(t *testing.T) *idpServer {
 	if err != nil {
 		t.Fatalf("tokenmanager.New: %v", err)
 	}
+	cm := cookiemanager.New(tm, "idp", "example.com", "https://idp.example.com")
 	opts := oidc.ServerOptions{
-		TokenManager: tm,
-		Issuer:       "https://idp.example.com",
+		CookieManager: cm,
 		ClaimsFromCtx: func(context.Context) jwt.MapClaims {
 			return jwt.MapClaims{
 				"email": "bob@example.com",

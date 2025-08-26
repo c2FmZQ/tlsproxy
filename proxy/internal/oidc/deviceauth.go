@@ -56,13 +56,13 @@ type deviceCodeData struct {
 	deviceCode string
 }
 
-type deviceAccessData struct {
-	created  time.Time
-	clientID string
-	scope    []string
-	token    string
-	denied   bool
-	ready    chan struct{}
+type deviceToken struct {
+	created     time.Time
+	clientID    string
+	scope       []string
+	accessToken string
+	denied      bool
+	ready       chan struct{}
 }
 
 func (s *ProviderServer) ServeDeviceAuthorization(w http.ResponseWriter, req *http.Request) {
@@ -105,7 +105,7 @@ func (s *ProviderServer) ServeDeviceAuthorization(w http.ResponseWriter, req *ht
 		clientID:   clientID,
 		deviceCode: deviceCode,
 	}
-	s.deviceIDTokens[deviceCode] = &deviceAccessData{
+	s.deviceTokens[deviceCode] = &deviceToken{
 		created:  now,
 		clientID: clientID,
 		scope:    scopes,
@@ -194,25 +194,25 @@ func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *htt
 
 	data, ok := s.deviceCodes[userCode]
 	delete(s.deviceCodes, userCode)
-	var idToken *deviceAccessData
+	var devToken *deviceToken
 	if ok {
-		idToken, ok = s.deviceIDTokens[data.deviceCode]
+		devToken, ok = s.deviceTokens[data.deviceCode]
 	}
 	if !ok {
 		http.Error(w, "request expired", http.StatusBadRequest)
 		return
 	}
-	defer close(idToken.ready)
+	defer close(devToken.ready)
 
 	if !s.AuthorizeClient(data.clientID, email) {
-		idToken.denied = true
+		devToken.denied = true
 		s.opts.EventRecorder.Record("device authorization denied by ACL for " + data.clientID)
 		http.Error(w, "operation not permitted", http.StatusForbidden)
 		return
 	}
 
 	if approve := req.Form.Get("approve"); approve != "true" {
-		idToken.denied = true
+		devToken.denied = true
 		s.opts.EventRecorder.Record("device authorization denied for " + data.clientID)
 		w.Write([]byte("denied\n"))
 		return
@@ -221,7 +221,6 @@ func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *htt
 	claims := jwt.MapClaims{}
 	for k, v := range userClaims {
 		if slices.Contains([]string{
-			"scope",
 			"proxyauth",
 			"source",
 			"hhash",
@@ -230,14 +229,10 @@ func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *htt
 		}
 		claims[k] = v
 	}
-	now := time.Now().UTC()
 	ttl := defaultTokenLifetime
 	if s.opts.TokenLifetime > 0 {
 		ttl = s.opts.TokenLifetime
 	}
-	claims["iat"] = now.Unix()
-	claims["exp"] = now.Add(ttl).Unix()
-	claims["aud"] = cookiemanager.AudienceForToken(req)
 	claims["client_id"] = data.clientID
 
 	// Remove any scopes that the user doesn't have.
@@ -247,19 +242,23 @@ func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *htt
 			http.Error(w, "invalid user scopes", http.StatusBadRequest)
 			return
 		}
-		idToken.scope = slices.DeleteFunc(idToken.scope, func(s string) bool {
+		devToken.scope = slices.DeleteFunc(devToken.scope, func(s string) bool {
 			return !slices.Contains(userScopes, any(s))
 		})
 	}
-	claims["scope"] = idToken.scope
+	if len(devToken.scope) == 0 {
+		devToken.scope = []string{"openid"}
+	}
+	claims["scope"] = devToken.scope
 
-	tok, err := s.opts.TokenManager.CreateToken(claims, "ES256")
+	tok, err := s.opts.CookieManager.MintToken(claims, ttl, cookiemanager.AudienceForToken(req), "ES256")
 	if err != nil {
-		s.opts.Logger.Errorf("ERR CreateToken: %v", err)
+		s.opts.Logger.Errorf("ERR MintToken: %v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	idToken.token = tok
+	devToken.accessToken = tok
+
 	s.opts.EventRecorder.Record("device authorization granted for " + data.clientID)
 	w.Write([]byte("approved\n"))
 }
@@ -279,7 +278,7 @@ func (s *ProviderServer) ServeDeviceToken(w http.ResponseWriter, req *http.Reque
 	clientID := req.Form.Get("client_id")
 
 	s.mu.Lock()
-	data, ok := s.deviceIDTokens[deviceCode]
+	data, ok := s.deviceTokens[deviceCode]
 	s.mu.Unlock()
 	if ok {
 		select {
@@ -289,7 +288,7 @@ func (s *ProviderServer) ServeDeviceToken(w http.ResponseWriter, req *http.Reque
 		}
 	}
 	s.mu.Lock()
-	data, ok = s.deviceIDTokens[deviceCode]
+	data, ok = s.deviceTokens[deviceCode]
 	defer s.mu.Unlock()
 
 	var resp struct {
@@ -306,11 +305,11 @@ func (s *ProviderServer) ServeDeviceToken(w http.ResponseWriter, req *http.Reque
 	case data.clientID != clientID:
 		resp.Error = "invalid_client"
 		status = http.StatusBadRequest
-	case data.token != "":
-		resp.AccessToken = data.token
+	case data.accessToken != "":
+		resp.AccessToken = data.accessToken
 		resp.Scope = strings.Join(data.scope, " ")
 		resp.TokenType = "Bearer"
-		delete(s.deviceIDTokens, deviceCode)
+		delete(s.deviceTokens, deviceCode)
 	case data.denied:
 		resp.Error = "access_denied"
 	default:

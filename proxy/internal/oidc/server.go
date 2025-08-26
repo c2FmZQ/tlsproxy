@@ -47,7 +47,6 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
 const (
@@ -76,16 +75,16 @@ type openIDConfiguration struct {
 }
 
 type codeData struct {
-	created  time.Time
-	clientID string
-	token    string
-	scope    []string
+	created     time.Time
+	clientID    string
+	accessToken string
+	idToken     string
+	scope       []string
 }
 
 // ServerOptions contains the parameters needed to configure a ProviderServer.
 type ServerOptions struct {
-	TokenManager  *tokenmanager.TokenManager
-	Issuer        string
+	CookieManager *cookiemanager.CookieManager
 	PathPrefix    string
 	TokenLifetime time.Duration
 	ClaimsFromCtx func(context.Context) jwt.MapClaims
@@ -120,10 +119,10 @@ func NewServer(opts ServerOptions) *ProviderServer {
 		opts.Logger = defaultLogger{}
 	}
 	return &ProviderServer{
-		opts:           opts,
-		codes:          make(map[string]*codeData),
-		deviceCodes:    make(map[string]*deviceCodeData),
-		deviceIDTokens: make(map[string]*deviceAccessData),
+		opts:         opts,
+		codes:        make(map[string]*codeData),
+		deviceCodes:  make(map[string]*deviceCodeData),
+		deviceTokens: make(map[string]*deviceToken),
 	}
 }
 
@@ -133,10 +132,10 @@ func NewServer(opts ServerOptions) *ProviderServer {
 type ProviderServer struct {
 	opts ServerOptions
 
-	mu             sync.Mutex
-	codes          map[string]*codeData
-	deviceCodes    map[string]*deviceCodeData
-	deviceIDTokens map[string]*deviceAccessData
+	mu           sync.Mutex
+	codes        map[string]*codeData
+	deviceCodes  map[string]*deviceCodeData
+	deviceTokens map[string]*deviceToken
 }
 
 type Client struct {
@@ -160,9 +159,9 @@ func (s *ProviderServer) vacuum() {
 			delete(s.deviceCodes, k)
 		}
 	}
-	for k, v := range s.deviceIDTokens {
+	for k, v := range s.deviceTokens {
 		if v.created.Add(codeExpiration).Before(now) {
-			delete(s.deviceIDTokens, k)
+			delete(s.deviceTokens, k)
 		}
 	}
 }
@@ -173,7 +172,7 @@ func (s *ProviderServer) ServeConfig(w http.ResponseWriter, req *http.Request) {
 		host = h
 	}
 	cfg := openIDConfiguration{
-		Issuer:                s.opts.Issuer,
+		Issuer:                s.opts.CookieManager.Issuer(),
 		AuthorizationEndpoint: fmt.Sprintf("https://%s%s%s", host, s.opts.PathPrefix, authorizationPath),
 		TokenEndpoint:         fmt.Sprintf("https://%s%s%s", host, s.opts.PathPrefix, tokenPath),
 		UserInfoEndpoint:      fmt.Sprintf("https://%s%s%s", host, s.opts.PathPrefix, userInfoPath),
@@ -299,7 +298,6 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		scopes = []string{"openid"}
 	}
 
-	now := time.Now().UTC()
 	ttl := s.opts.TokenLifetime
 	if ttl == 0 {
 		ttl = defaultTokenLifetime
@@ -308,10 +306,6 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	claims := jwt.MapClaims{
 		"email":          userClaims["email"],
 		"email_verified": true,
-		"iat":            now.Unix(),
-		"exp":            now.Add(ttl).Unix(),
-		"iss":            s.opts.Issuer,
-		"aud":            cookiemanager.AudienceForToken(req),
 		"sub":            userClaims["sub"],
 		"client_id":      clientID,
 		"scope":          scopes,
@@ -330,7 +324,14 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 
 	s.applyRewriteRules(s.opts.RewriteRules, userClaims, claims)
 
-	token, err := s.opts.TokenManager.CreateToken(claims, "RS256")
+	accessToken, err := s.opts.CookieManager.MintToken(claims, ttl, cookiemanager.AudienceForToken(req), "ES256")
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	claims["scope"] = []string{"openid"}
+	idToken, err := s.opts.CookieManager.MintToken(claims, ttl, clientID, "RS256")
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -338,10 +339,11 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 
 	s.mu.Lock()
 	s.codes[code] = &codeData{
-		created:  now,
-		clientID: clientID,
-		token:    token,
-		scope:    scopes,
+		created:     time.Now().UTC(),
+		clientID:    clientID,
+		accessToken: accessToken,
+		idToken:     idToken,
+		scope:       scopes,
 	}
 	s.mu.Unlock()
 
@@ -400,9 +402,9 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 		Scope       string `json:"scope"`
 		TokenType   string `json:"token_type"`
 	}{
-		AccessToken: data.token,
+		AccessToken: data.accessToken,
 		ExpiresIn:   90,
-		IDToken:     data.token,
+		IDToken:     data.idToken,
 		Scope:       strings.Join(data.scope, " "),
 		TokenType:   "Bearer",
 	}

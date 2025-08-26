@@ -72,10 +72,6 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, email
 	hh := sha256.Sum256([]byte(host))
 	now := time.Now().UTC()
 	claims := jwt.MapClaims{
-		"iat":       now.Unix(),
-		"exp":       now.Add(20 * time.Hour).Unix(),
-		"iss":       cm.issuer,
-		"aud":       cm.issuer,
 		"sub":       userID,
 		"email":     email,
 		"proxyauth": cm.issuer,
@@ -91,7 +87,7 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, email
 			claims[k] = v
 		}
 	}
-	token, err := cm.tm.CreateToken(claims, "")
+	token, err := cm.MintToken(claims, 20*time.Hour, cm.issuer, "")
 	if err != nil {
 		return err
 	}
@@ -109,6 +105,15 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, email
 	return nil
 }
 
+func (cm *CookieManager) MintToken(claims jwt.MapClaims, ttl time.Duration, audience any, alg string) (string, error) {
+	now := time.Now().UTC()
+	claims["iss"] = cm.issuer
+	claims["iat"] = now.Unix()
+	claims["exp"] = now.Add(ttl).Unix()
+	claims["aud"] = audience
+	return cm.tm.CreateToken(claims, alg)
+}
+
 func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Request, authToken *jwt.Token, groups []string) error {
 	c, ok := authToken.Claims.(jwt.MapClaims)
 	if !ok {
@@ -118,7 +123,6 @@ func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Reque
 	claims := jwt.MapClaims{}
 	for k, v := range c {
 		if slices.Contains([]string{
-			"scope",
 			"proxyauth",
 			"source",
 			"hhash",
@@ -129,6 +133,7 @@ func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Reque
 	}
 	claims["iat"] = now.Unix()
 	claims["aud"] = AudienceForToken(req)
+	claims["scope"] = []string{"openid"}
 	if len(groups) > 0 {
 		claims["groups"] = groups
 	}
