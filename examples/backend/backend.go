@@ -177,13 +177,19 @@ func (s *service) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
-	cookie, err := req.Cookie("TLSPROXYIDTOKEN")
-	if err != nil {
-		log.Printf("INF TLSPROXYIDTOKEN: %v", err)
-		http.Error(w, "TLSPROXYIDTOKEN cookie is not set", http.StatusForbidden)
-		return
+	var token string
+	if h := req.Header.Get("Authorization"); len(h) > 7 && strings.ToUpper(h[:7]) == "BEARER " {
+		token = h[7:]
+	} else {
+		cookie, err := req.Cookie("TLSPROXYIDTOKEN")
+		if err != nil {
+			log.Printf("INF TLSPROXYIDTOKEN: %v", err)
+			http.Error(w, "TLSPROXYIDTOKEN cookie is not set", http.StatusForbidden)
+			return
+		}
+		token = cookie.Value
 	}
-	if _, err := jwt.ParseWithClaims(cookie.Value, &claims, s.getKey, jwt.WithAudience(audienceFromReq(req))); err != nil {
+	if _, err := jwt.ParseWithClaims(token, &claims, s.getKey, jwt.WithAudience(audienceFromReq(req))); err != nil {
 		log.Printf("INF jwt.Parse: %v", err)
 		http.Error(w, "invalid token", http.StatusForbidden)
 		return

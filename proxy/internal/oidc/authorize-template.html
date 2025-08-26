@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Authorization</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
+<link rel="stylesheet" type="text/css" href="/.sso/style.css" />
+<style>
+h1 {
+  font-size: 150%;
+}
+button {
+  margin-top: 5rem;
+  cursor: pointer;
+  padding: 0.75em;
+  font-weight: bold;
+  border-radius: 1em;
+}
+button:hover {
+  background-color: lightgray;
+}
+#sso {
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
+}
+#usercode {
+  text-align: center;
+}
+</style>
+<script>
+function respond(answer) {
+  fetch(window.location, {
+    method: 'POST',
+    headers: {
+      'x-csrf-check': 1,
+      'content-type': 'application/x-www-form-urlencoded',
+    },
+    body: 'approve='+(answer===true?'true':'false')+'&request_id={{.RequestID}}',
+  })
+  .then(async resp => {
+    if (resp.status !== 200) {
+      const t = await resp.text();
+      throw new Error(resp.status + ': ' + t);
+    }
+    return resp.json();
+  })
+  .then(r => {
+    document.getElementById('message').textContent = r.redirect;
+  })
+  .catch(r => {
+    document.getElementById('message').textContent = r;
+  });
+}
+</script>
+</head>
+<body>
+<div id="sso">
+{{.Email}} <a href="/.sso/logout" class="button">Logout</a>
+</div>
+<div id="message">
+<h1>Authorization Request</h1>
+<div>{{.Host}} want to access your information ({{.Scopes}}).</div>
+<div><a class="button" onclick="respond(false);">Deny</a> <a class="button" onclick="respond(true);">Approve</a></div>
+</body>
+</html>

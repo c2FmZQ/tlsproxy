@@ -1,0 +1,108 @@
+// This is an example of a device authorization client.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+
+	"github.com/mdp/qrterminal/v3"
+	"golang.org/x/oauth2"
+)
+
+var (
+	clientID      = flag.String("client-id", "", "The client ID")
+	scopes        = flag.String("scopes", "", "The scopes to request (comma separated)")
+	authEndpoint  = flag.String("auth-endpoint", "", "The authorization endpoint")
+	tokenEndpoint = flag.String("token-endpoint", "", "The token endpoint")
+	jsonOutput    = flag.Bool("json", false, "Show the token in JSON format")
+	run           = flag.String("run", "", "The command to run with $TOKEN set in its environment")
+)
+
+func main() {
+	flag.Parse()
+	var missingFlags bool
+	if *clientID == "" {
+		fmt.Fprintf(os.Stderr, "--client-id must be set\n")
+		missingFlags = true
+	}
+	if *authEndpoint == "" {
+		fmt.Fprintf(os.Stderr, "--auth-endpoint must be set\n")
+		missingFlags = true
+	}
+	if *tokenEndpoint == "" {
+		fmt.Fprintf(os.Stderr, "--token-endpoint must be set\n")
+		missingFlags = true
+	}
+	if missingFlags {
+		os.Exit(1)
+	}
+
+	var scopeList []string
+	if *scopes != "" {
+		for _, s := range strings.Split(*scopes, ",") {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			scopeList = append(scopeList, s)
+		}
+	}
+	c := &oauth2.Config{
+		ClientID: *clientID,
+		Endpoint: oauth2.Endpoint{
+			DeviceAuthURL: *authEndpoint,
+			TokenURL:      *tokenEndpoint,
+		},
+		Scopes: scopeList,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	resp, err := c.DeviceAuth(ctx)
+	if err != nil {
+		log.Fatalf("DeviceAuth: %v", err)
+	}
+	url := resp.VerificationURIComplete
+	if url == "" {
+		url = resp.VerificationURI
+	}
+	qrterminal.GenerateHalfBlock(url, qrterminal.L, os.Stdout)
+	fmt.Printf("URL: %s\n", url)
+	fmt.Printf("User Code: %s\n", resp.UserCode)
+	if len(scopeList) > 0 {
+		fmt.Printf("Scopes: %s\n", strings.Join(scopeList, ","))
+	}
+
+	token, err := c.DeviceAccessToken(ctx, resp)
+	if err != nil {
+		log.Fatalf("DeviceAccessToken: %v", err)
+	}
+	log.Print("Token received")
+
+	if *jsonOutput {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		enc.Encode(token)
+	}
+	if *run != "" {
+		os.Setenv("TOKEN", token.AccessToken)
+		cmd := exec.Command("/bin/sh", "-c", *run)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			if ee, ok := err.(*exec.ExitError); ok && ee.ProcessState != nil {
+				os.Exit(ee.ProcessState.ExitCode())
+			} else {
+				log.Printf("Run: %v", err)
+			}
+		}
+	}
+}

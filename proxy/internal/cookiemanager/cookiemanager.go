@@ -61,6 +61,10 @@ func New(tm *tokenmanager.TokenManager, provider, domain, issuer string) *Cookie
 	}
 }
 
+func (cm *CookieManager) Issuer() string {
+	return cm.issuer
+}
+
 func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, email, sessionID, host string, extraClaims map[string]any) error {
 	if userID == "" || email == "" {
 		return errors.New("userID and email cannot be empty")
@@ -68,10 +72,6 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, email
 	hh := sha256.Sum256([]byte(host))
 	now := time.Now().UTC()
 	claims := jwt.MapClaims{
-		"iat":       now.Unix(),
-		"exp":       now.Add(20 * time.Hour).Unix(),
-		"iss":       cm.issuer,
-		"aud":       cm.issuer,
 		"sub":       userID,
 		"email":     email,
 		"proxyauth": cm.issuer,
@@ -87,7 +87,7 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, email
 			claims[k] = v
 		}
 	}
-	token, err := cm.tm.CreateToken(claims, "")
+	token, err := cm.MintToken(claims, 20*time.Hour, cm.issuer, "")
 	if err != nil {
 		return err
 	}
@@ -105,6 +105,15 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, email
 	return nil
 }
 
+func (cm *CookieManager) MintToken(claims jwt.MapClaims, ttl time.Duration, audience any, alg string) (string, error) {
+	now := time.Now().UTC()
+	claims["iss"] = cm.issuer
+	claims["iat"] = now.Unix()
+	claims["exp"] = now.Add(ttl).Unix()
+	claims["aud"] = audience
+	return cm.tm.CreateToken(claims, alg)
+}
+
 func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Request, authToken *jwt.Token, groups []string) error {
 	c, ok := authToken.Claims.(jwt.MapClaims)
 	if !ok {
@@ -114,7 +123,6 @@ func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Reque
 	claims := jwt.MapClaims{}
 	for k, v := range c {
 		if slices.Contains([]string{
-			"scope",
 			"proxyauth",
 			"source",
 			"hhash",
@@ -124,7 +132,8 @@ func (cm *CookieManager) SetIDTokenCookie(w http.ResponseWriter, req *http.Reque
 		claims[k] = v
 	}
 	claims["iat"] = now.Unix()
-	claims["aud"] = audienceForToken(req)
+	claims["aud"] = AudienceForToken(req)
+	claims["scope"] = []string{"openid"}
 	if len(groups) > 0 {
 		claims["groups"] = groups
 	}
@@ -266,7 +275,7 @@ func audienceFromReq(req *http.Request) string {
 	return "https://" + host + "/"
 }
 
-func audienceForToken(req *http.Request) any {
+func AudienceForToken(req *http.Request) any {
 	host := req.Host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
