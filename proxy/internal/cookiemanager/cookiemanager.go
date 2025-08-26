@@ -61,6 +61,10 @@ func New(tm *tokenmanager.TokenManager, provider, domain, issuer string) *Cookie
 	}
 }
 
+func (cm *CookieManager) Issuer() string {
+	return cm.issuer
+}
+
 func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, email, sessionID, host string, extraClaims map[string]any) error {
 	if userID == "" || email == "" {
 		return errors.New("userID and email cannot be empty")

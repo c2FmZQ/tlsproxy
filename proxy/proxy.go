@@ -535,10 +535,10 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				)
 			}
 
-			if ls := be.SSO.LocalOIDCServer; ls != nil && len(be.ServerNames) > 0 {
+			if ls := be.SSO.LocalOIDCServer; ls != nil {
 				opts := oidc.ServerOptions{
 					TokenManager:  p.tokenManager,
-					Issuer:        "https://" + be.ServerNames[0] + ls.PathPrefix,
+					Issuer:        be.SSO.cm.Issuer(),
 					PathPrefix:    ls.PathPrefix,
 					TokenLifetime: ls.TokenLifetime,
 					ClaimsFromCtx: claimsFromCtx,

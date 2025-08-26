@@ -238,7 +238,7 @@ func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *htt
 	claims["iat"] = now.Unix()
 	claims["exp"] = now.Add(ttl).Unix()
 	claims["aud"] = cookiemanager.AudienceForToken(req)
-	claims["device_client_id"] = data.clientID
+	claims["client_id"] = data.clientID
 
 	// Remove any scopes that the user doesn't have.
 	if userClaims["scope"] != nil {

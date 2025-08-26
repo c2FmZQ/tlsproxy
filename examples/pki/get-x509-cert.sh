@@ -23,7 +23,7 @@
 #     mode: local
 #     sso:
 #       provider: sso-provider # definition omitted for this example
-#       deviceAuth:
+#       localOIDCServer:
 #         clients:
 #         - id: myclientid123
 

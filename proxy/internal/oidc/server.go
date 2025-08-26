@@ -46,6 +46,7 @@ import (
 
 	jwt "github.com/golang-jwt/jwt/v5"
 
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
@@ -281,24 +282,6 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	}
 	code := base64.StdEncoding.EncodeToString(b)
 
-	sub, _ := userClaims.GetSubject()
-
-	now := time.Now().UTC()
-	ttl := s.opts.TokenLifetime
-	if ttl == 0 {
-		ttl = defaultTokenLifetime
-	}
-	claims := jwt.MapClaims{
-		"iat": now.Unix(),
-		"exp": now.Add(ttl).Unix(),
-		"iss": s.opts.Issuer,
-		"aud": clientID,
-		"sub": sub,
-	}
-	if nonce := req.Form.Get("nonce"); nonce != "" {
-		claims["nonce"] = nonce
-	}
-
 	scopes := slices.DeleteFunc(strings.Split(req.Form.Get("scope"), " "), func(s string) bool { return s == "" })
 
 	// Remove any scopes that the user doesn't have.
@@ -315,10 +298,27 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	if len(scopes) == 0 {
 		scopes = []string{"openid"}
 	}
-	claims["scope"] = scopes
 
-	claims["email"] = userClaims["email"]
-	claims["email_verified"] = true
+	now := time.Now().UTC()
+	ttl := s.opts.TokenLifetime
+	if ttl == 0 {
+		ttl = defaultTokenLifetime
+	}
+
+	claims := jwt.MapClaims{
+		"email":          userClaims["email"],
+		"email_verified": true,
+		"iat":            now.Unix(),
+		"exp":            now.Add(ttl).Unix(),
+		"iss":            s.opts.Issuer,
+		"aud":            cookiemanager.AudienceForToken(req),
+		"sub":            userClaims["sub"],
+		"client_id":      clientID,
+		"scope":          scopes,
+	}
+	if nonce := req.Form.Get("nonce"); nonce != "" {
+		claims["nonce"] = nonce
+	}
 
 	if slices.Contains(scopes, "profile") {
 		for _, v := range []string{"name", "family_name", "given_name", "middle_name", "nickname", "preferred_username", "profile", "picture", "website", "gender", "birthdate", "zoneinfo", "locale"} {

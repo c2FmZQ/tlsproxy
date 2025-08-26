@@ -21,7 +21,7 @@
 #     mode: local
 #     sso:
 #       provider: sso-provider # definition omitted for this example
-#       deviceAuth:
+#       localOIDCServer:
 #         clients:
 #         - id: myclientid123
 
@@ -31,7 +31,7 @@ if [[ $# != 3 ]]; then
 fi
 
 CLIENTID="$1"
-BASEURL="$2"
+BASEURL="$(echo $2 | sed -re 's:/+$::')" # remove trailing /
 PUBKEY="$3"
 CERTFILE="${PUBKEY/.pub/}-cert.pub"
 

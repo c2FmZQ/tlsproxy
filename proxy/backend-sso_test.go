@@ -395,15 +395,15 @@ func setAuthCookie(req *http.Request, email, host, issuer string, tm *tokenmanag
 func setAuthHeader(req *http.Request, clientID, email, host, issuer string, tm *tokenmanager.TokenManager) error {
 	now := time.Now().UTC()
 	claims := jwt.MapClaims{
-		"iat":              now.Unix(),
-		"exp":              now.Add(20 * time.Hour).Unix(),
-		"iss":              issuer,
-		"aud":              "https://" + host + "/",
-		"sub":              "12345",
-		"email":            email,
-		"provider":         "test-idp",
-		"sid":              "abc123",
-		"device_client_id": clientID,
+		"iat":       now.Unix(),
+		"exp":       now.Add(20 * time.Hour).Unix(),
+		"iss":       issuer,
+		"aud":       "https://" + host + "/",
+		"sub":       "12345",
+		"email":     email,
+		"provider":  "test-idp",
+		"sid":       "abc123",
+		"client_id": clientID,
 	}
 	token, err := tm.CreateToken(claims, "" /* default */)
 	if err != nil {
