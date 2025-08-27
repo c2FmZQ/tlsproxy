@@ -462,61 +462,117 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	req.ParseForm()
-	if gt := req.Form.Get("grant_type"); gt != "authorization_code" {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
-	}
-	code := req.Form.Get("code")
-	clientID := req.Form.Get("client_id")
-	clientSecret := req.Form.Get("client_secret")
-	redirectURI := req.Form.Get("redirect_uri")
+	switch req.Form.Get("grant_type") {
+	case "authorization_code":
+		code := req.Form.Get("code")
+		clientID := req.Form.Get("client_id")
+		clientSecret := req.Form.Get("client_secret")
+		redirectURI := req.Form.Get("redirect_uri")
 
-	var found bool
-	for _, client := range s.opts.Clients {
-		if client.ID == clientID && client.Secret != "" && client.Secret == clientSecret && redirectURI != "" && slices.Contains(client.RedirectURI, redirectURI) {
-			found = true
-			break
+		var found bool
+		for _, client := range s.opts.Clients {
+			if client.ID == clientID && client.Secret != "" && client.Secret == clientSecret && redirectURI != "" && slices.Contains(client.RedirectURI, redirectURI) {
+				found = true
+				break
+			}
 		}
-	}
-	if !found {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		if !found {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+
+		s.mu.Lock()
+		data, ok := s.codes[code]
+		delete(s.codes, code)
+		s.mu.Unlock()
+
+		if !ok || data.clientID != clientID {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+
+		resp := struct {
+			AccessToken string `json:"access_token"`
+			ExpiresIn   int    `json:"expires_in"`
+			IDToken     string `json:"id_token"`
+			Scope       string `json:"scope"`
+			TokenType   string `json:"token_type"`
+		}{
+			AccessToken: data.accessToken,
+			ExpiresIn:   90,
+			IDToken:     data.idToken,
+			Scope:       strings.Join(data.scopes, " "),
+			TokenType:   "Bearer",
+		}
+
+		s.opts.EventRecorder.Record("allow openid token request for " + clientID)
+		content, err := json.MarshalIndent(resp, "", "  ")
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-cache, no-store")
+		w.WriteHeader(http.StatusOK)
+		w.Write(content)
+
+	case "urn:ietf:params:oauth:grant-type:device_code":
+		deviceCode := req.Form.Get("device_code")
+		clientID := req.Form.Get("client_id")
+
+		s.mu.Lock()
+		data, ok := s.deviceTokens[deviceCode]
+		s.mu.Unlock()
+		if ok {
+			select {
+			case <-data.ready:
+			case <-req.Context().Done():
+			case <-time.After(20 * time.Second):
+			}
+		}
+		s.mu.Lock()
+		data, ok = s.deviceTokens[deviceCode]
+		defer s.mu.Unlock()
+
+		var resp struct {
+			Error       string `json:"error,omitempty"`
+			AccessToken string `json:"access_token,omitempty"`
+			Scope       string `json:"scope,omitempty"`
+			TokenType   string `json:"token_type,omitempty"`
+		}
+
+		status := http.StatusOK
+		switch {
+		case !ok:
+			resp.Error = "expired_token"
+		case data.clientID != clientID:
+			resp.Error = "invalid_client"
+			status = http.StatusBadRequest
+		case data.accessToken != "":
+			resp.AccessToken = data.accessToken
+			resp.Scope = strings.Join(data.scope, " ")
+			resp.TokenType = "Bearer"
+			delete(s.deviceTokens, deviceCode)
+		case data.denied:
+			resp.Error = "access_denied"
+		default:
+			resp.Error = "authorization_pending"
+		}
+
+		content, err := json.MarshalIndent(resp, "", "  ")
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-cache, no-store")
+		w.WriteHeader(status)
+		w.Write(content)
+
+	default:
+		http.Error(w, "unexpected grant_type", http.StatusBadRequest)
 		return
 	}
-
-	s.mu.Lock()
-	data, ok := s.codes[code]
-	delete(s.codes, code)
-	s.mu.Unlock()
-
-	if !ok || data.clientID != clientID {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
-	}
-
-	resp := struct {
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int    `json:"expires_in"`
-		IDToken     string `json:"id_token"`
-		Scope       string `json:"scope"`
-		TokenType   string `json:"token_type"`
-	}{
-		AccessToken: data.accessToken,
-		ExpiresIn:   90,
-		IDToken:     data.idToken,
-		Scope:       strings.Join(data.scopes, " "),
-		TokenType:   "Bearer",
-	}
-
-	s.opts.EventRecorder.Record("allow openid token request for " + clientID)
-	content, err := json.MarshalIndent(resp, "", "  ")
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-cache, no-store")
-	w.WriteHeader(http.StatusOK)
-	w.Write(content)
 }
 
 func (s *ProviderServer) ServeUserInfo(w http.ResponseWriter, req *http.Request) {

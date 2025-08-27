@@ -325,7 +325,7 @@ func TestSSOEnforceOIDC(t *testing.T) {
 				t.Errorf("Body = %v, want %v", got, want)
 			}
 
-			code, body = post("https://dev.example.com/device/token", nil, url.Values{
+			code, body = post("https://dev.example.com/token", nil, url.Values{
 				"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
 				"client_id":   {"clientid"},
 				"device_code": {result["device_code"].(string)},

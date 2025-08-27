@@ -612,12 +612,6 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						handler: logHandler(http.HandlerFunc(be.SSO.oidcServer.ServeDeviceVerification)),
 						scopes:  Strings{scopeOIDCAuth},
 					},
-					localHandler{
-						desc:      "OIDC Server Device Token Endpoint",
-						path:      ls.PathPrefix + "/device/token",
-						handler:   logHandler(http.HandlerFunc(be.SSO.oidcServer.ServeDeviceToken)),
-						ssoBypass: true,
-					},
 				)
 			}
 		}

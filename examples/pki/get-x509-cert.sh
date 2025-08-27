@@ -77,7 +77,7 @@ go run github.com/c2FmZQ/tlsproxy/examples/deviceauth \
   --client-id="${CLIENTID}"                           \
   --scopes=pki                                        \
   --auth-endpoint="${BASEURL}/device/authorization"   \
-  --token-endpoint="${BASEURL}/device/token"          \
+  --token-endpoint="${BASEURL}/token"                 \
   --run="${CURLCMD}"
 
 # The JSON file should look like:

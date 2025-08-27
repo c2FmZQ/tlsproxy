@@ -865,12 +865,11 @@ type PathOverride struct {
 // - <PathPrefix>/jwks
 // - <PathPrefix>/device/authorization
 // - <PathPrefix>/device/verification
-// - <PathPrefix>/device/token
 type LocalOIDCServer struct {
 	// PathPrefix specifies how the endpoint paths are constructed. It is
 	// generally fine to leave it empty.
 	PathPrefix string `yaml:"pathPrefix,omitempty"`
-	// TokenLifetime specifies how long the device tokens are valid. If the
+	// TokenLifetime specifies how long the tokens are valid. If the value
 	// is not set, the default is 10 minutes.
 	TokenLifetime time.Duration `yaml:"tokenLifetime,omitempty"`
 	// Clients is the list of all authorized clients and their

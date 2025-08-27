@@ -450,7 +450,7 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 		return h.path == cleanPath || (h.matchPrefix && strings.HasPrefix(cleanPath, h.path+"/"))
 	})
 	if hi >= 0 {
-		if !be.localHandlers[hi].ssoBypass && (!be.enforceSSOPolicy(w, req, be.localHandlers[hi].scopes)) {
+		if !be.localHandlers[hi].ssoBypass && !be.enforceSSOPolicy(w, req, be.localHandlers[hi].scopes) {
 			return false
 		}
 		if cleanPath != req.URL.Path {
