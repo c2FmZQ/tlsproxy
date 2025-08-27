@@ -46,7 +46,7 @@ function respond(answer) {
     return resp.json();
   })
   .then(r => {
-    document.getElementById('message').textContent = r.redirect;
+    window.location = r.redirect
   })
   .catch(r => {
     document.getElementById('message').textContent = r;
@@ -60,7 +60,7 @@ function respond(answer) {
 </div>
 <div id="message">
 <h1>Authorization Request</h1>
-<div>{{.Host}} want to access your information ({{.Scopes}}).</div>
+<div>{{.Host}} wants to access your information ({{.Scopes}}).</div>
 <div><a class="button" onclick="respond(false);">Deny</a> <a class="button" onclick="respond(true);">Approve</a></div>
 </body>
 </html>

@@ -56,6 +56,7 @@ const (
 	authorizationPath                = "/authorization"
 	tokenPath                        = "/token"
 	userInfoPath                     = "/userinfo"
+	deviceAuthorizationPath          = "/device/authorization"
 	jwksPath                         = "/jwks"
 
 	defaultTokenLifetime = time.Hour
@@ -80,6 +81,7 @@ type openIDConfiguration struct {
 	AuthorizationEndpoint            string   `json:"authorization_endpoint"`
 	TokenEndpoint                    string   `json:"token_endpoint"`
 	UserInfoEndpoint                 string   `json:"userinfo_endpoint"`
+	DeviceAuthorizationEndpoint      string   `json:"device_authorization_endpoint"`
 	JWKSURI                          string   `json:"jwks_uri"`
 	ResponseTypesSupported           []string `json:"response_types_supported"`
 	SubjectTypesSupported            []string `json:"subject_types_supported"`
@@ -191,11 +193,12 @@ func (s *ProviderServer) ServeConfig(w http.ResponseWriter, req *http.Request) {
 		host = h
 	}
 	cfg := openIDConfiguration{
-		Issuer:                s.opts.CookieManager.Issuer(),
-		AuthorizationEndpoint: fmt.Sprintf("https://%s%s%s", host, s.opts.PathPrefix, authorizationPath),
-		TokenEndpoint:         fmt.Sprintf("https://%s%s%s", host, s.opts.PathPrefix, tokenPath),
-		UserInfoEndpoint:      fmt.Sprintf("https://%s%s%s", host, s.opts.PathPrefix, userInfoPath),
-		JWKSURI:               fmt.Sprintf("https://%s%s%s", host, s.opts.PathPrefix, jwksPath),
+		Issuer:                      s.opts.CookieManager.Issuer(),
+		AuthorizationEndpoint:       fmt.Sprintf("https://%s%s%s", host, s.opts.PathPrefix, authorizationPath),
+		TokenEndpoint:               fmt.Sprintf("https://%s%s%s", host, s.opts.PathPrefix, tokenPath),
+		UserInfoEndpoint:            fmt.Sprintf("https://%s%s%s", host, s.opts.PathPrefix, userInfoPath),
+		DeviceAuthorizationEndpoint: fmt.Sprintf("https://%s%s%s", host, s.opts.PathPrefix, deviceAuthorizationPath),
+		JWKSURI:                     fmt.Sprintf("https://%s%s%s", host, s.opts.PathPrefix, jwksPath),
 		ResponseTypesSupported: []string{
 			"code",
 		},
@@ -451,7 +454,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		Scopes:    strings.Join(scopes, ","),
 	}
 	w.Header().Set("content-type", "text/html; charset=utf-8")
-	verifyTemplate.Execute(w, data)
+	authorizeTemplate.Execute(w, data)
 	return
 }
 
