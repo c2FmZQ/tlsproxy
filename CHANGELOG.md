@@ -6,6 +6,10 @@
 
 * Groups for access control. See [examples/sso](https://github.com/c2FmZQ/tlsproxy/tree/main/examples/sso#groups)
 
+### :wrench: Misc
+
+* Fix parsing of SSH Cert request. Sometimes, the requested TTL wasn't parsed correctly.
+
 ## v0.19.0
 
 ### :star: Feature improvement

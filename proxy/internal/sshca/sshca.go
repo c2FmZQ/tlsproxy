@@ -329,7 +329,7 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 	ttl := defaultCertsLifetime
 	key, query, ok := bytes.Cut(body, []byte{'\n'})
 	if ok {
-		v, err := url.ParseQuery(string(query))
+		v, err := url.ParseQuery(string(bytes.TrimSpace(query)))
 		if err != nil {
 			ca.opts.Logger.Errorf("ERR form: %v", err)
 			http.Error(w, "invalid request", http.StatusBadRequest)
