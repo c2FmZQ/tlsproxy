@@ -59,7 +59,7 @@ jobs:
     - name: Build examples
       run: |
         for dir in $(find examples/ -name go.mod); do
-          (cd "$(dirname "${dir}")" && go build .)
+          (cd "$(dirname "${dir}")" && go build -o /tmp/example .)
         done
     - name: Build test docker image
       run: |
