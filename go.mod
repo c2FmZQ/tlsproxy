@@ -3,7 +3,7 @@ module github.com/c2FmZQ/tlsproxy
 go 1.24.4
 
 require (
-	github.com/beevik/etree v1.5.1
+	github.com/beevik/etree v1.6.0
 	github.com/c2FmZQ/ech v0.3.6
 	github.com/c2FmZQ/ech/publish v0.1.2
 	github.com/c2FmZQ/ech/quic v0.3.6

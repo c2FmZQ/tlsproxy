@@ -11,8 +11,6 @@ if [[ "${latest}" =~ ^go ]]; then
 fi
 
 deps=$((go get -u ./... 2>&1 && go mod tidy) | grep upgrade | sed -re 's/go: //g')
-exdeps=$((cd examples/backend && go get -u ./... 2>&1 && go mod tidy) | grep upgrade | sed -re 's/go: //g')
-exdeps2=$((cd examples/deviceauth && go get -u ./... 2>&1 && go mod tidy) | grep upgrade | sed -re 's/go: //g')
 
 sed -n '1,2p' < CHANGELOG.md > CHANGELOG.md-new
 echo '## next' >> CHANGELOG.md-new
@@ -26,15 +24,15 @@ if [[ -n "${deps}" ]]; then
   echo "* Update go dependencies:" | tee -a CHANGELOG.md-new
   echo "${deps}" | sed -re 's/^/  * /g' | tee -a CHANGELOG.md-new
 fi
-if [[ -n "${exdeps}" ]]; then
-  echo "* Update go dependencies in examples/backend:"
-  echo "${exdeps}" | sed -re 's/^/  * /g'
-fi
-if [[ -n "${exdeps2}" ]]; then
-  echo "* Update go dependencies in examples/deviceauth:"
-  echo "${exdeps2}" | sed -re 's/^/  * /g'
-fi
 echo >> CHANGELOG.md-new
 sed -n '3,$p' < CHANGELOG.md >> CHANGELOG.md-new
 mv CHANGELOG.md-new CHANGELOG.md
+
+for dir in $(find examples/ go.mod); do
+  exdep=$((cd "$(dirname "${dir}")" && go get -u ./... 2>&1 && go mod tidy) | grep upgrade | sed -re 's/go: //g')
+  if [[ -n "${exdeps}" ]]; then
+    echo "* Update go dependencies in ${dir}:"
+    echo "${exdeps}" | sed -re 's/^/  * /g'
+  fi
+done
 exit 0

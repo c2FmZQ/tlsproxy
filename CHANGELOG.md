@@ -10,6 +10,7 @@
 ### :wrench: Misc
 
 * Update go dependencies:
+  * upgraded github.com/beevik/etree v1.5.1 => v1.6.0
   * upgraded go.uber.org/mock v0.5.2 => v0.6.0
 
 ### :wrench: Misc
