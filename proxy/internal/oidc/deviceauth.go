@@ -249,6 +249,8 @@ func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *htt
 	}
 	claims["scope"] = devToken.scope
 
+	s.applyRewriteRules(s.opts.RewriteRules, userClaims, claims)
+
 	tok, err := s.opts.CookieManager.MintToken(claims, ttl, cookiemanager.AudienceForToken(req), "ES256")
 	if err != nil {
 		s.opts.Logger.Errorf("ERR MintToken: %v", err)
