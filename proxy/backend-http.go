@@ -414,12 +414,16 @@ func (be *Backend) setAltSvc(header http.Header, req *http.Request) {
 }
 
 func (be *Backend) checkScopes(want []string, w http.ResponseWriter, req *http.Request) bool {
+	if len(want) == 0 {
+		return true // no restriction
+	}
 	claims := claimsFromCtx(req.Context())
 	if claims == nil {
-		return true
+		http.Error(w, "missing user identity", http.StatusForbidden)
+		return false // no user identity
 	}
 	scope := claims["scope"]
-	if scope == nil || len(want) == 0 {
+	if scope == nil {
 		return true // no restriction
 	}
 	if scopes, ok := scope.([]any); ok {
@@ -450,6 +454,9 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 		return h.path == cleanPath || (h.matchPrefix && strings.HasPrefix(cleanPath, h.path+"/"))
 	})
 	if hi >= 0 {
+		if be.localHandlers[hi].ssoBypass && !be.checkScopes(be.localHandlers[hi].scopes, w, req) {
+			return false
+		}
 		if !be.localHandlers[hi].ssoBypass && !be.enforceSSOPolicy(w, req, be.localHandlers[hi].scopes) {
 			return false
 		}
