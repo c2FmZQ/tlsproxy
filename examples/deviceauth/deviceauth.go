@@ -3,10 +3,12 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -17,6 +19,9 @@ import (
 )
 
 var (
+	key  = flag.String("key", "", "(optional) A file that contains a TLS key to use to authenticate with the server.")
+	cert = flag.String("cert", "", "(optional) A file that contains a TLS certificate to use to authenticate with the server.")
+
 	clientID      = flag.String("client-id", "", "The client ID")
 	scopes        = flag.String("scopes", "", "The scopes to request (comma separated)")
 	authEndpoint  = flag.String("auth-endpoint", "", "The authorization endpoint")
@@ -64,6 +69,22 @@ func main() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
+
+	if *key != "" && *cert != "" {
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = &tls.Config{
+			GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+				c, err := tls.LoadX509KeyPair(*cert, *key)
+				if err != nil {
+					return nil, err
+				}
+				return &c, nil
+			},
+		}
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, &http.Client{
+			Transport: transport,
+		})
+	}
 
 	resp, err := c.DeviceAuth(ctx)
 	if err != nil {
