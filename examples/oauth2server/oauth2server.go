@@ -28,7 +28,7 @@ var (
 	configURL    = flag.String("openid-config", "", "The URL of the proxy's openid configuration")
 	clientID     = flag.String("client-id", "", "The OAUTH2 client id")
 	clientSecret = flag.String("client-secret", "", "The client secret")
-	scopes       = flag.String("scopes", "openid email profile", "The scopes to request")
+	scopes       = flag.String("scopes", "openid,email,profile", "The list of scopes to request, comma-separated")
 
 	//go:embed root.html
 	rootEmbed []byte
@@ -60,12 +60,23 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	var scopeList []string
+	if *scopes != "" {
+		for _, s := range strings.Split(*scopes, ",") {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			scopeList = append(scopeList, s)
+		}
+	}
+
 	server := &Server{
 		Addr:            *serverAddr,
 		OpenIDConfigURL: *configURL,
 		ClientID:        *clientID,
 		ClientSecret:    *clientSecret,
-		Scopes:          strings.Split(*scopes, " "),
+		Scopes:          scopeList,
 	}
 	if err := server.Run(ctx); err != nil {
 		log.Fatalf("server: %v", err)
