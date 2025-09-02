@@ -419,7 +419,7 @@ func (be *Backend) checkScopes(want []string, w http.ResponseWriter, req *http.R
 	}
 	claims := claimsFromCtx(req.Context())
 	if claims == nil {
-		http.Error(w, "missing user identity", http.StatusForbidden)
+		http.Error(w, "missing request authorization", http.StatusForbidden)
 		return false // no user identity
 	}
 	scope := claims["scope"]
