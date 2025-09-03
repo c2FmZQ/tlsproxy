@@ -401,7 +401,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	requestID := base64.StdEncoding.EncodeToString(b)
+	requestID := hex.EncodeToString(b)
 
 	// Remove any scopes that are not allowed in the config.
 	scopes := slices.DeleteFunc(strings.Split(req.Form.Get("scope"), " "), func(scope string) bool {

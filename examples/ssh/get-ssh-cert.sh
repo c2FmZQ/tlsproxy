@@ -7,7 +7,7 @@
 # are configure like this:
 #   - <base URL>/cert
 #   - <base URL>/device/authorization
-#   - <base URL>/device/token
+#   - <base URL>/token
 #
 # The tlsproxy config would look like this:
 #

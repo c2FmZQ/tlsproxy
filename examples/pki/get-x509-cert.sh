@@ -8,7 +8,7 @@
 # configure like this:
 #   - <base URL>/pki
 #   - <base URL>/device/authorization
-#   - <base URL>/device/token
+#   - <base URL>/token
 #
 # With <base URL> = https://pki.example.com, the tlsproxy config would look
 # like this:
