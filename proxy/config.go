@@ -289,7 +289,7 @@ type Member struct {
 type WebSocketConfig struct {
 	Endpoint string  `yaml:"endpoint"`
 	Address  string  `yaml:"address,omitempty"`
-	Scopes   Strings `yaml:"scopes,omitempty"`
+	Scopes   Strings `yaml:"scopes,flow,omitempty"`
 }
 
 // Backend encapsulates the data of one backend.
@@ -708,7 +708,7 @@ type SSORule struct {
 	ACL *Strings `yaml:"acl,omitempty"`
 	// Scopes restricts access to user identities that have at least one of
 	// these scopes. If empty, there are no scope restrictions.
-	Scopes Strings `yaml:"scopes,omitempty"`
+	Scopes Strings `yaml:"scopes,flow,omitempty"`
 }
 
 // BackendSSO specifies the identity parameters to use for a backend.
@@ -879,7 +879,7 @@ type LocalOIDCServer struct {
 	// from existing ones.
 	RewriteRules []*LocalOIDCRewriteRule `yaml:"rewriteRules,omitempty"`
 	// Scopes is a list of scopes that may be requested by clients.
-	Scopes Strings `yaml:"scopes,omitempty"`
+	Scopes Strings `yaml:"scopes,flow,omitempty"`
 }
 
 // LocalOIDCClient contains the parameters of one OIDC client that is allowed
@@ -895,7 +895,7 @@ type LocalOIDCClient struct {
 	Secret string `yaml:"secret"`
 	// RedirectURI is where the authorization endpoint will redirect the
 	// user once the authorization code has been granted.
-	RedirectURI Strings `yaml:"redirectUri"`
+	RedirectURI Strings `yaml:"redirectUri,omitempty"`
 	// ACL restricts which user identity can use this Client ID.
 	// If ACL is nil, all identities are allowed. If ACL is an empty list,
 	// nobody is allowed.
