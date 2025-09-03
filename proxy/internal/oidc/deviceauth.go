@@ -68,14 +68,14 @@ type deviceToken struct {
 func (s *ProviderServer) ServeDeviceAuthorization(w http.ResponseWriter, req *http.Request) {
 	s.vacuum()
 	if req.Method != http.MethodPost {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	req.ParseForm()
 	clientID := req.Form.Get("client_id")
 	if !slices.ContainsFunc(s.opts.Clients, func(c Client) bool { return c.ID == clientID }) {
 		s.opts.Logger.Errorf("ERR ServeAuthorization: invalid client_id %q", clientID)
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		http.Error(w, "invalid client_id", http.StatusBadRequest)
 		return
 	}
 
@@ -177,7 +177,7 @@ func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *htt
 		return
 	}
 	if req.Method != http.MethodPost {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	if v := req.Header.Get("x-csrf-check"); v != "1" {

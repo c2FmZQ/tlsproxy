@@ -360,7 +360,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	// GET
 	if rt := req.Form.Get("response_type"); rt != "code" {
 		s.opts.Logger.Errorf("ERR ServeAuthorization: invalid response_type %q", rt)
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		http.Error(w, "invalid response_type", http.StatusBadRequest)
 		return
 	}
 	clientID := req.Form.Get("client_id")
@@ -374,7 +374,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	}
 	if !found {
 		s.opts.Logger.Errorf("ERR ServeAuthorization: invalid client_id %q or redirect_uri %q", clientID, redirectURI)
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		http.Error(w, "invalid client_id or redirect_uri", http.StatusBadRequest)
 		return
 	}
 	if !s.AuthorizeClient(clientID, email) {
@@ -386,7 +386,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	ru, err := url.Parse(redirectURI)
 	if err != nil {
 		s.opts.Logger.Errorf("ERR ServeAuthorization: invalid redirect_uri %q", redirectURI)
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		http.Error(w, "invalid redirect_uri", http.StatusBadRequest)
 		return
 	}
 
@@ -461,7 +461,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 	s.vacuum()
 	if req.Method != http.MethodPost {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	req.ParseForm()
@@ -581,7 +581,7 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 func (s *ProviderServer) ServeUserInfo(w http.ResponseWriter, req *http.Request) {
 	s.vacuum()
 	if req.Method != http.MethodGet && req.Method != http.MethodPost {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	userClaims := s.opts.ClaimsFromCtx(req.Context())
