@@ -20,10 +20,6 @@
 
 * Fix parsing of SSH Cert request. Sometimes, the requested TTL wasn't parsed correctly.
 
-### :wrench: Misc
-
-* Fix parsing of SSH Cert request. Sometimes, the requested TTL wasn't parsed correctly.
-
 ## v0.19.0
 
 ### :star: Feature improvement
