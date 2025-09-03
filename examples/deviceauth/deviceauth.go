@@ -19,9 +19,9 @@ import (
 )
 
 var (
-	key       = flag.String("key", "", "(optional) A file that contains a TLS key to use to authenticate with the server.")
-	cert      = flag.String("cert", "", "(optional) A file that contains a TLS certificate to use to authenticate with the server.")
-	urlOpener = flag.String("url-opener", os.Getenv("URLOPENER"), "The command that can open a URL")
+	key     = flag.String("key", "", "(optional) A file that contains a TLS key to use to authenticate with the server.")
+	cert    = flag.String("cert", "", "(optional) A file that contains a TLS certificate to use to authenticate with the server.")
+	browser = flag.String("browser", os.Getenv("BROWSER"), "The command that can open a URL")
 
 	clientID      = flag.String("client-id", "", "The client ID")
 	scopes        = flag.String("scopes", "", "The scopes to request (comma separated)")
@@ -102,12 +102,12 @@ func main() {
 		fmt.Printf("Scopes: %s\n", strings.Join(scopeList, ","))
 	}
 
-	if *urlOpener != "" {
-		cmd := exec.Command(*urlOpener, url)
+	if *browser != "" {
+		cmd := exec.Command(*browser, url)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
-			log.Printf("%s: %v", *urlOpener, err)
+			log.Printf("%s: %v", *browser, err)
 		}
 	}
 
