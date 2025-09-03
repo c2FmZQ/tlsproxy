@@ -105,7 +105,6 @@ const (
 	scopeOIDCAuth = "oidcauth"
 	scopePasskeys = "passkeys"
 	scopePKI      = "pki"
-	scopeService  = "service"
 	scopeSSH      = "ssh"
 	scopeSSO      = "sso"
 )
