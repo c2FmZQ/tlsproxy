@@ -317,7 +317,12 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 			return
 		}
 
-		idToken, err := s.opts.CookieManager.MintToken(s.opts.CookieManager.IDClaims(claims, nil), ttl, data.clientID, "RS256")
+		var groups []string
+		if slices.Contains(data.scopes, "groups") {
+			groups = s.opts.GroupsForEmail(email)
+		}
+
+		idToken, err := s.opts.CookieManager.MintToken(s.opts.CookieManager.IDClaims(claims, groups), ttl, data.clientID, "RS256")
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -589,8 +594,13 @@ func (s *ProviderServer) ServeUserInfo(w http.ResponseWriter, req *http.Request)
 		http.Error(w, "not logged in", http.StatusUnauthorized)
 		return
 	}
-	email, _ := userClaims["email"].(string)
-	out := s.opts.CookieManager.IDClaims(userClaims, s.opts.GroupsForEmail(email))
+
+	var groups []string
+	if scopes, ok := userClaims["scope"].([]any); (ok && slices.Contains(scopes, any("groups"))) || userClaims["scope"] == nil {
+		email, _ := userClaims["email"].(string)
+		groups = s.opts.GroupsForEmail(email)
+	}
+	out := s.opts.CookieManager.IDClaims(userClaims, groups)
 
 	content, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
