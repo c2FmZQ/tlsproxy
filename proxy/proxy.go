@@ -845,14 +845,15 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	}
 	for _, pp := range cfg.SSHCertificateAuthorities {
 		opts := sshca.Options{
-			Name:                pp.Name,
-			KeyType:             pp.KeyType,
-			PublicKeyEndpoint:   pp.PublicKeyEndpoint,
-			CertificateEndpoint: pp.CertificateEndpoint,
-			TPM:                 p.tpm,
-			Store:               p.store,
-			EventRecorder:       er,
-			ClaimsFromCtx:       claimsFromCtx,
+			Name:                       pp.Name,
+			KeyType:                    pp.KeyType,
+			PublicKeyEndpoint:          pp.PublicKeyEndpoint,
+			CertificateEndpoint:        pp.CertificateEndpoint,
+			MaximumCertificateLifetime: pp.MaximumCertificateLifetime,
+			TPM:                        p.tpm,
+			Store:                      p.store,
+			EventRecorder:              er,
+			ClaimsFromCtx:              claimsFromCtx,
 		}
 		ca, err := sshca.New(opts)
 		if err != nil {

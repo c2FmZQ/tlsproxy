@@ -686,6 +686,9 @@ type ConfigSSHCertificateAuthority struct {
 	// CertificateEndpoint is the URL where certificates are issued. It
 	// receives a public key in a POST request and returns a certificate.
 	CertificateEndpoint string `yaml:"certificateEndpoint"`
+	// MaximumCertificateLifetime specified the maximum certificate
+	// lifetime. The default value is 1 week.
+	MaximumCertificateLifetime time.Duration `yaml:"maximumCertificateLifetime,omitempty"`
 }
 
 // SSORule represents a path matching rule for SSO enforcement.
