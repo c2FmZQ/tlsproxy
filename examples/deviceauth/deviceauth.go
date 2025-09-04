@@ -19,16 +19,19 @@ import (
 )
 
 var (
-	key     = flag.String("key", "", "(optional) A file that contains a TLS key to use to authenticate with the server.")
-	cert    = flag.String("cert", "", "(optional) A file that contains a TLS certificate to use to authenticate with the server.")
-	browser = flag.String("browser", os.Getenv("BROWSER"), "The command that can open a URL")
+	key  = flag.String("key", "", "(optional) A file that contains a TLS key to use to authenticate with the server.")
+	cert = flag.String("cert", "", "(optional) A file that contains a TLS certificate to use to authenticate with the server.")
 
 	clientID      = flag.String("client-id", "", "The client ID")
 	scopes        = flag.String("scopes", "", "The scopes to request (comma separated)")
 	authEndpoint  = flag.String("auth-endpoint", "", "The authorization endpoint")
 	tokenEndpoint = flag.String("token-endpoint", "", "The token endpoint")
-	jsonOutput    = flag.Bool("json", false, "Show the token in JSON format")
-	run           = flag.String("run", "", "The command to run with $TOKEN set in its environment")
+
+	qrCode  = flag.Bool("qr", false, "Show a QR code of the verification URL")
+	browser = flag.String("browser", os.Getenv("BROWSER"), "The command to use to open the verification URL")
+
+	jsonOutput = flag.Bool("json", false, "Show the token in JSON format")
+	run        = flag.String("run", "", "The command to run with $TOKEN set in its environment")
 )
 
 func main() {
@@ -95,7 +98,9 @@ func main() {
 	if url == "" {
 		url = resp.VerificationURI
 	}
-	qrterminal.GenerateHalfBlock(url, qrterminal.L, os.Stdout)
+	if *qrCode {
+		qrterminal.GenerateHalfBlock(url, qrterminal.L, os.Stdout)
+	}
 	fmt.Printf("URL: %s\n", url)
 	fmt.Printf("User Code: %s\n", resp.UserCode)
 	if len(scopeList) > 0 {

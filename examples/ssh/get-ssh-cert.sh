@@ -60,6 +60,7 @@ eof
 
 cd "$(dirname $0)/../deviceauth"
 go run github.com/c2FmZQ/tlsproxy/examples/deviceauth \
+  --qr                                                \
   --client-id="${CLIENTID}"                           \
   --scopes=ssh                                        \
   --auth-endpoint="${BASEURL}/device/authorization"   \
