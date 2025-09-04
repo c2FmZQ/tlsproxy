@@ -109,7 +109,15 @@ func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.M
 	// If a valid ID Token is in the authorization header, use it and
 	// ignore the cookies.
 	if tok, err := be.SSO.cm.ValidateAuthorizationHeader(req); err == nil {
-		return tok.Claims.(jwt.MapClaims), true
+		c := tok.Claims.(jwt.MapClaims)
+		// Check that device tokens are still valid.
+		if clientID, ok := c["client_id"].(string); ok {
+			if email, ok := c["email"].(string); !ok || be.SSO.oidcServer == nil || !be.SSO.oidcServer.AuthorizeClient(clientID, email) {
+				w.WriteHeader(http.StatusForbidden)
+				return nil, false
+			}
+		}
+		return c, true
 	}
 
 	authToken, err := be.SSO.cm.ValidateAuthTokenCookie(req)
@@ -137,7 +145,7 @@ func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.M
 		// Token is already set, and is valid.
 		return authClaims, true
 	}
-	if err := be.SSO.cm.SetIDTokenCookie(w, req, authToken, be.aclMatcher.groupsForEmail(email)); err != nil {
+	if err := be.SSO.cm.SetIDTokenCookie(w, req, authClaims, be.aclMatcher.groupsForEmail(email)); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return nil, false
 	}
@@ -276,17 +284,20 @@ func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Reques
 	}
 }
 
-func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bool {
+func (be *Backend) findSSORule(req *http.Request) *SSORule {
+	for _, r := range be.SSO.Rules {
+		if pathMatches(r.Paths, req.URL.Path) && (len(r.Exceptions) == 0 || !pathMatches(r.Exceptions, req.URL.Path)) {
+			return r
+		}
+	}
+	return nil
+}
+
+func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request, overrideScopes Strings) bool {
 	if be.SSO == nil {
 		return true
 	}
-	var rule *SSORule
-	for _, r := range be.SSO.Rules {
-		if pathMatches(r.Paths, req.URL.Path) && (len(r.Exceptions) == 0 || !pathMatches(r.Exceptions, req.URL.Path)) {
-			rule = r
-			break
-		}
-	}
+	rule := be.findSSORule(req)
 	if rule == nil {
 		return true
 	}
@@ -355,6 +366,15 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request) bo
 		be.recordEvent(fmt.Sprintf("deny SSO %s to %s", userID, idnaToUnicode(host)))
 		be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (SSO) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden, userAgent(req))
 		be.servePermissionDenied(w, req)
+		return false
+	}
+	scopes := rule.Scopes
+	if overrideScopes != nil {
+		scopes = overrideScopes
+	} else if len(scopes) == 0 {
+		scopes = Strings{scopeSSO}
+	}
+	if !be.checkScopes(scopes, w, req) {
 		return false
 	}
 	be.recordEvent(fmt.Sprintf("allow SSO %s to %s", userID, idnaToUnicode(host)))

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>OAUTH2 Example</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
+<link rel="stylesheet" type="text/css" href="/.sso/style.css" />
+<script>
+function login() {
+  fetch('/authurl', {
+    method: 'POST',
+  })
+  .then(async resp => {
+    if (resp.status !== 200) {
+      const t = await resp.text();
+      throw new Error(resp.status + ': ' + t);
+    }
+    return resp.json();
+  })
+  .then(r => window.open(r.url, '_blank', 'popup=true'))
+  .catch(r => document.getElementById('message').textContent = r);
+}
+</script>
+</head>
+<body>
+<div id="message">
+<h1>OAUTH2 Example</h1>
+<div>Click <a class="button" onclick="login();">HERE</a> to login.</div>
+</body>
+</html>

@@ -53,8 +53,8 @@ import (
 )
 
 const (
-	defaultCertsLifetime = 10 * time.Minute
-	maxCertsLifetime     = 7 * 24 * time.Hour
+	defaultCertsLifetime    = 10 * time.Minute
+	defaultMaxCertsLifetime = 7 * 24 * time.Hour
 )
 
 //go:embed cert.html
@@ -84,6 +84,9 @@ type Options struct {
 	// CertificateEndpoint is the URL where certificates are issued. It
 	// receives a public key in a POST request and returns a certificate.
 	CertificateEndpoint string `yaml:"certificateEndpoint"`
+	// MaximumCertificateLifetime specified the maximum certificate
+	// lifetime. The default value is 1 week.
+	MaximumCertificateLifetime time.Duration `yaml:"maximumCertificateLifetime,omitempty"`
 	// TPM is used for hardware-backed keys.
 	TPM *tpm.TPM
 	// Store is used to store the PKI manager's data.
@@ -342,9 +345,15 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 				http.Error(w, "invalid request", http.StatusBadRequest)
 				return
 			}
-			ttl = min(maxCertsLifetime, time.Second*time.Duration(tt))
+			ttl = time.Second * time.Duration(tt)
 		}
 	}
+	if ca.opts.MaximumCertificateLifetime != 0 {
+		ttl = min(ca.opts.MaximumCertificateLifetime, ttl)
+	} else {
+		ttl = min(defaultMaxCertsLifetime, ttl)
+	}
+
 	pub, _, _, _, err := ssh.ParseAuthorizedKey(key)
 	if err != nil {
 		ca.opts.Logger.Errorf("ERR body: %v", err)

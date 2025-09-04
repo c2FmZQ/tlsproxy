@@ -51,6 +51,7 @@ import (
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/oidc"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
@@ -286,8 +287,9 @@ type Member struct {
 
 // WebSocketConfig specifies a WebSocket endpoint.
 type WebSocketConfig struct {
-	Endpoint string `yaml:"endpoint"`
-	Address  string `yaml:"address,omitempty"`
+	Endpoint string  `yaml:"endpoint"`
+	Address  string  `yaml:"address,omitempty"`
+	Scopes   Strings `yaml:"scopes,flow,omitempty"`
 }
 
 // Backend encapsulates the data of one backend.
@@ -542,6 +544,7 @@ type localHandler struct {
 	ssoBypass   bool
 	matchPrefix bool
 	isCallback  bool
+	scopes      []string
 }
 
 // ClientAuth specifies how to authenticate and authorize the TLS client's
@@ -683,6 +686,9 @@ type ConfigSSHCertificateAuthority struct {
 	// CertificateEndpoint is the URL where certificates are issued. It
 	// receives a public key in a POST request and returns a certificate.
 	CertificateEndpoint string `yaml:"certificateEndpoint"`
+	// MaximumCertificateLifetime specified the maximum certificate
+	// lifetime. The default value is 1 week.
+	MaximumCertificateLifetime time.Duration `yaml:"maximumCertificateLifetime,omitempty"`
 }
 
 // SSORule represents a path matching rule for SSO enforcement.
@@ -703,6 +709,9 @@ type SSORule struct {
 	// If ACL is nil, all identities are allowed. If ACL is an empty list,
 	// nobody is allowed.
 	ACL *Strings `yaml:"acl,omitempty"`
+	// Scopes restricts access to user identities that have at least one of
+	// these scopes. If empty, there are no scope restrictions.
+	Scopes Strings `yaml:"scopes,flow,omitempty"`
 }
 
 // BackendSSO specifies the identity parameters to use for a backend.
@@ -760,9 +769,10 @@ type BackendSSO struct {
 	// authenticate users with backend services that support OpenID Connect.
 	LocalOIDCServer *LocalOIDCServer `yaml:"localOIDCServer,omitempty"`
 
-	p         identityProvider
-	cm        *cookiemanager.CookieManager
-	actualIDP string
+	p          identityProvider
+	cm         *cookiemanager.CookieManager
+	oidcServer *oidc.ProviderServer
+	actualIDP  string
 }
 
 // BackendECH contains Encrypted Client Hello parameters for connecting to the
@@ -856,16 +866,23 @@ type PathOverride struct {
 // - <PathPrefix>/authorization
 // - <PathPrefix>/token
 // - <PathPrefix>/jwks
+// - <PathPrefix>/device/authorization
+// - <PathPrefix>/device/verification
 type LocalOIDCServer struct {
 	// PathPrefix specifies how the endpoint paths are constructed. It is
 	// generally fine to leave it empty.
 	PathPrefix string `yaml:"pathPrefix,omitempty"`
+	// TokenLifetime specifies how long the tokens are valid. If the value
+	// is not set, the default is 10 minutes.
+	TokenLifetime time.Duration `yaml:"tokenLifetime,omitempty"`
 	// Clients is the list of all authorized clients and their
 	// configurations.
 	Clients []*LocalOIDCClient `yaml:"clients,omitempty"`
 	// RewriteRules are used to rewrite existing claims or create new claims
 	// from existing ones.
 	RewriteRules []*LocalOIDCRewriteRule `yaml:"rewriteRules,omitempty"`
+	// Scopes is a list of scopes that may be requested by clients.
+	Scopes Strings `yaml:"scopes,flow,omitempty"`
 }
 
 // LocalOIDCClient contains the parameters of one OIDC client that is allowed
@@ -881,7 +898,11 @@ type LocalOIDCClient struct {
 	Secret string `yaml:"secret"`
 	// RedirectURI is where the authorization endpoint will redirect the
 	// user once the authorization code has been granted.
-	RedirectURI Strings `yaml:"redirectUri"`
+	RedirectURI Strings `yaml:"redirectUri,omitempty"`
+	// ACL restricts which user identity can use this Client ID.
+	// If ACL is nil, all identities are allowed. If ACL is an empty list,
+	// nobody is allowed.
+	ACL *Strings `yaml:"acl,omitempty"`
 }
 
 // LocalOIDCRewriteRule define how to rewrite existing claims or create new
@@ -1257,12 +1278,6 @@ func (cfg *Config) Check() error {
 				for j, client := range be.SSO.LocalOIDCServer.Clients {
 					if client.ID == "" {
 						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.Clients[%d].ID must be set", i, j)
-					}
-					if client.Secret == "" {
-						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.Clients[%d].Secret must be set", i, j)
-					}
-					if len(client.RedirectURI) == 0 {
-						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.Clients[%d].RedirectURI must be set", i, j)
 					}
 				}
 				for j, rr := range be.SSO.LocalOIDCServer.RewriteRules {

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Device Authorization</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
+<link rel="stylesheet" type="text/css" href="/.sso/style.css" />
+<style>
+h1 {
+  font-size: 150%;
+}
+button {
+  margin-top: 5rem;
+  cursor: pointer;
+  padding: 0.75em;
+  font-weight: bold;
+  border-radius: 1em;
+}
+button:hover {
+  background-color: lightgray;
+}
+#sso {
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
+}
+#usercode {
+  text-align: center;
+}
+</style>
+<script>
+function respond(answer) {
+  fetch(window.location, {
+    method: 'POST',
+    headers: {
+      'x-csrf-check': 1,
+      'content-type': 'application/x-www-form-urlencoded',
+    },
+    body: 'approve='+(answer===true?'true':'false')+'&user_code='+encodeURIComponent(document.getElementById('usercode').value),
+  })
+  .then(async resp => {
+    if (resp.status !== 200) {
+      const t = await resp.text();
+      throw new Error(resp.status + ': ' + t);
+    }
+    return resp.text();
+  })
+  .then(r => {
+    document.getElementById('message').textContent = r;
+    window.close();
+  })
+  .catch(r => {
+    document.getElementById('message').textContent = r;
+  });
+}
+</script>
+</head>
+<body>
+<div id="sso">
+{{.Email}} <a href="/.sso/logout" class="button">Logout</a>
+</div>
+<div id="message">
+<h1>Device Authorization Request</h1>
+<div>Please verify that the device requesting authorization is in your possession and that the User Code matches.</div>
+<div><input id="usercode" type="text" name="user_code" value="{{.UserCode}}" placeholder="User Code" /></div>
+<div><a class="button" onclick="respond(false);">Deny</a> <a class="button" onclick="respond(true);">Approve</a></div>
+</body>
+</html>

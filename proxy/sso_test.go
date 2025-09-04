@@ -46,12 +46,15 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/oidc"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/passkeys"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
 func TestSSOEnforceOIDC(t *testing.T) {
+	oidc.AutoApproveForTests = true
+
 	for _, tc := range []struct {
 		name     string
 		hwBacked bool
@@ -103,6 +106,10 @@ func TestSSOEnforceOIDC(t *testing.T) {
 							ForwardRateLimit:  1000,
 							ForwardRootCAs:    []string{ca.RootCAPEM()},
 							SSO: &BackendSSO{
+								Rules: []*SSORule{
+									{Paths: []string{"/openid/"}, Scopes: Strings{"openid"}},
+									{},
+								},
 								Provider:         "test-idp",
 								GenerateIDTokens: true,
 							},
@@ -119,6 +126,21 @@ func TestSSOEnforceOIDC(t *testing.T) {
 							ForwardRateLimit: 1000,
 							SSO: &BackendSSO{
 								Provider: "test-idp",
+							},
+						},
+						{
+							ServerNames: []string{
+								"dev.example.com",
+							},
+							Mode:             "LOCAL",
+							ForwardRateLimit: 1000,
+							SSO: &BackendSSO{
+								Provider: "test-idp",
+								LocalOIDCServer: &LocalOIDCServer{
+									Clients: []*LocalOIDCClient{
+										{ID: "clientid", ACL: &Strings{"bob@example.com"}},
+									},
+								},
 							},
 						},
 					},
@@ -186,6 +208,48 @@ func TestSSOEnforceOIDC(t *testing.T) {
 				return resp.StatusCode, string(body), cookies
 			}
 
+			post := func(urlToGet string, hdr http.Header, form url.Values) (int, string) {
+				u, err := url.Parse(urlToGet)
+				if err != nil {
+					t.Fatalf("%q: %v", urlToGet, err)
+				}
+				transport := http.DefaultTransport.(*http.Transport).Clone()
+				transport.TLSClientConfig = &tls.Config{
+					RootCAs: ca.RootCACertPool(),
+				}
+				transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+					var d net.Dialer
+					if strings.Contains(addr, "example.com") {
+						return d.DialContext(ctx, "tcp", proxy.listener.Addr().String())
+					}
+					return d.DialContext(ctx, network, addr)
+				}
+				client := http.Client{Transport: transport}
+				req := &http.Request{
+					Method: "POST",
+					URL:    u,
+					Host:   u.Host,
+					Header: hdr,
+					Body:   io.NopCloser(strings.NewReader(form.Encode())),
+				}
+				if req.Header == nil {
+					req.Header = make(http.Header)
+				}
+				req.Header.Set("content-type", "application/x-www-form-urlencoded")
+				resp, err := client.Do(req)
+				if err != nil {
+					t.Fatalf("%s: get failed: %v", urlToGet, err)
+				}
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					t.Fatalf("%s: body read: %v", urlToGet, err)
+				}
+				if err := resp.Body.Close(); err != nil {
+					t.Fatalf("%s: body close: %v", urlToGet, err)
+				}
+				return resp.StatusCode, string(body)
+			}
+
 			code, body, cookies := get("https://https.example.com/blah", nil)
 			if got, want := code, 200; got != want {
 				t.Errorf("Code = %v, want %v", got, want)
@@ -203,30 +267,87 @@ func TestSSOEnforceOIDC(t *testing.T) {
 			hdr := http.Header{}
 			hdr.Set("Authorization", "Bearer "+cookies["TLSPROXYIDTOKEN"])
 			code, body, cookies = get("https://https.example.com/blah", hdr)
+			if got, want := code, 403; got != want {
+				t.Errorf("Code = %v, want %v", got, want)
+			}
+			code, body, cookies = get("https://https.example.com/openid/blah", hdr)
 			if got, want := code, 200; got != want {
 				t.Errorf("Code = %v, want %v", got, want)
 			}
-			if got, want := body, "[https-server] /blah\n"; got != want {
+			if got, want := body, "[https-server] /openid/blah\n"; got != want {
 				t.Errorf("Body = %v, want %v", got, want)
 			}
 			if got, want := len(cookies), 0; got != want {
 				t.Errorf("len(cookies) = %v, want %v", got, want)
 			}
 
-			hdr = http.Header{}
 			hdr.Set("Authorization", "Bearer "+cookies["TLSPROXYIDTOKEN"])
-			code, body, cookies = get("https://https.example.com/?header=x-test", hdr)
+			code, body, cookies = get("https://https.example.com/openid/?header=x-test", hdr)
 			if got, want := code, 200; got != want {
 				t.Errorf("Code = %v, want %v", got, want)
 			}
-			if got, want := body, "[https-server] /?header=x-test\nx-test=FOO https.example.com tcp // bob@example.com\n"; got != want {
+			if got, want := body, "[https-server] /openid/?header=x-test\nx-test=FOO https.example.com tcp // bob@example.com\n"; got != want {
 				t.Errorf("Body = %v, want %v", got, want)
+			}
+
+			code, body = post("https://dev.example.com/device/authorization", nil, url.Values{"client_id": {"clientid"}})
+			if got, want := code, 200; got != want {
+				t.Errorf("Code = %v, want %v", got, want)
+			}
+			var result map[string]any
+			if err := json.Unmarshal([]byte(body), &result); err != nil {
+				t.Fatalf("Unmarshal: %v", err)
+			}
+			t.Logf("RESULT: %#v", result)
+
+			code, _, cookies = get(result["verification_uri_complete"].(string), nil)
+			if got, want := code, 200; got != want {
+				t.Errorf("Code = %v, want %v", got, want)
+			}
+
+			var jar []string
+			for k, v := range cookies {
+				t.Logf("COOKIE: %s=%s", k, v)
+				jar = append(jar, k+"="+v)
+			}
+			hdr = http.Header{
+				"cookie":       {strings.Join(jar, "; ")},
+				"x-csrf-check": {"1"},
+			}
+			code, body = post(result["verification_uri_complete"].(string), hdr, url.Values{
+				"user_code": {result["user_code"].(string)},
+				"approve":   {"true"},
+			})
+			if got, want := code, 200; got != want {
+				t.Errorf("Code = %v, want %v", got, want)
+			}
+			if got, want := body, "approved\n"; got != want {
+				t.Errorf("Body = %v, want %v", got, want)
+			}
+
+			code, body = post("https://dev.example.com/token", nil, url.Values{
+				"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
+				"client_id":   {"clientid"},
+				"device_code": {result["device_code"].(string)},
+			})
+			if got, want := code, 200; got != want {
+				t.Errorf("Code = %v, want %v", got, want)
+			}
+			var token map[string]any
+			if err := json.Unmarshal([]byte(body), &token); err != nil {
+				t.Fatalf("Unmarshal: %v", err)
+			}
+			t.Logf("TOKEN: %#v", token)
+			if token["access_token"] == nil || token["token_type"] != "Bearer" {
+				t.Fatalf("TOKEN: %#v", token)
 			}
 		})
 	}
 }
 
 func TestSSOEnforcePasskey(t *testing.T) {
+	oidc.AutoApproveForTests = true
+
 	for _, tc := range []struct {
 		name     string
 		hwBacked bool
@@ -539,9 +660,9 @@ func newIDPServer(t *testing.T) *idpServer {
 	if err != nil {
 		t.Fatalf("tokenmanager.New: %v", err)
 	}
+	cm := cookiemanager.New(tm, "idp", "example.com", "https://idp.example.com")
 	opts := oidc.ServerOptions{
-		TokenManager: tm,
-		Issuer:       "https://idp.example.com",
+		CookieManager: cm,
 		ClaimsFromCtx: func(context.Context) jwt.MapClaims {
 			return jwt.MapClaims{
 				"email": "bob@example.com",
@@ -555,6 +676,9 @@ func newIDPServer(t *testing.T) *idpServer {
 			}},
 		},
 		EventRecorder: eventRecorder{record: func(string) {}},
+		GroupsForEmail: func(email string) []string {
+			return []string{"users"}
+		},
 	}
 
 	idp := &idpServer{

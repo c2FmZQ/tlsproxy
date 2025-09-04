@@ -413,6 +413,34 @@ func (be *Backend) setAltSvc(header http.Header, req *http.Request) {
 	}
 }
 
+func (be *Backend) checkScopes(want []string, w http.ResponseWriter, req *http.Request) bool {
+	if len(want) == 0 {
+		return true // no restriction
+	}
+	claims := claimsFromCtx(req.Context())
+	if claims == nil {
+		http.Error(w, "missing request authorization", http.StatusForbidden)
+		return false // no user identity
+	}
+	scope := claims["scope"]
+	if scope == nil {
+		return true // no restriction
+	}
+	if scopes, ok := scope.([]any); ok {
+		if slices.ContainsFunc(want, func(w string) bool {
+			return slices.Contains(scopes, any(w))
+		}) {
+			return true
+		}
+	}
+	userID, _ := claims["email"].(string)
+	host := connServerName(req.Context().Value(connCtxKey).(anyConn))
+	be.recordEvent(fmt.Sprintf("deny SSO scope %s to %s", userID, idnaToUnicode(host)))
+	be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (SCOPE) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden, userAgent(req))
+	http.Error(w, "missing scope: "+strings.Join(want, ","), http.StatusForbidden)
+	return false
+}
+
 // handleLocalEndpointsAndAuthorize handles local endpoints and applies the SSO
 // authorization policy. It returns true if processing of the request should
 // continue.
@@ -426,7 +454,10 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 		return h.path == cleanPath || (h.matchPrefix && strings.HasPrefix(cleanPath, h.path+"/"))
 	})
 	if hi >= 0 {
-		if !be.localHandlers[hi].ssoBypass && !be.enforceSSOPolicy(w, req) {
+		if be.localHandlers[hi].ssoBypass && !be.checkScopes(be.localHandlers[hi].scopes, w, req) {
+			return false
+		}
+		if !be.localHandlers[hi].ssoBypass && !be.enforceSSOPolicy(w, req, be.localHandlers[hi].scopes) {
 			return false
 		}
 		if cleanPath != req.URL.Path {
@@ -437,7 +468,7 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 		be.localHandlers[hi].handler.ServeHTTP(w, req)
 		return false
 	}
-	if !be.enforceSSOPolicy(w, req) {
+	if !be.enforceSSOPolicy(w, req, nil) {
 		return false
 	}
 	if hi < 0 {

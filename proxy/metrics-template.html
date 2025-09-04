@@ -293,7 +293,7 @@ Backend[{{$i}}]: {{.Mode}} {{.ALPNProtos}} {{.BackendProto}} {{.SSO}}
     {{- range .Handlers }}
       <div>{{ if .Bypass}}[X]{{ else }}[ ]{{ end }}</div>
       <div>https://{{.HostPath}}</div>
-      <div>{{.Desc}}</div>
+      <div>{{.Desc}}{{.Scope}}</div>
     {{- end }}
     </div>
   {{- end }}

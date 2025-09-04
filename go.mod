@@ -3,7 +3,7 @@ module github.com/c2FmZQ/tlsproxy
 go 1.24.4
 
 require (
-	github.com/beevik/etree v1.5.1
+	github.com/beevik/etree v1.6.0
 	github.com/c2FmZQ/ech v0.3.6
 	github.com/c2FmZQ/ech/publish v0.1.2
 	github.com/c2FmZQ/ech/quic v0.3.6
@@ -37,7 +37,7 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	go.uber.org/mock v0.5.2 // indirect
+	go.uber.org/mock v0.6.0 // indirect
 	golang.org/x/mod v0.27.0 // indirect
 	golang.org/x/sync v0.16.0 // indirect
 	golang.org/x/text v0.28.0 // indirect

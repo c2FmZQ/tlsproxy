@@ -2,13 +2,21 @@
 
 ## next
 
-### :star2: New feature
+### :star2: New features
 
 * Groups for access control. See [examples/sso](https://github.com/c2FmZQ/tlsproxy/tree/main/examples/sso#groups)
+* Device authorization flow (RFC 8628) to access backend services from non-browser environments, e.g. shell scripts.
+  * Parts of this change also add scopes to all the endpoints so that the permissions of tokens issued with oauth2
+    can be limited. By default, all the proxied http(s) endpoints that require SSO also require the *sso* scope.
+    Built-in endpoints have their own required scopes as well, e.g. ssh, pki, etc.
+* New `maximumCertificateLifetime` attribute for `sshCertificateAuthorities`.
 
 ### :wrench: Misc
 
 * Fix parsing of SSH Cert request. Sometimes, the requested TTL wasn't parsed correctly.
+* Update go dependencies:
+  * upgraded github.com/beevik/etree v1.5.1 => v1.6.0
+  * upgraded go.uber.org/mock v0.5.2 => v0.6.0
 
 ## v0.19.0
 
