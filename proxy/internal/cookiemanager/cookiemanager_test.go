@@ -77,8 +77,8 @@ func TestCookies(t *testing.T) {
 	}
 
 	recorder = httptest.NewRecorder()
-	if err := cm.SetIDTokenCookie(recorder, req, tok, nil); err != nil {
-		t.Fatal("cookie not set")
+	if err := cm.SetIDTokenCookie(recorder, req, claims, nil); err != nil {
+		t.Fatalf("cookie not set: %v", err)
 	}
 	v = recorder.Header().Get("Set-Cookie")
 	if v == "" {

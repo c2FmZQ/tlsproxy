@@ -145,7 +145,7 @@ func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.M
 		// Token is already set, and is valid.
 		return authClaims, true
 	}
-	if err := be.SSO.cm.SetIDTokenCookie(w, req, authToken, be.aclMatcher.groupsForEmail(email)); err != nil {
+	if err := be.SSO.cm.SetIDTokenCookie(w, req, authClaims, be.aclMatcher.groupsForEmail(email)); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return nil, false
 	}

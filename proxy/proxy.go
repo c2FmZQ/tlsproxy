@@ -537,15 +537,16 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 
 			if ls := be.SSO.LocalOIDCServer; ls != nil {
 				opts := oidc.ServerOptions{
-					CookieManager: be.SSO.cm,
-					PathPrefix:    ls.PathPrefix,
-					TokenLifetime: ls.TokenLifetime,
-					ClaimsFromCtx: claimsFromCtx,
-					ACLMatcher:    aclMatcher.emailMatches,
-					Clients:       make([]oidc.Client, 0, len(ls.Clients)),
-					Scopes:        ls.Scopes,
-					EventRecorder: er,
-					Logger:        be.extLogger(),
+					CookieManager:  be.SSO.cm,
+					PathPrefix:     ls.PathPrefix,
+					TokenLifetime:  ls.TokenLifetime,
+					ClaimsFromCtx:  claimsFromCtx,
+					ACLMatcher:     aclMatcher.emailMatches,
+					GroupsForEmail: aclMatcher.groupsForEmail,
+					Clients:        make([]oidc.Client, 0, len(ls.Clients)),
+					Scopes:         ls.Scopes,
+					EventRecorder:  er,
+					Logger:         be.extLogger(),
 				}
 				for _, client := range ls.Clients {
 					var acl *[]string

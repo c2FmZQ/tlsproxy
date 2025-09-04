@@ -676,6 +676,9 @@ func newIDPServer(t *testing.T) *idpServer {
 			}},
 		},
 		EventRecorder: eventRecorder{record: func(string) {}},
+		GroupsForEmail: func(email string) []string {
+			return []string{"users"}
+		},
 	}
 
 	idp := &idpServer{

@@ -47,6 +47,7 @@ function respond(answer) {
   })
   .then(r => {
     document.getElementById('message').textContent = r;
+    window.close();
   })
   .catch(r => {
     document.getElementById('message').textContent = r;

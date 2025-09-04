@@ -104,14 +104,15 @@ type codeData struct {
 
 // ServerOptions contains the parameters needed to configure a ProviderServer.
 type ServerOptions struct {
-	CookieManager *cookiemanager.CookieManager
-	PathPrefix    string
-	TokenLifetime time.Duration
-	ClaimsFromCtx func(context.Context) jwt.MapClaims
-	ACLMatcher    func(acl []string, email string) bool
-	Clients       []Client
-	Scopes        []string
-	RewriteRules  []RewriteRule
+	CookieManager  *cookiemanager.CookieManager
+	PathPrefix     string
+	TokenLifetime  time.Duration
+	ClaimsFromCtx  func(context.Context) jwt.MapClaims
+	ACLMatcher     func(acl []string, email string) bool
+	GroupsForEmail func(string) []string
+	Clients        []Client
+	Scopes         []string
+	RewriteRules   []RewriteRule
 
 	EventRecorder EventRecorder
 	Logger        interface {
@@ -316,8 +317,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 			return
 		}
 
-		claims["scope"] = []string{}
-		idToken, err := s.opts.CookieManager.MintToken(claims, ttl, data.clientID, "RS256")
+		idToken, err := s.opts.CookieManager.MintToken(s.opts.CookieManager.IDClaims(claims, nil), ttl, data.clientID, "RS256")
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -589,23 +589,8 @@ func (s *ProviderServer) ServeUserInfo(w http.ResponseWriter, req *http.Request)
 		http.Error(w, "not logged in", http.StatusUnauthorized)
 		return
 	}
-
-	filter := map[string]bool{
-		"iss":   true,
-		"aud":   true,
-		"iat":   true,
-		"exp":   true,
-		"nbf":   true,
-		"scope": true,
-		"sid":   true,
-		"nonce": true,
-	}
-	out := make(map[string]interface{})
-	for k, v := range userClaims {
-		if !filter[k] {
-			out[k] = v
-		}
-	}
+	email, _ := userClaims["email"].(string)
+	out := s.opts.CookieManager.IDClaims(userClaims, s.opts.GroupsForEmail(email))
 
 	content, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {

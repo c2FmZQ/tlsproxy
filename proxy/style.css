@@ -41,7 +41,7 @@ a.button:hover {
   top: 50vh;
   transform: translate(-50%, -50%);
   padding: 1rem;
-  width: clamp(20rem, fit-content, 90vw);
+  width: clamp(20rem, 90vw, 50rem);
   max-height: 80vh;
   overflow: scroll;
 }
