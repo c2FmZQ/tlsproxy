@@ -591,12 +591,16 @@ func (s *ProviderServer) ServeUserInfo(w http.ResponseWriter, req *http.Request)
 	}
 	userClaims := s.opts.ClaimsFromCtx(req.Context())
 	if userClaims == nil {
-		http.Error(w, "not logged in", http.StatusUnauthorized)
+		http.Error(w, "authentication required", http.StatusUnauthorized)
 		return
 	}
-
+	scopes, ok := userClaims["scope"].([]any)
+	if !ok || !slices.Contains(scopes, any("openid")) {
+		http.Error(w, "missing scope: openid", http.StatusUnauthorized)
+		return
+	}
 	var groups []string
-	if scopes, ok := userClaims["scope"].([]any); (ok && slices.Contains(scopes, any("groups"))) || userClaims["scope"] == nil {
+	if slices.Contains(scopes, any("groups")) {
 		email, _ := userClaims["email"].(string)
 		groups = s.opts.GroupsForEmail(email)
 	}
