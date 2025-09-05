@@ -50,7 +50,7 @@ import (
 // http://docs.oasis-open.org/security/saml/v2.0/saml-core-2.0-os.pdf
 
 type CookieManager interface {
-	SetAuthTokenCookie(w http.ResponseWriter, userID, email, sessionID, host string, extraClaims map[string]any) error
+	SetAuthTokenCookie(w http.ResponseWriter, req *http.Request, userID, email, sessionID, host string, extraClaims map[string]any) error
 	ClearCookies(w http.ResponseWriter) error
 }
 
@@ -253,7 +253,7 @@ func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		// Value: Bob
 		extraClaims[key] = value
 	}
-	if err := p.cm.SetAuthTokenCookie(w, sub, sub, id, state.Host, extraClaims); err != nil {
+	if err := p.cm.SetAuthTokenCookie(w, req, sub, sub, id, state.Host, extraClaims); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

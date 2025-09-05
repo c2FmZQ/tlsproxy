@@ -27,15 +27,16 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
 	"golang.org/x/net/idna"
 
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
@@ -43,6 +44,8 @@ const (
 	tlsProxyAuthCookie    = "TLSPROXYAUTH"
 	tlsProxyIDTokenCookie = "TLSPROXYIDTOKEN"
 	tlsProxyNonce         = "TLSPROXYNONCE"
+
+	expiredAuthTokenLeeway = 7 * 24 * time.Hour
 )
 
 type CookieManager struct {
@@ -65,7 +68,7 @@ func (cm *CookieManager) Issuer() string {
 	return cm.issuer
 }
 
-func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, email, sessionID, host string, extraClaims map[string]any) error {
+func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, req *http.Request, userID, email, sessionID, host string, extraClaims map[string]any) error {
 	if userID == "" || email == "" {
 		return errors.New("userID and email cannot be empty")
 	}
@@ -87,6 +90,25 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, email
 			claims[k] = v
 		}
 	}
+	var th []any
+	if v := fromctx.TokenHash(req.Context()); v != "" {
+		th = append(th, v)
+	}
+	if c := fromctx.Claims(req.Context()); c != nil && c["sub"] == claims["sub"] && c["th"] != nil {
+		if v, ok := c["th"].([]any); ok {
+			th = append(th, v...)
+		}
+	} else if c := fromctx.ExpiredClaims(req.Context()); c != nil && c["sub"] == claims["sub"] && c["th"] != nil {
+		if v, ok := c["th"].([]any); ok {
+			th = append(th, v...)
+		}
+	}
+	if len(th) > 0 {
+		if len(th) > 10 {
+			th = th[:10]
+		}
+		claims["th"] = th
+	}
 	token, err := cm.MintToken(claims, 20*time.Hour, cm.issuer, "")
 	if err != nil {
 		return err
@@ -96,7 +118,7 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, userID, email
 		Value:    token,
 		Domain:   cm.domain,
 		Path:     "/",
-		Expires:  now.Add(24 * time.Hour),
+		Expires:  now.Add(20*time.Hour + expiredAuthTokenLeeway),
 		SameSite: http.SameSiteLaxMode,
 		Secure:   true,
 		HttpOnly: true,
@@ -220,22 +242,50 @@ func (cm *CookieManager) ClearCookies(w http.ResponseWriter) error {
 	return nil
 }
 
-func (cm *CookieManager) ValidateAuthTokenCookie(req *http.Request) (*jwt.Token, error) {
+func (cm *CookieManager) validateAuthToken(req *http.Request, leeway time.Duration) (*jwt.Token, string, error) {
 	cookie, err := req.Cookie(tlsProxyAuthCookie)
 	if err != nil {
-		return nil, err
+		return nil, "", fmt.Errorf("%s: %w", tlsProxyAuthCookie, err)
 	}
-	tok, err := cm.tm.ValidateToken(cookie.Value, jwt.WithIssuer(cm.issuer), jwt.WithAudience(cm.issuer))
+	tok, err := cm.tm.ValidateToken(cookie.Value,
+		jwt.WithIssuer(cm.issuer),
+		jwt.WithAudience(cm.issuer),
+		jwt.WithExpirationRequired(),
+		jwt.WithLeeway(leeway),
+	)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if c, ok := tok.Claims.(jwt.MapClaims); !ok || c["proxyauth"] != cm.issuer || c["provider"] != cm.provider {
-		return nil, errors.New("invalid proxyauth or provider")
+		return nil, "", errors.New("invalid proxyauth or provider")
 	}
 	if sub, err := tok.Claims.GetSubject(); err != nil || sub == "" {
-		return nil, errors.New("invalid subject")
+		return nil, "", errors.New("invalid subject")
 	}
-	return tok, nil
+	return tok, hex.EncodeToString(cm.tm.Hash([]byte(cookie.Value))[:16]), nil
+}
+
+func (cm *CookieManager) ValidateAuthTokenCookie(req *http.Request) (*jwt.Token, string, error) {
+	return cm.validateAuthToken(req, 0)
+}
+
+func (cm *CookieManager) ValidateExpiredAuthTokenCookie(req *http.Request) (*jwt.Token, string, error) {
+	token, th, err := cm.validateAuthToken(req, expiredAuthTokenLeeway)
+	if err != nil {
+		return nil, "", err
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, "", errors.New("internal error")
+	}
+	exp, err := claims.GetExpirationTime()
+	if err != nil {
+		return nil, "", err
+	}
+	if time.Now().Before(exp.Time) {
+		return nil, "", errors.New("token is not expired")
+	}
+	return token, th, nil
 }
 
 func (cm *CookieManager) ValidateIDTokenCookie(req *http.Request, authToken *jwt.Token) error {
@@ -275,11 +325,11 @@ func (cm *CookieManager) ValidateAuthorizationHeader(req *http.Request) (*jwt.To
 	return tok, nil
 }
 
-func FilterOutAuthTokenCookie(req *http.Request, names ...string) {
+func FilterOutAuthTokenCookie(req *http.Request) {
 	cookies := req.Cookies()
 	req.Header.Del("Cookie")
 	for _, c := range cookies {
-		if c.Name != tlsProxyAuthCookie && !slices.Contains(names, c.Name) {
+		if c.Name != tlsProxyAuthCookie {
 			req.AddCookie(c)
 		}
 	}

@@ -40,6 +40,7 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 )
 
 //go:embed verify-template.html
@@ -152,7 +153,7 @@ func (s *ProviderServer) AuthorizeClient(clientID, email string) bool {
 func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *http.Request) {
 	s.vacuum()
 
-	userClaims := s.opts.ClaimsFromCtx(req.Context())
+	userClaims := fromctx.Claims(req.Context())
 	if userClaims == nil {
 		http.Error(w, "not logged in", http.StatusUnauthorized)
 		return
@@ -178,11 +179,6 @@ func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *htt
 	}
 	if req.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if v := req.Header.Get("x-csrf-check"); v != "1" {
-		s.opts.Logger.Errorf("ERR x-csrf-check: %v", v)
-		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 	userCode := strings.ToUpper(req.Form.Get("user_code"))

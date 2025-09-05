@@ -24,7 +24,6 @@
 package proxy
 
 import (
-	"context"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
@@ -38,21 +37,17 @@ import (
 
 	jwt "github.com/golang-jwt/jwt/v5"
 
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/idp"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/passkeys"
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/sid"
 )
-
-type ctxAuthKey struct{}
 
 const (
 	xTLSProxyUserIDHeader = "X-tlsproxy-user-id"
 )
 
 var (
-	authCtxKey ctxAuthKey
-
 	//go:embed permission-denied-template.html
 	permissionDeniedEmbed    string
 	permissionDeniedTemplate *template.Template
@@ -67,6 +62,8 @@ var (
 	ssoStatusTemplate *template.Template
 	//go:embed style.css
 	styleEmbed []byte
+	//go:embed common.js
+	commonJSEmbed []byte
 )
 
 func init() {
@@ -76,20 +73,13 @@ func init() {
 	ssoStatusTemplate = template.Must(template.New("sso-status").Parse(ssoStatusEmbed))
 }
 
-func claimsFromCtx(ctx context.Context) jwt.MapClaims {
-	if v := ctx.Value(authCtxKey); v != nil {
-		return v.(jwt.MapClaims)
-	}
-	return nil
-}
-
 // authenticateUser inspects the request headers to get the user's identity, if
 // available. It modifies the request headers and context.
 // It returns true if processing of the request should continue.
 func (be *Backend) authenticateUser(w http.ResponseWriter, req **http.Request) bool {
 	(*req).Header.Del(xTLSProxyUserIDHeader)
 	if be.SSO != nil {
-		claims, cont := be.checkCookies(w, *req)
+		claims, tokenHash, cont := be.checkCookies(w, *req)
 		if !cont {
 			return false
 		}
@@ -98,14 +88,28 @@ func (be *Backend) authenticateUser(w http.ResponseWriter, req **http.Request) b
 				if be.SSO.SetUserIDHeader {
 					(*req).Header.Set(xTLSProxyUserIDHeader, email)
 				}
-				*req = (*req).WithContext(context.WithValue((*req).Context(), authCtxKey, claims))
+				*req = (*req).WithContext(fromctx.WithClaims((*req).Context(), claims))
+			}
+			if claims["depth"] == nil && tokenHash != "" {
+				*req = (*req).WithContext(fromctx.WithTokenHash((*req).Context(), tokenHash))
+				if sid.SessionID(*req) != tokenHash {
+					sid.SetSessionID(w, *req, tokenHash)
+				}
+			}
+		} else if token, tokenHash, err := be.SSO.cm.ValidateExpiredAuthTokenCookie(*req); err == nil {
+			if claims, ok := token.Claims.(jwt.MapClaims); ok {
+				*req = (*req).WithContext(fromctx.WithExpiredClaims((*req).Context(), claims))
+			}
+			*req = (*req).WithContext(fromctx.WithTokenHash((*req).Context(), tokenHash))
+			if sid.SessionID(*req) != tokenHash {
+				sid.SetSessionID(w, *req, tokenHash)
 			}
 		}
 	}
 	return true
 }
 
-func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.MapClaims, bool) {
+func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.MapClaims, string, bool) {
 	// If a valid ID Token is in the authorization header, use it and
 	// ignore the cookies.
 	if tok, err := be.SSO.cm.ValidateAuthorizationHeader(req); err == nil {
@@ -114,50 +118,50 @@ func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.M
 		if clientID, ok := c["client_id"].(string); ok {
 			if email, ok := c["email"].(string); !ok || be.SSO.oidcServer == nil || !be.SSO.oidcServer.AuthorizeClient(clientID, email) {
 				w.WriteHeader(http.StatusForbidden)
-				return nil, false
+				return nil, "", false
 			}
 		}
-		return c, true
+		return c, "", true
 	}
 
-	authToken, err := be.SSO.cm.ValidateAuthTokenCookie(req)
+	authToken, tokenHash, err := be.SSO.cm.ValidateAuthTokenCookie(req)
 	if err != nil {
-		return nil, true
+		return nil, "", true
 	}
 	authClaims, ok := authToken.Claims.(jwt.MapClaims)
 	if !ok {
-		return nil, true
+		return nil, "", true
 	}
 	email, ok := authClaims["email"].(string)
 	if !ok || email == "" {
-		return nil, true
+		return nil, "", true
 	}
 
 	if !be.SSO.GenerateIDTokens {
-		return authClaims, true
+		return authClaims, tokenHash, true
 	}
 
 	if !slices.Contains(be.ServerNames, hostFromReq(req)) {
-		return authClaims, true
+		return authClaims, tokenHash, true
 	}
 
 	if err := be.SSO.cm.ValidateIDTokenCookie(req, authToken); err == nil {
 		// Token is already set, and is valid.
-		return authClaims, true
+		return authClaims, tokenHash, true
 	}
 	if err := be.SSO.cm.SetIDTokenCookie(w, req, authClaims, be.aclMatcher.groupsForEmail(email)); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
-		return nil, false
+		return nil, "", false
 	}
 	http.Redirect(w, req, req.URL.String(), http.StatusFound)
-	return nil, false
+	return nil, "", false
 }
 
-func (be *Backend) serveSSOStyle(w http.ResponseWriter, req *http.Request) {
-	sum := sha256.Sum256(styleEmbed)
+func serveStatic(w http.ResponseWriter, req *http.Request, content []byte, contentType string) {
+	sum := sha256.Sum256(content)
 	etag := `"` + hex.EncodeToString(sum[:]) + `"`
 
-	w.Header().Set("Content-Type", "text/css")
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "public")
 	w.Header().Set("Etag", etag)
 
@@ -166,11 +170,19 @@ func (be *Backend) serveSSOStyle(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	w.Write(styleEmbed)
+	w.Write(content)
+}
+
+func (be *Backend) serveSSOStyle(w http.ResponseWriter, req *http.Request) {
+	serveStatic(w, req, styleEmbed, "text/css")
+}
+
+func (be *Backend) serveSSOCommonJS(w http.ResponseWriter, req *http.Request) {
+	serveStatic(w, req, commonJSEmbed, "text/javascript")
 }
 
 func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
-	claims := claimsFromCtx(req.Context())
+	claims := fromctx.Claims(req.Context())
 	var keys []string
 	for k := range claims {
 		keys = append(keys, k)
@@ -203,7 +215,7 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 	}
 	req.URL.Scheme = "https"
 	req.URL.Host = req.Host
-	token, _, err := be.tm.URLToken(w, req, req.URL, nil)
+	token, _, err := be.tm.URLToken(req, req.URL, nil)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -220,7 +232,7 @@ func (be *Backend) serveLogin(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	url, claims, err := be.tm.ValidateURLToken(w, req, tok)
+	url, claims, err := be.tm.ValidateURLToken(req, tok)
 	if err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
@@ -233,30 +245,41 @@ func (be *Backend) serveLogin(w http.ResponseWriter, req *http.Request) {
 }
 
 func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
-	if be.SSO != nil {
+	var email string
+	if claims := fromctx.Claims(req.Context()); claims != nil {
+		email, _ = claims["email"].(string)
+	}
+	if req.Method == http.MethodPost && be.SSO != nil {
 		be.SSO.cm.ClearCookies(w)
 	}
 	req.ParseForm()
 	if tokenStr := req.Form.Get("u"); tokenStr != "" {
-		url, _, err := be.tm.ValidateURLToken(w, req, tokenStr)
+		url, _, err := be.tm.ValidateURLToken(req, tokenStr)
 		if err != nil {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
+		be.SSO.cm.ClearCookies(w)
 		be.SSO.p.RequestLogin(w, req, url.String(), idp.WithSelectAccount(true))
 		return
 	}
-	logoutTemplate.Execute(w, nil)
+	logoutTemplate.Execute(w, struct {
+		Email  string
+		Method string
+	}{
+		Email:  email,
+		Method: req.Method,
+	})
 }
 
 func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Request) {
 	var email string
-	if claims := claimsFromCtx(req.Context()); claims != nil {
+	if claims := fromctx.Claims(req.Context()); claims != nil {
 		email, _ = claims["email"].(string)
 	}
 	req.URL.Scheme = "https"
 	req.URL.Host = req.Host
-	token, url, err := be.tm.URLToken(w, req, req.URL, nil)
+	token, url, err := be.tm.URLToken(req, req.URL, nil)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -301,7 +324,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request, ov
 	if rule == nil {
 		return true
 	}
-	claims := claimsFromCtx(req.Context())
+	claims := fromctx.Claims(req.Context())
 	var iat time.Time
 	if claims != nil {
 		if p, _ := claims.GetIssuedAt(); p != nil {
@@ -321,15 +344,17 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request, ov
 		}
 		req.URL.Scheme = "https"
 		req.URL.Host = req.Host
-		var extra map[string]any
+		extra := make(map[string]any)
 		if claims != nil {
 			if email, ok := claims["email"].(string); ok {
-				extra = map[string]any{
-					"email": email,
-				}
+				extra["email"] = email
+			}
+		} else if claims := fromctx.ExpiredClaims(req.Context()); claims != nil {
+			if email, ok := claims["email"].(string); ok {
+				extra["email"] = email
 			}
 		}
-		token, url, err := be.tm.URLToken(w, req, req.URL, extra)
+		token, url, err := be.tm.URLToken(req, req.URL, extra)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return false
@@ -378,9 +403,6 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request, ov
 		return false
 	}
 	be.recordEvent(fmt.Sprintf("allow SSO %s to %s", userID, idnaToUnicode(host)))
-
-	// Filter out the tlsproxy auth cookie.
-	cookiemanager.FilterOutAuthTokenCookie(req, tokenmanager.SessionIDCookieName)
 	return true
 }
 

@@ -25,7 +25,6 @@ package sshca
 
 import (
 	"bytes"
-	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"io"
@@ -39,6 +38,8 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/google/go-tpm-tools/simulator"
 	"golang.org/x/crypto/ssh"
+
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 )
 
 func newCA(t *testing.T, tpm *tpm.TPM) *SSHCA {
@@ -53,11 +54,6 @@ func newCA(t *testing.T, tpm *tpm.TPM) *SSHCA {
 		CertificateEndpoint: "https://ssh.example.com/cert",
 		Store:               storage.New(dir, mk),
 		TPM:                 tpm,
-		ClaimsFromCtx: func(context.Context) jwt.MapClaims {
-			return jwt.MapClaims{
-				"email": "alice@example.com",
-			}
-		},
 	}
 	ca, err := New(opts)
 	if err != nil {
@@ -96,7 +92,12 @@ func TestCertificate(t *testing.T) {
 			m := newCA(t, tc.tpm)
 			mux := http.NewServeMux()
 			mux.HandleFunc("/ca", m.ServePublicKey)
-			mux.HandleFunc("/cert", m.ServeCertificate)
+			mux.HandleFunc("/cert", func(w http.ResponseWriter, req *http.Request) {
+				req = req.WithContext(fromctx.WithClaims(req.Context(), jwt.MapClaims{
+					"email": "alice@example.com",
+				}))
+				m.ServeCertificate(w, req)
+			})
 			server := httptest.NewServer(mux)
 			defer server.Close()
 			resp, err := http.Get(server.URL + "/ca")
@@ -126,7 +127,6 @@ func TestCertificate(t *testing.T) {
 			if err != nil {
 				t.Fatalf("http.NewRequest: %v", err)
 			}
-			req.Header.Set("x-csrf-check", "1")
 			req.Header.Set("content-type", "text/plain")
 			if resp, err = http.DefaultClient.Do(req); err != nil {
 				t.Fatalf("Post(/cert): %v", err)

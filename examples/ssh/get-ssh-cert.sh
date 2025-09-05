@@ -45,7 +45,6 @@ CURLCMD="$(cat <<"eof"
       --data-binary "@${PUBKEY}"                \
       -o "${TMPFILE}"                           \
       -H "Content-Type: text/plain"             \
-      -H "x-csrf-check: 1"                      \
       -H "Authorization: Bearer ${TOKEN}"       \
       "${BASEURL}/cert"; then
     mv -f "${TMPFILE}" "${CERTFILE}"

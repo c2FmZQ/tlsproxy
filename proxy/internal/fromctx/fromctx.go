@@ -1,7 +1,7 @@
 // MIT License
 //
-// Copyright (c) 2024 TTBT Enterprises LLC
-// Copyright (c) 2024 Robin Thellend <rthellend@rthellend.com>
+// Copyright (c) 2025 TTBT Enterprises LLC
+// Copyright (c) 2025 Robin Thellend <rthellend@rthellend.com>
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -21,50 +21,51 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package idp
+package fromctx
 
-type LoginOptions struct {
-	loginHint     string
-	selectAccount bool
-	depth         int
+import (
+	"context"
+
+	jwt "github.com/golang-jwt/jwt/v5"
+)
+
+type ctxKeyType uint8
+
+var (
+	claimsKey        = ctxKeyType(1)
+	expiredClaimsKey = ctxKeyType(2)
+	tokenHashKey     = ctxKeyType(3)
+)
+
+func WithClaims(ctx context.Context, v jwt.MapClaims) context.Context {
+	return context.WithValue(ctx, claimsKey, v)
 }
 
-func (o LoginOptions) LoginHint() string {
-	return o.loginHint
-}
-
-func (o LoginOptions) SelectAccount() bool {
-	return o.selectAccount
-}
-
-func (o LoginOptions) Depth() int {
-	return o.depth
-}
-
-type Option func(*LoginOptions)
-
-func WithLoginHint(v string) Option {
-	return func(o *LoginOptions) {
-		o.loginHint = v
+func Claims(ctx context.Context) jwt.MapClaims {
+	if v := ctx.Value(claimsKey); v != nil {
+		return v.(jwt.MapClaims)
 	}
+	return nil
 }
 
-func WithSelectAccount(v bool) Option {
-	return func(o *LoginOptions) {
-		o.selectAccount = v
-	}
+func WithExpiredClaims(ctx context.Context, v jwt.MapClaims) context.Context {
+	return context.WithValue(ctx, expiredClaimsKey, v)
 }
 
-func WithDepth(v int) Option {
-	return func(o *LoginOptions) {
-		o.depth = v
+func ExpiredClaims(ctx context.Context) jwt.MapClaims {
+	if v := ctx.Value(expiredClaimsKey); v != nil {
+		return v.(jwt.MapClaims)
 	}
+	return nil
 }
 
-func ApplyOptions(opts []Option) LoginOptions {
-	var lo LoginOptions
-	for _, opt := range opts {
-		opt(&lo)
+func WithTokenHash(ctx context.Context, v string) context.Context {
+	return context.WithValue(ctx, tokenHashKey, v)
+}
+
+func TokenHash(ctx context.Context) string {
+	if v := ctx.Value(tokenHashKey); v != nil {
+		return v.(string)
 	}
-	return lo
+	return ""
 }

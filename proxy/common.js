@@ -1,7 +1,7 @@
 // MIT License
 //
-// Copyright (c) 2024 TTBT Enterprises LLC
-// Copyright (c) 2024 Robin Thellend <rthellend@rthellend.com>
+// Copyright (c) 2025 TTBT Enterprises LLC
+// Copyright (c) 2025 Robin Thellend <rthellend@rthellend.com>
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -21,50 +21,18 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package idp
+'use strict';
 
-type LoginOptions struct {
-	loginHint     string
-	selectAccount bool
-	depth         int
+function tlsProxySessionId() {
+    const m = document.cookie.match(/__tlsproxySid=([^;]*)(;|$)/);
+    if (m) return m[1];
+    return '';
 }
 
-func (o LoginOptions) LoginHint() string {
-	return o.loginHint
-}
-
-func (o LoginOptions) SelectAccount() bool {
-	return o.selectAccount
-}
-
-func (o LoginOptions) Depth() int {
-	return o.depth
-}
-
-type Option func(*LoginOptions)
-
-func WithLoginHint(v string) Option {
-	return func(o *LoginOptions) {
-		o.loginHint = v
-	}
-}
-
-func WithSelectAccount(v bool) Option {
-	return func(o *LoginOptions) {
-		o.selectAccount = v
-	}
-}
-
-func WithDepth(v int) Option {
-	return func(o *LoginOptions) {
-		o.depth = v
-	}
-}
-
-func ApplyOptions(opts []Option) LoginOptions {
-	var lo LoginOptions
-	for _, opt := range opts {
-		opt(&lo)
-	}
-	return lo
+function tlsProxyLogout() {
+  fetch('/.sso/logout', {
+        method: 'POST',
+        headers: {'x-csrf-token': tlsProxySessionId()},
+      })
+  .then(() => window.location = '/.sso/logout');
 }

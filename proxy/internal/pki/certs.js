@@ -39,7 +39,7 @@ function requestCert(csr) {
     method: 'POST',
     headers: {
       'content-type': 'application/x-pem-file',
-      'x-csrf-check': '1',
+      'x-csrf-token': tlsProxySessionId(),
     },
     body: csr,
   })
@@ -71,7 +71,7 @@ function revokeCert(sn) {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
-      'x-csrf-check': '1',
+      'x-csrf-token': tlsProxySessionId(),
     },
     body: 'sn='+encodeURIComponent(sn),
   })

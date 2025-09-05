@@ -40,6 +40,7 @@ import (
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
 
@@ -215,7 +216,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		Config             string
 	}
 
-	if c := claimsFromCtx(req.Context()); c != nil {
+	if c := fromctx.Claims(req.Context()); c != nil {
 		if email, ok := c["email"].(string); ok {
 			data.Email = email
 		}

@@ -1,7 +1,7 @@
 // MIT License
 //
-// Copyright (c) 2024 TTBT Enterprises LLC
-// Copyright (c) 2024 Robin Thellend <rthellend@rthellend.com>
+// Copyright (c) 2025 TTBT Enterprises LLC
+// Copyright (c) 2025 Robin Thellend <rthellend@rthellend.com>
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -21,50 +21,38 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package idp
+package sid
 
-type LoginOptions struct {
-	loginHint     string
-	selectAccount bool
-	depth         int
-}
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
 
-func (o LoginOptions) LoginHint() string {
-	return o.loginHint
-}
-
-func (o LoginOptions) SelectAccount() bool {
-	return o.selectAccount
-}
-
-func (o LoginOptions) Depth() int {
-	return o.depth
-}
-
-type Option func(*LoginOptions)
-
-func WithLoginHint(v string) Option {
-	return func(o *LoginOptions) {
-		o.loginHint = v
+func TestSessionID(t *testing.T) {
+	req, err := http.NewRequest("GET", "https://example.com/", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
 	}
-}
-
-func WithSelectAccount(v bool) Option {
-	return func(o *LoginOptions) {
-		o.selectAccount = v
+	if got, want := SessionID(req), ""; got != want {
+		t.Fatalf("SessionID = %q, want %q", got, want)
 	}
-}
+	w := httptest.NewRecorder()
 
-func WithDepth(v int) Option {
-	return func(o *LoginOptions) {
-		o.depth = v
+	SetSessionID(w, req, "foo")
+	if got, want := SessionID(req), "foo"; got != want {
+		t.Fatalf("SessionID = %q, want %q", got, want)
 	}
-}
+	if got, want := w.Header().Get("Set-Cookie"), "__tlsproxySid=foo;"; !strings.HasPrefix(got, want) {
+		t.Fatalf("Set-Cookie = %q, want %q", got, want)
+	}
 
-func ApplyOptions(opts []Option) LoginOptions {
-	var lo LoginOptions
-	for _, opt := range opts {
-		opt(&lo)
+	SetSessionID(w, req, "bar")
+	if got, want := SessionID(req), "bar"; got != want {
+		t.Fatalf("SessionID = %q, want %q", got, want)
 	}
-	return lo
+	if got, want := w.Header().Get("Set-Cookie"), "__tlsproxySid=bar;"; !strings.HasPrefix(got, want) {
+		t.Fatalf("Set-Cookie = %q, want %q", got, want)
+	}
 }

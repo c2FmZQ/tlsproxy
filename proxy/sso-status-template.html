@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
 <link rel="icon" href="/.sso/favicon.ico" />
 <link rel="stylesheet" type="text/css" href="/.sso/style.css" />
+<script src="/.sso/common.js"></script>
 <style>
 #claims {
   text-align: left;
@@ -23,16 +24,26 @@
   overflow: scroll;
   white-space: nowrap;
 }
+#top {
+  font-size: 150%;
+  margin: 0.5rem;
+}
+#top a {
+  text-decoration: none;
+}
 </style>
 </head>
 <body>
+<div id="top">
+<a href="/">◤</a>
+</div>
 <div id="buttons">
 {{ if len .Claims | ne 0 }}
 {{ if .Passkeys }}
 <a class="button" href="/.sso/passkeys">Passkeys</a>
 {{ end }}
 <a class="button" href="/.sso/logout?u={{.Token}}">Switch Account</a>
-<a class="button" href="/.sso/logout">Logout</a>
+<a class="button" onclick="tlsProxyLogout();">Logout</a>
 {{ else }}
 <a class="button" href="/.sso/logout?u={{.Token}}">Login</a>
 {{ end }}

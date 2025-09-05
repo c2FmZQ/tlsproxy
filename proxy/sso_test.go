@@ -29,8 +29,8 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -47,6 +47,7 @@ import (
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/oidc"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/passkeys"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
@@ -152,6 +153,11 @@ func TestSSOEnforceOIDC(t *testing.T) {
 			}
 			defer proxy.Stop()
 
+			jar, err := cookiejar.New(nil)
+			if err != nil {
+				t.Fatalf("cookiejar: %v", err)
+			}
+
 			get := func(urlToGet string, hdr http.Header) (int, string, map[string]string) {
 				u, err := url.Parse(urlToGet)
 				if err != nil {
@@ -168,13 +174,16 @@ func TestSSOEnforceOIDC(t *testing.T) {
 					}
 					return d.DialContext(ctx, network, addr)
 				}
-				jar, err := cookiejar.New(nil)
-				if err != nil {
-					t.Fatalf("cookiejar: %v", err)
-				}
 				client := http.Client{
 					Transport: transport,
 					Jar:       jar,
+					CheckRedirect: func(req *http.Request, via []*http.Request) error {
+						t.Logf("  Redirect[%d] %s", len(via), req.URL)
+						if n := len(via); n >= 10 {
+							return fmt.Errorf("too many redirects: %d", n)
+						}
+						return nil
+					},
 				}
 				req := &http.Request{
 					Method: "GET",
@@ -188,7 +197,8 @@ func TestSSOEnforceOIDC(t *testing.T) {
 				req.Header.Set("x-skip-login-confirmation", "true")
 				resp, err := client.Do(req)
 				if err != nil {
-					t.Fatalf("%s: get failed: %v", urlToGet, err)
+					t.Errorf("%s: get failed: %v", urlToGet, err)
+					return 0, err.Error(), nil
 				}
 				body, err := io.ReadAll(resp.Body)
 				if err != nil {
@@ -198,12 +208,10 @@ func TestSSOEnforceOIDC(t *testing.T) {
 					t.Fatalf("%s: body close: %v", urlToGet, err)
 				}
 				cookies := make(map[string]string)
-				log.Printf("COOKIES:")
+				t.Logf("GET COOKIES:")
 				for _, c := range jar.Cookies(u) {
-					if c.Name == "TLSPROXYAUTH" || c.Name == "TLSPROXYIDTOKEN" {
-						cookies[c.Name] = c.Value
-					}
-					log.Printf("  %s: %s\n", c.Name, c.Value)
+					cookies[c.Name] = c.Value
+					t.Logf("  %s: %s\n", c.Name, c.Value)
 				}
 				return resp.StatusCode, string(body), cookies
 			}
@@ -224,7 +232,10 @@ func TestSSOEnforceOIDC(t *testing.T) {
 					}
 					return d.DialContext(ctx, network, addr)
 				}
-				client := http.Client{Transport: transport}
+				client := http.Client{
+					Transport: transport,
+					Jar:       jar,
+				}
 				req := &http.Request{
 					Method: "POST",
 					URL:    u,
@@ -257,7 +268,7 @@ func TestSSOEnforceOIDC(t *testing.T) {
 			if got, want := body, "[https-server] /blah\n"; got != want {
 				t.Errorf("Body = %v, want %v", got, want)
 			}
-			if got, want := len(cookies), 2; got != want {
+			if got, want := len(cookies), 3; got != want {
 				t.Errorf("len(cookies) = %v, want %v", got, want)
 			}
 			if idp.count == 0 {
@@ -276,9 +287,6 @@ func TestSSOEnforceOIDC(t *testing.T) {
 			}
 			if got, want := body, "[https-server] /openid/blah\n"; got != want {
 				t.Errorf("Body = %v, want %v", got, want)
-			}
-			if got, want := len(cookies), 0; got != want {
-				t.Errorf("len(cookies) = %v, want %v", got, want)
 			}
 
 			hdr.Set("Authorization", "Bearer "+cookies["TLSPROXYIDTOKEN"])
@@ -305,14 +313,15 @@ func TestSSOEnforceOIDC(t *testing.T) {
 				t.Errorf("Code = %v, want %v", got, want)
 			}
 
-			var jar []string
+			var sid string
 			for k, v := range cookies {
 				t.Logf("COOKIE: %s=%s", k, v)
-				jar = append(jar, k+"="+v)
+				if k == "__tlsproxySid" {
+					sid = v
+				}
 			}
 			hdr = http.Header{
-				"cookie":       {strings.Join(jar, "; ")},
-				"x-csrf-check": {"1"},
+				"x-csrf-token": {sid},
 			}
 			code, body = post(result["verification_uri_complete"].(string), hdr, url.Values{
 				"user_code": {result["user_code"].(string)},
@@ -469,7 +478,16 @@ func TestSSOEnforcePasskey(t *testing.T) {
 				if hdr != nil {
 					req.Header = hdr
 				}
-				req.Header.Set("x-csrf-check", "1")
+				if req.Method == "POST" {
+					for _, c := range jar.Cookies(req.URL) {
+						req.AddCookie(c)
+						if c.Name == "__tlsproxySid" {
+							t.Logf("%s = %q", c.Name, c.Value)
+							req.Header.Set("x-csrf-token", c.Value)
+							break
+						}
+					}
+				}
 				resp, err := client.Do(req)
 				if err != nil {
 					t.Fatalf("%s: get failed: %v", urlToGet, err)
@@ -562,7 +580,7 @@ func TestSSOEnforcePasskey(t *testing.T) {
 			}
 
 			// Logout
-			code, body, _ = get("https://"+host+"/.sso/logout", nil, nil)
+			code, body, _ = get("https://"+host+"/.sso/logout", nil, []byte{})
 			if got, want := code, 200; got != want {
 				t.Errorf("Code = %v, want %v", got, want)
 			}
@@ -663,12 +681,6 @@ func newIDPServer(t *testing.T) *idpServer {
 	cm := cookiemanager.New(tm, "idp", "example.com", "https://idp.example.com")
 	opts := oidc.ServerOptions{
 		CookieManager: cm,
-		ClaimsFromCtx: func(context.Context) jwt.MapClaims {
-			return jwt.MapClaims{
-				"email": "bob@example.com",
-				"sub":   "bob.example.com",
-			}
-		},
 		Clients: []oidc.Client{
 			{ID: "CLIENTID", Secret: "CLIENTSECRET", RedirectURI: []string{
 				"https://öauth2.example.com/redirect",
@@ -693,6 +705,10 @@ func newIDPServer(t *testing.T) *idpServer {
 			for k, v := range req.Form {
 				t.Logf("[IDP SERVER]  %s: %v", k, v)
 			}
+			req = req.WithContext(fromctx.WithClaims(req.Context(), jwt.MapClaims{
+				"email": "bob@example.com",
+				"sub":   "bob.example.com",
+			}))
 			next.ServeHTTP(w, req)
 
 			idp.mu.Lock()

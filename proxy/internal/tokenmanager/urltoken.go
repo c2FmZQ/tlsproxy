@@ -24,46 +24,21 @@
 package tokenmanager
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
-	"io"
 	"net/http"
 	"net/url"
-	"time"
+	"slices"
 
 	jwt "github.com/golang-jwt/jwt/v5"
 	"golang.org/x/net/idna"
-)
 
-const (
-	SessionIDCookieName = "TLSPROXYSID"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/sid"
 )
-
-func sessionID(w http.ResponseWriter, req *http.Request) string {
-	var sid string
-	if cookie, err := req.Cookie(SessionIDCookieName); err == nil {
-		sid = cookie.Value
-	} else {
-		var buf [16]byte
-		io.ReadFull(rand.Reader, buf[:])
-		sid = hex.EncodeToString(buf[:])
-	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     SessionIDCookieName,
-		Value:    sid,
-		Path:     "/",
-		Expires:  time.Now().Add(30 * 24 * time.Hour),
-		SameSite: http.SameSiteLaxMode,
-		Secure:   true,
-		HttpOnly: true,
-	})
-	return sid
-}
 
 // URLToken returns a signed token for URL u in the context of request req.
-func (tm *TokenManager) URLToken(w http.ResponseWriter, req *http.Request, u *url.URL, extra map[string]any) (string, string, error) {
-	sid := sessionID(w, req)
+func (tm *TokenManager) URLToken(req *http.Request, u *url.URL, extra map[string]any) (string, string, error) {
+	sid := sid.SessionID(req)
 	realHost := u.Host
 	if h, err := idna.Lookup.ToUnicode(u.Hostname()); err == nil {
 		u.Host = h
@@ -82,7 +57,7 @@ func (tm *TokenManager) URLToken(w http.ResponseWriter, req *http.Request, u *ur
 
 // ValidateURLToken validates a signed token and returns the URL. The request
 // must on the same host as the one where the token was created.
-func (tm *TokenManager) ValidateURLToken(w http.ResponseWriter, req *http.Request, token string) (*url.URL, jwt.MapClaims, error) {
+func (tm *TokenManager) ValidateURLToken(req *http.Request, token string) (*url.URL, jwt.MapClaims, error) {
 	tok, err := tm.ValidateToken(token)
 	if err != nil {
 		return nil, nil, err
@@ -91,9 +66,9 @@ func (tm *TokenManager) ValidateURLToken(w http.ResponseWriter, req *http.Reques
 	if !ok {
 		return nil, nil, errors.New("invalid token")
 	}
-	if sid := sessionID(w, req); sid != c["sid"] {
-		tm.logger.Errorf("ERR session ID mismatch %q != %q", sid, c["sid"])
-		return nil, nil, errors.New("invalid token")
+	if !sidOK(req, c["sid"]) {
+		tm.logger.Errorf("ERR session ID mismatch %v", c["sid"])
+		return nil, nil, errors.New("url token is expired")
 	}
 	u, ok := c["url"].(string)
 	if !ok {
@@ -101,4 +76,22 @@ func (tm *TokenManager) ValidateURLToken(w http.ResponseWriter, req *http.Reques
 	}
 	tokURL, err := url.Parse(u)
 	return tokURL, c, err
+}
+
+func sidOK(req *http.Request, v any) bool {
+	if sid := sid.SessionID(req); sid == v {
+		return true
+	}
+	c := fromctx.Claims(req.Context())
+	if c == nil {
+		c = fromctx.ExpiredClaims(req.Context())
+	}
+	if c == nil {
+		return false
+	}
+	th, ok := c["th"].([]any)
+	if !ok {
+		return false
+	}
+	return slices.Contains(th, v)
 }

@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="icon" href="/.sso/favicon.ico" />
 <link rel="stylesheet" type="text/css" href="/.sso/style.css" />
+<script src="/.sso/common.js"></script>
 <style>
 #header {
   padding: 1rem;
@@ -96,7 +97,7 @@ function getCert() {
   fetch(window.location, {
     method: 'POST',
     headers: {
-      'x-csrf-check': 1,
+      'x-csrf-token': tlsProxySessionId(),
       'content-type': 'text/plain',
     },
     body: body,
@@ -168,7 +169,7 @@ addEventListener('keydown', onKeydown);
 <body>
 <div id="header">{{.Name}}</div>
 <div id="buttons">
-  {{.Email}} <a href="/.sso/logout" class="button">Logout</a>
+  {{.Email}} <a onclick="tlsProxyLogout();" class="button">Logout</a>
 </div>
 <div id="message" style="text-align: left;">
   <p>Enter your SSH <em>Public</em> Key to receive a Certificate with principal: [<b>{{.Email}}</b>] signed by <b>{{.Name}}</b>.<a onclick="show('cadiv');")>&#9432;</a></p>

@@ -57,7 +57,6 @@ CURLCMD="$(cat <<"eof"
       --data-binary "@${KEYNAME}.csr"            \
       -o "${TMPFILE}"                            \
       -H "Content-Type: application/x-pem-file"  \
-      -H "x-csrf-check: 1"                       \
       -H "Authorization: Bearer ${TOKEN}"        \
       "${BASEURL}/pki?get=requestCert"; then
     mv -f "${TMPFILE}" "${KEYNAME}.cert.json"

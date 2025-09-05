@@ -36,6 +36,7 @@ import (
 
 	jwt "github.com/golang-jwt/jwt/v5"
 
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
@@ -54,8 +55,8 @@ func TestAuthenticateUser(t *testing.T) {
 	if req.Header.Get("x-tlsproxy-user-id") != "" {
 		t.Fatalf("request has x-tlsproxy-user-id")
 	}
-	if c := claimsFromCtx(req.Context()); c != nil {
-		t.Fatalf("claimsFromCtx() = %v", c)
+	if c := fromctx.Claims(req.Context()); c != nil {
+		t.Fatalf("fromctx.Claims() = %v", c)
 	}
 
 	// Add a valid auth token.
@@ -72,8 +73,8 @@ func TestAuthenticateUser(t *testing.T) {
 	if got, want := req.Header.Get("x-tlsproxy-user-id"), "bob@"; got != want {
 		t.Errorf("x-tlsproxy-user-id = %q, want %q", got, want)
 	}
-	if c := claimsFromCtx(req.Context()); c == nil || c["email"] != "bob@" {
-		t.Fatalf("claimsFromCtx() = %v", c)
+	if c := fromctx.Claims(req.Context()); c == nil || c["email"] != "bob@" {
+		t.Fatalf("fromctx.Claims() = %v", c)
 	}
 	if got, want := w.Code, 200; got != want {
 		t.Errorf("response code = %d, want %d", got, want)
@@ -102,8 +103,8 @@ func TestAuthenticateUser(t *testing.T) {
 	if got, want := req.Header.Get("x-tlsproxy-user-id"), "bob@"; got != want {
 		t.Errorf("x-tlsproxy-user-id = %q, want %q", got, want)
 	}
-	if c := claimsFromCtx(req.Context()); c == nil || c["email"] != "bob@" {
-		t.Fatalf("claimsFromCtx() = %v", c)
+	if c := fromctx.Claims(req.Context()); c == nil || c["email"] != "bob@" {
+		t.Fatalf("fromctx.Claims() = %v", c)
 	}
 	if got, want := w.Code, 200; got != want {
 		t.Errorf("response code = %d, want %d", got, want)
@@ -123,8 +124,8 @@ func TestAuthenticateDevice(t *testing.T) {
 	if req.Header.Get("x-tlsproxy-user-id") != "" {
 		t.Fatalf("request has x-tlsproxy-user-id")
 	}
-	if c := claimsFromCtx(req.Context()); c != nil {
-		t.Fatalf("claimsFromCtx() = %v", c)
+	if c := fromctx.Claims(req.Context()); c != nil {
+		t.Fatalf("fromctx.Claims() = %v", c)
 	}
 
 	// Add a valid auth token.
@@ -136,8 +137,8 @@ func TestAuthenticateDevice(t *testing.T) {
 	if cont := proxy.cfg.Backends[0].authenticateUser(w, &req); !cont {
 		t.Fatal("authenticateUser() = false")
 	}
-	if c := claimsFromCtx(req.Context()); c == nil || c["email"] != "bob@" {
-		t.Fatalf("claimsFromCtx() = %v", c)
+	if c := fromctx.Claims(req.Context()); c == nil || c["email"] != "bob@" {
+		t.Fatalf("fromctx.Claims() = %v", c)
 	}
 	if got, want := w.Code, 200; got != want {
 		t.Errorf("response code = %d, want %d", got, want)
@@ -152,8 +153,8 @@ func TestAuthenticateDevice(t *testing.T) {
 	if cont := proxy.cfg.Backends[0].authenticateUser(w, &req); cont {
 		t.Fatal("authenticateUser() = true")
 	}
-	if c := claimsFromCtx(req.Context()); c != nil {
-		t.Fatalf("claimsFromCtx() = %v", c)
+	if c := fromctx.Claims(req.Context()); c != nil {
+		t.Fatalf("fromctx.Claims() = %v", c)
 	}
 	if got, want := w.Code, 403; got != want {
 		t.Errorf("response code = %d, want %d", got, want)
@@ -168,8 +169,8 @@ func TestAuthenticateDevice(t *testing.T) {
 	if cont := proxy.cfg.Backends[0].authenticateUser(w, &req); cont {
 		t.Fatal("authenticateUser() = true")
 	}
-	if c := claimsFromCtx(req.Context()); c != nil {
-		t.Fatalf("claimsFromCtx() = %v", c)
+	if c := fromctx.Claims(req.Context()); c != nil {
+		t.Fatalf("fromctx.Claims() = %v", c)
 	}
 	if got, want := w.Code, 403; got != want {
 		t.Errorf("response code = %d, want %d", got, want)
@@ -184,8 +185,8 @@ func TestAuthenticateDevice(t *testing.T) {
 	if cont := proxy.cfg.Backends[0].authenticateUser(w, &req); !cont {
 		t.Fatal("authenticateUser() = false")
 	}
-	if c := claimsFromCtx(req.Context()); c == nil || c["email"] != "alice@" {
-		t.Fatalf("claimsFromCtx() = %v", c)
+	if c := fromctx.Claims(req.Context()); c == nil || c["email"] != "alice@" {
+		t.Fatalf("fromctx.Claims() = %v", c)
 	}
 	if got, want := w.Code, 200; got != want {
 		t.Errorf("response code = %d, want %d", got, want)
@@ -200,7 +201,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 	conn.SetAnnotation(serverNameKey, "example.com")
 
 	ctx := context.Background()
-	ctx = context.WithValue(ctx, authCtxKey, jwt.MapClaims{
+	ctx = fromctx.WithClaims(ctx, jwt.MapClaims{
 		"email": "bob@example.org",
 	})
 	ctx = context.WithValue(ctx, connCtxKey, conn)
@@ -304,7 +305,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 
 	// ForceReAuth ok
 	hh := sha256.Sum256([]byte("example.com"))
-	ctx = context.WithValue(req.Context(), authCtxKey, jwt.MapClaims{
+	ctx = fromctx.WithClaims(req.Context(), jwt.MapClaims{
 		"email": "bob@example.org",
 		"hhash": hex.EncodeToString(hh[:]),
 		"iat":   float64(time.Now().Unix()),
@@ -388,6 +389,14 @@ func setAuthCookie(req *http.Request, email, host, issuer string, tm *tokenmanag
 		SameSite: http.SameSiteLaxMode,
 		Secure:   true,
 		HttpOnly: true,
+	})
+	req.AddCookie(&http.Cookie{
+		Name:     "__tlsproxySid",
+		Value:    "abc123",
+		Domain:   "example.com",
+		Path:     "/",
+		SameSite: http.SameSiteLaxMode,
+		Secure:   true,
 	})
 	return nil
 }
