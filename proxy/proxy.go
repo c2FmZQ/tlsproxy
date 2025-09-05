@@ -107,6 +107,7 @@ const (
 	scopePKI      = "pki"
 	scopeSSH      = "ssh"
 	scopeSSO      = "sso"
+	scopeOpenID   = "openid"
 )
 
 var (
@@ -593,7 +594,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						desc:    "OIDC Server Userinfo Endpoint",
 						path:    ls.PathPrefix + "/userinfo",
 						handler: logHandler(http.HandlerFunc(be.SSO.oidcServer.ServeUserInfo)),
-						scopes:  Strings{},
+						scopes:  Strings{scopeOpenID},
 					},
 					localHandler{
 						desc:      "OIDC Server JWKS Endpoint",

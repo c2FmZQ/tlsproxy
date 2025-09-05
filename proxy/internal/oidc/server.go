@@ -595,8 +595,8 @@ func (s *ProviderServer) ServeUserInfo(w http.ResponseWriter, req *http.Request)
 		return
 	}
 	scopes, ok := userClaims["scope"].([]any)
-	if !ok || !slices.Contains(scopes, any("openid")) {
-		http.Error(w, "missing scope: openid", http.StatusUnauthorized)
+	if !ok {
+		http.Error(w, "missing scope", http.StatusUnauthorized)
 		return
 	}
 	var groups []string
