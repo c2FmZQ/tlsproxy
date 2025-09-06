@@ -1,5 +1,12 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Only show groups when the groups scope is granted.
+* Require the openid scope to access /userinfo.
+
 ## v0.20.0
 
 ### :star2: New features
