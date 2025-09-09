@@ -23,27 +23,28 @@
 
 'use strict';
 
-function tlsProxySessionId() {
-  const m = document.cookie.match(/__tlsproxySid=([^;]*)(;|$)/);
-  if (m) return m[1];
-  return '';
-}
-
 function tlsProxyLogout() {
-  fetch('/.sso/logout', {
+  return fetch('/.sso/logout', {
     method: 'POST',
   })
   .then(() => window.location = '/.sso/logout');
 }
 
-let ofetch = window.fetch;
-window.fetch = function(res, opt) {
-  if (!opt) {
-    opt = {};
+(() => {
+  function tlsProxySessionId() {
+    const m = document.cookie.match(/__tlsproxySid=([^;]*)(;|$)/);
+    if (m) return m[1];
+    return '';
   }
-  if (!opt.headers) {
-    opt.headers = {};
-  }
-  opt.headers['x-csrf-token'] = tlsProxySessionId();
-  return ofetch(res, opt);
-};
+  const ofetch = window.fetch;
+  window.fetch = function(res, opt) {
+    if (!opt) {
+      opt = {};
+    }
+    if (!opt.headers) {
+      opt.headers = {};
+    }
+    opt.headers['x-csrf-token'] = tlsProxySessionId();
+    return ofetch(res, opt);
+  };
+})();
