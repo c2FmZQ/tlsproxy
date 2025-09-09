@@ -32,9 +32,6 @@ function registerPasskey(token) {
 
   fetch('?get=AttestationOptions'+(token?'&redirect='+token:''), {
     method: 'POST',
-    headers: {
-      'x-csrf-token': tlsProxySessionId(),
-    },
   })
   .then(resp => {
     if (resp.status !== 200) {
@@ -65,7 +62,6 @@ function registerPasskey(token) {
       method: 'POST',
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
-        'x-csrf-token': tlsProxySessionId(),
       },
       body: 'args=' + encodeURIComponent(v),
     });
@@ -104,7 +100,6 @@ function loginWithPasskey(token, loginId) {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
-      'x-csrf-token': tlsProxySessionId(),
     },
     body: body,
   })
@@ -137,7 +132,6 @@ function loginWithPasskey(token, loginId) {
       method: 'POST',
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
-        'x-csrf-token': tlsProxySessionId(),
       },
       credentials: 'same-origin',
       body: 'args=' + encodeURIComponent(v),
@@ -175,7 +169,6 @@ function deleteKey(id) {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
-      'x-csrf-token': tlsProxySessionId(),
     },
       body: 'id=' + encodeURIComponent(id),
   })
@@ -201,9 +194,6 @@ function deleteKey(id) {
 function switchAccount(token) {
   fetch('?get=Switch&redirect='+token, {
     method: 'POST',
-    headers: {
-      'x-csrf-token': tlsProxySessionId(),
-    },
   })
   .then(resp => {
     if (resp.status !== 200) {

@@ -34,7 +34,6 @@ function respond(answer) {
   fetch(window.location, {
     method: 'POST',
     headers: {
-      'x-csrf-token': tlsProxySessionId(),
       'content-type': 'application/x-www-form-urlencoded',
     },
     body: 'approve='+(answer===true?'true':'false')+'&request_id={{.RequestID}}',
