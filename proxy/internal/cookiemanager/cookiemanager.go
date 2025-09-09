@@ -262,7 +262,7 @@ func (cm *CookieManager) validateAuthToken(req *http.Request, leeway time.Durati
 	if sub, err := tok.Claims.GetSubject(); err != nil || sub == "" {
 		return nil, "", errors.New("invalid subject")
 	}
-	return tok, hex.EncodeToString(cm.tm.Hash([]byte(cookie.Value))[:16]), nil
+	return tok, hex.EncodeToString(cm.tm.HMAC([]byte(cookie.Value))[:16]), nil
 }
 
 func (cm *CookieManager) ValidateAuthTokenCookie(req *http.Request) (*jwt.Token, string, error) {

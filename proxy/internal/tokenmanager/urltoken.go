@@ -24,6 +24,8 @@
 package tokenmanager
 
 import (
+	"crypto/hmac"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"net/url"
@@ -38,7 +40,6 @@ import (
 
 // URLToken returns a signed token for URL u in the context of request req.
 func (tm *TokenManager) URLToken(req *http.Request, u *url.URL, extra map[string]any) (string, string, error) {
-	sid := sid.SessionID(req)
 	realHost := u.Host
 	if h, err := idna.Lookup.ToUnicode(u.Hostname()); err == nil {
 		u.Host = h
@@ -50,7 +51,7 @@ func (tm *TokenManager) URLToken(req *http.Request, u *url.URL, extra map[string
 		claims[k] = v
 	}
 	claims["url"] = u.String()
-	claims["sid"] = sid
+	claims["hsid"] = base64.StdEncoding.EncodeToString(tm.HMAC([]byte(sid.SessionID(req))))
 	token, err := tm.CreateToken(claims, "")
 	return token, displayURL, err
 }
@@ -66,7 +67,7 @@ func (tm *TokenManager) ValidateURLToken(req *http.Request, token string) (*url.
 	if !ok {
 		return nil, nil, errors.New("invalid token")
 	}
-	if !sidOK(req, c["sid"]) {
+	if !tm.sidOK(req, c["hsid"]) {
 		tm.logger.Errorf("ERR session ID mismatch %v", c["sid"])
 		return nil, nil, errors.New("url token is expired")
 	}
@@ -78,8 +79,23 @@ func (tm *TokenManager) ValidateURLToken(req *http.Request, token string) (*url.
 	return tokURL, c, err
 }
 
-func sidOK(req *http.Request, v any) bool {
-	if sid := sid.SessionID(req); sid == v {
+func (tm *TokenManager) sidOK(req *http.Request, v any) bool {
+	s, ok := v.(string)
+	if !ok {
+		return false
+	}
+	want, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return false
+	}
+	match := func(v any) bool {
+		s, ok := v.(string)
+		if !ok {
+			return false
+		}
+		return hmac.Equal(want, tm.HMAC([]byte(s)))
+	}
+	if match(sid.SessionID(req)) {
 		return true
 	}
 	c := fromctx.Claims(req.Context())
@@ -93,5 +109,5 @@ func sidOK(req *http.Request, v any) bool {
 	if !ok {
 		return false
 	}
-	return slices.Contains(th, v)
+	return slices.ContainsFunc(th, match)
 }

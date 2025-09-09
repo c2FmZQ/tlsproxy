@@ -284,10 +284,14 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	m.noncesMu.Unlock()
 
 	if ok {
-		token, _, err := m.cfg.TokenManager.URLToken(req, nData.origURL, map[string]any{
-			"email": nData.opts.LoginHint(),
-			"depth": nData.opts.Depth(),
-		})
+		extra := make(map[string]any)
+		if e := nData.opts.LoginHint(); e != "" {
+			extra["email"] = e
+		}
+		if d := nData.opts.Depth(); d > 0 {
+			extra["depth"] = d
+		}
+		token, _, err := m.cfg.TokenManager.URLToken(req, nData.origURL, extra)
 		if err != nil {
 			m.cfg.Logger.Errorf("ERR %q: %v", nData.origURL, err)
 			http.Error(w, "internal error", http.StatusInternalServerError)

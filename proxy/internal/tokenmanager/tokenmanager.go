@@ -129,7 +129,7 @@ func (tm *TokenManager) KeyRotationLoop(ctx context.Context) {
 	}
 }
 
-func (tm *TokenManager) Hash(b []byte) []byte {
+func (tm *TokenManager) HMAC(b []byte) []byte {
 	mac := hmac.New(sha256.New, tm.keys.HMACKey)
 	mac.Write(b)
 	h := mac.Sum(nil)
