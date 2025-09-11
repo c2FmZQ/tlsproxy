@@ -44,6 +44,10 @@ func (tm *TokenManager) URLToken(req *http.Request, u *url.URL, extra map[string
 	if h, err := idna.Lookup.ToUnicode(u.Hostname()); err == nil {
 		u.Host = h
 	}
+	sid := sid.SessionID(req)
+	if sid == "" {
+		return "", "", errors.New("no session id")
+	}
 	displayURL := u.String()
 	u.Host = realHost
 	claims := make(jwt.MapClaims)
@@ -51,7 +55,7 @@ func (tm *TokenManager) URLToken(req *http.Request, u *url.URL, extra map[string
 		claims[k] = v
 	}
 	claims["url"] = u.String()
-	claims["hsid"] = base64.StdEncoding.EncodeToString(tm.HMAC([]byte(sid.SessionID(req))))
+	claims["hsid"] = base64.StdEncoding.EncodeToString(tm.HMAC([]byte(sid)))
 	token, err := tm.CreateToken(claims, "")
 	return token, displayURL, err
 }

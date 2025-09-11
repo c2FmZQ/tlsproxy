@@ -38,6 +38,7 @@ import (
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/sid"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
@@ -207,6 +208,7 @@ func TestEnforceSSOPolicy(t *testing.T) {
 	ctx = context.WithValue(ctx, connCtxKey, conn)
 
 	req = req.WithContext(ctx)
+	sid.SetSessionID(nil, req, "")
 
 	// No ACL
 	proxy.cfg.Backends[0].SSO.Rules = []*SSORule{{}}
