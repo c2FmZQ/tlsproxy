@@ -104,8 +104,8 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, req *http.Req
 		}
 	}
 	if len(th) > 0 {
-		if len(th) > 10 {
-			th = th[:10]
+		if n := 3; len(th) > n {
+			th = th[:n]
 		}
 		claims["th"] = th
 	}
