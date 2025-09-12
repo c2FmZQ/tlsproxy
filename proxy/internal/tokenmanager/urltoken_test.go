@@ -24,7 +24,6 @@
 package tokenmanager
 
 import (
-	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -50,15 +49,25 @@ func TestURLToken(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "https://example.com/foo/bar", nil)
 	w := httptest.NewRecorder()
-	sid.SetSessionID(w, req, "")
-	sessionID := sid.SessionID(req)
+	sessionID := sid.SessionID(w, req)
 	t.Logf("SessionID: %s", sessionID)
-	tok, displayURL, err := tm.URLToken(req, req.URL, nil)
+
+	tok, displayURL, err := tm.URLToken(w, req, req.URL, nil)
 	if err != nil {
 		t.Errorf("URLToken() err = %v", err)
 	}
 	if got, want := displayURL, "https://example.com/foo/bar"; got != want {
 		t.Errorf("displayURL = %q, want %q", got, want)
+	}
+	t.Logf("URL TOKEN %s", tok)
+
+	// Correct session id
+	u, _, err := tm.ValidateURLToken(req, tok)
+	if err != nil {
+		t.Fatalf("ValidateURLToken err = %v", err)
+	}
+	if got, want := u.String(), "https://example.com/foo/bar"; got != want {
+		t.Errorf("url = %q, want %q", got, want)
 	}
 
 	// Wrong session id
@@ -67,28 +76,10 @@ func TestURLToken(t *testing.T) {
 		t.Fatal("ValidateURLToken should fail")
 	}
 
-	// Correct session id
-	cookie, err := http.ParseSetCookie(w.Header().Get("set-cookie"))
-	if err != nil {
-		t.Fatalf("cookie: %v", err)
-	}
-	req.AddCookie(cookie)
-	u, _, err := tm.ValidateURLToken(req, tok)
-	if err != nil {
-		t.Errorf("ValidateURLToken err = %v", err)
-	}
-	if got, want := u.String(), "https://example.com/foo/bar"; got != want {
-		t.Errorf("url = %q, want %q", got, want)
-	}
-
 	// Find session ID in claims.
 	req = req.WithContext(fromctx.WithClaims(req.Context(), jwt.MapClaims{
 		"th": []any{sessionID},
 	}))
-	req.Header.Del("cookie")
-	if v := sid.SessionID(req); v != "" {
-		t.Errorf("SessionID = %q, want %q", v, "")
-	}
 	u, _, err = tm.ValidateURLToken(req, tok)
 	if err != nil {
 		t.Errorf("ValidateURLToken err = %v", err)

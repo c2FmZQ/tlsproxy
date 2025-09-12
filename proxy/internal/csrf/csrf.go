@@ -37,10 +37,11 @@ func Check(w http.ResponseWriter, req *http.Request) bool {
 	if req.Header.Get("authorization") != "" {
 		return true
 	}
-	id := sid.SessionID(req)
-	th := fromctx.TokenHash(req.Context())
-	if req.Header.Get("x-csrf-token") == id && (th == "" || th == id) {
-		return true
+	if id := sid.SessionID(nil, req); id != "" {
+		th := fromctx.TokenHash(req.Context())
+		if req.Header.Get("x-csrf-token") == id && (th == "" || th == id) {
+			return true
+		}
 	}
 	http.Error(w, "session expired", http.StatusBadRequest)
 	return false

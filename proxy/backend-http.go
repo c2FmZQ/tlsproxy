@@ -49,7 +49,6 @@ import (
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/csrf"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/sid"
 )
 
 const (
@@ -450,10 +449,6 @@ func (be *Backend) checkScopes(want []string, w http.ResponseWriter, req *http.R
 // authorization policy. It returns true if processing of the request should
 // continue.
 func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *http.Request) bool {
-	if sid.SessionID(req) == "" {
-		// Make sure the sid is set.
-		sid.SetSessionID(w, req, "")
-	}
 	defer func() {
 		// Filter out the tlsproxy auth cookie.
 		cookiemanager.FilterOutAuthTokenCookie(req)

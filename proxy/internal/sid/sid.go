@@ -36,7 +36,7 @@ const (
 	tlsProxySessionIDCookie = "__tlsproxySid"
 )
 
-func SetSessionID(w http.ResponseWriter, req *http.Request, value string) {
+func SetSessionID(w http.ResponseWriter, req *http.Request, value string) string {
 	if value == "" {
 		var buf [16]byte
 		io.ReadFull(rand.Reader, buf[:])
@@ -73,11 +73,15 @@ func SetSessionID(w http.ResponseWriter, req *http.Request, value string) {
 		}
 		http.SetCookie(w, cookie)
 	}
+	return value
 }
 
-func SessionID(req *http.Request) string {
+func SessionID(w http.ResponseWriter, req *http.Request) string {
 	if cookie, err := req.Cookie(tlsProxySessionIDCookie); err == nil {
 		return cookie.Value
+	}
+	if w != nil {
+		return SetSessionID(w, req, "")
 	}
 	return ""
 }

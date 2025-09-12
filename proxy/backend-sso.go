@@ -92,7 +92,7 @@ func (be *Backend) authenticateUser(w http.ResponseWriter, req **http.Request) b
 			}
 			if claims["depth"] == nil && tokenHash != "" {
 				*req = (*req).WithContext(fromctx.WithTokenHash((*req).Context(), tokenHash))
-				if sid.SessionID(*req) != tokenHash {
+				if sid.SessionID(nil, *req) != tokenHash {
 					sid.SetSessionID(w, *req, tokenHash)
 				}
 			}
@@ -101,7 +101,7 @@ func (be *Backend) authenticateUser(w http.ResponseWriter, req **http.Request) b
 				*req = (*req).WithContext(fromctx.WithExpiredClaims((*req).Context(), claims))
 			}
 			*req = (*req).WithContext(fromctx.WithTokenHash((*req).Context(), tokenHash))
-			if sid.SessionID(*req) != tokenHash {
+			if sid.SessionID(nil, *req) != tokenHash {
 				sid.SetSessionID(w, *req, tokenHash)
 			}
 		}
@@ -215,7 +215,7 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 	}
 	req.URL.Scheme = "https"
 	req.URL.Host = req.Host
-	token, _, err := be.tm.URLToken(req, req.URL, nil)
+	token, _, err := be.tm.URLToken(w, req, req.URL, nil)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -279,7 +279,7 @@ func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Reques
 	}
 	req.URL.Scheme = "https"
 	req.URL.Host = req.Host
-	token, url, err := be.tm.URLToken(req, req.URL, nil)
+	token, url, err := be.tm.URLToken(w, req, req.URL, nil)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -354,7 +354,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request, ov
 				extra["email"] = email
 			}
 		}
-		token, url, err := be.tm.URLToken(req, req.URL, extra)
+		token, url, err := be.tm.URLToken(w, req, req.URL, extra)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return false

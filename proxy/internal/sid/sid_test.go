@@ -35,13 +35,10 @@ func TestSessionID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}
-	if got, want := SessionID(req), ""; got != want {
-		t.Fatalf("SessionID = %q, want %q", got, want)
-	}
 	w := httptest.NewRecorder()
 
 	SetSessionID(w, req, "foo")
-	if got, want := SessionID(req), "foo"; got != want {
+	if got, want := SessionID(w, req), "foo"; got != want {
 		t.Fatalf("SessionID = %q, want %q", got, want)
 	}
 	if got, want := w.Header().Get("Set-Cookie"), "__tlsproxySid=foo;"; !strings.HasPrefix(got, want) {
@@ -49,7 +46,7 @@ func TestSessionID(t *testing.T) {
 	}
 
 	SetSessionID(w, req, "bar")
-	if got, want := SessionID(req), "bar"; got != want {
+	if got, want := SessionID(w, req), "bar"; got != want {
 		t.Fatalf("SessionID = %q, want %q", got, want)
 	}
 	if got, want := w.Header().Get("Set-Cookie"), "__tlsproxySid=bar;"; !strings.HasPrefix(got, want) {

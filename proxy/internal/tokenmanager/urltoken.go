@@ -39,12 +39,12 @@ import (
 )
 
 // URLToken returns a signed token for URL u in the context of request req.
-func (tm *TokenManager) URLToken(req *http.Request, u *url.URL, extra map[string]any) (string, string, error) {
+func (tm *TokenManager) URLToken(w http.ResponseWriter, req *http.Request, u *url.URL, extra map[string]any) (string, string, error) {
 	realHost := u.Host
 	if h, err := idna.Lookup.ToUnicode(u.Hostname()); err == nil {
 		u.Host = h
 	}
-	sid := sid.SessionID(req)
+	sid := sid.SessionID(w, req)
 	if sid == "" {
 		return "", "", errors.New("no session id")
 	}
@@ -72,7 +72,7 @@ func (tm *TokenManager) ValidateURLToken(req *http.Request, token string) (*url.
 		return nil, nil, errors.New("invalid token")
 	}
 	if !tm.sidOK(req, c["hsid"]) {
-		tm.logger.Errorf("ERR session ID mismatch %v", c["sid"])
+		tm.logger.Errorf("ERR session ID mismatch %v", c["hsid"])
 		return nil, nil, errors.New("url token is expired")
 	}
 	u, ok := c["url"].(string)
@@ -99,7 +99,7 @@ func (tm *TokenManager) sidOK(req *http.Request, v any) bool {
 		}
 		return hmac.Equal(want, tm.HMAC([]byte(s)))
 	}
-	if match(sid.SessionID(req)) {
+	if match(sid.SessionID(nil, req)) {
 		return true
 	}
 	c := fromctx.Claims(req.Context())

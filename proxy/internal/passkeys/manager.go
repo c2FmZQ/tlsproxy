@@ -291,7 +291,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		if d := nData.opts.Depth(); d > 0 {
 			extra["depth"] = d
 		}
-		token, _, err := m.cfg.TokenManager.URLToken(req, nData.origURL, extra)
+		token, _, err := m.cfg.TokenManager.URLToken(w, req, nData.origURL, extra)
 		if err != nil {
 			m.cfg.Logger.Errorf("ERR %q: %v", nData.origURL, err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
