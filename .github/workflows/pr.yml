@@ -61,6 +61,8 @@ jobs:
         for dir in $(find examples/ -name go.mod); do
           (cd "$(dirname "${dir}")" && go build -o /tmp/example .)
         done
+    - name: Check for debug
+      run: ./scripts/check-for-debug.sh
     - name: Build test docker image
       run: |
         touch version.sh
