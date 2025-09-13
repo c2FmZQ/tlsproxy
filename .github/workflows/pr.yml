@@ -63,7 +63,7 @@ jobs:
         done
     - name: Check for X X X
       run: |
-        out="$(git grep X\XX)"
+        out="$(git grep X\\XX)"
         if [[ "${out}" != "" ]]; then
           echo "Found:"
           echo "${out}" | sed -re 's/^/> /'
