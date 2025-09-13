@@ -74,7 +74,7 @@ type Config struct {
 
 // CookieManager is the interface to set and clear the auth token.
 type CookieManager interface {
-	SetAuthTokenCookie(w http.ResponseWriter, userID, email, sessionID, host string, extraClaims map[string]any) error
+	SetAuthTokenCookie(w http.ResponseWriter, req *http.Request, userID, email, sessionID, host string, extraClaims map[string]any) error
 	SetNonce(w http.ResponseWriter, nonce string)
 	Nonce(w http.ResponseWriter, req *http.Request) string
 	ClearCookies(w http.ResponseWriter) error
@@ -102,6 +102,7 @@ type oauthState struct {
 	OriginalURL  string
 	Host         string
 	CodeVerifier string
+	Depth        int
 	Seen         bool
 }
 
@@ -172,6 +173,7 @@ func (p *ProviderClient) RequestLogin(w http.ResponseWriter, req *http.Request, 
 		OriginalURL:  originalURL,
 		Host:         ou.Host,
 		CodeVerifier: codeVerifierStr,
+		Depth:        loginOptions.Depth(),
 	}
 	p.mu.Unlock()
 	scopes := p.cfg.Scopes
@@ -331,6 +333,9 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 	extraClaims := map[string]any{
 		"source": claims.Issuer,
 	}
+	if state.Depth > 0 {
+		extraClaims["depth"] = state.Depth
+	}
 	if claims.HostedDomain != "" {
 		extraClaims["hd"] = claims.HostedDomain
 	}
@@ -351,7 +356,7 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 	} else if claims.AvatarURL != "" {
 		extraClaims["picture"] = claims.AvatarURL
 	}
-	if err := p.cm.SetAuthTokenCookie(w, claims.Subject, claims.Email, claims.Nonce, state.Host, extraClaims); err != nil {
+	if err := p.cm.SetAuthTokenCookie(w, req, claims.Subject, claims.Email, claims.Nonce, state.Host, extraClaims); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

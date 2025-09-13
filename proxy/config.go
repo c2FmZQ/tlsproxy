@@ -542,6 +542,7 @@ type localHandler struct {
 	path        string
 	handler     http.Handler
 	ssoBypass   bool
+	csrfBypass  bool
 	matchPrefix bool
 	isCallback  bool
 	scopes      []string

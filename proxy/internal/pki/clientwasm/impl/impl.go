@@ -43,7 +43,7 @@ import (
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki/keys"
 )
 
-func GetCertificate(url, keyType, format, label, dnsname, password string) (data []byte, contentType, filename string, err error) {
+func GetCertificate(url, keyType, format, label, dnsname, password, sid string) (data []byte, contentType, filename string, err error) {
 	privKey, err := keys.GenerateKey(keyType)
 	if err != nil {
 		return nil, "", "", err
@@ -57,12 +57,16 @@ func GetCertificate(url, keyType, format, label, dnsname, password string) (data
 		return nil, "", "", err
 	}
 	req.Header.Set("content-type", "application/x-pem-file")
-	req.Header.Set("x-csrf-check", "1")
+	req.Header.Set("x-csrf-token", sid)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, "", "", err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, "", "", fmt.Errorf("status code %d: %s", resp.StatusCode, b)
+	}
 	var reqResult struct {
 		Cert   string `json:"cert"`
 		Result string `json:"result"`

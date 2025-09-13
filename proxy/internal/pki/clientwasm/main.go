@@ -29,6 +29,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"syscall/js"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki/clientwasm/impl"
@@ -68,12 +69,17 @@ func getCertificate(this js.Value, args []js.Value) (result any) {
 	dnsName := arg.Get("dnsname").String()
 	url := js.Global().Get("location").Get("pathname").String() + "?get=requestCert"
 
+	var sid string
+	if m := regexp.MustCompile(`__tlsproxySid=([^;]*)(;|$)`).FindStringSubmatch(js.Global().Get("document").Get("cookie").String()); len(m) > 1 {
+		sid = m[1]
+	}
+
 	return js.Global().Get("Promise").New(js.FuncOf(
 		func(this js.Value, args []js.Value) any {
 			resolve := args[0]
 			reject := args[1]
 			go func() {
-				data, contentType, filename, err := impl.GetCertificate(url, keyType, format, label, dnsName, password)
+				data, contentType, filename, err := impl.GetCertificate(url, keyType, format, label, dnsName, password, sid)
 				if err != nil {
 					reject.Invoke(js.Global().Get("Error").New(err.Error()))
 					return

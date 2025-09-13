@@ -68,6 +68,7 @@ import (
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/idp"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
@@ -398,7 +399,6 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			CookieManager:      cm,
 			OtherCookieManager: other.cm,
 			TokenManager:       p.tokenManager,
-			ClaimsFromCtx:      claimsFromCtx,
 			ACLMatcher:         aclMatcher.emailMatches,
 		}
 		provider, err := passkeys.NewManager(cfg)
@@ -427,7 +427,6 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			TPM:                   p.tpm,
 			Store:                 p.store,
 			EventRecorder:         er,
-			ClaimsFromCtx:         claimsFromCtx,
 			AdminMatcher:          aclMatcher.emailMatches,
 		}
 		m, err := pki.New(opts)
@@ -502,6 +501,12 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 					ssoBypass: true,
 				},
 				localHandler{
+					desc:      "Javascript",
+					path:      "/.sso/common.js",
+					handler:   logHandler(http.HandlerFunc(be.serveSSOCommonJS)),
+					ssoBypass: true,
+				},
+				localHandler{
 					desc:      "SSO Login",
 					path:      "/.sso/login",
 					handler:   logHandler(http.HandlerFunc(be.serveLogin)),
@@ -541,7 +546,6 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 					CookieManager:  be.SSO.cm,
 					PathPrefix:     ls.PathPrefix,
 					TokenLifetime:  ls.TokenLifetime,
-					ClaimsFromCtx:  claimsFromCtx,
 					ACLMatcher:     aclMatcher.emailMatches,
 					GroupsForEmail: aclMatcher.groupsForEmail,
 					Clients:        make([]oidc.Client, 0, len(ls.Clients)),
@@ -585,10 +589,11 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						scopes:  Strings{scopeOIDCAuth},
 					},
 					localHandler{
-						desc:      "OIDC Server Token Endpoint",
-						path:      ls.PathPrefix + "/token",
-						handler:   logHandler(http.HandlerFunc(be.SSO.oidcServer.ServeToken)),
-						ssoBypass: true,
+						desc:       "OIDC Server Token Endpoint",
+						path:       ls.PathPrefix + "/token",
+						handler:    logHandler(http.HandlerFunc(be.SSO.oidcServer.ServeToken)),
+						ssoBypass:  true,
+						csrfBypass: true,
 					},
 					localHandler{
 						desc:    "OIDC Server Userinfo Endpoint",
@@ -603,10 +608,11 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						ssoBypass: true,
 					},
 					localHandler{
-						desc:      "OIDC Server Device Authorization Endpoint",
-						path:      ls.PathPrefix + "/device/authorization",
-						handler:   logHandler(http.HandlerFunc(be.SSO.oidcServer.ServeDeviceAuthorization)),
-						ssoBypass: true,
+						desc:       "OIDC Server Device Authorization Endpoint",
+						path:       ls.PathPrefix + "/device/authorization",
+						handler:    logHandler(http.HandlerFunc(be.SSO.oidcServer.ServeDeviceAuthorization)),
+						ssoBypass:  true,
+						csrfBypass: true,
 					},
 					localHandler{
 						desc:    "OIDC Server Device Verification Endpoint",
@@ -854,7 +860,6 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			TPM:                        p.tpm,
 			Store:                      p.store,
 			EventRecorder:              er,
-			ClaimsFromCtx:              claimsFromCtx,
 		}
 		ca, err := sshca.New(opts)
 		if err != nil {
@@ -1559,7 +1564,7 @@ func (p *Proxy) backend(serverName string, protos ...string) (*Backend, error) {
 
 func formatReqDesc(req *http.Request) string {
 	var ids []string
-	if claims := claimsFromCtx(req.Context()); claims != nil {
+	if claims := fromctx.Claims(req.Context()); claims != nil {
 		email, _ := claims["email"].(string)
 		ids = append(ids, email)
 	}

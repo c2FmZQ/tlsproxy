@@ -1,7 +1,7 @@
 // MIT License
 //
-// Copyright (c) 2024 TTBT Enterprises LLC
-// Copyright (c) 2024 Robin Thellend <rthellend@rthellend.com>
+// Copyright (c) 2025 TTBT Enterprises LLC
+// Copyright (c) 2025 Robin Thellend <rthellend@rthellend.com>
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -21,50 +21,28 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package idp
+package csrf
 
-type LoginOptions struct {
-	loginHint     string
-	selectAccount bool
-	depth         int
-}
+import (
+	"net/http"
 
-func (o LoginOptions) LoginHint() string {
-	return o.loginHint
-}
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/sid"
+)
 
-func (o LoginOptions) SelectAccount() bool {
-	return o.selectAccount
-}
-
-func (o LoginOptions) Depth() int {
-	return o.depth
-}
-
-type Option func(*LoginOptions)
-
-func WithLoginHint(v string) Option {
-	return func(o *LoginOptions) {
-		o.loginHint = v
+func Check(w http.ResponseWriter, req *http.Request) bool {
+	if req.Method != http.MethodPost {
+		return true
 	}
-}
-
-func WithSelectAccount(v bool) Option {
-	return func(o *LoginOptions) {
-		o.selectAccount = v
+	if req.Header.Get("authorization") != "" {
+		return true
 	}
-}
-
-func WithDepth(v int) Option {
-	return func(o *LoginOptions) {
-		o.depth = v
+	if id := sid.SessionID(nil, req); id != "" {
+		th := fromctx.TokenHash(req.Context())
+		if req.Header.Get("x-csrf-token") == id && (th == "" || th == id) {
+			return true
+		}
 	}
-}
-
-func ApplyOptions(opts []Option) LoginOptions {
-	var lo LoginOptions
-	for _, opt := range opts {
-		opt(&lo)
-	}
-	return lo
+	http.Error(w, "session expired", http.StatusBadRequest)
+	return false
 }

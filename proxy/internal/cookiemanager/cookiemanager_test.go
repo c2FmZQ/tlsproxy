@@ -49,19 +49,24 @@ func TestCookies(t *testing.T) {
 	cm := New(tm, "idp", "example.com", "https://idp.example.com")
 
 	recorder := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "http://example.com", nil)
 
-	if err := cm.SetAuthTokenCookie(recorder, "test@example.com", "test@example.com", "session123", "example.com", nil); err != nil {
+	if err := cm.SetAuthTokenCookie(recorder, req, "test@example.com", "test@example.com", "session123", "example.com", nil); err != nil {
 		t.Fatalf("SetAuthTokenCookie: %v", err)
 	}
 
-	v := recorder.Header().Get("Set-Cookie")
-	if v == "" {
-		t.Fatal("cookie not set")
+	cookies := func() {
+		for _, c := range recorder.Header()["Set-Cookie"] {
+			cookie, err := http.ParseSetCookie(c)
+			if err != nil {
+				t.Fatalf("http.ParseSetCookie: %v", err)
+			}
+			req.AddCookie(cookie)
+		}
 	}
-	req, _ := http.NewRequest("GET", "http://example.com", nil)
-	req.Header.Set("cookie", v)
+	cookies()
 
-	tok, err := cm.ValidateAuthTokenCookie(req)
+	tok, _, err := cm.ValidateAuthTokenCookie(req)
 	if err != nil {
 		t.Fatalf("ValidateAuthTokenCookie: %v", err)
 	}
@@ -80,11 +85,7 @@ func TestCookies(t *testing.T) {
 	if err := cm.SetIDTokenCookie(recorder, req, claims, nil); err != nil {
 		t.Fatalf("cookie not set: %v", err)
 	}
-	v = recorder.Header().Get("Set-Cookie")
-	if v == "" {
-		t.Fatal("cookie not set")
-	}
-	req.Header.Set("cookie", v)
+	cookies()
 	if err := cm.ValidateIDTokenCookie(req, tok); err != nil {
 		t.Fatalf("ValidateIDTokenCookie: %v", err)
 	}

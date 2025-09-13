@@ -30,10 +30,12 @@ import (
 	"testing"
 
 	jwt "github.com/golang-jwt/jwt/v5"
+
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 )
 
 func TestExpandVars(t *testing.T) {
-	ctx := context.WithValue(context.Background(), authCtxKey, jwt.MapClaims{
+	ctx := fromctx.WithClaims(context.Background(), jwt.MapClaims{
 		"email": "bob@example.com",
 		"name":  "Bob",
 	})

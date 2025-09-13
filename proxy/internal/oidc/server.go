@@ -24,7 +24,6 @@
 package oidc
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	_ "embed"
@@ -49,6 +48,7 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 )
 
 const (
@@ -107,7 +107,6 @@ type ServerOptions struct {
 	CookieManager  *cookiemanager.CookieManager
 	PathPrefix     string
 	TokenLifetime  time.Duration
-	ClaimsFromCtx  func(context.Context) jwt.MapClaims
 	ACLMatcher     func(acl []string, email string) bool
 	GroupsForEmail func(string) []string
 	Clients        []Client
@@ -250,7 +249,7 @@ func (s *ProviderServer) ServeConfig(w http.ResponseWriter, req *http.Request) {
 
 func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Request) {
 	s.vacuum()
-	userClaims := s.opts.ClaimsFromCtx(req.Context())
+	userClaims := fromctx.Claims(req.Context())
 	if userClaims == nil {
 		http.Error(w, "not logged in", http.StatusUnauthorized)
 		return
@@ -353,11 +352,6 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	}
 
 	if req.Method == http.MethodPost {
-		if v := req.Header.Get("x-csrf-check"); v != "1" {
-			s.opts.Logger.Errorf("ERR x-csrf-check: %v", v)
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
 		handlePost(req.Form.Get("request_id"))
 		return
 	}
@@ -589,7 +583,7 @@ func (s *ProviderServer) ServeUserInfo(w http.ResponseWriter, req *http.Request)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	userClaims := s.opts.ClaimsFromCtx(req.Context())
+	userClaims := fromctx.Claims(req.Context())
 	if userClaims == nil {
 		http.Error(w, "authentication required", http.StatusUnauthorized)
 		return

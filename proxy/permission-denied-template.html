@@ -5,6 +5,7 @@
 <meta http-equiv="content-type" content="text/html; charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
 <link rel="stylesheet" type="text/css" href="/.sso/style.css" />
+<script src="/.sso/common.js"></script>
 <style>
 #target {
   line-height: 2em;
@@ -17,7 +18,7 @@
 <body>
 <div id="buttons">
 <a class="button" href="/.sso/logout?u={{.Token}}">Switch Account</a>
-<a class="button" href="/.sso/logout">Logout</a>
+<a class="button" onclick="tlsProxyLogout();">Logout</a>
 </div>
 <div id="message">
 <div class="big">🛂</div>

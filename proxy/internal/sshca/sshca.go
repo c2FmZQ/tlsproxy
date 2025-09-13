@@ -26,13 +26,11 @@ package sshca
 
 import (
 	"bytes"
-	"context"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
 	_ "embed"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -46,9 +44,9 @@ import (
 
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/tpm"
-	jwt "github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/ssh"
 
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki/keys"
 )
 
@@ -98,8 +96,6 @@ type Options struct {
 	Logger interface {
 		Errorf(format string, args ...any)
 	}
-	// ClaimsFromCtx returns jwt claims for the current user.
-	ClaimsFromCtx func(context.Context) jwt.MapClaims
 }
 
 // New returns a new initialized CA.
@@ -113,9 +109,6 @@ func New(opts Options) (*SSHCA, error) {
 	}
 	if ca.opts.KeyType == "" {
 		ca.opts.KeyType = "ecdsa-p256"
-	}
-	if ca.opts.ClaimsFromCtx == nil {
-		return nil, errors.New("ClaimsFromCtx must be set")
 	}
 	ca.opts.Store.CreateEmptyFile(ca.caFile, &certificateAuthority{})
 	if err := ca.initCA(); err != nil {
@@ -279,7 +272,7 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	var email string
-	if claims := ca.opts.ClaimsFromCtx(req.Context()); claims != nil {
+	if claims := fromctx.Claims(req.Context()); claims != nil {
 		if e, ok := claims["email"].(string); ok && e != "" {
 			email = e
 		}
@@ -310,11 +303,6 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		ca.opts.Logger.Errorf("ERR method: %v", req.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if v := req.Header.Get("x-csrf-check"); v != "1" {
-		ca.opts.Logger.Errorf("ERR x-csrf-check: %v", v)
-		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 	if ct := req.Header.Get("content-type"); ct != "text/plain" {

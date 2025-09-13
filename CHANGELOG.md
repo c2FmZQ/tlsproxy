@@ -4,6 +4,7 @@
 
 ### :wrench: Misc
 
+* Better CSRF protection for local http handlers.
 * Only show groups when the groups scope is granted.
 * Require the openid scope to access /userinfo.
 

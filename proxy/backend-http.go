@@ -45,6 +45,10 @@ import (
 	"time"
 
 	"golang.org/x/net/http2"
+
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/csrf"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 )
 
 const (
@@ -367,7 +371,7 @@ func addr2ip(addr net.Addr) string {
 
 func expandVars(s string, req *http.Request) string {
 	ctx := req.Context()
-	claims := claimsFromCtx(ctx)
+	claims := fromctx.Claims(ctx)
 	conn := ctx.Value(connCtxKey).(anyConn)
 	return os.Expand(s, func(n string) string {
 		switch n {
@@ -417,7 +421,7 @@ func (be *Backend) checkScopes(want []string, w http.ResponseWriter, req *http.R
 	if len(want) == 0 {
 		return true // no restriction
 	}
-	claims := claimsFromCtx(req.Context())
+	claims := fromctx.Claims(req.Context())
 	if claims == nil {
 		http.Error(w, "missing request authorization", http.StatusForbidden)
 		return false // no user identity
@@ -445,6 +449,11 @@ func (be *Backend) checkScopes(want []string, w http.ResponseWriter, req *http.R
 // authorization policy. It returns true if processing of the request should
 // continue.
 func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *http.Request) bool {
+	defer func() {
+		// Filter out the tlsproxy auth cookie.
+		cookiemanager.FilterOutAuthTokenCookie(req)
+	}()
+
 	reqHost := hostFromReq(req)
 	cleanPath := pathClean(req.URL.Path)
 	hi := slices.IndexFunc(be.localHandlers, func(h localHandler) bool {
@@ -454,6 +463,9 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 		return h.path == cleanPath || (h.matchPrefix && strings.HasPrefix(cleanPath, h.path+"/"))
 	})
 	if hi >= 0 {
+		if !be.localHandlers[hi].csrfBypass && !csrf.Check(w, req) {
+			return false
+		}
 		if be.localHandlers[hi].ssoBypass && !be.checkScopes(be.localHandlers[hi].scopes, w, req) {
 			return false
 		}

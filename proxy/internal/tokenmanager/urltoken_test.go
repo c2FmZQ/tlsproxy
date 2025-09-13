@@ -29,6 +29,10 @@ import (
 
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/storage/crypto"
+	jwt "github.com/golang-jwt/jwt/v5"
+
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/sid"
 )
 
 func TestURLToken(t *testing.T) {
@@ -45,6 +49,9 @@ func TestURLToken(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "https://example.com/foo/bar", nil)
 	w := httptest.NewRecorder()
+	sessionID := sid.SessionID(w, req)
+	t.Logf("SessionID: %s", sessionID)
+
 	tok, displayURL, err := tm.URLToken(w, req, req.URL, nil)
 	if err != nil {
 		t.Errorf("URLToken() err = %v", err)
@@ -52,15 +59,28 @@ func TestURLToken(t *testing.T) {
 	if got, want := displayURL, "https://example.com/foo/bar"; got != want {
 		t.Errorf("displayURL = %q, want %q", got, want)
 	}
+	t.Logf("URL TOKEN %s", tok)
+
+	// Correct session id
+	u, _, err := tm.ValidateURLToken(req, tok)
+	if err != nil {
+		t.Fatalf("ValidateURLToken err = %v", err)
+	}
+	if got, want := u.String(), "https://example.com/foo/bar"; got != want {
+		t.Errorf("url = %q, want %q", got, want)
+	}
 
 	// Wrong session id
-	if _, _, err := tm.ValidateURLToken(w, req, tok); err == nil {
+	req.Header.Del("cookie")
+	if _, _, err := tm.ValidateURLToken(req, tok); err == nil {
 		t.Fatal("ValidateURLToken should fail")
 	}
 
-	// Correct session id
-	req.Header.Set("cookie", w.Header().Get("set-cookie"))
-	u, _, err := tm.ValidateURLToken(w, req, tok)
+	// Find session ID in claims.
+	req = req.WithContext(fromctx.WithClaims(req.Context(), jwt.MapClaims{
+		"th": []any{sessionID},
+	}))
+	u, _, err = tm.ValidateURLToken(req, tok)
 	if err != nil {
 		t.Errorf("ValidateURLToken err = %v", err)
 	}

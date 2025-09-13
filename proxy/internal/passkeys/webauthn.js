@@ -23,6 +23,8 @@
  * SOFTWARE.
  */
 
+'use strict';
+
 function registerPasskey(token) {
   if (!('PublicKeyCredential' in window)) {
     throw new Error('Browser doesn\'t support WebAuthn');
@@ -30,9 +32,6 @@ function registerPasskey(token) {
 
   fetch('?get=AttestationOptions'+(token?'&redirect='+token:''), {
     method: 'POST',
-    headers: {
-      'x-csrf-check': 1,
-    },
   })
   .then(resp => {
     if (resp.status !== 200) {
@@ -63,7 +62,6 @@ function registerPasskey(token) {
       method: 'POST',
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
-        'x-csrf-check': 1,
       },
       body: 'args=' + encodeURIComponent(v),
     });
@@ -102,7 +100,6 @@ function loginWithPasskey(token, loginId) {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
-      'x-csrf-check': 1,
     },
     body: body,
   })
@@ -135,7 +132,6 @@ function loginWithPasskey(token, loginId) {
       method: 'POST',
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
-        'x-csrf-check': 1,
       },
       credentials: 'same-origin',
       body: 'args=' + encodeURIComponent(v),
@@ -173,7 +169,6 @@ function deleteKey(id) {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
-      'x-csrf-check': 1,
     },
       body: 'id=' + encodeURIComponent(id),
   })
@@ -199,9 +194,6 @@ function deleteKey(id) {
 function switchAccount(token) {
   fetch('?get=Switch&redirect='+token, {
     method: 'POST',
-    headers: {
-      'x-csrf-check': 1,
-    },
   })
   .then(resp => {
     if (resp.status !== 200) {

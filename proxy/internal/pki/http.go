@@ -46,6 +46,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ocsp"
+
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 )
 
 //go:embed certs.html
@@ -188,7 +190,7 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 	req.ParseForm()
 
 	enableAdmin := req.Form.Get("admin")
-	claims := m.opts.ClaimsFromCtx(req.Context())
+	claims := fromctx.Claims(req.Context())
 	if claims == nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -342,7 +344,7 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 }
 
 func (m *PKIManager) handleRequestCert(w http.ResponseWriter, req *http.Request) {
-	claims := m.opts.ClaimsFromCtx(req.Context())
+	claims := fromctx.Claims(req.Context())
 	if claims == nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -351,11 +353,6 @@ func (m *PKIManager) handleRequestCert(w http.ResponseWriter, req *http.Request)
 
 	if req.Method != http.MethodPost {
 		m.opts.Logger.Errorf("ERR method: %v", req.Method)
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
-	}
-	if v := req.Header.Get("x-csrf-check"); v != "1" {
-		m.opts.Logger.Errorf("ERR x-csrf-check: %v", v)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
@@ -409,7 +406,7 @@ func (m *PKIManager) handleRequestCert(w http.ResponseWriter, req *http.Request)
 }
 
 func (m *PKIManager) handleRevokeCert(w http.ResponseWriter, req *http.Request, isAdmin bool) {
-	claims := m.opts.ClaimsFromCtx(req.Context())
+	claims := fromctx.Claims(req.Context())
 	if claims == nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -418,11 +415,6 @@ func (m *PKIManager) handleRevokeCert(w http.ResponseWriter, req *http.Request, 
 
 	if req.Method != http.MethodPost {
 		m.opts.Logger.Errorf("ERR method: %v", req.Method)
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
-	}
-	if v := req.Header.Get("x-csrf-check"); v != "1" {
-		m.opts.Logger.Errorf("ERR x-csrf-check: %v", v)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}

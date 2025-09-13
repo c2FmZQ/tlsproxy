@@ -25,7 +25,6 @@ package passkeys
 
 import (
 	"bytes"
-	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -50,6 +49,7 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/idp"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
@@ -110,7 +110,6 @@ type Config struct {
 	CookieManager      *cookiemanager.CookieManager
 	OtherCookieManager *cookiemanager.CookieManager
 	TokenManager       *tokenmanager.TokenManager
-	ClaimsFromCtx      func(context.Context) jwt.MapClaims
 	ACLMatcher         func(acl []string, email string) bool
 	Logger             interface {
 		Errorf(format string, args ...any)
@@ -285,7 +284,14 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	m.noncesMu.Unlock()
 
 	if ok {
-		token, _, err := m.cfg.TokenManager.URLToken(w, req, nData.origURL, map[string]any{"email": nData.opts.LoginHint()})
+		extra := make(map[string]any)
+		if e := nData.opts.LoginHint(); e != "" {
+			extra["email"] = e
+		}
+		if d := nData.opts.Depth(); d > 0 {
+			extra["depth"] = d
+		}
+		token, _, err := m.cfg.TokenManager.URLToken(w, req, nData.origURL, extra)
 		if err != nil {
 			m.cfg.Logger.Errorf("ERR %q: %v", nData.origURL, err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -311,20 +317,23 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	originalURL, redirectClaims, err := m.cfg.TokenManager.ValidateURLToken(w, req, redirectToken)
+	originalURL, redirectClaims, err := m.cfg.TokenManager.ValidateURLToken(req, redirectToken)
 	if err != nil {
 		m.cfg.Logger.Errorf("ERR redirect token: %v", err)
 		http.Error(w, "invalid or expired request", http.StatusBadRequest)
 		return
 	}
 
-	token, err := m.cfg.OtherCookieManager.ValidateAuthTokenCookie(req)
+	token, _, err := m.cfg.OtherCookieManager.ValidateAuthTokenCookie(req)
 	if err != nil {
 		switch mode {
 		case "RegisterNewID", "RefreshID":
+			depth, _ := redirectClaims["depth"].(int)
 			req.URL.Scheme = "https"
 			req.URL.Host = req.Host
-			var opts []idp.Option
+			opts := []idp.Option{
+				idp.WithDepth(depth + 1),
+			}
 			if mode == "RefreshID" {
 				email, _ := redirectClaims["email"].(string)
 				if email == "" {
@@ -381,11 +390,6 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		if v := req.Header.Get("x-csrf-check"); v != "1" {
-			m.cfg.Logger.Errorf("ERR x-csrf-check: %v", v)
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
 		opts, err := m.assertionOptions(req.PostForm.Get("loginId"))
 		if err != nil {
 			m.cfg.Logger.Errorf("ERR assertionOptions: %v", err)
@@ -397,11 +401,6 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 
 	case "AttestationOptions":
 		if req.Method != "POST" {
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
-		if v := req.Header.Get("x-csrf-check"); v != "1" {
-			m.cfg.Logger.Errorf("ERR x-csrf-check: %v", v)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -421,11 +420,6 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 
 	case "Check":
 		if req.Method != "POST" {
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
-		if v := req.Header.Get("x-csrf-check"); v != "1" {
-			m.cfg.Logger.Errorf("ERR x-csrf-check: %v", v)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -456,15 +450,10 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 		m.cfg.EventRecorder.Record("passkey check request")
-		m.setAuthToken(w, originalURL, claims)
+		m.setAuthToken(w, req, originalURL, claims)
 
 	case "AddKey":
 		if req.Method != "POST" {
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
-		if v := req.Header.Get("x-csrf-check"); v != "1" {
-			m.cfg.Logger.Errorf("ERR x-csrf-check: %v", v)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -485,15 +474,10 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		m.cfg.EventRecorder.Record("passkey addkey request")
-		m.setAuthToken(w, originalURL, claims)
+		m.setAuthToken(w, req, originalURL, claims)
 
 	case "Switch":
 		if req.Method != "POST" {
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
-		if v := req.Header.Get("x-csrf-check"); v != "1" {
-			m.cfg.Logger.Errorf("ERR x-csrf-check: %v", v)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -554,7 +538,7 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 	req.URL.Host = req.Host
 	here := req.URL.String()
 
-	claims := m.cfg.ClaimsFromCtx(req.Context())
+	claims := fromctx.Claims(req.Context())
 	var iat time.Time
 	if claims != nil {
 		if p, _ := claims.GetIssuedAt(); p != nil {
@@ -586,11 +570,6 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		if v := req.Header.Get("x-csrf-check"); v != "1" {
-			m.cfg.Logger.Errorf("ERR x-csrf-check: %v", v)
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
 		opts, err := m.attestationOptions(claims)
 		if err != nil {
 			m.cfg.Logger.Errorf("ERR attestationOptions: %v", err)
@@ -602,11 +581,6 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 
 	case "AddKey":
 		if req.Method != "POST" {
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
-		if v := req.Header.Get("x-csrf-check"); v != "1" {
-			m.cfg.Logger.Errorf("ERR x-csrf-check: %v", v)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -623,11 +597,6 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 
 	case "DeleteKey":
 		if req.Method != "POST" {
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
-		if v := req.Header.Get("x-csrf-check"); v != "1" {
-			m.cfg.Logger.Errorf("ERR x-csrf-check: %v", v)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -758,7 +727,7 @@ func (m *Manager) deleteKey(email string, id Bytes) (retErr error) {
 	return commit(true, nil)
 }
 
-func (m *Manager) setAuthToken(w http.ResponseWriter, u *url.URL, claims map[string]any) {
+func (m *Manager) setAuthToken(w http.ResponseWriter, req *http.Request, u *url.URL, claims map[string]any) {
 	if u == nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -778,7 +747,7 @@ func (m *Manager) setAuthToken(w http.ResponseWriter, u *url.URL, claims map[str
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	if err := m.cfg.CookieManager.SetAuthTokenCookie(w, subject, email, sid, u.Host, claims); err != nil {
+	if err := m.cfg.CookieManager.SetAuthTokenCookie(w, req, subject, email, sid, u.Host, claims); err != nil {
 		m.cfg.Logger.Errorf("ERR SetAuthTokenCookie: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

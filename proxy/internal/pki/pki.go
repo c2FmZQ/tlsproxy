@@ -27,7 +27,6 @@ package pki
 
 import (
 	"bytes"
-	"context"
 	"crypto"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -49,7 +48,6 @@ import (
 
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/tpm"
-	jwt "github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/ocsp"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki/keys"
@@ -119,9 +117,6 @@ type Options struct {
 	Logger interface {
 		Errorf(format string, args ...any)
 	}
-	// ClaimsFromCtx returns jwt claims for the current user.
-	ClaimsFromCtx func(context.Context) jwt.MapClaims
-
 	// AdminMatcher returns true if group contains email.
 	AdminMatcher func(acl []string, email string) bool
 }

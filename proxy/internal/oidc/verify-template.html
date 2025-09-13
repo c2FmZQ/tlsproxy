@@ -5,6 +5,7 @@
 <meta http-equiv="content-type" content="text/html; charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
 <link rel="stylesheet" type="text/css" href="/.sso/style.css" />
+<script src="/.sso/common.js"></script>
 <style>
 h1 {
   font-size: 150%;
@@ -33,7 +34,6 @@ function respond(answer) {
   fetch(window.location, {
     method: 'POST',
     headers: {
-      'x-csrf-check': 1,
       'content-type': 'application/x-www-form-urlencoded',
     },
     body: 'approve='+(answer===true?'true':'false')+'&user_code='+encodeURIComponent(document.getElementById('usercode').value),
@@ -57,7 +57,7 @@ function respond(answer) {
 </head>
 <body>
 <div id="sso">
-{{.Email}} <a href="/.sso/logout" class="button">Logout</a>
+{{.Email}} <a onclick="tlsProxyLogout();" class="button">Logout</a>
 </div>
 <div id="message">
 <h1>Device Authorization Request</h1>

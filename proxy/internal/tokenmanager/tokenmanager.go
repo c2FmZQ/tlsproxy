@@ -32,6 +32,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -59,7 +60,8 @@ const (
 )
 
 type tokenKeys struct {
-	Keys []*tokenKey
+	HMACKey []byte
+	Keys    []*tokenKey
 }
 
 type privateKey interface {
@@ -127,6 +129,13 @@ func (tm *TokenManager) KeyRotationLoop(ctx context.Context) {
 	}
 }
 
+func (tm *TokenManager) HMAC(b []byte) []byte {
+	mac := hmac.New(sha256.New, tm.keys.HMACKey)
+	mac.Write(b)
+	h := mac.Sum(nil)
+	return h[:]
+}
+
 func (tm *TokenManager) rotateKeys() (retErr error) {
 	var keys tokenKeys
 	commit, err := tm.store.OpenForUpdate(tokenKeyFile, &keys)
@@ -136,6 +145,13 @@ func (tm *TokenManager) rotateKeys() (retErr error) {
 	defer commit(false, &retErr)
 	var changed bool
 
+	if len(keys.HMACKey) == 0 {
+		keys.HMACKey = make([]byte, 32)
+		if _, err := io.ReadFull(rand.Reader, keys.HMACKey); err != nil {
+			return err
+		}
+		changed = true
+	}
 	if len(keys.Keys) == 0 {
 		tk, err := tm.createNewTokenKeys()
 		if err != nil {
