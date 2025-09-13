@@ -61,6 +61,14 @@ jobs:
         for dir in $(find examples/ -name go.mod); do
           (cd "$(dirname "${dir}")" && go build -o /tmp/example .)
         done
+    - name: Check for X X X
+      run: |
+        out="$(git grep X\XX)"
+        if [[ "${out}" != "" ]]; then
+          echo "Found:"
+          echo "${out}" | sed -re 's/^/> /'
+          exit 1
+        fi
     - name: Build test docker image
       run: |
         touch version.sh

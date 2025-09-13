@@ -81,7 +81,7 @@ go run github.com/c2FmZQ/tlsproxy/examples/deviceauth \
   --run="${CURLCMD}"
 
 # The JSON file should look like:
-# {"cert":"-----BEGIN CERTIFICATE-----\nXXXX-----END CERTIFICATE-----\n","result":"ok"}
+# {"cert":"-----BEGIN CERTIFICATE-----\n....-----END CERTIFICATE-----\n","result":"ok"}
 jq -r .cert < "${KEYNAME}.cert.json" > "${KEYNAME}.cert"
 
 echo "=============================================================="
