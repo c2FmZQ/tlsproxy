@@ -10,6 +10,11 @@ h1 {
 h2 {
   font-size: 125%;
 }
+#identity {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+}
 #csrform {
   border: 2px solid black;
   background-color: slategray;

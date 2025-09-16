@@ -61,8 +61,10 @@ window.tlsProxy = {
       opts.push(m[0]+'-'+m[2]);
       opts.push(m[0]+'-'+m[1]);
     }
-    opts.push(m[0]);
-    return fetch('/.sso/languages.json?lang='+encodeURIComponent(opts.join(',')))
+    if (m.length > 1) {
+      opts.push(m[0]);
+    }
+    return fetch('/.sso/languages.json?lang='+encodeURIComponent(opts.join(',')).replaceAll('%2C',','))
       .then(r => r.json())
       .then(data => {
         for (let opt of opts) {
