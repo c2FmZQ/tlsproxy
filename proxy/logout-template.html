@@ -12,7 +12,7 @@
 {{ if eq .Email "" }}
 <div style="font-size: 200%" translation-key="sso-logged-out">Logged out</div>
 {{ else }}
-<div>Click the button to continue</div>
+<div translation-key="logout-instructions">Click the button to continue</div>
 <a class="button" onclick="tlsProxy.logout();" translation-key="logout-button">Logout</a>
 {{ end }}
 </div>
