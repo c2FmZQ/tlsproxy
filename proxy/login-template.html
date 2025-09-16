@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Login</title>
+<title translation-key="sso-login-title">Login</title>
 <meta http-equiv="content-type" content="text/html; charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
 <link rel="stylesheet" type="text/css" href="/.sso/style.css" />
@@ -155,7 +155,7 @@ button.github {
 <body>
 <div id="message">
 <div class="big">🛂</div>
-<div>Authentication required to access</div>
+<div translation-key="sso-auth-required">Authentication required to access this document</div>
 <div id="target"><a href="{{.URL}}">{{.DisplayURL}}</a></div>
 <div>
 {{- if eq .IDP "google" }}
@@ -171,16 +171,16 @@ button.github {
         <path fill="none" d="M0 0h48v48H0z"></path>
       </svg>
     </div>
-    <span class="gsi-material-button-contents">Continue with Google</span>
-    <span style="display: none;">Continue with Google</span>
+    <span class="gsi-material-button-contents" translation-key="sso-continue-with-google">Continue with Google</span>
+    <span style="display: none;" translation-key="sso-continue-with-google">Continue with Google</span>
   </div>
 </button>
 {{- else if eq .IDP "facebook" }}
-<button onclick="window.location='/.sso/login?redirect={{.Token}}';" class="facebook">Continue with Facebook</button>
+<button translation-key="sso-continue-with-facebook" onclick="window.location='/.sso/login?redirect={{.Token}}';" class="facebook">Continue with Facebook</button>
 {{- else if eq .IDP "github" }}
-<button onclick="window.location='/.sso/login?redirect={{.Token}}';" class="github">Continue with GitHub</button>
+<button translation-key="sso-continue-with-github" onclick="window.location='/.sso/login?redirect={{.Token}}';" class="github">Continue with GitHub</button>
 {{- else }}
-<button onclick="window.location='/.sso/login?redirect={{.Token}}';">Login</button>
+<button translation-key="sso-login" onclick="window.location='/.sso/login?redirect={{.Token}}';">Login</button>
 {{- end }}
 </div>
 </body>

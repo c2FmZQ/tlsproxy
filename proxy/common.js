@@ -30,8 +30,14 @@ function tlsProxyLogout() {
   .then(() => window.location = '/.sso/logout');
 }
 
+window.tlsProxy = {
+  logout: tlsProxyLogout,
+  lang: 'en', // default language
+  langData: {},
+};
+
 (() => {
-  function tlsProxySessionId() {
+  function sessionId() {
     const m = document.cookie.match(/__tlsproxySid=([^;]*)(;|$)/);
     if (m) return m[1];
     return '';
@@ -44,7 +50,76 @@ function tlsProxyLogout() {
     if (!opt.headers) {
       opt.headers = {};
     }
-    opt.headers['x-csrf-token'] = tlsProxySessionId();
+    opt.headers['x-csrf-token'] = sessionId();
     return ofetch(res, opt);
   };
+
+  function setLanguage(lang) {
+    let opts = [lang];
+    const m = lang.split('-');
+    if (m.length === 3) {
+      opts.push(m[0]+'-'+m[2]);
+    }
+    if (m.length >= 2) {
+      opts.push(m[0]+'-'+m[1]);
+    }
+    opts.push(m[0]);
+    return fetch('/.sso/languages.json?lang='+encodeURIComponent(opts.join(',')))
+      .then(r => r.json())
+      .then(data => {
+        for (let opt of opts) {
+          if (data[opt]) {
+            window.tlsProxy.lang = opt;
+            window.tlsProxy.langData = data;
+            console.log(`Matched ${opt}`);
+            return
+          }
+        }
+        throw new Error(`unsupported language ${lang}`);
+      });
+  }
+
+  function translate(key) {
+    const value = tlsProxy.langData[tlsProxy.lang][key];
+    if (!value) {
+      return '###' + key + '###';
+    }
+    return value;
+  }
+  tlsProxy.translate = translate;
+
+  async function applyTranslations(lang) {
+    await setLanguage(lang?lang:navigator.language);
+    document.querySelector('HTML').setAttribute('dir', translate('DIR') === 'rtl' ? 'rtl' : '');
+    document.querySelectorAll('[translation-key]').forEach(e => {
+      const key = e.getAttribute('translation-key');
+      const value = translate(key);
+      if (!value) {
+        console.log(`Missing translation key ${key} for ${tlsProxy.lang}`);
+        return;
+      }
+      if (e.tagName === 'INPUT' && e.hasAttribute('placeholder')) {
+        e.setAttribute('placeholder', value);
+      } else {
+        e.textContent = value;
+      }
+    });
+    if (tlsProxy.lang !== 'en') {
+      const b = document.createElement('a');
+      b.textContent = 'Show in english';
+      b.addEventListener('click', () => {
+        applyTranslations('en-US');
+        document.body.removeChild(b);
+      });
+      b.style.cursor = 'pointer';
+      b.style.position = 'absolute';
+      b.style.bottom = '0.25rem';
+      b.style.left = '0.25rem';
+      b.style.padding = '0.1rem';
+      b.style.zIndex = 10;
+      b.style.backgroundColor = 'white';
+      document.body.appendChild(b);
+    }
+  }
+  document.addEventListener('DOMContentLoaded', () => applyTranslations());
 })();

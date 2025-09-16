@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Passkey</title>
+<title translation-key="passkey-manage-title">Passkey</title>
 <meta http-equiv="content-type" content="text/html; charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
 <link rel="stylesheet" type="text/css" href="/.sso/style.css" />
@@ -36,14 +36,14 @@
   {{ .Email }}
   </div>
   <div id="buttons">
-    <a class="button" onclick="registerPasskey();">Register New Passkey</a>
+    <a class="button" translation-key="passkey-register-new-passkey" onclick="registerPasskey();">Register New Passkey</a>
   </div>
   <div id="message">
-    Registered Passkeys
+    <span translation-key="passkey-registered-passkeys">Registered Passkeys</span>
     <div id="keys">
-      <div>ID</div>
-      <div>Created (UTC)</div>
-      <div>Last Seen (UTC)</div>
+      <div translation-key="passkey-id">ID</div>
+      <div translation-key="passkey-created">Created (UTC)</div>
+      <div translation-key="passkey-last-seen">Last Seen (UTC)</div>
       <div>&nbsp;</div>
 {{- range .Keys }}
       <div>{{.ShortID}}</div>

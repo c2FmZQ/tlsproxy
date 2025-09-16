@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Status</title>
+<title translation-key="sso-status-title">Status</title>
 <meta http-equiv="content-type" content="text/html; charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
 <link rel="icon" href="/.sso/favicon.ico" />
@@ -40,24 +40,24 @@
 <div id="buttons">
 {{ if len .Claims | ne 0 }}
 {{ if .Passkeys }}
-<a class="button" href="/.sso/passkeys">Passkeys</a>
+<a class="button" translation-key="sso-passkeys" href="/.sso/passkeys">Passkeys</a>
 {{ end }}
-<a class="button" href="/.sso/logout?u={{.Token}}">Switch Account</a>
-<a class="button" onclick="tlsProxyLogout();">Logout</a>
+<a class="button" translation-key="sso-switch-account" href="/.sso/logout?u={{.Token}}">Switch Account</a>
+<a class="button" translation-key="logout-button" onclick="tlsProxy.logout();">Logout</a>
 {{ else }}
-<a class="button" href="/.sso/logout?u={{.Token}}">Login</a>
+<a class="button" translation-key="login-button" href="/.sso/logout?u={{.Token}}">Login</a>
 {{ end }}
 </div>
 <div id="message">
 {{ if len .Claims | ne 0 }}
-Your Identity
+<span translation-key="sso-your-identity">Your Identity</span>
 <div id="claims">
 {{ range .Claims }}
 <div>{{.Key}}</div>
 <div>{{.Value}}{{ if eq .Key "picture" }}<br /><img style="max-width: 40vw; max-height: 40vh;" src="{{.Value}}" />{{ end }}</div>
 {{ end }}
 {{ else }}
-Your Are Not Logged In
+<span translation-key="sso-not-logged-in">You Are Not Logged In</span>
 {{ end }}
 </div>
 </div>
