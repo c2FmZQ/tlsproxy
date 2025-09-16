@@ -59,8 +59,6 @@ window.tlsProxy = {
     const m = lang.split('-');
     if (m.length === 3) {
       opts.push(m[0]+'-'+m[2]);
-    }
-    if (m.length >= 2) {
       opts.push(m[0]+'-'+m[1]);
     }
     opts.push(m[0]);
@@ -109,7 +107,7 @@ window.tlsProxy = {
         document.body.removeChild(b);
       });
       b.style.cursor = 'pointer';
-      b.style.position = 'absolute';
+      b.style.position = 'fixed';
       b.style.bottom = '0.25rem';
       b.style.left = '0.25rem';
       b.style.padding = '0.1rem';
