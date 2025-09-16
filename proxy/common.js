@@ -71,7 +71,7 @@ window.tlsProxy = {
           if (data[opt]) {
             window.tlsProxy.lang = opt;
             window.tlsProxy.langData = data;
-            console.log(`Matched ${opt}`);
+            console.log(`found ${opt} for ${lang}`);
             return
           }
         }
@@ -91,20 +91,17 @@ window.tlsProxy = {
   async function applyTranslations(lang) {
     await setLanguage(lang?lang:navigator.language);
     document.querySelector('HTML').setAttribute('dir', translate('DIR') === 'rtl' ? 'rtl' : '');
+    let changed = false;
     document.querySelectorAll('[translation-key]').forEach(e => {
-      const key = e.getAttribute('translation-key');
-      const value = translate(key);
-      if (!value) {
-        console.log(`Missing translation key ${key} for ${tlsProxy.lang}`);
-        return;
-      }
+      const value = translate(e.getAttribute('translation-key'));
       if (e.tagName === 'INPUT' && e.hasAttribute('placeholder')) {
         e.setAttribute('placeholder', value);
       } else {
         e.textContent = value;
       }
+      changed = true;
     });
-    if (tlsProxy.lang !== 'en') {
+    if (changed && tlsProxy.lang !== 'en') {
       const b = document.createElement('a');
       b.textContent = 'Show in english';
       b.addEventListener('click', () => {

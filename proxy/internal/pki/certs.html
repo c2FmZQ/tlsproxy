@@ -41,7 +41,7 @@
 <div class="certs"><span translation-key="pki-issued-certs">Issued Certificates:</span>
 {{- range .Certs }}
 <div class="onerow{{ if .UsedNow }} usednow{{ end }}">
-<div class="status">{{.Status}}</div>
+<div class="status" translation-key="pki-{{toLower .Status}}">{{.Status}}</div>
 <div class="onecert">
 <div translation-key="pki-sn">SerialNumber:</div><div>{{.SN}}</div>
 <div translation-key="pki-publickey">PublicKey:</div><div>{{.PublicKey}}</div>

@@ -59,7 +59,10 @@ var staticFiles embed.FS
 var staticEtags map[string]string
 
 func init() {
-	certsTemplate = template.Must(template.New("pki-certs").Parse(embedCerts))
+	funcs := template.FuncMap{
+		"toLower": strings.ToLower,
+	}
+	certsTemplate = template.Must(template.New("pki-certs").Funcs(funcs).Parse(embedCerts))
 	staticEtags = make(map[string]string)
 	d, err := staticFiles.ReadDir(".")
 	if err != nil {
