@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title translation-key="oidc-auth-title">Authorization</title>
+<title tkey="oidc-auth-title">Authorization</title>
 <meta http-equiv="content-type" content="text/html; charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
 <link rel="stylesheet" type="text/css" href="/.sso/style.css" />
@@ -56,13 +56,13 @@ function respond(answer) {
 </head>
 <body>
 <div id="sso">
-{{.Email}} <a onclick="tlsProxy.logout();" translation-key="logout-button" class="button">Logout</a>
+{{.Email}} <a onclick="tlsProxy.logout();" tkey="logout-button" class="button">Logout</a>
 </div>
 <div id="message">
-<h1 translation-key="oidc-auth-request">Authorization Request</h1>
+<h1 tkey="oidc-auth-request">Authorization Request</h1>
 <div>{{.Host}}</div>
-<div translation-key="oidc-wants-access">This server wants to access your information.</div>
+<div tkey="oidc-wants-access">This server wants to access your information.</div>
 <div>({{.Scopes}})</div>
-<div><a class="button" translation-key="oidc-deny-button" onclick="respond(false);">Deny</a> <a class="button" translation-key="oidc-approve-button" onclick="respond(true);">Approve</a></div>
+<div><a class="button" tkey="oidc-deny-button" onclick="respond(false);">Deny</a> <a class="button" tkey="oidc-approve-button" onclick="respond(true);">Approve</a></div>
 </body>
 </html>

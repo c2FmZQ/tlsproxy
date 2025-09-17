@@ -501,7 +501,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			localHandler{
 				desc:      "Language Translations",
 				path:      "/.sso/languages.json",
-				handler:   logHandler(http.HandlerFunc(be.serveLanguagesJSON)),
+				handler:   logHandler(http.HandlerFunc(serveLanguagesJSON)),
 				ssoBypass: true,
 			},
 			localHandler{

@@ -23,20 +23,20 @@
 
 'use strict';
 
-function tlsProxyLogout() {
-  return fetch('/.sso/logout', {
-    method: 'POST',
-  })
-  .then(() => window.location = '/.sso/logout');
-}
-
 window.tlsProxy = {
-  logout: tlsProxyLogout,
   lang: 'en', // default language
   langData: {},
 };
 
 (() => {
+  function logout() {
+    return fetch('/.sso/logout', {
+      method: 'POST',
+    })
+    .then(() => window.location = '/.sso/logout');
+  }
+  tlsProxy.logout = logout;
+
   function sessionId() {
     const m = document.cookie.match(/__tlsproxySid=([^;]*)(;|$)/);
     if (m) return m[1];
@@ -54,28 +54,32 @@ window.tlsProxy = {
     return ofetch(res, opt);
   };
 
-  function setLanguage(lang) {
-    let opts = [lang];
-    const m = lang.split('-');
-    if (m.length === 3) {
-      opts.push(m[0]+'-'+m[2]);
-      opts.push(m[0]+'-'+m[1]);
+  function setLanguage(langs) {
+    let opts = [...langs];
+    for (let lang of langs) {
+      const m = lang.split('-');
+      if (m.length === 3) {
+        opts.push(m[0]+'-'+m[2]);
+        opts.push(m[0]+'-'+m[1]);
+      }
+      if (m.length > 1) {
+        opts.push(m[0]);
+      }
     }
-    if (m.length > 1) {
-      opts.push(m[0]);
-    }
-    return fetch('/.sso/languages.json?lang='+encodeURIComponent(opts.join(',')).replaceAll('%2C',','))
+    let sorted = [...new Set(opts)];
+    sorted.sort();
+    return fetch('/.sso/languages.json?lang='+encodeURIComponent(sorted.join(',')).replaceAll('%2C',','))
       .then(r => r.json())
       .then(data => {
         for (let opt of opts) {
           if (data[opt]) {
             window.tlsProxy.lang = opt;
             window.tlsProxy.langData = data;
-            console.log(`found ${opt} for ${lang}`);
+            console.log(`translations: found ${opt} for ${langs}`);
             return
           }
         }
-        throw new Error(`unsupported language ${lang}`);
+        throw new Error(`translations: no match for ${langs}`);
       });
   }
 
@@ -89,11 +93,10 @@ window.tlsProxy = {
   tlsProxy.translate = translate;
 
   async function applyTranslations(lang) {
-    await setLanguage(lang?lang:navigator.language);
-    document.querySelector('HTML').setAttribute('dir', translate('DIR') === 'rtl' ? 'rtl' : '');
+    await setLanguage(lang?[lang]:navigator.languages);
     let changed = false;
-    document.querySelectorAll('[translation-key]').forEach(e => {
-      const value = translate(e.getAttribute('translation-key'));
+    document.querySelectorAll('[tkey]').forEach(e => {
+      const value = translate(e.getAttribute('tkey'));
       if (e.tagName === 'INPUT' && e.hasAttribute('placeholder')) {
         e.setAttribute('placeholder', value);
       } else {
@@ -101,11 +104,18 @@ window.tlsProxy = {
       }
       changed = true;
     });
+    if (changed) {
+      const html = document.querySelector('HTML');
+      html.setAttribute('lang', tlsProxy.lang);
+      html.setAttribute('dir', translate('DIR') === 'rtl' ? 'rtl' : 'ltr');
+    }
     if (changed && tlsProxy.lang !== 'en') {
       const b = document.createElement('a');
+      b.setAttribute('lang', 'en');
+      b.setAttribute('direction', 'ltr');
       b.textContent = 'Show in english';
       b.addEventListener('click', () => {
-        applyTranslations('en-US');
+        applyTranslations('en');
         document.body.removeChild(b);
       });
       b.style.cursor = 'pointer';

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title translation-key="pki-title">PKI</title>
+<title tkey="pki-title">PKI</title>
 <meta http-equiv="content-type" content="text/html; charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
 <link rel="stylesheet" type="text/css" href="/.sso/style.css" />
@@ -12,66 +12,66 @@
 </head>
 <body>
 <div id="buttons">
-  <a class="button" translation-key="pki-new-cert" onclick="showForm();">New Certificate</a>
+  <a class="button" tkey="pki-new-cert" onclick="showForm();">New Certificate</a>
 </div>
 <div id="identity">{{$.Email}}</div>
 
-<div class="certs"><span translation-key="pki-cert-authority">Certificate Authority:</span>
+<div class="certs"><span tkey="pki-cert-authority">Certificate Authority:</span>
 <div class="onecert">
-<div translation-key="pki-subject">Subject:</div><div>{{ .CASubject }}</div>
-<div translation-key="pki-sn">SerialNumber:</div><div>{{ .CASN }}</div>
-<div translation-key="pki-subject-key-id">SubjectKeyId:</div><div>{{ .CASubjectKeyId }}</div>
+<div tkey="pki-subject">Subject:</div><div>{{ .CASubject }}</div>
+<div tkey="pki-sn">SerialNumber:</div><div>{{ .CASN }}</div>
+<div tkey="pki-subject-key-id">SubjectKeyId:</div><div>{{ .CASubjectKeyId }}</div>
 </div>
 </div>
 
 <form id="filters">
-<b translation-key="pki-filters">Filters:</b> <select name="owner" onchange="this.form.submit();">
-<option value="me"{{if eq .Owner "me"}} selected{{end}} translation-key="pki-mine">Mine</option>
-<option value="all"{{if eq .Owner "all"}} selected{{end}} translation-key="pki-all">All</option>
+<b tkey="pki-filters">Filters:</b> <select name="owner" onchange="this.form.submit();">
+<option value="me"{{if eq .Owner "me"}} selected{{end}} tkey="pki-mine">Mine</option>
+<option value="all"{{if eq .Owner "all"}} selected{{end}} tkey="pki-all">All</option>
 </select>
 <select name="status" onchange="this.form.submit();">
-<option value="valid"{{if eq .Status "valid"}} selected{{end}} translation-key="pki-valid">Valid</option>
-<option value="expired"{{if eq .Status "expired"}} selected{{end}} translation-key="pki-expired">Expired</option>
-<option value="revoked"{{if eq .Status "revoked"}} selected{{end}} translation-key="pki-revoked">Revoked</option>
-<option value="all"{{if eq .Status "all"}} selected{{end}} translation-key="pki-all">All</option>
+<option value="valid"{{if eq .Status "valid"}} selected{{end}} tkey="pki-valid">Valid</option>
+<option value="expired"{{if eq .Status "expired"}} selected{{end}} tkey="pki-expired">Expired</option>
+<option value="revoked"{{if eq .Status "revoked"}} selected{{end}} tkey="pki-revoked">Revoked</option>
+<option value="all"{{if eq .Status "all"}} selected{{end}} tkey="pki-all">All</option>
 </select>
 </form>
 
 {{- if len .Certs | ne 0 }}
-<div class="certs"><span translation-key="pki-issued-certs">Issued Certificates:</span>
+<div class="certs"><span tkey="pki-issued-certs">Issued Certificates:</span>
 {{- range .Certs }}
 <div class="onerow{{ if .UsedNow }} usednow{{ end }}">
-<div class="status" translation-key="pki-{{toLower .Status}}">{{.Status}}</div>
+<div class="status" tkey="pki-{{toLower .Status}}">{{.Status}}</div>
 <div class="onecert">
-<div translation-key="pki-sn">SerialNumber:</div><div>{{.SN}}</div>
-<div translation-key="pki-publickey">PublicKey:</div><div>{{.PublicKey}}</div>
+<div tkey="pki-sn">SerialNumber:</div><div>{{.SN}}</div>
+<div tkey="pki-publickey">PublicKey:</div><div>{{.PublicKey}}</div>
 {{- if eq .Status "Revoked" }}
-<div translation-key="pki-revocation">Revocation:</div><div>{{.RevocationTime}}</div>
+<div tkey="pki-revocation">Revocation:</div><div>{{.RevocationTime}}</div>
 {{- end }}
 {{- if ne .Subject "" }}
-<div translation-key="pki-subject">Subject:</div><div>{{.Subject}}</div>
+<div tkey="pki-subject">Subject:</div><div>{{.Subject}}</div>
 {{- end }}
 {{- range .EmailAddresses }}
-<div translation-key="pki-email">Email:</div><div>{{.}}</div>
+<div tkey="pki-email">Email:</div><div>{{.}}</div>
 {{- end }}
 {{- range .DNSNames }}
-<div translation-key="pki-dns-name">DNS Name:</div><div>{{.}}</div>
+<div tkey="pki-dns-name">DNS Name:</div><div>{{.}}</div>
 {{- end }}
 {{- if ne .ExtKeyUsage "" }}
-<div translation-key="pki-ext-keyusage">ExtKeyUsage:</div><div>{{.ExtKeyUsage}}</div>
+<div tkey="pki-ext-keyusage">ExtKeyUsage:</div><div>{{.ExtKeyUsage}}</div>
 {{- end }}
 {{- if .IsCA }}
-<div translation-key="pki-is-ca">IsCA:</div><div>{{.IsCA}}</div>
+<div tkey="pki-is-ca">IsCA:</div><div>{{.IsCA}}</div>
 {{- end }}
-<div translation-key="pki-not-before">NotBefore:</div><div>{{.NotBefore}}</div>
-<div translation-key="pki-not-after">NotAfter:</div><div>{{.NotAfter}}</div>
+<div tkey="pki-not-before">NotBefore:</div><div>{{.NotBefore}}</div>
+<div tkey="pki-not-after">NotAfter:</div><div>{{.NotAfter}}</div>
 </div>
 <div class="certButtons">
-<a class="button" translation-key="pki-view" onclick="showView({{.SN}});">View</a>
-<a class="button" translation-key="pki-download" onclick="downloadCert({{.SN}});">Download</a>
+<a class="button" tkey="pki-view" onclick="showView({{.SN}});">View</a>
+<a class="button" tkey="pki-download" onclick="downloadCert({{.SN}});">Download</a>
 {{- if eq .Status "Valid" }}
 {{- if .CanRevoke }}
-<a class="button" translation-key="pki-revoke" onclick="revokeCert({{.SN}});">Revoke</a>
+<a class="button" tkey="pki-revoke" onclick="revokeCert({{.SN}});">Revoke</a>
 {{- end }}
 {{- end }}
 </div>
@@ -81,19 +81,19 @@
 {{- end }}
 
 <div id="csrform" style="display: none;">
-<h1 translation-key="pki-new-cert">New Certificate</h1>
-<h2 translation-key="pki-option-1">Option 1</h2>
-<div translation-key="pki-generate-private-key-instructions">
+<h1 tkey="pki-new-cert">New Certificate</h1>
+<h2 tkey="pki-option-1">Option 1</h2>
+<div tkey="pki-generate-private-key-instructions">
 Generate a private key in the browser and request a new certificate. The private
 key is never sent to the server.
 </div>
 <form onsubmit="return false;">
 <div class="table2">
-<div><b translation-key="pki-format">Format:</b></div><div><select name="format">
+<div><b tkey="pki-format">Format:</b></div><div><select name="format">
 <option value="gpg">PEM + OpenPGP</option>
 <option value="p12">PKCS#12</option>
 </select></div>
-<div><b translation-key="pki-key-type">Key Type:</b></div><div><select name="keytype">
+<div><b tkey="pki-key-type">Key Type:</b></div><div><select name="keytype">
 <option value="ecdsa-p224">ECDSA P-224</option>
 <option value="ecdsa-p256" selected>ECDSA P-256</option>
 <option value="ecdsa-p384">ECDSA P-384</option>
@@ -103,36 +103,36 @@ key is never sent to the server.
 <option value="rsa-3072">RSA 3072</option>
 <option value="rsa-4096">RSA 4096</option>
 </select></div>
-<div><b translation-key="pki-label">Label:</b></div><div><input type="text" translation-key="pki-label-desc" name="label" size="20" placeholder="optional common name suffix" /></div>
-<div><b translation-key="pki-usage">Usage:</b></div><div><select name="usage" onchange="selectUsage(this)">
-<option translation-key="pki-client" value="client">Client</option>
-<option translation-key="pki-server" value="server">Server</select>
+<div><b tkey="pki-label">Label:</b></div><div><input type="text" tkey="pki-label-desc" name="label" size="20" placeholder="optional common name suffix" /></div>
+<div><b tkey="pki-usage">Usage:</b></div><div><select name="usage" onchange="selectUsage(this)">
+<option tkey="pki-client" value="client">Client</option>
+<option tkey="pki-server" value="server">Server</select>
 </div>
-<div class="dnsinput"><b translation-key="pki-dns-name">DNS Name:</b></div><div class="dnsinput"><input type="text" translation-key="pki-required" name="dnsname" size="20" placeholder="required" /></div>
-<div><b translation-key="pki-password">Password:</b></div><div><input type="password" translation-key="pki-required" name="pw1" size="20" placeholder="required" autocomplete="new-password" /></div>
-<div><b translation-key="pki-password2">Re-type Password:</b></div><div><input type="password" translation-key="pki-required" name="pw2" size="20" placeholder="required" autocomplete="new-password" /></div>
+<div class="dnsinput"><b tkey="pki-dns-name">DNS Name:</b></div><div class="dnsinput"><input type="text" tkey="pki-required" name="dnsname" size="20" placeholder="required" /></div>
+<div><b tkey="pki-password">Password:</b></div><div><input type="password" tkey="pki-required" name="pw1" size="20" placeholder="required" autocomplete="new-password" /></div>
+<div><b tkey="pki-password2">Re-type Password:</b></div><div><input type="password" tkey="pki-required" name="pw2" size="20" placeholder="required" autocomplete="new-password" /></div>
 </div>
-<button translation-key="pki-get-key-and-cert" onclick="generateKeyAndCert(this);">Get Key &amp; Cert</button>
-<button translation-key="pki-cancel" onclick="hideForm();">Cancel</button>
+<button tkey="pki-get-key-and-cert" onclick="generateKeyAndCert(this);">Get Key &amp; Cert</button>
+<button tkey="pki-cancel" onclick="hideForm();">Cancel</button>
 </form>
 <hr />
-<h2 translation-key="pki-option-2">Option 2</h2>
-<div translation-key="pki-option-2-instructions">Use a Certificate Signing Request. One can be created with openssl, e.g.</div>
+<h2 tkey="pki-option-2">Option 2</h2>
+<div tkey="pki-option-2-instructions">Use a Certificate Signing Request. One can be created with openssl, e.g.</div>
 <code>openssl req -newkey rsa:2048 -keyout PRIVATEKEY.key -out CSR.pem</code>
-<div translation-key="pki-option-2-instructions2">Paste the CSR below, and click Request.</div>
+<div tkey="pki-option-2-instructions2">Paste the CSR below, and click Request.</div>
 <form onsubmit="return false;">
 <textarea name="csr" placeholder="-----BEGIN CERTIFICATE REQUEST-----
 ...
 -----END CERTIFICATE REQUEST-----">
 </textarea><br />
-<button translation-key="pki-request" onclick="requestCert(this.form.csr.value);">Request</button>
-<button translation-key="pki-cancel" onclick="hideForm();" />Cancel</button>
+<button tkey="pki-request" onclick="requestCert(this.form.csr.value);">Request</button>
+<button tkey="pki-cancel" onclick="hideForm();" />Cancel</button>
 </form>
 </div>
 
 <div id="viewcert" style="display: none;">
 <pre id="certpem"></pre>
-<button translation-key="pki-close" onclick="hideView();">Close</button>
+<button tkey="pki-close" onclick="hideView();">Close</button>
 </div>
 
 </body>

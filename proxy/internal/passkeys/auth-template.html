@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title translation-key="passkey-auth-title">Passkey</title>
+<title tkey="passkey-auth-title">Passkey</title>
 <meta http-equiv="content-type" content="text/html; charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
 <link rel="stylesheet" type="text/css" href="/.sso/style.css" />
@@ -32,38 +32,38 @@ a.button.big {
 </style>
 </head>
 <body>
-  <div id="sum"><span translation-key="passkey-access-to-this-page">Access to this page is controlled using passkeys.</span></div>
+  <div id="sum"><span tkey="passkey-access-to-this-page">Access to this page is controlled using passkeys.</span></div>
   <div id="buttons">
 {{- if eq .Mode "Login" }}
-    <a class="button" translation-key="passkey-register-new-id" href="{{.Self}}?get=RegisterNewID&redirect={{.Token}}">Register New Identity</a>
+    <a class="button" tkey="passkey-register-new-id" href="{{.Self}}?get=RegisterNewID&redirect={{.Token}}">Register New Identity</a>
 {{- end }}
 {{- if ne .Mode "Login" }}
-    <a class="button" translation-key="passkey-switch-account" onclick="switchAccount({{.Token}});">Switch Account</a>
+    <a class="button" tkey="passkey-switch-account" onclick="switchAccount({{.Token}});">Switch Account</a>
 {{- end }}
   </div>
   <div id="message">
 {{- if eq .Mode "Login" }}
     <div class="big">🛂</div>
-    <div translation-key="passkey-auth-required">Authentication required to access this document.</div>
+    <div tkey="passkey-auth-required">Authentication required to access this document.</div>
     <div id="target"><a href="{{.URL}}">{{.DisplayURL}}</a></div>
-    <div><input id="loginid" translation-key="passkey-email" value="{{.Email}}" placeholder="Email" /></div>
-    <div><a class="button big" translation-key="continue-button" onclick="loginWithPasskey({{.Token}}, document.getElementById('loginid').value);">Continue</a></div>
+    <div><input id="loginid" tkey="passkey-email" value="{{.Email}}" placeholder="Email" /></div>
+    <div><a class="button big" tkey="continue-button" onclick="loginWithPasskey({{.Token}}, document.getElementById('loginid').value);">Continue</a></div>
 {{- end }}
 {{- if eq .Mode "RefreshID" }}
     <div>{{.Email}}</div>
-    <div><a class="button" translation-key="passkey-refresh-id" onclick="loginWithPasskey({{.Token}}, {{.Email}});">Refresh ID</a></div>
+    <div><a class="button" tkey="passkey-refresh-id" onclick="loginWithPasskey({{.Token}}, {{.Email}});">Refresh ID</a></div>
 {{- end }}
 {{- if eq .Mode "RegisterNewID" }}
     <div>{{.Email}}</div>
   {{- if .IsAllowed }}
     {{- if .IsRegistered }}
-    <div translation-key="passkey-already-registered">Already Registered</div>
-    <div><a class="button big" translation-key="continue-button" onclick="loginWithPasskey({{.Token}}, {{.Email}});">Continue</a></div>
+    <div tkey="passkey-already-registered">Already Registered</div>
+    <div><a class="button big" tkey="continue-button" onclick="loginWithPasskey({{.Token}}, {{.Email}});">Continue</a></div>
     {{- else }}
-    <div><a class="button" translation-key="passkey-register-this-id" onclick="registerPasskey({{.Token}});">Register This Identity</a></div>
+    <div><a class="button" tkey="passkey-register-this-id" onclick="registerPasskey({{.Token}});">Register This Identity</a></div>
     {{- end }}
   {{- else }}
-    <div translation-key="passkey-id-not-allowed">This Email Address Is Not Allowed</div>
+    <div tkey="passkey-id-not-allowed">This Email Address Is Not Allowed</div>
   {{- end }}
 {{- end }}
   </div>

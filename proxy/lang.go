@@ -24,14 +24,12 @@
 package proxy
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strings"
 )
 
-func (be *Backend) serveLanguagesJSON(w http.ResponseWriter, req *http.Request) {
+func serveLanguagesJSON(w http.ResponseWriter, req *http.Request) {
 	req.ParseForm()
 	var out map[string]map[string]string
 	if lang := req.Form.Get("lang"); lang != "" {
@@ -47,19 +45,7 @@ func (be *Backend) serveLanguagesJSON(w http.ResponseWriter, req *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	sum := sha256.Sum256(content)
-	etag := `"` + hex.EncodeToString(sum[:]) + `"`
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "public")
-	w.Header().Set("Etag", etag)
-
-	if e := req.Header.Get("If-None-Match"); e == etag {
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-	w.Write(content)
+	serveStatic(w, req, content, "application/json")
 }
 
 // Translations for various languages. They are mostly AI-generated.
