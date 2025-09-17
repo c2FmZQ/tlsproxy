@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :star2: New feature
+
+* New translations for 40 languages, mostly AI-generated.
+
 ## v0.21.0
 
 ### :wrench: Misc
