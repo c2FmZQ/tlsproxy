@@ -109,23 +109,33 @@ window.tlsProxy = {
       html.setAttribute('lang', tlsProxy.lang);
       html.setAttribute('dir', translate('DIR') === 'rtl' ? 'rtl' : 'ltr');
     }
-    if (changed && tlsProxy.lang !== 'en') {
-      const b = document.createElement('a');
-      b.setAttribute('lang', 'en');
-      b.setAttribute('direction', 'ltr');
-      b.textContent = 'Show in english';
+    if (changed && !document.getElementById('lang-selector')) {
+      const b = document.createElement('select');
+      b.id = 'lang-selector';
       b.addEventListener('click', () => {
-        applyTranslations('en');
-        document.body.removeChild(b);
+        const s = b.options[b.selectedIndex].value;
+        if (s !== tlsProxy.lang) {
+          applyTranslations(s);
+        }
       });
       b.style.cursor = 'pointer';
       b.style.position = 'fixed';
       b.style.bottom = '0.25rem';
-      b.style.left = '0.25rem';
+      b.style.right = '0.25rem';
       b.style.padding = '0.1rem';
       b.style.zIndex = 10;
       b.style.backgroundColor = 'white';
       document.body.appendChild(b);
+      fetch('/.sso/languages.json').then(r => r.json()).then(r => {
+        for (let key in r) {
+          const o = document.createElement('option');
+          o.value = key;
+          o.setAttribute('lang', key);
+          o.selected = key === tlsProxy.lang;
+          o.textContent = r[key].lang;
+          b.appendChild(o);
+        }
+      });
     }
   }
   document.addEventListener('DOMContentLoaded', () => applyTranslations());
