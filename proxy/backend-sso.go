@@ -162,7 +162,7 @@ func serveStatic(w http.ResponseWriter, req *http.Request, content []byte, conte
 	etag := `"` + hex.EncodeToString(sum[:]) + `"`
 
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Cache-Control", "public, max-age=900, stale-while-revalidate=300, stale-if-error=300")
+	w.Header().Set("Cache-Control", "public")
 	w.Header().Set("Etag", etag)
 
 	if e := req.Header.Get("If-None-Match"); e == etag {
