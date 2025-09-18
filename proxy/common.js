@@ -66,9 +66,7 @@ window.tlsProxy = {
         opts.push(m[0]);
       }
     }
-    let sorted = [...new Set(opts)];
-    sorted.sort();
-    return fetch('/.sso/languages.json?lang='+encodeURIComponent(sorted.join(',')).replaceAll('%2C',','))
+    return fetch('/.sso/languages.json?lang='+encodeURIComponent(opts.join(',')).replaceAll('%2C',','))
       .then(r => r.json())
       .then(data => {
         for (let opt of opts) {
@@ -79,7 +77,10 @@ window.tlsProxy = {
             return
           }
         }
-        throw new Error(`translations: no match for ${langs}`);
+        console.log(`translations: no match for ${langs}`);
+        if (langs.length !== 1 || langs[0] !== 'en') {
+          return setLanguage(['en']);
+        }
       });
   }
 

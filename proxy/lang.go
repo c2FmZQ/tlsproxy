@@ -37,6 +37,7 @@ func serveLanguagesJSON(w http.ResponseWriter, req *http.Request) {
 		for _, key := range strings.Split(lang, ",") {
 			if v, ok := languages[key]; ok {
 				out[key] = v
+				break
 			}
 		}
 	} else {
