@@ -5,8 +5,8 @@ go 1.24.6
 require (
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/lestrrat-go/httprc/v3 v3.0.1
-	github.com/lestrrat-go/jwx/v3 v3.0.10
-	golang.org/x/oauth2 v0.30.0
+	github.com/lestrrat-go/jwx/v3 v3.0.11
+	golang.org/x/oauth2 v0.31.0
 )
 
 require (
@@ -17,5 +17,5 @@ require (
 	github.com/lestrrat-go/option v1.0.1 // indirect
 	github.com/lestrrat-go/option/v2 v2.0.0 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
-	golang.org/x/sys v0.35.0 // indirect
+	golang.org/x/sys v0.36.0 // indirect
 )

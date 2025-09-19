@@ -6,6 +6,20 @@
 
 * New translations for 40 languages, mostly AI-generated.
 
+### :wrench: Misc
+
+* Update go: 1.25.1
+* Update go dependencies:
+  * upgraded github.com/google/go-tpm v0.9.5 => v0.9.6
+  * upgraded golang.org/x/crypto v0.41.0 => v0.42.0
+  * upgraded golang.org/x/mod v0.27.0 => v0.28.0
+  * upgraded golang.org/x/net v0.43.0 => v0.44.0
+  * upgraded golang.org/x/sync v0.16.0 => v0.17.0
+  * upgraded golang.org/x/sys v0.35.0 => v0.36.0
+  * upgraded golang.org/x/text v0.28.0 => v0.29.0
+  * upgraded golang.org/x/time v0.12.0 => v0.13.0
+  * upgraded golang.org/x/tools v0.36.0 => v0.37.0
+
 ## v0.21.0
 
 ### :wrench: Misc
