@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>SSH Cert</title>
-<meta http-equiv="content-security-policy" content="default-src 'self'; style-src 'unsafe-inline' 'self'; script-src 'unsafe-inline';" />
+<title tkey="ssh-cert-title">SSH Cert</title>
+<meta http-equiv="content-security-policy" content="default-src 'self'; style-src 'unsafe-inline' 'self'; script-src 'unsafe-inline' 'self';" />
 <meta http-equiv="content-type" content="text/html; charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="icon" href="/.sso/favicon.ico" />
@@ -10,7 +10,9 @@
 <script src="/.sso/common.js"></script>
 <style>
 #header {
-  padding: 1rem;
+  position: absolute;
+  left: 1rem;
+  top: 1rem;
   opacity: 0.1;
   font-weight: bold;
   font-size: 250%;
@@ -168,28 +170,29 @@ addEventListener('keydown', onKeydown);
 <body>
 <div id="header">{{.Name}}</div>
 <div id="buttons">
-  {{.Email}} <a onclick="tlsProxyLogout();" class="button">Logout</a>
+  {{.Email}} <a onclick="tlsProxy.logout();" class="button" tkey="logout-button">Logout</a>
 </div>
 <div id="message" style="text-align: left;">
-  <p>Enter your SSH <em>Public</em> Key to receive a Certificate with principal: [<b>{{.Email}}</b>] signed by <b>{{.Name}}</b>.<a onclick="show('cadiv');")>&#9432;</a></p>
+  <p tkey="ssh-enter-public-key">Enter your SSH <em>Public</em> Key to receive a Certificate.</p>
+  <p><span tkey="ssh-principal">Principal:</span> [<b>{{.Email}}</b>] <span tkey="ssh-authority">Authority:</span> <b>{{.Name}}</b>.<a onclick="show('cadiv');")>&#9432;</a></p>
   <input id="filepicker" type="file" accept=".pub" style="opacity: 0;" onchange="receiveFile(this);"><br />
-  <label for="ttl">Expiration:</label><select id="ttl">
-    <option value="300">5 min</option>
-    <option value="600">10 min</option>
-    <option value="1800">30 min</option>
-    <option value="3600" selected>1 hour</option>
-    <option value="21600">6 hours</option>
-    <option value="43200">12 hours</option>
-    <option value="86400">24 hours</option>
-    <option value="604800">1 week</option>
+  <label for="ttl" tkey="ssh-expiration">Expiration:</label><select id="ttl">
+    <option value="300" tkey="ssh-5-min">5 min</option>
+    <option value="600" tkey="ssh-10-min">10 min</option>
+    <option value="1800" tkey="ssh-30-min">30 min</option>
+    <option value="3600" tkey="ssh-1-hour" selected>1 hour</option>
+    <option value="21600" tkey="ssh-6-hours">6 hours</option>
+    <option value="43200" tkey="ssh-12-hours">12 hours</option>
+    <option value="86400" tkey="ssh-24-hours">24 hours</option>
+    <option value="604800" tkey="ssh-1-week">1 week</option>
   </select><br />
-  <textarea id="key" placeholder="SSH Public Key"></textarea>
-  <a class="button" onclick="pickFile();">Open File</a>
-  <a class="button" onclick="getCert();">Get Certificate</a>
+  <textarea id="key" tkey="ssh-public-key" placeholder="SSH Public Key"></textarea><br />
+  <a class="button" onclick="pickFile();" tkey="ssh-open-file">Open a File</a>
+  <a class="button" onclick="getCert();" tkey="ssh-get-cert">Get Certificate</a>
 </div>
 <div id="cadiv">
   <span style="position: fixed; right: 2px; top: 2px; cursor: pointer;" onclick="hide('cadiv');">✖</span>
-  <p>To trust this Certificate Authority, add this line to your <code>$HOME/.ssh/authorized_keys</code> file.</p>
+  <p tkey="ssh-to-trust-this-cert">To trust this Certificate Authority, add this line to your authorized_keys file.</p>
   <div id="ca">cert-authority,principals="{{.Email}}" {{.CA}}</div>
 </div>
 <div id="errdiv" style="display: none;" onclick="closeErr();">
@@ -199,8 +202,8 @@ addEventListener('keydown', onKeydown);
 <div id="certdiv">
   Certificate:
   <div id="cert"></div>
-  <a id="download" class="button">Download ⤓</a>
-  <a class="button" onclick="closeCert();">Close</a>
+  <a id="download" class="button" tkey="ssh-download">Download ⤓</a>
+  <a class="button" onclick="closeCert();" tkey="ssh-close">Close</a>
   </div>
 </body>
 </html>

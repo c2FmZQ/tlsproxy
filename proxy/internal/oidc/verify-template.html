@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Device Authorization</title>
+<title tkey="oidc-device-auth-title">Device Authorization</title>
 <meta http-equiv="content-type" content="text/html; charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
+<link rel="icon" href="/.sso/favicon.ico" />
 <link rel="stylesheet" type="text/css" href="/.sso/style.css" />
 <script src="/.sso/common.js"></script>
 <style>
@@ -46,7 +47,7 @@ function respond(answer) {
     return resp.text();
   })
   .then(r => {
-    document.getElementById('message').textContent = r;
+    document.getElementById('message').textContent = tlsProxy.translate(r.trim());
     window.close();
   })
   .catch(r => {
@@ -57,12 +58,12 @@ function respond(answer) {
 </head>
 <body>
 <div id="sso">
-{{.Email}} <a onclick="tlsProxyLogout();" class="button">Logout</a>
+{{.Email}} <a onclick="tlsProxy.logout();" tkey="logout-button" class="button">Logout</a>
 </div>
 <div id="message">
-<h1>Device Authorization Request</h1>
-<div>Please verify that the device requesting authorization is in your possession and that the User Code matches.</div>
-<div><input id="usercode" type="text" name="user_code" value="{{.UserCode}}" placeholder="User Code" /></div>
-<div><a class="button" onclick="respond(false);">Deny</a> <a class="button" onclick="respond(true);">Approve</a></div>
+<h1 tkey="oidc-device-auth-request">Device Authorization Request</h1>
+<div tkey="oidc-verify-device-auth">Please verify that the device requesting authorization is in your possession and that the User Code matches.</div>
+<div><input id="usercode" type="text" tkey="oidc-user-code" name="user_code" value="{{.UserCode}}" placeholder="User Code" /></div>
+<div><a class="button" tkey="oidc-deny-button" onclick="respond(false);">Deny</a> <a class="button" tkey="oidc-approve-button" onclick="respond(true);">Approve</a></div>
 </body>
 </html>

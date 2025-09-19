@@ -479,6 +479,38 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		if l, ok := p.bwLimits[be.BWLimit]; ok {
 			be.bwLimit = l
 		}
+		be.localHandlers = append(be.localHandlers,
+			localHandler{
+				desc:      "SSO identity",
+				path:      "/.sso/",
+				handler:   logHandler(http.HandlerFunc(be.serveSSOStatus)),
+				ssoBypass: true,
+			},
+			localHandler{
+				desc:      "Style Sheet",
+				path:      "/.sso/style.css",
+				handler:   logHandler(http.HandlerFunc(be.serveSSOStyle)),
+				ssoBypass: true,
+			},
+			localHandler{
+				desc:      "Javascript",
+				path:      "/.sso/common.js",
+				handler:   logHandler(http.HandlerFunc(be.serveSSOCommonJS)),
+				ssoBypass: true,
+			},
+			localHandler{
+				desc:      "Language Translations",
+				path:      "/.sso/languages.json",
+				handler:   logHandler(http.HandlerFunc(serveLanguagesJSON)),
+				ssoBypass: true,
+			},
+			localHandler{
+				desc:      "Icon",
+				path:      "/.sso/favicon.ico",
+				handler:   logHandler(http.HandlerFunc(p.faviconHandler)),
+				ssoBypass: true,
+			},
+		)
 		if be.SSO != nil {
 			idp, ok := identityProviders[be.SSO.Provider]
 			if !ok {
@@ -488,24 +520,6 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			be.SSO.cm = idp.cm
 			be.SSO.actualIDP = idp.actualIDP
 			be.localHandlers = append(be.localHandlers,
-				localHandler{
-					desc:      "SSO identity",
-					path:      "/.sso/",
-					handler:   logHandler(http.HandlerFunc(be.serveSSOStatus)),
-					ssoBypass: true,
-				},
-				localHandler{
-					desc:      "Style Sheet",
-					path:      "/.sso/style.css",
-					handler:   logHandler(http.HandlerFunc(be.serveSSOStyle)),
-					ssoBypass: true,
-				},
-				localHandler{
-					desc:      "Javascript",
-					path:      "/.sso/common.js",
-					handler:   logHandler(http.HandlerFunc(be.serveSSOCommonJS)),
-					ssoBypass: true,
-				},
 				localHandler{
 					desc:      "SSO Login",
 					path:      "/.sso/login",
@@ -518,12 +532,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 					handler:   logHandler(http.HandlerFunc(be.serveLogout)),
 					ssoBypass: true,
 				},
-				localHandler{
-					desc:      "Icon",
-					path:      "/.sso/favicon.ico",
-					handler:   logHandler(http.HandlerFunc(p.faviconHandler)),
-					ssoBypass: true,
-				})
+			)
 			if m, ok := be.SSO.p.(*passkeys.Manager); ok {
 				be.localHandlers = append(be.localHandlers,
 					localHandler{

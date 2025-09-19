@@ -186,7 +186,7 @@ function selectTab(target) {
 <h1>TLSPROXY {{.Version}}</h1>
 {{ if ne .Email "" }}
 <div id="sso">
-{{.Email}} <a onclick="tlsProxyLogout();" class="button">Logout</a>
+{{.Email}} <a onclick="tlsProxy.logout();" class="button">Logout</a>
 </div>
 {{ end }}
 

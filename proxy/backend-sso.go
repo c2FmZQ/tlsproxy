@@ -226,6 +226,10 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 }
 
 func (be *Backend) serveLogin(w http.ResponseWriter, req *http.Request) {
+	if be.SSO == nil {
+		http.Error(w, "sso is not enabled", http.StatusNotFound)
+		return
+	}
 	req.ParseForm()
 	tok := req.Form.Get("redirect")
 	if tok == "" {
@@ -245,6 +249,10 @@ func (be *Backend) serveLogin(w http.ResponseWriter, req *http.Request) {
 }
 
 func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
+	if be.SSO == nil {
+		http.Error(w, "sso is not enabled", http.StatusNotFound)
+		return
+	}
 	var email string
 	if claims := fromctx.Claims(req.Context()); claims != nil {
 		email, _ = claims["email"].(string)
