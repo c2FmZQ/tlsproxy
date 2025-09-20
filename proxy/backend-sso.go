@@ -62,8 +62,8 @@ var (
 	ssoStatusTemplate *template.Template
 	//go:embed style.css
 	styleEmbed []byte
-	//go:embed common.js
-	commonJSEmbed []byte
+	//go:embed proxy.mjs
+	proxyMJSEmbed []byte
 )
 
 func init() {
@@ -177,8 +177,8 @@ func (be *Backend) serveSSOStyle(w http.ResponseWriter, req *http.Request) {
 	serveStatic(w, req, styleEmbed, "text/css")
 }
 
-func (be *Backend) serveSSOCommonJS(w http.ResponseWriter, req *http.Request) {
-	serveStatic(w, req, commonJSEmbed, "text/javascript")
+func (be *Backend) serveSSOProxyMJS(w http.ResponseWriter, req *http.Request) {
+	serveStatic(w, req, proxyMJSEmbed, "text/javascript")
 }
 
 func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {

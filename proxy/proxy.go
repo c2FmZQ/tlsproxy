@@ -493,9 +493,9 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				ssoBypass: true,
 			},
 			localHandler{
-				desc:      "Javascript",
-				path:      "/.sso/common.js",
-				handler:   logHandler(http.HandlerFunc(be.serveSSOCommonJS)),
+				desc:      "Javascript Module",
+				path:      "/.sso/proxy.mjs",
+				handler:   logHandler(http.HandlerFunc(be.serveSSOProxyMJS)),
 				ssoBypass: true,
 			},
 			localHandler{
