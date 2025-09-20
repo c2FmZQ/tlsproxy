@@ -55,8 +55,9 @@ window.tlsProxy = {
   };
 
   function setLanguage(langs) {
-    let opts = [...langs];
+    let opts = [];
     for (let lang of langs) {
+      opts.push(lang);
       const m = lang.split('-');
       if (m.length === 3) {
         opts.push(m[0]+'-'+m[2]);
