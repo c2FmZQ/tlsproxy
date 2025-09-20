@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## v0.22.1
+
+### :wrench: Bug fix
+
+* Fix minor language matching bug. Undee some conditions, the UI would pick the wrong language from the browser.
+
 ## v0.22.0
 
 ### :star2: New feature
