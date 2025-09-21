@@ -581,7 +581,7 @@ cert-authority,principals="<email>" <CA's public key>
 
 ### :wrench: Misc
 
-* Same as v0.10.0. The v0.10.0 docker image was created before the Go linux/amd64 was ready. So, it used linux/386 instead. v0.10.1 should be OK.
+* Same as v0.10.0. The v0.10.0 docker image was created before the Go linux/amd64 was ready. So, it used linux/386 instead. v0.10.2 should be OK.
 
 ## v0.10.1
 
