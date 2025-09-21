@@ -143,7 +143,7 @@ func TestReadConfig(t *testing.T) {
 				},
 				ForwardRateLimit: 5,
 				Mode:             "LOCAL",
-				ALPNProtos:       &Strings{"h3", "h2", "http/1.1"},
+				ALPNProtos:       &Strings{"h2", "http/1.1"},
 				DocumentRoot:     "/var/www/htdocs",
 				ForwardTimeout:   30 * time.Second,
 			},
@@ -152,7 +152,7 @@ func TestReadConfig(t *testing.T) {
 	want.EnableQUIC = newPtr(quicIsEnabled)
 	if quicIsEnabled {
 		for _, be := range want.Backends {
-			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS {
+			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS || be.Mode == ModeLocal {
 				be.ALPNProtos = defaultALPNProtosPlusH3
 			}
 		}
