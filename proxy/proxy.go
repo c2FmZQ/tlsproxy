@@ -314,7 +314,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		return err
 	}
 	if p.cfg != nil {
-		p.logErrorF("INF Configuration changed")
+		log.Printf("INF Configuration changed")
 		p.recordEvent("config change")
 	}
 

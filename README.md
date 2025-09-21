@@ -4,7 +4,7 @@
 
 # TLS Termination Proxy
 
-TLSPROXY is primarily a [TLS termination proxy](https://en.wikipedia.org/wiki/TLS_termination_proxy) that uses Let's Encrypt to provide TLS encryption for any number of TCP or HTTP servers, and any number of server names concurrently on the same port.
+TLSPROXY is primarily a [TLS termination proxy](https://en.wikipedia.org/wiki/TLS_termination_proxy) that uses Let's Encrypt to provide TLS encryption for any number of TCP and HTTP servers, and any number of server names concurrently on the same port.
 
 TLSPROXY can also be used as a simple [Web server](https://en.wikipedia.org/wiki/Web_server), or a [Reverse Proxy](https://en.wikipedia.org/wiki/Reverse_proxy) for HTTP(S) services, and optionally control access to these services with user authentication and authorization.
 
@@ -21,7 +21,7 @@ Overview of features:
 * [x] Support for the [PROXY protocol](https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt) defined by HAProxy. (not on QUIC or HTTP/3 backends)
 * [x] TLS client authentication & authorization (when the proxy terminates the TLS connections).
 * [x] Built-in [Certificate Authority](https://github.com/c2FmZQ/tlsproxy/tree/main/examples/pki#readme) for managing client and backend server TLS certificates.
-* [x] Built-in [Certificate Authority](https://github.com/c2FmZQ/tlsproxy/tree/main/examples/ssh#readme) for issuing SSH user certificates..
+* [x] Built-in [Certificate Authority](https://github.com/c2FmZQ/tlsproxy/tree/main/examples/ssh#readme) for issuing SSH user certificates.
 * [x] User authentication with OpenID Connect, SAML, and/or passkeys (for HTTP and HTTPS connections). Optionally issue JSON Web Tokens (JWT) to authenticated users to use with the backend services and/or run a local OpenID Connect server for backend services.
 * [x] Access control by IP address.
 * [x] Routing based on Server Name Indication (SNI), with optional default route when SNI isn't used.
@@ -30,7 +30,7 @@ Overview of features:
 * [x] OCSP stapling and OCSP certificate verification.
 * [x] Support for TLS certificates stored locally.
 * [x] Hardware-backed cryptographic keys for encryption and signing with a [TPM](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/TPM.md).
-* [x] Use the same address (IPAddr:port) for any number of server names, e.g. foo.example.com and bar.example.com on the same xxx.xxx.xxx.xxx:443.
+* [x] Use the same address (IP Address:port) for any number of server names, e.g. foo.example.com and bar.example.com on the same xxx.xxx.xxx.xxx:443.
 
 ```mermaid
 flowchart LR
@@ -194,7 +194,7 @@ docker run                                 \
   c2fmzq/tlsproxy:latest
 ```
 
-The proxy reads the config from `${CONFIGDIR}/config.yaml`.
+The proxy reads the configuration from ${CONFIGDIR}/config.yaml.
 
 :warning: `${TLSPROXY_PASSPHRASE}` is used to encrypt the TLS secrets.
 

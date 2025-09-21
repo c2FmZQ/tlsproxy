@@ -1,13 +1,13 @@
-# tlsproxy with docker compose
+# TLSPROXY with Docker Compose
 
-This example shows how to run tlsproxy with docker compose.
+This example shows how to run TLSPROXY with Docker Compose.
 
-It spins up tlsproxy and 3 backends:
+It spins up TLSPROXY and 3 backends:
 * [c2fmzq-server](https://github.com/c2FmZQ/c2FmZQ)
 * [nginx](https://en.wikipedia.org/wiki/Nginx)
 * [apache](https://en.wikipedia.org/wiki/Apache_HTTP_Server)
 
-Before starting the docker containers, the we need to edit the tlsproxy config file, and change the permissions on the tlsproxy cache directory and the c2fmzq-server data directory.
+Before starting the Docker containers, we need to edit the TLSPROXY config file, and change the permissions on the TLSPROXY cache directory and the c2fmzq-server data directory.
 
 ## Edit data/tlsproxy/config/config.yaml
 

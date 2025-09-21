@@ -4,7 +4,7 @@
 
 ### :wrench: Bug fix
 
-* Fix minor language matching bug. Undee some conditions, the UI would pick the wrong language from the browser.
+* Fix minor language matching bug. Under some conditions, the UI would pick the wrong language from the browser.
 
 ## v0.22.0
 
@@ -337,7 +337,7 @@ The old syntax still works, but is now deprecated and will be removed eventually
 
 ### :star2: New feature
 
-* Add support for Encrypted Client Hello. This feature improves privacy by allowing the clients to encrypt the Server Name to which they are connecting. Without ECH, this information is actually transmitted in plaintext. When `ech:` is set in `config.yaml`, tlsproxy handles ECH as a Client-Facing Server with a Split Mode Topology as specified in https://datatracker.ietf.org/doc/html/draft-ietf-tls-esni/. See [ECH](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/ECH.md)
+* Add support for Encrypted Client Hello. This feature improves privacy by allowing the clients to encrypt the Server Name to which they are connecting. Without ECH, this information is actually transmitted in plain text. When `ech:` is set in `config.yaml`, tlsproxy handles ECH as a Client-Facing Server with a Split Mode Topology as specified in https://datatracker.ietf.org/doc/html/draft-ietf-tls-esni/. See [ECH](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/ECH.md)
 
 ### :wrench: Bug fixes
 
@@ -426,13 +426,13 @@ cert-authority,principals="<email>" <CA's public key>
 
 ### :wrench: Bug fix
 
-* Fix goroutine and connection leak with websockets.
+* Fix goroutine and connection leak with WebSockets.
 
 ## v0.13.0
 
 ### :star2: New feature
 
-* Add support for forwarding WebSocket requests to arbitrary TCP servers. WebSockets were already forwarded transparently to backends before, and that is not changing. The new feature lets tlsproxy itself handle the WebSocket request and forward them to any TCP servers. The content of BinaryMessages is streamed to the remote server, and data received from the server is sent back to the client also as BinaryMessages.
+* Add support for forwarding WebSocket requests to arbitrary TCP servers. WebSockets were already forwarded transparently to backends before, and that is not changing. The new feature lets TLSPROXY itself handle the WebSocket request and forward them to any TCP servers. The content of BinaryMessages is streamed to the remote server, and data received from the server is sent back to the client also as BinaryMessages.
   * This is used by [SSH Term](https://github.com/c2FmZQ/sshterm).
 
 ## v0.12.0
@@ -518,7 +518,7 @@ cert-authority,principals="<email>" <CA's public key>
 
 ### :wrench: Misc
 
-* Update to quic-go [v0.47.0](https://github.com/quic-go/quic-go/releases/tag/v0.47.0). The release notes point out that a bug in go 1.23 is causing problems with quic. So, we're also setting go version in `go.mod` back to `1.22.0` for now.
+* Update to quic-go [v0.47.0](https://github.com/quic-go/quic-go/releases/tag/v0.47.0). The release notes point out that a bug in Go 1.23 is causing problems with QUIC. So, we're also setting go version in `go.mod` back to `1.22.0` for now.
 * Update go dependencies:
   * upgraded github.com/google/pprof v0.0.0-20240903155634-a8630aee4ab9 => v0.0.0-20240910150728-a0b0bb1d4134
   * upgraded github.com/quic-go/qpack v0.5.0 => v0.5.1
@@ -581,7 +581,7 @@ cert-authority,principals="<email>" <CA's public key>
 
 ### :wrench: Misc
 
-* Same as v0.10.0. The v0.10.0 docker image was created before the golang linux/amd64 was ready. So, it used linux/386 instead. v0.10.2 should be OK.
+* Same as v0.10.0. The v0.10.0 docker image was created before the Go linux/amd64 was ready. So, it used linux/386 instead. v0.10.1 should be OK.
 
 ## v0.10.1
 
@@ -594,13 +594,13 @@ cert-authority,principals="<email>" <CA's public key>
 ### :star: Feature improvements
 
 * When `forwardHttpHeaders` is used, special keywords are automatically expanded from the header values:
-  * `${NETWORK}` is either tcp or udp.
+  * `${NETWORK}` is either TCP or UDP.
   * `${LOCAL_ADDR}` is the local address of the network connection.
   * `${REMOTE_ADDR}` is the remote address of the network connection.
   * `${LOCAL_IP}` is the local IP address of the network connection.
   * `${REMOTE_IP}` is the remote IP address of the network connection.
-  * `${SERVER_NAME}` is the server name requested by the client.
-  * `${JWT:xxxx}` expands to the value of claim `xxxx` from the ID token.
+  * `${SERVER_NAME}` is the Server Name requested by the client.
+  * `${JWT:xxxx}` expands to the value of claim `xxxx` from the ID Token.
 
 ### :wrench: Misc
 
@@ -666,7 +666,7 @@ cert-authority,principals="<email>" <CA's public key>
 ### :star: Feature improvements
 
 * Only allow GET and HEAD methods for static files.
-* Sanitize the request path before comparing to local endpoints, e.g. `//.sso` redirects to `/.sso`
+* Sanitize the request path before comparing to local endpoints, e.g. `//.sso` redirects to `/.sso`.
 * Add a `sanitizePath` option to backends. When true (default), request paths are sanitized before they are sent to the backends.
 
 ### :wrench: Misc
@@ -696,7 +696,7 @@ cert-authority,principals="<email>" <CA's public key>
 
 ### :wrench: Misc
 
-* Update the tpm library to pick up a bug fix. The saved TPM keys would become invalid after a reboot. This only affected configurations with `hwBacked: true`.
+* Update the TPM library to pick up a bug fix. The saved TPM keys would become invalid after a reboot. This only affected configurations with `hwBacked: true`.
 
 ## v0.7.1
 
@@ -717,9 +717,9 @@ cert-authority,principals="<email>" <CA's public key>
 
 * Add `hwBacked` option. When enabled, hardware-backed cryptographic keys are used to:
   * encrypt local data (the data cannot be used or recovered on a different device),
-  * sign authentication tokens,
-  * sign the PKI certificates, OCSP responses, and CRLs.
-* Add `--quiet` flag. When set (or the `TLSPROXY_QUIET` env variable is `true`), logging is turned off after tlsproxy starts.
+  * sign authentication Tokens,
+  * sign the PKI Certificates, OCSP responses, and CRLs.
+* Add `--quiet` flag. When set (or the `TLSPROXY_QUIET` env variable is `true`), logging is turned off after TLSPROXY starts.
 
 ### :wrench: Misc
 
@@ -751,7 +751,7 @@ cert-authority,principals="<email>" <CA's public key>
 
 ## v0.6.0
 
-* Starting with v0.6.0, tlsproxy is built with QUIC & HTTP/3 support by default. Binaries without QUIC can still be built with `-tags noquic`.
+* Starting with v0.6.0, TLSPROXY is built with QUIC & HTTP/3 support by default. Binaries without QUIC can still be built with `-tags noquic`.
 * Add support for QUIC datagrams.
 
 ## v0.5.2
@@ -773,7 +773,7 @@ cert-authority,principals="<email>" <CA's public key>
 
 * Add support for the PROXY protocol for incoming connections. See the `AcceptProxyHeaderFrom` config option.
 * Fix bug with the handling of the PROXY protocol header with TLS backends. The header was sent after the TLS handshake instead of before.
-* Fix bug that prevented logins with passkeys on non default ports when ForceReAuth is set. (introduced in v0.4.4)
+* Fix bug that prevented logins with passkeys on non-default ports when ForceReAuth is set. (introduced in v0.4.4)
 * Log aborted ReverseProxy requests more gracefully.
 * Update go: 1.21.6
 * Update go dependencies:
@@ -788,7 +788,7 @@ cert-authority,principals="<email>" <CA's public key>
 
 * Improve user experience with the passkey login screen.
 * Fix small accounting bug in ingress metrics.
-* Apply the forward rate limit to http requests. Before, the rate limit was only applied to incoming connections.
+* Apply the forward rate limit to HTTP requests. Before, the rate limit was only applied to incoming connections.
 
 ## v0.4.3
 
@@ -799,7 +799,7 @@ cert-authority,principals="<email>" <CA's public key>
 
 ## v0.4.2
 
-* Minor changes to the metrics page: combine runtime and memory profile, add config.
+* Minor changes to the Metrics page: combine runtime and memory profile, add Config.
 * Remove the /config endpoint.
 * Refactor HTTP handlers. No functional change.
 
@@ -825,7 +825,7 @@ cert-authority,principals="<email>" <CA's public key>
 
 ## v0.3.4
 
-* Add an option to automatically revoke unused _Let's encrypt_ certificates.
+* Add an option to automatically revoke unused _Let's Encrypt_ certificates.
 * Add a flag to revoke all cached certificates. This is useful when a server is decommissioned or compromised.
 * IDN fixes and tests
 
@@ -833,7 +833,7 @@ cert-authority,principals="<email>" <CA's public key>
 
 * Implement OCSP stapling.
 * Verify the status of client and server certificates when OCSP servers are specified.
-* Fix bug that prevented the PKI WASM client from loading on chrome 119.
+* Fix bug that prevented the PKI WASM client from loading on Chrome 119.
 * Handle Internationalized Domain Names correctly.
 * Add an option to refresh the identity used with passkeys (`refreshInterval`).
 
@@ -844,9 +844,9 @@ cert-authority,principals="<email>" <CA's public key>
 
 ## v0.3.1
 
-* Decouple frontend and backend protocols in `mode: http` and `mode: https`. The ALPN protocols that TLSPROXY accepts are specified in `alpnProtos: [...]`, and the protocol to use with the request to the backend is specified with `backendProto: ...`, which defaults to `http/1.1`. The previous behavior was to use the same protocol that the client used. It is still possible to do that by setting `backendProto` explicitly to an empty string.
+* Decouple frontend and backend protocols in `mode: HTTP` and `mode: HTTPS`. The ALPN protocols that TLSPROXY accepts are specified in `alpnProtos: [...]`, and the protocol to use with the request to the backend is specified with `backendProto: ...`, which defaults to `http/1.1`. The previous behavior was to use the same protocol that the client used. It is still possible to do that by setting `backendProto` explicitly to an empty string.
 * Fix QUIC stream direction in metrics.
-* Fix persistent config reload every 30 sec in some conditions.
+* Fix persistent config reload every 30 seconds in some conditions.
 
 ## v0.3.0
 
@@ -862,15 +862,15 @@ cert-authority,principals="<email>" <CA's public key>
 
 ## v0.1.1
 
-* Allow multiple backends with the same server name but different ALPN protos, e.g. one backend could have foo.example.com with the default ALPN protos, and another backend could have foo.example.com with `alpnProtos: [imap]`. If ALPN is not used by the client, the first backend with a matching server name will be used.
+* Allow multiple backends with the same server name but different ALPN protocols, e.g. one backend could have foo.example.com with the default ALPN protocols, and another backend could have foo.example.com with `alpnProtos: [imap]`. If ALPN is not used by the client, the first backend with a matching server name will be used.
 
 ## v0.1.0
 
 Let's call this the first _stable_ development release. We'll try to keep decent release notes going forward.
 
-TLSPROXY is primarily a [TLS termination proxy](https://en.wikipedia.org/wiki/TLS_termination_proxy) that uses letsencrypt to provide TLS encryption for any number of TCP or HTTP servers, and any number of server names concurrently on the same port.
+TLSPROXY is primarily a [TLS termination proxy](https://en.wikipedia.org/wiki/TLS_termination_proxy) that uses Let's Encrypt to provide TLS encryption for any number of TCP or HTTP servers, and any number of server names concurrently on the same port.
 
-Its functionality is similar to an [stunnel](https://www.stunnel.org/) server, but without the need to configure and run [certbot](https://certbot.eff.org/) separately.
+Its functionality is similar to an [stunnel](https://www.stunnel.org/) server, but without the need to configure and run [Certbot](https://certbot.eff.org/) separately.
 
 TLSPROXY can also be used as a [Reverse Proxy](https://en.wikipedia.org/wiki/Reverse_proxy) for HTTP(S) services, and optionally control access to these services with user authentication and authorization.
 
@@ -889,5 +889,5 @@ ervices and/or run a local OpenID Connect server for backend services.
 * [x] Routing based on Server Name Indication (SNI), with optional default route when SNI isn't used.
 * [x] Simple round-robin load balancing between servers.
 * [x] Support any ALPN protocol in TLS, TLSPASSTHROUGH, or TCP mode.
-* [x] Use the same TCP address (IPAddr:port) for any number of server names, e.g. foo.example.com and bar.example.com on the same xxx.xxx.xxx.xxx:443.
+* [x] Use the same TCP address (IP Address:port) for any number of server names, e.g. foo.example.com and bar.example.com on the same xxx.xxx.xxx.xxx:443.
 

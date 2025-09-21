@@ -1,6 +1,6 @@
 # TLSPROXY on Synology DSM
 
-Running tlsproxy on [Synology DSM](https://www.synology.com/en-us/dsm) is pretty straight forward using Container Manager.
+Running tlsproxy on [Synology DSM](https://www.synology.com/en-us/dsm) is pretty straightforward using Container Manager.
 
 ## Create a tlsproxy user and a tlsproxy group
 
@@ -8,7 +8,7 @@ Running tlsproxy on [Synology DSM](https://www.synology.com/en-us/dsm) is pretty
 * In the `User` tab, click `Create` to create the tlsproxy user.
 * In the `Group` tab, click `Create` to create the tlsproxy group. Assign the tlsproxy user to the new group.
 
-Then determine the tlsproxy UID and GID. The simplest way is to ssh into the DSM and run:
+Then determine the tlsproxy UID and GID. The simplest way is to SSH into the DSM and run:
 
 ```
 # id tlsproxy
@@ -20,7 +20,7 @@ uid=1031(tlsproxy) gid=100(users) groups=100(users),65537(tlsproxy)
 
 * Go to: `File Station`
 * Create a new directory somewhere and make it accessible to user tlsproxy.
-* Create a subdirectory named `config` and save your `config.yaml` file there. Make sure they are readable by user tlsproxy.
+* Create a subdirectory named `config` and save your `config.yaml` file there. Make sure it is readable by user tlsproxy.
 
 ## Create the container manager project
 
@@ -28,7 +28,7 @@ uid=1031(tlsproxy) gid=100(users) groups=100(users),65537(tlsproxy)
 * Click `Create`
 * Enter `tlsproxy` as project name.
 * Select the directory that was created earlier as path.
-* Enter the following compose.yaml, replacing UID, GUI, and PASSPHRASE:
+* Enter the following compose.yaml, replacing UID, GID, and PASSPHRASE:
 
 ```yaml
 services:
@@ -37,7 +37,7 @@ services:
     image: c2fmzq/tlsproxy:latest
     restart: always
     # tlsproxy:tlsproxy
-    user: UID:GUI   <--- update this
+    user: UID:GID   <--- update this
     environment:
       - TLSPROXY_PASSPHRASE=PASSPHRASE   <--- and this
     volumes:
@@ -56,5 +56,5 @@ INF Accepting TLS connections on [::]:10443
 
 * Forward ports 80 and 443 to the DSM's IP address and ports 10080 and 10443, respectively.
 
-At this point, incoming traffic should be directed to tlsproxy.
+At this point, incoming traffic should be directed to TLSPROXY.
 

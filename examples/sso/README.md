@@ -1,6 +1,6 @@
 # User authentication with OpenID Connect, SAML and/or Passkeys
 
-TLSPROXY can be configured to authenticate users with OpenID Connect and SAML identity providers. Another option is to use Passkeys for password-less user authentication. To configure Passkeys, users still need to authenticate once with OpenID Connect or SAML, but then authentication is done exclusively with Passkeys.
+TLSPROXY can be configured to authenticate users with OpenID Connect and SAML identity providers. Another option is to use Passkeys for passwordless user authentication. To configure Passkeys, users still need to authenticate once with OpenID Connect or SAML, but then authentication is done exclusively with Passkeys.
 
 OpenID Connect has been tested with Google, Facebook, SimpleLogin, and GitHub as identity providers.
 
@@ -217,9 +217,8 @@ backends:
 
 ## Groups
 
-Groups can be used to simplify authorization decisions. They can be used ACLs,
-and group memberships are included in the generated ID tokens sent to the
-backends.
+Groups can be used to simplify authorization decisions. They can be used in ACLs,
+and group memberships are included in the generated ID Tokens sent to the backends.
 
 ```yaml
 groups:

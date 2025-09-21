@@ -24,7 +24,6 @@
 package proxy
 
 import (
-	"net"
 	"sync"
 )
 
@@ -33,8 +32,8 @@ func newConnTracker() *connTracker {
 }
 
 type connKey struct {
-	dst net.Addr
-	src net.Addr
+	dst string
+	src string
 }
 
 type connTracker struct {
@@ -59,7 +58,7 @@ func (t *connTracker) add(c annotatedConnection) int {
 		t.conns = make(map[connKey]annotatedConnection)
 	}
 	cc := localNetConn(c)
-	t.conns[connKey{src: cc.LocalAddr(), dst: cc.RemoteAddr()}] = c
+	t.conns[connKey{src: cc.LocalAddr().String(), dst: cc.RemoteAddr().String()}] = c
 	return len(t.conns)
 }
 
@@ -67,6 +66,6 @@ func (t *connTracker) remove(c annotatedConnection) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	cc := localNetConn(c)
-	delete(t.conns, connKey{src: cc.LocalAddr(), dst: cc.RemoteAddr()})
+	delete(t.conns, connKey{src: cc.LocalAddr().String(), dst: cc.RemoteAddr().String()})
 	return len(t.conns)
 }

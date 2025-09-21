@@ -345,8 +345,8 @@ type Backend struct {
 	// client will be used with the backend.
 	BackendProto *string `yaml:"backendProto,omitempty"`
 	// Mode controls how the proxy communicates with the backend.
-	// - PLAINTEXT: Use a plaintext, non-encrypted, TCP connection. This is
-	// the the default mode.
+	// - TCP: Use a plaintext, non-encrypted, TCP connection. This is the
+	//     default mode. PLAINTEXT is a legacy alias for this mode.
 	//        CLIENT --TLS--> PROXY ----> BACKEND SERVER
 	// - TLS: Open a new TLS connection. Set ForwardServerName, ForwardRootCAs,
 	//     and/or InsecureSkipVerify to verify the identity of the server.

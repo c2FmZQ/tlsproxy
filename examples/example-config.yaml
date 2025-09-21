@@ -21,6 +21,11 @@ definitions:
         Au1hFufDZDNab/FH91MEj6hwIkT8blxhd2Kuj8r/+X8=
         -----END CERTIFICATE-----
 
+# (Required) Indicate acceptance of the Let's Encrypt Terms of Service.
+acceptTOS: true
+# (Optional) The email address is used by Let's Encrypt to send important notifications.
+email: <your email address>
+
 # The HTTP address must be reachable from the internet via port 80.
 httpAddr: ":10080"
 
@@ -61,6 +66,7 @@ backends:
 
 - serverNames:
   - ssh.example.com
+  mode: tcp
   clientAuth:
     rootCAs:
     - *myCA
@@ -72,3 +78,8 @@ backends:
   mode: tlspassthrough
   addresses:
   - 192.168.3.30:5443
+
+- serverNames:
+  - static.example.com
+  mode: local
+  documentRoot: /var/www/htdocs

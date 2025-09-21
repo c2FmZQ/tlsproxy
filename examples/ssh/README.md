@@ -1,6 +1,6 @@
-# SSH, SSH CA, SSH Term, SSH Proxying
+# SSH, SSH CA, sshterm, SSH Proxying
 
-TLSPROXY can facilate remote access with SSH in a variety of ways.
+TLSPROXY can facilitate remote access with SSH in a variety of ways.
 
 * It can proxy SSH connections over TLS. See [tlsclient](https://github.com/c2FmZQ/tlsproxy/tree/main/tlsclient#readme).
 * It can run a SSH client in a web browser. See [sshterm](https://github.com/c2FmZQ/sshterm#readme).
@@ -34,7 +34,7 @@ backends:
 ## SSHTERM
 
 The SSH CA and the [sshterm](https://github.com/c2FmZQ/sshterm#readme) app can
-be served on the same server name. The docroot files must me installed first.
+be served on the same server name. The docroot files must be installed first.
 
 ```
 backends:

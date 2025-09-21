@@ -138,8 +138,8 @@ func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 				}
 				return
 			}()
-			buf := make([]byte, 1024)
 			for {
+				buf := make([]byte, 1024)
 				n, err := out.Read(buf)
 				if n > 0 {
 					if err := in.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {

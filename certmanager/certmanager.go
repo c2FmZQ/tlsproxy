@@ -264,7 +264,7 @@ func (cm *CertManager) GetCert(name string) (*tls.Certificate, error) {
 		return nil, fmt.Errorf("x509.ParseCertificate: %v", err)
 	}
 	cm.certs[name] = &tls.Certificate{
-		Certificate: [][]byte{b},
+		Certificate: [][]byte{b, cm.caCert.Raw},
 		PrivateKey:  key,
 		Leaf:        cert,
 	}
