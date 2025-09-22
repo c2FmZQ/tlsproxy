@@ -306,20 +306,18 @@ func findElementAttr(e *etree.Element, p, a string) string {
 }
 
 type samlAuthnRequest struct {
-	XMLName                     xml.Name   `xml:"saml2p:AuthnRequest"`
-	XMLNSProtocol               string     `xml:"xmlns:saml2p,attr"`
-	XMLNSAssertion              string     `xml:"xmlns:saml2,attr"`
+	XMLName                     xml.Name   `xml:"urn:oasis:names:tc:SAML:2.0:protocol AuthnRequest"`
 	ID                          string     `xml:",attr"`
 	Version                     string     `xml:",attr"`
 	IssueInstant                string     `xml:",attr"`
 	Destination                 string     `xml:",attr"`
 	ProtocolBinding             string     `xml:",attr"`
 	AssertionConsumerServiceURL string     `xml:",attr"`
-	Issuer                      samlIssuer `xml:"saml2:Issuer"`
+	Issuer                      samlIssuer `xml:"Issuer"`
 }
 
 type samlIssuer struct {
-	XMLName xml.Name `xml:"saml2:Issuer"`
+	XMLName xml.Name `xml:"urn:oasis:names:tc:SAML:2.0:assertion Issuer"`
 	Format  string   `xml:",attr"`
 	Value   string   `xml:",chardata"`
 }
