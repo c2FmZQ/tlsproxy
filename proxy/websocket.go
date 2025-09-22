@@ -136,13 +136,20 @@ func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 				case done <- true:
 				default:
 				}
-				return
 			}()
+			buf := make([]byte, 1024)
 			for {
-				buf := make([]byte, 1024)
 				n, err := out.Read(buf)
 				if n > 0 {
-					if err := in.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
+					w, err := in.NextWriter(websocket.BinaryMessage)
+					if err != nil {
+						return
+					}
+					if nn, err := w.Write(buf[:n]); err != nil || n != nn {
+						w.Close()
+						return
+					}
+					if err := w.Close(); err != nil {
 						return
 					}
 				}
