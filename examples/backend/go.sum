@@ -1,7 +1,7 @@
 github.com/blend/go-sdk v1.20240719.1 h1:eyispDP9DzQuNE+y7j1xSqwRm6ndMS4jgwlOQU4BTGY=
 github.com/blend/go-sdk v1.20240719.1/go.mod h1:aTw/exIbMHDYcJLTiqeWMMVhUs9+72BDe26AA0A6jno=
-github.com/c2FmZQ/tlsproxy v0.21.0 h1:nM2ahVIAEhQlgla6+bizSE7lWHaVaJr3rSmblbUIILI=
-github.com/c2FmZQ/tlsproxy v0.21.0/go.mod h1:y1aysGjIrrJp+NUk88jiSS1VbJY6OFb80h3BcQsJO9c=
+github.com/c2FmZQ/tlsproxy v0.22.1 h1:2fzmxSotsh7WtUWdeEZzSEcOpe9MwTOHcNzMZkPkIRc=
+github.com/c2FmZQ/tlsproxy v0.22.1/go.mod h1:H9zbdINjJKfxFqmiHC6ciWUxNQzQ2JUTlRQ0Lb3CqHA=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

@@ -1,5 +1,13 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/storage v0.3.0 => v0.3.1
+  * upgraded github.com/c2FmZQ/tpm v0.4.1 => v0.4.3
+
 ## v0.22.1
 
 ### :wrench: Bug fix

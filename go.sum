@@ -10,10 +10,10 @@ github.com/c2FmZQ/http3-go v0.54.0 h1:v42n4MQ2xr/rDB9h9ycy2+JqxHZjhv4xNKZQlp2Tui
 github.com/c2FmZQ/http3-go v0.54.0/go.mod h1:fH4C5OJo+rW7eaDeydRi02AiBVnnUDbAlXJxqx/Rub8=
 github.com/c2FmZQ/quic-api v0.54.0 h1:PdzusBr51s3ViteAQYlkIrIAf3pStHkL6dvYU5QLkCo=
 github.com/c2FmZQ/quic-api v0.54.0/go.mod h1:jnNZzS5aPXL6lH9thuCHUPd09yRj+TPQTlc/S42E/xw=
-github.com/c2FmZQ/storage v0.3.0 h1:0jlP1hV9v2mD/Cx3u82oFxrh3z5AbJwZnndmL9KEJ7c=
-github.com/c2FmZQ/storage v0.3.0/go.mod h1:8uXO/kJQ6UuvaB9QC7IoctLBShhhXL5gOF5ndHRUbos=
-github.com/c2FmZQ/tpm v0.4.1 h1:CTEEsdcpEoymUeBj4RIkoImx3+DVSCWqTCDtc5IqFyE=
-github.com/c2FmZQ/tpm v0.4.1/go.mod h1:ESnZpMOfIHRkZuLajQGyGEFFHT3bt5YD5fo8XTd6Fg0=
+github.com/c2FmZQ/storage v0.3.1 h1:MmVBPjZpeWwlghqziZyFCBWGbcQiQExz0WHK2A4dYzQ=
+github.com/c2FmZQ/storage v0.3.1/go.mod h1:8uXO/kJQ6UuvaB9QC7IoctLBShhhXL5gOF5ndHRUbos=
+github.com/c2FmZQ/tpm v0.4.3 h1:b5jjlqVyf5rdU0z0uohi5QylE6hb6vxryWGr3b3qCos=
+github.com/c2FmZQ/tpm v0.4.3/go.mod h1:WOLrMYIX1ueasQqAdWcBjCwAJ+blrHEUxUcT1K0w360=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
