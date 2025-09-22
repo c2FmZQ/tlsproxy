@@ -831,6 +831,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				p.identityProvider.HandleCallback(w, req)
 			}),
 			ssoBypass:  true,
+			csrfBypass: true,
 			isCallback: true,
 		}, p.callback)
 	}
