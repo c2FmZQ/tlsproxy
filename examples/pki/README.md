@@ -21,7 +21,7 @@ pki:
   - bob@example.com
 
 backends:
-# Optional: Use a server name to publich the CA's certificate and Revocation
+# Optional: Use a server name to publish the CA's certificate and Revocation
 # List.
 - serverNames:
   - pki.example.com

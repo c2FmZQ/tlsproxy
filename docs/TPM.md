@@ -10,9 +10,8 @@ When this feature is enabled, hardware-backed cryptographic keys are used to:
 To enable this feature, set `hwBacked: true` in config.yaml. This option cannot
 be changed without manually deleting the entire cache directory.
 
-The TLSPROXY process needs access to `/dev/tpm0` and/or `/dev/tpmrm0` on linux.
+The TLSPROXY process needs access to `/dev/tpm0` and/or `/dev/tpmrm0` on Linux.
 
 ## Docker
 
-On docker, use `--device /dev/tpmrm0:/dev/tpmrm0:rwm` and make sure the
-container's userid has access to `/dev/tpmrm0`.
+On Docker, use `--device /dev/tpmrm0:/dev/tpmrm0:rwm` and make sure the container's user ID has access to `/dev/tpmrm0`.

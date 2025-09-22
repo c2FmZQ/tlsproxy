@@ -257,7 +257,7 @@ func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
 	if claims := fromctx.Claims(req.Context()); claims != nil {
 		email, _ = claims["email"].(string)
 	}
-	if req.Method == http.MethodPost && be.SSO != nil {
+	if req.Method == http.MethodPost {
 		be.SSO.cm.ClearCookies(w)
 	}
 	req.ParseForm()

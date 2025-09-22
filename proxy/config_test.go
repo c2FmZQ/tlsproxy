@@ -58,10 +58,12 @@ func TestReadConfig(t *testing.T) {
 	}
 
 	want := &Config{
-		HTTPAddr: newPtr(":10080"),
-		TLSAddr:  newPtr(":10443"),
-		CacheDir: got.CacheDir,
-		MaxOpen:  got.MaxOpen,
+		AcceptTOS: newPtr(true),
+		Email:     newPtr("<your email address>"),
+		HTTPAddr:  newPtr(":10080"),
+		TLSAddr:   newPtr(":10443"),
+		CacheDir:  got.CacheDir,
+		MaxOpen:   got.MaxOpen,
 		Backends: []*Backend{
 			{
 				ServerNames: []string{
@@ -135,12 +137,22 @@ func TestReadConfig(t *testing.T) {
 				ALPNProtos:       &Strings{"h2", "http/1.1"},
 				ForwardTimeout:   30 * time.Second,
 			},
+			{
+				ServerNames: Strings{
+					"static.example.com",
+				},
+				ForwardRateLimit: 5,
+				Mode:             "LOCAL",
+				ALPNProtos:       &Strings{"h2", "http/1.1"},
+				DocumentRoot:     "/var/www/htdocs",
+				ForwardTimeout:   30 * time.Second,
+			},
 		},
 	}
 	want.EnableQUIC = newPtr(quicIsEnabled)
 	if quicIsEnabled {
 		for _, be := range want.Backends {
-			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS {
+			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS || be.Mode == ModeLocal {
 				be.ALPNProtos = defaultALPNProtosPlusH3
 			}
 		}
