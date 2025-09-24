@@ -94,6 +94,40 @@ window.tlsProxy = {
   }
   tlsProxy.translate = translate;
 
+  function cookieBanner() {
+    const name='__tlsProxyCookieBannerDismissed';
+    if (localStorage.getItem(name)) {
+      return;
+    }
+    const div = document.createElement('div');
+    div.style.position = 'fixed';
+    div.style.left = '0.25rem';
+    div.style.bottom = '0.25rem';
+    div.style.width = '25vw';
+    div.style.padding = '1rem';
+    div.style.color = 'black';
+    div.style.backgroundColor = 'white';
+    div.style.border = '1px solid black';
+    div.style.cursor = 'pointer';
+    div.style.zIndex = '1';
+    div.style.textAlign = 'center';
+    div.style.boxShadow = '3px 3px 5px black';
+    const x = document.createElement('div');
+    x.style.position = 'absolute';
+    x.style.right = '0.25rem';
+    x.style.top = '0.25rem';
+    x.textContent = '✖';
+    div.appendChild(x);
+    const m = document.createElement('div');
+    m.setAttribute('tkey', 'cookie-banner');
+    div.appendChild(m);
+    div.addEventListener('click', () => {
+      document.body.removeChild(div);
+      localStorage.setItem(name, 'yes');
+    });
+    document.body.appendChild(div);
+  }
+
   async function applyTranslations(lang) {
     await setLanguage(lang?[lang]:navigator.languages);
     let changed = false;
@@ -140,5 +174,8 @@ window.tlsProxy = {
       });
     }
   }
-  document.addEventListener('DOMContentLoaded', () => applyTranslations());
+  document.addEventListener('DOMContentLoaded', () => {
+    cookieBanner();
+    applyTranslations();
+  });
 })();
