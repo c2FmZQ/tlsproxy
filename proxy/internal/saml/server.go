@@ -26,11 +26,11 @@ package saml
 import (
 	"bytes"
 	"compress/flate"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/xml"
-	"fmt"
 	"html/template"
 	"io"
 	"net"
@@ -84,7 +84,7 @@ func (s *ProviderServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	issuer := reqData.Issuer.Value
 	resp := samlResponse{
 		XMLNS:        "urn:oasis:names:tc:SAML:2.0:protocol",
-		ID:           "id-" + fmt.Sprintf("%x", time.Now().UnixNano()),
+		ID:           rand.Text(),
 		Version:      "2.0",
 		IssueInstant: now.Format(time.RFC3339Nano),
 		Destination:  reqData.AssertionConsumerServiceURL,
@@ -141,7 +141,7 @@ func (s *ProviderServer) newAssertion(now time.Time, reqData SAMLAuthnRequest) (
 	}
 	assertion := samlAssertion{
 		XMLNS:        "urn:oasis:names:tc:SAML:2.0:assertion",
-		ID:           "id-" + fmt.Sprintf("%x", time.Now().UnixNano()),
+		ID:           rand.Text(),
 		Version:      "2.0",
 		IssueInstant: now.Format(time.RFC3339Nano),
 		Issuer: samlIssuer{
