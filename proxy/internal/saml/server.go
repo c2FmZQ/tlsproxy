@@ -74,7 +74,7 @@ func (s *ProviderServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	var reqData SAMLAuthnRequest
+	var reqData samlAuthnRequest
 	if err := xml.Unmarshal(xmlBytes, &reqData); err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
@@ -129,7 +129,7 @@ func (s *ProviderServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 }
-func (s *ProviderServer) newAssertion(now time.Time, reqData SAMLAuthnRequest) (string, error) {
+func (s *ProviderServer) newAssertion(now time.Time, reqData samlAuthnRequest) (string, error) {
 	issuer := reqData.Issuer.Value
 	acsURL, err := url.Parse(reqData.AssertionConsumerServiceURL)
 	if err != nil {

@@ -24,6 +24,8 @@
 package saml
 
 import (
+	"bytes"
+	"compress/flate"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/base64"
@@ -123,10 +125,8 @@ func (p *Provider) RequestLogin(w http.ResponseWriter, req *http.Request, origUR
 	}
 	p.mu.Unlock()
 
-	authReq := &SAMLAuthnRequest{
+	authReq := &samlAuthnRequest{
 		XMLName:                     xml.Name{Local: "samlp:samlAuthnRequest"},
-		XMLNS:                       "urn:oasis:names:tc:SAML:2.0:protocol",
-		XMLNSSAML:                   "urn:oasis:names:tc:SAML:2.0:assertion",
 		ID:                          idStr,
 		Version:                     "2.0",
 		IssueInstant:                time.Now().UTC().Format(time.RFC3339Nano),
@@ -303,4 +303,48 @@ func findElementAttr(e *etree.Element, p, a string) string {
 		return ""
 	}
 	return attr.Value
+}
+
+type samlAuthnRequest struct {
+	XMLName                     xml.Name   `xml:"urn:oasis:names:tc:SAML:2.0:protocol AuthnRequest"`
+	ID                          string     `xml:",attr"`
+	Version                     string     `xml:",attr"`
+	IssueInstant                string     `xml:",attr"`
+	Destination                 string     `xml:",attr"`
+	ProtocolBinding             string     `xml:",attr"`
+	AssertionConsumerServiceURL string     `xml:",attr"`
+	Issuer                      samlIssuer `xml:"Issuer"`
+}
+
+type samlIssuer struct {
+	XMLName xml.Name `xml:"urn:oasis:names:tc:SAML:2.0:assertion Issuer"`
+	Format  string   `xml:",attr"`
+	Value   string   `xml:",chardata"`
+}
+
+func (r *samlAuthnRequest) URL() (string, error) {
+	var buf bytes.Buffer
+	w, err := flate.NewWriter(&buf, flate.DefaultCompression)
+	if err != nil {
+		return "", err
+	}
+	s, err := xml.Marshal(r)
+	if err != nil {
+		return "", err
+	}
+	if _, err := w.Write(s); err != nil {
+		return "", err
+	}
+	if err := w.Close(); err != nil {
+		return "", err
+	}
+	url, err := url.Parse(r.Destination)
+	if err != nil {
+		return "", err
+	}
+	q := url.Query()
+	q.Set("SAMLRequest", base64.StdEncoding.EncodeToString(buf.Bytes()))
+	url.RawQuery = q.Encode()
+
+	return url.String(), nil
 }
