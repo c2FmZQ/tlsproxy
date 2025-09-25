@@ -1,6 +1,6 @@
 # `proxy.mjs` - Client-Side Proxy Helper
 
-This JavaScript module provides essential client-side functionality for HTML pages served by `tlsproxy`. It handles CSRF protection, session management, and internationalization (i18n) dynamically in the user's browser.
+This JavaScript module provides client-side functionality for HTML pages served by `tlsproxy`. It handles CSRF protection, session management, and internationalization (i18n) dynamically in the user's browser.
 
 ## Features
 
@@ -46,7 +46,7 @@ This script is intended to be included as a module in HTML pages served by `tlsp
 
 ```html
 <script type="module">
-  import { logout, whoami } from './proxy.mjs';
+  import { logout, whoami } from '/.sso/proxy.mjs';
 
   // Example: Add a logout button
   const logoutButton = document.getElementById('logout-btn');
@@ -61,5 +61,5 @@ This script is intended to be included as a module in HTML pages served by `tlsp
 </script>
 
 <!-- Example of an element that will be translated -->
-<h1 tkey="welcome_message">Welcome</h1>
+<h1 tkey="logout-button">Logout</h1>
 ```
