@@ -68,7 +68,12 @@ export function logout() {
 export function whoami() {
   return fetch('/.sso/', {
     method: 'POST',
-  }).then(r => r.json());
+  }).then(r => {
+    if (!r.ok) {
+      throw new Error(`HTTP error, status: ${r.status}`);
+    }
+    return r.json();
+  });
 }
 
 /** @type {string} The currently active language code (e.g., 'en', 'fr-CA'). */
