@@ -27,6 +27,7 @@ import (
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -183,6 +184,28 @@ func (be *Backend) serveSSOProxyMJS(w http.ResponseWriter, req *http.Request) {
 
 func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 	claims := fromctx.Claims(req.Context())
+
+	if req.Method == http.MethodPost {
+		w.Header().Set("content-type", "application/json")
+		if claims == nil {
+			w.Write([]byte("null\n"))
+			return
+		}
+		out := struct {
+			Name   string         `json:"name,omitempty"`
+			Email  string         `json:"email,omitempty"`
+			Claims map[string]any `json:"claims,omitempty"`
+		}{
+			Claims: claims,
+		}
+		out.Name, _ = claims["name"].(string)
+		out.Email, _ = claims["email"].(string)
+
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		enc.Encode(out)
+		return
+	}
 	var keys []string
 	for k := range claims {
 		keys = append(keys, k)
