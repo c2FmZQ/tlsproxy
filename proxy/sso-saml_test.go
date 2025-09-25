@@ -82,9 +82,17 @@ func TestSSOEnforceSAML(t *testing.T) {
 					Name:     "test-idp",
 					SSOURL:   idp.URL,
 					EntityID: "https.example.com",
-					Certs:    string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: idpCert.Certificate[0]})) + string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: idpCert.Certificate[1]})),
-					ACSURL:   "https://sso.example.com/saml/acs",
-					Domain:   "example.com",
+					Certs: string(pem.EncodeToMemory(
+						&pem.Block{
+							Type:  "CERTIFICATE",
+							Bytes: idpCert.Certificate[0],
+						})) + string(pem.EncodeToMemory(
+						&pem.Block{
+							Type:  "CERTIFICATE",
+							Bytes: idpCert.Certificate[1],
+						})),
+					ACSURL: "https://sso.example.com/saml/acs",
+					Domain: "example.com",
 				},
 			},
 			Backends: []*Backend{
@@ -248,15 +256,6 @@ type samlIDPServer struct {
 	count int
 }
 
-const (
-	samlResponseTemplate = `<html>
-	<body onload="document.forms[0].submit()">
-	<form method="POST" action="{{.URL}}"><input type="hidden" name="SAMLResponse" value="{{.SAMLResponse}}"/>
-	</form>
-	</body>
-	</html>`
-)
-
 // samlTestServer is a SAML Identity Provider for testing.
 type samlTestServer struct {
 	cert tls.Certificate
@@ -314,6 +313,13 @@ func (s *samlTestServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+
+	const samlResponseTemplate = `<html>
+	<body onload="document.forms[0].submit()">
+	<form method="POST" action="{{.URL}}"><input type="hidden" name="SAMLResponse" value="{{.SAMLResponse}}"/>
+	</form>
+	</body>
+	</html>`
 
 	tmpl := template.Must(template.New("saml-response").Parse(samlResponseTemplate))
 	data := struct {
