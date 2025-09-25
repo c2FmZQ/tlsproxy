@@ -45,6 +45,12 @@ export function logout() {
   .then(() => window.location = '/.sso/logout');
 }
 
+export function whoami() {
+  return fetch('/.sso/', {
+    method: 'POST',
+  }).then(r => r.json());
+}
+
 let currentLang = 'en';
 let langData = {};
 
