@@ -33,6 +33,7 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"encoding/xml"
+	"html"
 	"html/template"
 	"io"
 	"net"
@@ -201,7 +202,7 @@ func TestSSOEnforceSAML(t *testing.T) {
 	}
 	action := m[1]
 	name := m[2]
-	value := strings.ReplaceAll((m[3]), "&#43;", "+")
+	value := html.UnescapeString(m[3])
 
 	hdrs := http.Header{}
 	hdrs.Set("content-type", "application/x-www-form-urlencoded")
