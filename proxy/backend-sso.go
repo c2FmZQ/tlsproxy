@@ -186,6 +186,7 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 	claims := fromctx.Claims(req.Context())
 
 	if req.Method == http.MethodPost {
+		w.Header().Set("content-type", "application/json")
 		if claims == nil {
 			w.Write([]byte("null\n"))
 			return
@@ -200,7 +201,6 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 		out.Name, _ = claims["name"].(string)
 		out.Email, _ = claims["email"].(string)
 
-		w.Header().Set("content-type", "application/json")
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		enc.Encode(out)
