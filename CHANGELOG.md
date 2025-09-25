@@ -1,9 +1,10 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.22.2
 
 ### :wrench: Misc
 
+* New tests and refactoring.
 * Update go dependencies:
   * upgraded github.com/c2FmZQ/storage v0.3.0 => v0.3.1
   * upgraded github.com/c2FmZQ/tpm v0.4.1 => v0.4.3
