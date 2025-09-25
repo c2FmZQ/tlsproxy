@@ -6,7 +6,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
 <link rel="icon" href="/.sso/favicon.ico" />
 <link rel="stylesheet" type="text/css" href="/.sso/style.css" />
-<script src="/.sso/common.js"></script>
+<script type="module">
+import { logout } from '/.sso/proxy.mjs';
+window.logout = logout;
+</script>
 <style>
 #claims {
   text-align: left;
@@ -45,7 +48,7 @@
 <a class="button" tkey="sso-passkeys" href="/.sso/passkeys">Passkeys</a>
 {{ end }}
 <a class="button" tkey="sso-switch-account" href="/.sso/logout?u={{.Token}}">Switch Account</a>
-<a class="button" tkey="logout-button" onclick="tlsProxy.logout();">Logout</a>
+<a class="button" tkey="logout-button" onclick="logout();">Logout</a>
 {{ else }}
 <a class="button" tkey="login-button" href="/.sso/logout?u={{.Token}}">Login</a>
 {{ end }}

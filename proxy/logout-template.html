@@ -6,7 +6,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.1" />
 <link rel="icon" href="/.sso/favicon.ico" />
 <link rel="stylesheet" type="text/css" href="/.sso/style.css" />
-<script src="/.sso/common.js"></script>
+<script type="module">
+import { logout } from '/.sso/proxy.mjs';
+window.logout = logout;
+</script>
 </head>
 <body>
 <div id="message">
@@ -14,7 +17,7 @@
 <div style="font-size: 200%" tkey="sso-logged-out">Logged out</div>
 {{ else }}
 <div tkey="logout-instructions">Click the button to continue</div>
-<a class="button" onclick="tlsProxy.logout();" tkey="logout-button">Logout</a>
+<a class="button" onclick="logout();" tkey="logout-button">Logout</a>
 {{ end }}
 </div>
 </div>
