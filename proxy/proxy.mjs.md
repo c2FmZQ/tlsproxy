@@ -56,7 +56,11 @@ This script is intended to be included as a module in HTML pages served by `tlsp
 
   // Example: Display user's name
   whoami().then(user => {
-    document.getElementById('user-name').textContent = user.name;
+    if (user) {
+      document.getElementById('user-name').textContent = user.name;
+    }
+  }).catch(error => {
+    console.error('Failed to get user info:', error);
   });
 </script>
 
