@@ -612,6 +612,8 @@ sshCertificateAuthorities:
 
 Once an SSH CA is configured in TLSPROXY, users can obtain SSH certificates through a web interface. Navigate to the `certificateEndpoint` (e.g., `https://ssh.example.com/cert`) in your browser. You will be prompted to enter your SSH public key, and TLSPROXY will issue a signed certificate if you are authorized.
 
+Alternatively, the [`examples/ssh/get-ssh-cert.sh`](./examples/ssh/get-ssh-cert.sh) script can be used to obtain a certificate from the command line.
+
 ### 5.6. Setting up PKI (Public Key Infrastructure)
 
 TLSPROXY can also function as a general-purpose PKI, issuing X.509 certificates for clients and backend services.
