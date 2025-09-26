@@ -2,35 +2,52 @@
 [![release](https://github.com/c2FmZQ/tlsproxy/actions/workflows/release.yml/badge.svg)](https://github.com/c2FmZQ/tlsproxy/actions/workflows/release.yml)
 [![CodeQL](https://github.com/c2FmZQ/tlsproxy/actions/workflows/github-code-scanning/codeql/badge.svg?branch=main)](https://github.com/c2FmZQ/tlsproxy/actions/workflows/github-code-scanning/codeql)
 
-# TLS Termination Proxy
+# TLSPROXY
 
-TLSPROXY is primarily a [TLS termination proxy](https://en.wikipedia.org/wiki/TLS_termination_proxy) that uses Let's Encrypt to provide TLS encryption for any number of TCP and HTTP servers, and any number of server names concurrently on the same port.
+<details>
+<summary>Table of Contents</summary>
 
-TLSPROXY can also be used as a simple [Web server](https://en.wikipedia.org/wiki/Web_server), or a [Reverse Proxy](https://en.wikipedia.org/wiki/Reverse_proxy) for HTTP(S) services, and optionally control access to these services with user authentication and authorization.
+- [1. Overview](#1-overview)
+- [2. Installation](#2-installation)
+  - [From Source](#from-source)
+  - [Docker Image](#docker-image)
+  - [Precompiled Binaries](#precompiled-binaries)
+  - [Verifying Signatures](#verifying-signatures)
+- [3. Configuration](#3-configuration)
+  - [`config.yaml` Structure](#configyaml-structure)
+  - [Backend Configuration (`Backend` Object)](#backend-configuration-backend-object)
+    - [SSORule Object](#ssorule-object)
+    - [LocalOIDCServer Object](#localoidcserver-object)
+      - [LocalOIDCClient Object](#localoidcclient-object)
+      - [LocalOIDCRewriteRule Object](#localoidcrewriterule-object)
+  - [Identity Provider Configuration](#identity-provider-configuration)
+  - [Group and Member Objects](#group-and-member-objects)
+    - [`Group` Object](#group-object)
+    - [`Member` Object](#member-object)
+  - [PKI Configuration (`ConfigPKI`)](#pki-configuration-configpki)
+  - [SSH Certificate Authority Configuration (`ConfigSSHCertificateAuthority`)](#ssh-certificate-authority-configuration-configsshcertificateauthority)
+  - [Bandwidth Limit Configuration (`BWLimit`)](#bandwidth-limit-configuration-bwlimit)
+  - [WebSocket Configuration (`WebSocketConfig`)](#websocket-configuration-websocketconfig)
+  - [ECH Configuration (`ECH` Object)](#ech-configuration-ech-object)
+  - [ForwardECH Configuration (`BackendECH` Object)](#forwardech-configuration-backendech-object)
+- [4. Usage](#4-usage)
+- [5. Common Use Cases](#5-common-use-cases)
+  - [5.1. Basic HTTP/HTTPS Proxying](#51-basic-httphttps-proxying)
+    - [5.1.1. HTTP Mode (HTTPS to HTTP)](#511-http-mode-https-to-http)
+    - [5.1.2. HTTPS Mode (HTTPS to HTTPS)](#512-https-mode-https-to-https)
+  - [5.2. TCP Proxying](#52-tcp-proxying)
+    - [5.2.1. TCP Mode (TLS to Plain TCP)](#521-tcp-mode-tls-to-plain-tcp)
+    - [5.2.2. TLSPASSTHROUGH Mode (TLS Passthrough)](#522-tlspassthrough-mode-tls-passthrough)
+  - [5.3. SSH Proxying with `tlsclient`](#53-ssh-proxying-with-tlsclient)
+  - [5.4. Setting up an SSH Certificate Authority (CA)](#54-setting-up-an-ssh-certificate-authority-ca)
+  - [5.5. Getting SSH Certificates](#55-getting-ssh-certificates)
+  - [5.6. Setting up PKI (Public Key Infrastructure)](#56-setting-up-pki-public-key-infrastructure)
+  - [5.7. Serving Static Files](#57-serving-static-files)
+  - [5.8. QUIC/HTTP3 Proxying](#58-quichttp3-proxying)
+- [6. Advanced Topics](#6-advanced-topics)
+- [7. Support and Community](#7-support-and-community)
 
-Overview of features:
-
-* [x] Use [Let's Encrypt](https://letsencrypt.org/) automatically to get TLS certificates (http-01 & tls-alpn-01 challenges).
-* [x] Terminate TLS connections, and forward the data to any TCP server in plaintext.
-* [x] Terminate TLS connections, and forward the data to any TLS server. The data is encrypted in transit, but the proxy sees the plaintext.
-* [x] Terminate _TCP_ connections, and forward the TLS connection to any TLS server (passthrough). The proxy doesn't see the plaintext.
-* [x] Terminate [QUIC](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/QUIC.md) connections, and forward the data to any QUIC or TLS/TCP server.
-* [x] Terminate HTTPS connections, and forward the requests to HTTP or HTTPS servers (http/1.1, http/2, http/3).
-* [x] Support Encrypted Client Hello ([ECH](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/ECH.md)).
-* [x] Serve static files from a local filesystem.
-* [x] Support for the [PROXY protocol](https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt) defined by HAProxy. (not on QUIC or HTTP/3 backends)
-* [x] TLS client authentication & authorization (when the proxy terminates the TLS connections).
-* [x] Built-in [Certificate Authority](https://github.com/c2FmZQ/tlsproxy/tree/main/examples/pki#readme) for managing client and backend server TLS certificates.
-* [x] Built-in [Certificate Authority](https://github.com/c2FmZQ/tlsproxy/tree/main/examples/ssh#readme) for issuing SSH user certificates.
-* [x] User authentication with OpenID Connect, SAML, and/or passkeys (for HTTP and HTTPS connections). Optionally issue JSON Web Tokens (JWT) to authenticated users to use with the backend services and/or run a local OpenID Connect server for backend services.
-* [x] Access control by IP address.
-* [x] Routing based on Server Name Indication (SNI), with optional default route when SNI isn't used.
-* [x] Simple round-robin load balancing between servers.
-* [x] Support any ALPN protocol in TLS, TLSPASSTHROUGH, QUIC, or TCP mode.
-* [x] OCSP stapling and OCSP certificate verification.
-* [x] Support for TLS certificates stored locally.
-* [x] Hardware-backed cryptographic keys for encryption and signing with a [TPM](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/TPM.md).
-* [x] Use the same address (IP Address:port) for any number of server names, e.g. foo.example.com and bar.example.com on the same xxx.xxx.xxx.xxx:443.
+</details>
 
 ```mermaid
 flowchart LR
@@ -57,115 +74,40 @@ flowchart LR
   prx-->be4
 ```
 
-## Example config:
+## 1. Overview
 
-```yaml
-# (Required) Indicate acceptance of the Let's Encrypt Terms of Service.
-acceptTOS: true
-# (Optional) The email address is used by Let's Encrypt to send important notifications.
-email: <your email address>
+TLSPROXY is a versatile [TLS termination proxy](https://en.wikipedia.org/wiki/TLS_termination_proxy) designed to secure various network services. It automatically handles TLS encryption using [Let's Encrypt](https://letsencrypt.org/), allowing multiple services and server names to share the same port. Beyond TLS termination, TLSPROXY can function as a simple [web server](https://en.wikipedia.org/wiki/Web_server), a [reverse proxy](https://en.wikipedia.org/wiki/Reverse_proxy) for HTTP(S) services, and offers robust user authentication and authorization features.
 
-# The HTTP address must be reachable from the internet via port 80 for the
-# letsencrypt ACME http-01 challenge to work. If the httpAddr is empty, the
-# proxy will only use tls-alpn-01 and tlsAddr must be reachable on port 443.
-# See https://letsencrypt.org/docs/challenge-types/
-# Normal HTTP requests received on this port are redirected to port 443.
-httpAddr: ":10080"
+**Key Features:**
 
-# The proxy will receive TLS connections at this address and forward them to
-# the backends.
-tlsAddr: ":10443"
+*   **Automatic TLS Certificates:** Integrates with Let's Encrypt for automatic certificate acquisition using http-01 and tls-alpn-01 challenges.
+*   **Flexible TLS Termination:**
+    *   Terminates TLS and forwards data to TCP servers in plain text.
+    *   Terminates TLS and forwards data to TLS servers (encrypted in transit, proxy sees plain text).
+    *   Passes through raw TLS connections to backend TLS servers (proxy does not see plain text).
+*   **QUIC and HTTP/3 Support:** Terminates QUIC connections and forwards data to QUIC or TLS/TCP servers.
+*   **Encrypted Client Hello (ECH):** Enhances privacy by encrypting ClientHello messages.
+*   **Static File Serving:** Can serve static content directly from the local filesystem.
+*   **PROXY Protocol Support:** Integrates with the PROXY protocol for incoming TCP connections (not for QUIC or HTTP/3 backends).
+*   **Client Authentication & Authorization:** Supports TLS client authentication and authorization when the proxy terminates TLS connections.
+*   **Built-in Certificate Authorities:**
+    *   Manages client and backend server TLS certificates.
+    *   Issues SSH user certificates based on SSO credentials.
+*   **User Authentication:** Supports OpenID Connect, SAML, and Passkeys for HTTP and HTTPS connections. Can optionally issue JSON Web Tokens (JWTs) and run a local OpenID Connect server.
+*   **Access Control:** Implements access control based on IP addresses.
+*   **Routing & Load Balancing:** Routes requests based on Server Name Indication (SNI) with optional default routes and simple round-robin load balancing.
+*   **ALPN Protocol Support:** Supports any ALPN protocol in TLS, TLSPASSTHROUGH, QUIC, or TCP mode.
+*   **OCSP Stapling & Verification:** Includes OCSP stapling and certificate verification.
+*   **Local TLS Certificates:** Supports using locally stored TLS certificates.
+*   **Hardware-backed Cryptographic Keys:** Can use a Trusted Platform Module (TPM) for enhanced security of cryptographic keys.
+*   **Port Sharing:** Allows multiple server names to share the same IP address and port.
 
-# Each backend has a list of server names (DNS names that clients connect to),
-# and addresses (where to forward connections).
-backends:
+## 2. Installation
 
-# In HTTP mode, HTTPS requests to example.com and www.example.com are forwarded
-# to the listed addresses using round robin load balancing.
-- serverNames:
-  - example.com
-  - www.example.com
-  mode: http
-  addresses:
-  - 192.168.0.10:80
-  - 192.168.0.11:80
-  - 192.168.0.12:80
+### From Source
 
-# In HTTPS mode, HTTPS requests to other.example.com are forwarded to the listed
-# addresses just like in http mode. The connection between the proxy and the
-# backend server(s) uses TLS. The identity of the server is verified with
-# forwardServerName, forwardRootCAs, and/or insecureSkipVerify.
-- serverNames:
-  - other.example.com
-  mode: https
-  addresses:
-  - 192.168.1.100:443
-  insecureSkipVerify: true
+To install TLSPROXY from its source code, follow these steps:
 
-# In TCP mode, incoming TLS connections are forwarded to the listed addresses
-# using unencrypted TCP connections. The connections are distributed between
-# backend servers using round robin load balancing.
-- serverNames:
-  - ssh.example.com
-  mode: tcp
-  addresses:
-  - 192.168.2.200:22
-
-# In TLS mode, incoming TLS connections are forwarded to the listed addresses
-# using TLS. The connections are distributed between backend servers using round
-# robin load balancing. The identity of the server is verified with
-# forwardServerName, forwardRootCAs, and/or insecureSkipVerify.
-- serverNames:
-  - secure.example.com
-  mode: tls
-  addresses:
-  - 192.168.3.123:8443
-  forwardServerName: secure-internal.example.com
-
-# In all modes (except tlspassthrough), the client identity can be verified by
-# setting clientAuth, and optionally setting rootCAs and acl.
-- serverNames:
-  - restricted.example.com
-  mode: https
-  clientAuth:
-    rootCAs:
-    - |
-      -----BEGIN CERTIFICATE-----
-      .....
-      -----END CERTIFICATE-----
-    acl:
-    - SUBJECT:CN=admin-user
-  addresses:
-  - 192.168.4.100:443
-  forwardServerName: restricted-internal.example.com
-
-# In TLSPASSTHROUGH mode, incoming TLS connections are forwarded directly to the
-# backend servers. The proxy only sees the encrypted content transmitted between
-# the client and the backend servers. The backend servers need to have their own
-# TLS certificates and, if client authentication is required, they need to do it
-# themselves.
-- serverNames:
-  - passthrough.example.com
-  mode: tlspassthrough
-  addresses:
-  - 192.168.5.66:8443
-
-# When documentRoot is set, static content is served from that directory.
-# (The addresses field must be empty)
-- serverNames: 
-  - static.example.com
-  mode: local
-  documentRoot: /var/www/htdocs
-```
-
-See the [godoc](https://pkg.go.dev/github.com/c2FmZQ/tlsproxy/proxy#section-documentation) and the [examples](https://github.com/c2FmZQ/tlsproxy/blob/main/examples) directory for more details.
-
-
-## How to download and run tlsproxy
-
-### From source
-
-Install from the source code:
 ```console
 git clone https://github.com/c2FmZQ/tlsproxy.git
 cd tlsproxy
@@ -173,66 +115,636 @@ go generate ./...
 go build -o tlsproxy
 ```
 
-Then, run it with:
-```console
-<path>/tlsproxy --config=config.yaml
-```
+### Docker Image
 
-### Docker image
+You can use the official Docker image from [Docker Hub](https://hub.docker.com/r/c2fmzq/tlsproxy). Here's an example command:
 
-Use the [docker image](https://hub.docker.com/r/c2fmzq/tlsproxy), e.g.
 ```console
-docker run                                 \
-  --name=tlsproxy                          \
-  --user=1000:1000                         \
-  --restart=always                         \
-  --volume=${CONFIGDIR}:/config            \
-  --volume=${CACHEDIR}:/.cache             \
-  --publish=80:10080                       \
-  --publish=443:10443                      \
+docker run \
+  --name=tlsproxy \
+  --user=1000:1000 \
+  --restart=always \
+  --volume=${CONFIGDIR}:/config \
+  --volume=${CACHEDIR}:/.cache \
+  --publish=80:10080 \
+  --publish=443:10443 \
   --env=TLSPROXY_PASSPHRASE="<passphrase>" \
   c2fmzq/tlsproxy:latest
 ```
 
 The proxy reads the configuration from ${CONFIGDIR}/config.yaml.
 
-:warning: `${TLSPROXY_PASSPHRASE}` is used to encrypt the TLS secrets.
+:warning: The `${TLSPROXY_PASSPHRASE}` environment variable is crucial as it's used to encrypt the TLS secrets.
 
-### Precompiled binaries
+### Precompiled Binaries
 
-Download a precompiled binary from the [release page](https://github.com/c2FmZQ/tlsproxy/releases).
+Precompiled binaries for various platforms are available on the [release page](https://github.com/c2FmZQ/tlsproxy/releases).
 
-## Verify signatures
+### Verifying Signatures
 
-The release binaries and the container images are signed when they are published.
+It is highly recommended to verify the authenticity of downloaded binaries and container images.
 
-### Container image
+**Container Image:**
 
-To verify the authenticity of a container image, use:
+To verify the authenticity of a container image, use `cosign`:
 
 ```console
 cosign verify \
   --certificate-identity-regexp='^https://github[.]com/c2FmZQ/tlsproxy/[.]github/workflows/release[.]yml' \
-  --certificate-oidc-issuer=https://token.actions.githubusercontent.com                                   \
+  --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
   c2fmzq/tlsproxy:latest
 ```
 
-and/or:
+Alternatively, if you have the public key:
 
 ```console
 cosign verify --key keys/cosign.pub c2fmzq/tlsproxy:latest
 ```
 
-### Release binary
+**Release Binary:**
 
-To verify the authenticity of a release binary, first import `c2FmZQ-bot.pub`:
+To verify the authenticity of a release binary, first import the `c2FmZQ-bot.pub` key:
 
 ```console
 curl https://raw.githubusercontent.com/c2FmZQ/tlsproxy/main/keys/c2FmZQ-bot.pub | gpg --import
 ```
 
-Then, verify the signature, e.g.
+Then, verify the signature (e.g., for `tlsproxy-linux-amd64`):
 
 ```console
 gpg --verify tlsproxy-linux-amd64.sig tlsproxy-linux-amd64
 ```
+
+## 3. Configuration
+
+TLSPROXY is configured using a YAML file, typically named `config.yaml`. This file defines how the proxy behaves, including backend services, authentication methods, and security settings.
+
+### `config.yaml` Structure
+
+The main configuration options are:
+
+*   `acceptTOS`: (Required) Boolean. Indicates acceptance of the Let's Encrypt Terms of Service. Must be `true` for Let's Encrypt to function.
+*   `email`: (Optional) String. Your email address, used by Let's Encrypt for important notifications.
+*   `httpAddr`: (Optional) String. The address where the proxy listens for HTTP connections (e.g., `":80"` or `":10080"`). Essential for Let's Encrypt's http-01 challenge.
+*   `tlsAddr`: (Required) String. The address where the proxy listens for TLS connections (e.g., `":443"` or `":10443"`).
+*   `enableQUIC`: (Optional) Boolean. Enables QUIC protocol support. Defaults to `true` if compiled with QUIC support.
+*   `ech`: (Optional) Object. Configures Encrypted Client Hello (ECH).
+*   `acceptProxyHeaderFrom`: (Optional) List of CIDRs. Enables PROXY protocol for connections from specified IP ranges.
+*   `hwBacked`: (Optional) Boolean. Enables hardware-backed cryptographic keys (e.g., with a TPM).
+*   `cacheDir`: (Optional) String. Directory for storing TLS certificates, OCSP responses, etc. Defaults to a system cache directory.
+*   `defaultServerName`: (Optional) String. Server name to use when SNI is not provided by the client.
+*   `logFilter`: (Optional) Object. Controls what gets logged (connections, requests, errors).
+*   `groups`: (Optional) List of `Group` objects. Defines user groups for access control.
+*   `backends`: (Required) List of `Backend` objects. Defines the services TLSPROXY will forward traffic to.
+*   `oidc`: (Optional) List of `ConfigOIDC` objects. Defines OpenID Connect identity providers.
+*   `saml`: (Optional) List of `ConfigSAML` objects. Defines SAML identity providers.
+*   `passkey`: (Optional) List of `ConfigPasskey` objects. Defines Passkey managers.
+*   `pki`: (Optional) List of `ConfigPKI` objects. Defines local Certificate Authorities.
+*   `sshCertificateAuthorities`: (Optional) List of `ConfigSSHCertificateAuthority` objects. Defines local SSH Certificate Authorities.
+*   `tlsCertificates`: (Optional) List of `TLSCertificate` objects. Specifies pre-existing TLS certificates to use.
+*   `bwLimits`: (Optional) List of `BWLimit` objects. Defines named bandwidth limit groups.
+*   `webSockets`: (Optional) List of `WebSocketConfig` objects. Defines WebSocket endpoints.
+
+See the [GoDoc](https://pkg.go.dev/github.com/c2FmZQ/tlsproxy/proxy#Config) for complete and up-to-date documentation.
+
+### Backend Configuration (`Backend` Object)
+
+Each `Backend` object defines a service and its behavior:
+
+*   `serverNames`: (Required) List of strings. DNS names for this service.
+*   `mode`: (Required) String. Controls how the proxy communicates with the backend. Valid values include `TCP`, `TLS`, `TLSPASSTHROUGH`, `QUIC`, `HTTP`, `HTTPS`, `LOCAL`, `CONSOLE`.
+*   `addresses`: (Optional) List of strings. Backend server addresses (e.g., `192.168.1.10:80`).
+*   `documentRoot`: (Optional) String. Directory for serving static files (only if `addresses` is empty).
+*   `clientAuth`: (Optional) Object. Configures TLS client authentication.
+    *   `acl`: (Optional) List of strings. Restricts client identities (email, subject, DNS, URI).
+    *   `rootCAs`: (Optional) List of strings. CA names or PEM-encoded certificates for client verification.
+    *   `addClientCertHeader`: (Optional) List of strings. Specifies which client certificate fields to add to `X-Forwarded-Client-Cert` header.
+*   `sso`: (Optional) Object. Configures Single Sign-On for the backend.
+    *   `provider`: String. Name of an OIDC or SAML provider.
+    *   `rules`: List of `SSORule` objects. Defines path-matching rules for SSO enforcement.
+    *   `htmlMessage`: String. HTML message displayed on permission denied screen (not escaped).
+    *   `setUserIdHeader`: Boolean. Sets `x-tlsproxy-user-id` header with user's email.
+    *   `generateIdTokens`: Boolean. Generates ID tokens for authenticated users.
+    *   `localOIDCServer`: Object. Configures a local OpenID Provider.
+*   `exportJwks`: (Optional) String. Path to export the proxy's JSON Web Key Set.
+*   `alpnProtos`: (Optional) List of strings. ALPN protocols supported by this backend.
+*   `backendProto`: (Optional) String. Protocol for forwarding HTTPS requests to the backend (e.g., `http/1.1`, `h2`, `h3`).
+*   `insecureSkipVerify`: (Optional) Boolean. Disables backend server TLS certificate verification (use with caution).
+*   `forwardServerName`: (Optional) String. ServerName to send in TLS handshake with backend.
+*   `forwardRootCAs`: (Optional) List of strings. CA names or PEM-encoded certificates for backend verification.
+*   `forwardTimeout`: (Optional) Duration. Connection timeout to backend servers.
+*   `forwardHttpHeaders`: (Optional) Map of strings. HTTP headers to add to forwarded requests.
+*   `forwardECH`: (Optional) Object. ECH parameters for connecting to the backend.
+*   `pathOverrides`: (Optional) List of `PathOverride` objects. Defines different backend parameters for specific path prefixes.
+*   `proxyProtocolVersion`: (Optional) String. Enables PROXY protocol on this backend (`v1` or `v2`).
+*   `sanitizePath`: (Optional) Boolean. Sanitizes request path before forwarding (defaults to `true`).
+*   `serverCloseEndsConnection`: (Optional) Boolean. Closes TCP connection when server closes its end.
+*   `clientCloseEndsConnection`: (Optional) Boolean. Closes TCP connection when client closes its end.
+*   `halfCloseTimeout`: (Optional) Duration. Timeout for half-closed TCP connections.
+
+#### SSORule Object
+
+The `SSORule` object allows for fine-grained control over SSO enforcement based on request paths. Each rule in the `rules` list is evaluated in order, and the first matching rule is applied.
+
+*   `paths`: (Optional) List of strings. A list of path prefixes to which this rule applies. If empty, the rule matches all paths.
+*   `exceptions`: (Optional) List of strings. A list of path prefixes that are exempt from this rule.
+*   `forceReAuth`: (Optional) Duration. A time duration after which the user must re-authenticate, even if their session is still valid.
+*   `acl`: (Optional) List of strings. A list of email addresses or domains (e.g., `bob@example.com`, `@example.com`) that are allowed access. If not provided, all authenticated users are allowed.
+*   `scopes`: (Optional) List of strings. A list of scopes that the user must have to be granted access.
+
+**Example:**
+
+```yaml
+sso:
+  provider: "my-oidc-provider"
+  rules:
+    - paths:
+      - "/admin/"
+      forceReAuth: "1h"
+      acl:
+      - "admin@example.com"
+    - paths:
+      - "/public/"
+      exceptions:
+      - "/public/login"
+    - acl:
+      - "@example.com"
+```
+
+In this example:
+1.  Access to `/admin/` requires re-authentication every hour and is restricted to `admin@example.com`.
+2.  All paths under `/public/` are subject to SSO, except for `/public/login`.
+3.  All other paths are accessible to any authenticated user from the `@example.com` domain.
+
+#### LocalOIDCServer Object
+
+The `localOIDCServer` object allows `tlsproxy` to act as an OpenID Connect (OIDC) provider, issuing tokens to authenticated users. This is useful for services that can authenticate using OIDC.
+
+When `localOIDCServer` is configured, `tlsproxy` exposes the following endpoints:
+*   `/.well-known/openid-configuration`
+*   `/authorization`
+*   `/token`
+*   `/jwks`
+*   `/device/authorization`
+*   `/device/verification`
+
+The paths can be prefixed using the `pathPrefix` field.
+
+*   `pathPrefix`: (Optional) String. A prefix for the OIDC endpoints.
+*   `tokenLifetime`: (Optional) Duration. The lifetime of the OIDC tokens. Defaults to 10 minutes.
+*   `clients`: (Required) List of `LocalOIDCClient` objects. Defines the OIDC clients that are allowed to connect.
+*   `rewriteRules`: (Optional) List of `LocalOIDCRewriteRule` objects. Defines rules to rewrite claims in the ID token.
+*   `scopes`: (Optional) List of strings. A list of scopes that may be requested by clients.
+
+##### LocalOIDCClient Object
+
+*   `id`: (Required) String. The OIDC client ID.
+*   `secret`: (Required) String. The OIDC client secret.
+*   `redirectUri`: (Required) List of strings. The OIDC redirect URIs.
+*   `acl`: (Optional) List of strings. A list of email addresses or domains (e.g., `bob@example.com`, `@example.com`) that are allowed to use this client.
+
+##### LocalOIDCRewriteRule Object
+
+*   `inputClaim`: (Required) String. The name of the claim to use as input.
+*   `outputClaim`: (Required) String. The name of the claim to create or overwrite.
+*   `regex`: (Required) String. A regular expression to match against the input claim's value.
+*   `value`: (Required) String. The new value for the output claim. Can use capture groups from the regex.
+
+**Example:**
+
+```yaml
+sso:
+  provider: "my-sso-provider"
+  localOIDCServer:
+    tokenLifetime: "1h"
+    clients:
+      - id: "my-app"
+        secret: "a-very-secret-string"
+        redirectUri:
+          - "https://my-app.example.com/oauth2/callback"
+        acl:
+          - "@example.com"
+    rewriteRules:
+      - inputClaim: "email"
+        outputClaim: "preferred_username"
+        regex: "^([^@]+)@.+$"
+        value: "$1"
+```
+In this example:
+1.  The local OIDC server will issue tokens with a lifetime of 1 hour.
+2.  The client `my-app` is allowed to authenticate, and only users with an email address ending in `@example.com` can use it.
+3.  A `preferred_username` claim will be added to the ID token, containing the local part of the user's email address.
+
+
+### Identity Provider Configuration
+
+*   **`ConfigOIDC` (OpenID Connect):**
+    *   `name`: String. Internal name.
+    *   `discoveryUrl`: String. Discovery URL.
+    *   `authorizationEndpoint`: String. Authorization endpoint.
+    *   `scopes`: List of strings. Scopes to request (e.g., `openid`, `email`, `profile`).
+    *   `hostedDomain`: String. Restricts login to a specific domain (Google only).
+    *   `tokenEndpoint`: String. Token endpoint.
+    *   `userinfoEndpoint`: String. Userinfo endpoint.
+    *   `redirectUrl`: String. OAuth2 redirect URL.
+    *   `clientId`: String. Client ID.
+    *   `clientSecret`: String. Client Secret.
+    *   `domain`: String. Domain for user identities.
+
+    **Example (Google OpenID Connect):**
+
+    ```yaml
+    oidc:
+    - name: "google"
+      discoveryUrl: "https://accounts.google.com/.well-known/openid-configuration"
+      redirectUrl: "https://login.example.com/oidc/google"
+      clientId: "<YOUR CLIENT ID>"
+      clientSecret: "<YOUR CLIENT SECRET>"
+      hostedDomain: "example.com" # Optional: Restrict to a specific Google Workspace domain
+    ```
+
+*   **`ConfigSAML` (SAML):**
+    *   `name`: String. Internal name.
+    *   `ssoUrl`: String. SSO URL.
+    *   `entityId`: String. Entity ID.
+    *   `certs`: String. PEM-encoded certificates.
+    *   `acsUrl`: String. ACS URL.
+    *   `domain`: String. Domain for user identities.
+
+    **Example (Google Workspace SAML):**
+
+    ```yaml
+    saml:
+    - name: "google-saml"
+      ssoUrl: "https://accounts.google.com/o/saml2/idp?idpid=<YOUR APP ID>"
+      entityId: "https://login.example.com/"
+      certs: |
+        -----BEGIN CERTIFICATE-----
+        ...
+        -----END CERTIFICATE-----
+      acsUrl: "https://login.example.com/saml"
+    ```
+
+*   **`ConfigPasskey` (Passkey):**
+    *   `name`: String. Internal name.
+    *   `identityProvider`: String. Name of another identity provider for initial authentication.
+    *   `refreshInterval`: Duration. Re-authentication interval.
+    *   `endpoint`: String. URL for passkey authentication.
+    *   `domain`: String. Domain for user identities.
+
+    **Example (Passkey with Google OpenID Connect for initial authentication):**
+
+    ```yaml
+    passkey:
+    - name: "passkey"
+      identityProvider: "google" # Name of the OIDC provider for initial authentication
+      endpoint: "https://login.example.com/passkey"
+      domain: "example.com"
+    ```
+
+### Group and Member Objects
+
+The `groups` section in the configuration allows for the creation of user groups for access control. These groups can be used in `sso` and `clientAuth` rules.
+
+#### `Group` Object
+
+*   `name`: (Required) String. The name of the group.
+*   `members`: (Optional) List of `Member` objects.
+
+#### `Member` Object
+
+A member can be identified in one of three ways:
+*   `email`: String. The email address of the user. This is used for SSO authentication.
+*   `x509`: String. The X.509 subject of a client certificate. This is used for TLS client authentication.
+*   `group`: String. The name of another group. This allows for nested groups.
+
+**Example:**
+
+```yaml
+groups:
+- name: admins
+  members:
+  - email: "admin@example.com"
+  - x509: "SUBJECT:CN=admin"
+- name: users
+  members:
+  - email: "user1@example.com"
+  - x509: "SUBJECT:CN=user1"
+  - group: "admins" # All admins are also users.
+
+backends:
+- serverNames:
+  - "sso.example.com"
+  sso:
+    provider: "my-sso-provider"
+    rules:
+    - acl:
+      - "users" # Only members of the 'users' group can access.
+- serverNames:
+  - "client-auth.example.com"
+  clientAuth:
+    rootCAs:
+    - "my-ca"
+    acl:
+    - "admins" # Only members of the 'admins' group can access.
+```
+
+
+### PKI Configuration (`ConfigPKI`)
+
+Defines a local Certificate Authority:
+
+*   `name`: String. Name of the CA.
+*   `keyType`: String. Cryptographic key type (e.g., `ecdsa-p256`, `rsa-2048`).
+*   `issuingCertificateUrls`: List of strings. URLs for CA's X509 certificate.
+*   `crlDistributionPoints`: List of strings. URLs for Certificate Revocation List.
+*   `ocspServers`: List of strings. URLs for OCSP.
+*   `endpoint`: String. URL for certificate management.
+*   `admins`: List of strings. Users allowed to perform administrative tasks.
+
+### SSH Certificate Authority Configuration (`ConfigSSHCertificateAuthority`)
+
+Defines a local SSH Certificate Authority:
+
+*   `name`: String. Name of the CA.
+*   `keyType`: String. Cryptographic key type.
+*   `publicKeyEndpoint`: String. URL where CA's public key is published.
+*   `certificateEndpoint`: String. URL where certificates are issued.
+*   `maximumCertificateLifetime`: Duration. Maximum certificate lifetime.
+
+### Bandwidth Limit Configuration (`BWLimit`)
+
+Defines named bandwidth limits:
+
+*   `name`: String. Name of the group.
+*   `ingress`: Float. Ingress limit in bytes per second.
+*   `egress`: Float. Egress limit in bytes per second.
+
+### WebSocket Configuration (`WebSocketConfig`)
+
+Defines WebSocket endpoints:
+
+*   `endpoint`: String. WebSocket endpoint URL.
+*   `address`: String. Backend address for WebSocket connections.
+*   `scopes`: List of strings. Scopes for access control.
+
+### ECH Configuration (`ECH` Object)
+
+The `ech` object configures Encrypted Client Hello (ECH). When enabled, `tlsproxy` acts as a Client-Facing Server for all backends.
+
+*   `publicName`: (Required) String. The public name of the ECH configuration.
+*   `interval`: (Optional) Duration. The time interval between key/config rotations.
+*   `endpoint`: (Optional) String. The local endpoint where `tlsproxy` will publish the current ECH ConfigList.
+*   `webhooks`: (Optional) List of strings. A list of webhook URLs to call when the ECH config is updated.
+*   `cloudflare`: (Optional) List of `Cloudflare` objects. Configures Cloudflare DNS records to update when the ECH ConfigList changes.
+
+See the [GoDoc](https://pkg.go.dev/github.com/c2FmZQ/tlsproxy/proxy#ECH) for more details.
+
+**Example:**
+
+```yaml
+ech:
+  publicName: "www.example.com"
+  interval: "1h"
+  endpoint: "https://www.example.com/.well-known/ech-config"
+```
+
+### ForwardECH Configuration (`BackendECH` Object)
+
+The `forwardECH` object configures ECH for connections to backend servers.
+
+*   `echConfigList`: (Optional) String. A static, base64-encoded ECH Config list to use with the backend.
+*   `echPublicName`: (Optional) String. The public name of the backend server's ECH config.
+*   `requireECH`: (Optional) Boolean. If true, connections to the backend will not be attempted without an ECH Config List.
+
+See the [GoDoc](https://pkg.go.dev/github.com/c2FmZQ/tlsproxy/proxy#BackendECH) for more details.
+
+**Example:**
+
+```yaml
+backends:
+- serverNames:
+  - "frontend.example.com"
+  mode: "https"
+  addresses:
+  - "backend.example.com:443"
+  forwardECH:
+    echPublicName: "backend.example.com"
+    requireECH: true
+```
+
+## 4. Usage
+
+To run TLSPROXY, use the `tlsproxy` executable with the `--config` flag pointing to your configuration file:
+
+```console
+./tlsproxy --config=config.yaml
+```
+
+**Command-line Flags:**
+
+*   `--config <file>`: Specifies the path to the configuration YAML file.
+*   `--revoke-all-certificates <reason>`: Revokes all cached certificates. `reason` can be `unspecified`, `keyCompromise`, `superseded`, or `cessationOfOperation`.
+*   `--passphrase <passphrase>`: The passphrase to encrypt TLS keys on disk. Can also be set via `TLSPROXY_PASSPHRASE` environment variable.
+*   `--shutdown-grace-period <duration>`: Graceful shutdown period (e.g., `1m`, `30s`).
+*   `--use-ephemeral-certificate-manager`: (For testing) Uses an ephemeral certificate manager.
+*   `--stdout`: Logs output to STDOUT.
+*   `--quiet`: Suppresses logging after startup.
+*   `-v`: Shows the version information.
+
+## 5. Common Use Cases
+
+This section provides practical examples for common TLSPROXY use cases.
+
+### 5.1. Basic HTTP/HTTPS Proxying
+
+#### 5.1.1. HTTP Mode (HTTPS to HTTP)
+
+In this mode, TLSPROXY terminates HTTPS connections and forwards requests to a backend HTTP server. This is useful for adding TLS encryption to existing HTTP services without modifying the backend.
+
+```yaml
+backends:
+- serverNames:
+  - www.example.com
+  mode: http
+  addresses:
+  - 192.168.1.1:80
+```
+
+#### 5.1.2. HTTPS Mode (HTTPS to HTTPS)
+
+This mode is used when the backend server already supports HTTPS. TLSPROXY terminates the client-side HTTPS connection and establishes a new HTTPS connection to the backend.
+
+```yaml
+backends:
+- serverNames:
+  - secure.example.com
+  mode: https
+  addresses:
+  - 192.168.1.2:443
+  # insecureSkipVerify: true # Use with caution, disables backend cert verification
+```
+
+### 5.2. TCP Proxying
+
+#### 5.2.1. TCP Mode (TLS to Plain TCP)
+
+TLSPROXY terminates TLS connections and forwards the decrypted data to a plain TCP backend. This is commonly used for services like IMAP, SMTP, or SSH that don't natively support TLS.
+
+```yaml
+backends:
+- serverNames:
+  - mail.example.com
+  mode: tcp
+  addresses:
+  - 192.168.1.3:143 # IMAP
+```
+
+#### 5.2.2. TLSPASSTHROUGH Mode (TLS Passthrough)
+
+In this mode, TLSPROXY acts as a simple TCP proxy, forwarding the raw TLS connection directly to the backend without decrypting it. The backend server must handle its own TLS termination.
+
+```yaml
+backends:
+- serverNames:
+  - passthrough.example.com
+  mode: TLSPASSTHROUGH
+  addresses:
+  - 192.168.1.4:8443
+```
+
+### 5.3. SSH Proxying with `tlsclient`
+
+You can use `tlsclient` to proxy SSH connections through TLSPROXY, allowing you to secure SSH traffic with TLS and leverage TLSPROXY's features like client authentication.
+
+**TLSPROXY Configuration (`config.yaml`):**
+
+```yaml
+backends:
+- serverNames:
+  - ssh.example.com
+  mode: tcp
+  addresses:
+  - 192.168.1.5:22
+  alpnProtos:
+  - ssh
+```
+
+**SSH Client Configuration (`~/.ssh/config`):**
+
+```ssh-config
+Host ssh.example.com
+  ProxyCommand /path/to/tlsclient -alpn=ssh %h:443
+```
+
+Then, you can connect using `ssh user@ssh.example.com`.
+
+### 5.4. Setting up an SSH Certificate Authority (CA)
+
+TLSPROXY can act as an SSH Certificate Authority, issuing short-lived SSH user certificates. This is particularly useful in conjunction with SSO for managing access to SSH servers.
+
+```yaml
+sshCertificateAuthorities:
+- name: "EXAMPLE SSH CA"
+  # Optional: Publish the CA's public key.
+  publicKeyEndpoint:
+  - https://ssh.example.com/ca
+  # Users can request their own certificate.
+  certificateEndpoint: https://ssh.example.com/cert
+```
+
+### 5.5. Getting SSH Certificates
+
+Once an SSH CA is configured in TLSPROXY, users can obtain SSH certificates through a web interface. Navigate to the `certificateEndpoint` (e.g., `https://ssh.example.com/cert`) in your browser. You will be prompted to enter your SSH public key, and TLSPROXY will issue a signed certificate if you are authorized.
+
+Alternatively, the [`examples/ssh/get-ssh-cert.sh`](./examples/ssh/get-ssh-cert.sh) script can be used to obtain a certificate from the command line.
+
+### 5.6. Setting up PKI (Public Key Infrastructure)
+
+TLSPROXY can also function as a general-purpose PKI, issuing X.509 certificates for clients and backend services.
+
+```yaml
+pki:
+- name: "EXAMPLE CA"
+  # Optional: Publish the CA's certificate(s).
+  issuingCertificateUrls:
+  - https://pki.example.com/ca.pem
+  # Optional: Publish the CA's Revocation List.
+  crlDistributionPoints:
+  - https://pki.example.com/crl.pem
+  # Optional: Enable OCSP (Online Certificate Status Protocol).
+  ocspServers:
+  - https://pki.example.com/ocsp
+  # Users can manage their own certificates with this endpoint.
+  endpoint: https://pki-internal.example.com/certs
+  # Optional: Admins can revoke anybody's certificates.
+  admins:
+  - bob@example.com
+```
+
+This example configures a local Certificate Authority (CA) named "EXAMPLE CA". This CA can be used to issue X.509 certificates for client and backend authentication within your environment.
+
+Here is a breakdown of the configuration:
+*   `issuingCertificateUrls`: Specifies the URL where the CA's public certificate is published. Relying parties can use this to verify certificates issued by this CA.
+*   `crlDistributionPoints`: Defines the URL for the Certificate Revocation List (CRL), allowing clients to check for revoked certificates.
+*   `ocspServers`: Provides the endpoint for the Online Certificate Status Protocol (OCSP), offering a real-time method for checking certificate validity.
+*   `endpoint`: Sets up a web interface at `https://pki-internal.example.com/certs` where authenticated users can request and manage their own certificates.
+*   `admins`: Grants administrative privileges to `bob@example.com`, allowing this user to perform actions like revoking any user's certificate.
+
+You can then use this CA to enforce client certificate-based authorization for a backend. In the following example, only clients presenting a valid certificate issued by "EXAMPLE CA" for the identity `user@example.com` are allowed access.
+
+```yaml
+backends:
+- serverNames:
+  - "client-auth.example.com"
+  mode: "https"
+  addresses:
+  - "192.168.1.10:443"
+  clientAuth:
+    rootCAs:
+    - "EXAMPLE CA"
+    acl:
+    - "EMAIL:user@example.com"
+```
+
+### 5.7. Serving Static Files
+
+TLSPROXY can serve static files directly from a local directory, acting as a simple web server.
+
+```yaml
+backends:
+- serverNames:
+  - static.example.com
+  mode: local
+  documentRoot: /var/www/htdocs
+```
+
+### 5.8. QUIC/HTTP3 Proxying
+
+TLSPROXY supports proxying QUIC and HTTP/3 traffic. Ensure `enableQUIC` is set to `true` in your top-level configuration.
+
+```yaml
+backends:
+- serverNames:
+  - quic.example.com
+  mode: QUIC
+  addresses:
+  - 192.168.1.6:4443
+```
+
+## 6. Advanced Topics
+
+For more detailed information on specific features and advanced configurations, refer to the following documentation:
+
+*   [Hardware-backed keys (TPM)](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/TPM.md)
+*   [QUIC/HTTP3](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/QUIC.md)
+*   [Authentication Flows (OIDC, SAML, Passkeys)](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/authentication.md)
+*   [PROXY Protocol](https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt)
+*   [GoDoc for proxy package](https://pkg.go.dev/github.com/c2FmZQ/tlsproxy/proxy#section-documentation)
+
+
+## 7. Support and Community
+
+*   **Report an issue:** If you find a bug or have a feature request, please open an issue on [GitHub Issues](https://github.com/c2FmZQ/tlsproxy/issues).
+*   **Ask a question:** For general questions and discussions, please use [GitHub Discussions](https://github.com/c2FmZQ/tlsproxy/discussions).
+*   **Report a security vulnerability:** If you discover a security vulnerability, please report it privately by following the instructions in [SECURITY.md](./SECURITY.md).
