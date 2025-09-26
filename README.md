@@ -4,6 +4,51 @@
 
 # TLSPROXY
 
+<details>
+<summary>Table of Contents</summary>
+
+- [1. Overview](#1-overview)
+- [2. Installation](#2-installation)
+  - [From Source](#from-source)
+  - [Docker Image](#docker-image)
+  - [Precompiled Binaries](#precompiled-binaries)
+  - [Verifying Signatures](#verifying-signatures)
+- [3. Configuration](#3-configuration)
+  - [`config.yaml` Structure](#configyaml-structure)
+  - [Backend Configuration (`Backend` Object)](#backend-configuration-backend-object)
+    - [SSORule Object](#ssorule-object)
+    - [LocalOIDCServer Object](#localoidcserver-object)
+      - [LocalOIDCClient Object](#localoidcclient-object)
+      - [LocalOIDCRewriteRule Object](#localoidcrewriterule-object)
+  - [Identity Provider Configuration](#identity-provider-configuration)
+  - [Group and Member Objects](#group-and-member-objects)
+    - [`Group` Object](#group-object)
+    - [`Member` Object](#member-object)
+  - [PKI Configuration (`ConfigPKI`)](#pki-configuration-configpki)
+  - [SSH Certificate Authority Configuration (`ConfigSSHCertificateAuthority`)](#ssh-certificate-authority-configuration-configsshcertificateauthority)
+  - [Bandwidth Limit Configuration (`BWLimit`)](#bandwidth-limit-configuration-bwlimit)
+  - [WebSocket Configuration (`WebSocketConfig`)](#websocket-configuration-websocketconfig)
+  - [ECH Configuration (`ECH` Object)](#ech-configuration-ech-object)
+  - [ForwardECH Configuration (`BackendECH` Object)](#forwardech-configuration-backendech-object)
+- [4. Usage](#4-usage)
+- [5. Common Use Cases](#5-common-use-cases)
+  - [5.1. Basic HTTP/HTTPS Proxying](#51-basic-httphttps-proxying)
+    - [5.1.1. HTTP Mode (HTTPS to HTTP)](#511-http-mode-https-to-http)
+    - [5.1.2. HTTPS Mode (HTTPS to HTTPS)](#512-https-mode-https-to-https)
+  - [5.2. TCP Proxying](#52-tcp-proxying)
+    - [5.2.1. TCP Mode (TLS to Plain TCP)](#521-tcp-mode-tls-to-plain-tcp)
+    - [5.2.2. TLSPASSTHROUGH Mode (TLS Passthrough)](#522-tlspassthrough-mode-tls-passthrough)
+  - [5.3. SSH Proxying with `tlsclient`](#53-ssh-proxying-with-tlsclient)
+  - [5.4. Setting up an SSH Certificate Authority (CA)](#54-setting-up-an-ssh-certificate-authority-ca)
+  - [5.5. Getting SSH Certificates](#55-getting-ssh-certificates)
+  - [5.6. Setting up PKI (Public Key Infrastructure)](#56-setting-up-pki-public-key-infrastructure)
+  - [5.7. Serving Static Files](#57-serving-static-files)
+  - [5.8. QUIC/HTTP3 Proxying](#58-quichttp3-proxying)
+- [6. Advanced Topics](#6-advanced-topics)
+- [7. Support and Community](#7-support-and-community)
+
+</details>
+
 ```mermaid
 flowchart LR
   subgraph Incoming TLS or QUIC Connections
@@ -697,3 +742,9 @@ For more detailed information on specific features and advanced configurations, 
 *   [PROXY Protocol](https://www.haproxy.com/blog/haproxy/proxy-protocol)
 *   [GoDoc for proxy package](https://pkg.go.dev/github.com/c2FmZQ/tlsproxy/proxy#section-documentation)
 
+
+## 7. Support and Community
+
+*   **Report an issue:** If you find a bug or have a feature request, please open an issue on [GitHub Issues](https://github.com/c2FmZQ/tlsproxy/issues).
+*   **Ask a question:** For general questions and discussions, please use [GitHub Discussions](https://github.com/c2FmZQ/tlsproxy/discussions).
+*   **Report a security vulnerability:** If you discover a security vulnerability, please report it privately by following the instructions in [SECURITY.md](./SECURITY.md).
