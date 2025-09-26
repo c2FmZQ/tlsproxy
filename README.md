@@ -179,6 +179,8 @@ gpg --verify tlsproxy-linux-amd64.sig tlsproxy-linux-amd64
 
 TLSPROXY is configured using a YAML file, typically named `config.yaml`. This file defines how the proxy behaves, including backend services, authentication methods, and security settings.
 
+The [examples directory](https://github.com/c2FmZQ/tlsproxy/tree/main/examples) contains full configuration files for various use cases.
+
 ### `config.yaml` Structure
 
 The main configuration options are:

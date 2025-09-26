@@ -1,0 +1,44 @@
+# (Required) Indicate acceptance of the Let's Encrypt Terms of Service.
+acceptTOS: true
+# (Optional) The email address is used by Let's Encrypt to send important notifications.
+email: <your email address>
+
+# The HTTP address must be reachable from the internet via port 80.
+httpAddr: ":10080"
+
+# The TLS address will receive TLS connections and forward them to your
+# backends.
+tlsAddr: ":10443"
+
+# --- OIDC Configuration (optional, but good for protecting cert issuance) ---
+oidc:
+  - name: google-oidc-for-sshca
+    discoveryUrl: https://accounts.google.com/.well-known/openid-configuration
+    redirectUrl: https://sshca.example.com/oauth2/callback
+    clientId: YOUR_GOOGLE_CLIENT_ID
+    clientSecret: YOUR_GOOGLE_CLIENT_SECRET
+    scopes:
+      - openid
+      - email
+
+# --- SSH Certificate Authority Configuration ---
+sshCertificateAuthorities:
+  - name: my-ssh-ca
+    keyType: ed25519
+    publicKeyEndpoint: https://sshca.example.com/ssh/ca.pub
+    certificateEndpoint: https://sshca.example.com/ssh/issue
+    maximumCertificateLifetime: 24h
+
+# Each backend has a list of server names (DNS names that clients connect to),
+# and addresses (where to forward connections).
+backends:
+  # --- Backend for SSH CA Public Key ---
+  - serverNames:
+      - sshca.example.com
+    mode: local
+    sso:
+      provider: google-oidc-for-sshca
+      rules:
+        - acl:
+            - "@example.com" # Only allow users from example.com to issue certs
+    documentRoot: /var/www/sshterm # Optional: Directory for a web-based SSH client.

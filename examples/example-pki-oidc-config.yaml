@@ -1,0 +1,97 @@
+# (Required) Indicate acceptance of the Let's Encrypt Terms of Service.
+acceptTOS: true
+# (Optional) The email address is used by Let's Encrypt to send important notifications.
+email: <your email address>
+
+# The HTTP address must be reachable from the internet via port 80.
+httpAddr: ":10080"
+
+# The TLS address will receive TLS connections and forward them to your
+# backends.
+tlsAddr: ":10443"
+
+# --- PKI Configuration ---
+pki:
+  - name: my-internal-ca
+    keyType: rsa-2048
+    endpoint: https://pki.example.com/
+    admins:
+      - admin@example.com
+      - another-admin@example.com
+    issuingCertificateUrls:
+      - https://pki.example.com/ca.crt
+    crlDistributionPoints:
+      - https://pki.example.com/ca.crl
+    ocspServers:
+      - https://pki.example.com/ocsp
+
+# --- OIDC Configuration ---
+oidc:
+  - name: google-oidc
+    discoveryUrl: https://accounts.google.com/.well-known/openid-configuration
+    redirectUrl: https://app.example.com/oauth2/callback
+    clientId: YOUR_GOOGLE_CLIENT_ID
+    clientSecret: YOUR_GOOGLE_CLIENT_SECRET
+    scopes:
+      - openid
+      - email
+      - profile
+    domain: example.com
+
+# Each backend has a list of server names (DNS names that clients connect to),
+# and addresses (where to forward connections).
+backends:
+  - serverNames:
+      - secure.example.com
+    clientAuth:
+      rootCAs:
+        - my-internal-ca # Referencing the PKI CA by name
+      acl:
+        - SUBJECT:CN=client.example.com
+        - EMAIL:user@example.com
+    mode: tls
+    addresses:
+      - 192.168.2.200:443
+    forwardServerName: secure-internal.example.com
+    forwardRootCAs:
+      - my-internal-ca
+
+  # --- Backend using OIDC for SSO ---
+  - serverNames:
+      - app.example.com
+    clientAuth:
+      rootCAs:
+        - my-internal-ca # Referencing the PKI CA by name
+      acl:
+        - SUBJECT:CN=client.example.com
+        - EMAIL:user@example.com
+    mode: https
+    addresses:
+      - 192.168.10.100:443
+    sso:
+      provider: google-oidc
+      rules:
+        - paths:
+            - /admin/
+          acl:
+            - admin@example.com
+        - paths:
+            - /
+          acl:
+            - "@example.com" # Allow all users from example.com
+          exceptions:
+            - /public/
+      htmlMessage: |
+        <h1>Access Denied</h1>
+        <p>You do not have permission to access this resource.</p>
+
+  # --- Backend for PKI management ---
+  - serverNames:
+      - pki.example.com
+    mode: local
+    sso:
+      provider: google-oidc
+      rules:
+        - acl:
+            - admin@example.com
+            - another-admin@example.com
