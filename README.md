@@ -143,6 +143,7 @@ The main configuration options are:
 *   `httpAddr`: (Optional) String. The address where the proxy listens for HTTP connections (e.g., `":80"` or `":10080"`). Essential for Let's Encrypt's http-01 challenge.
 *   `tlsAddr`: (Required) String. The address where the proxy listens for TLS connections (e.g., `":443"` or `":10443"`).
 *   `enableQUIC`: (Optional) Boolean. Enables QUIC protocol support. Defaults to `true` if compiled with QUIC support.
+*   `ech`: (Optional) Object. Configures Encrypted Client Hello (ECH).
 *   `acceptProxyHeaderFrom`: (Optional) List of CIDRs. Enables PROXY protocol for connections from specified IP ranges.
 *   `hwBacked`: (Optional) Boolean. Enables hardware-backed cryptographic keys (e.g., with a TPM).
 *   `cacheDir`: (Optional) String. Directory for storing TLS certificates, OCSP responses, etc. Defaults to a system cache directory.
@@ -158,6 +159,8 @@ The main configuration options are:
 *   `tlsCertificates`: (Optional) List of `TLSCertificate` objects. Specifies pre-existing TLS certificates to use.
 *   `bwLimits`: (Optional) List of `BWLimit` objects. Defines named bandwidth limit groups.
 *   `webSockets`: (Optional) List of `WebSocketConfig` objects. Defines WebSocket endpoints.
+
+See the [GoDoc](https://pkg.go.dev/github.com/c2FmZQ/tlsproxy/proxy#Config) complete up-to-date documentation.
 
 ### Backend Configuration (`Backend` Object)
 
@@ -440,6 +443,51 @@ Defines WebSocket endpoints:
 *   `address`: String. Backend address for WebSocket connections.
 *   `scopes`: List of strings. Scopes for access control.
 
+### ECH Configuration (`ECH` Object)
+
+The `ech` object configures Encrypted Client Hello (ECH). When enabled, `tlsproxy` acts as a Client-Facing Server for all backends.
+
+*   `publicName`: (Required) String. The public name of the ECH configuration.
+*   `interval`: (Optional) Duration. The time interval between key/config rotations.
+*   `endpoint`: (Optional) String. The local endpoint where `tlsproxy` will publish the current ECH ConfigList.
+*   `webhooks`: (Optional) List of strings. A list of webhook URLs to call when the ECH config is updated.
+*   `cloudflare`: (Optional) List of `Cloudflare` objects. Configures Cloudflare DNS records to update when the ECH ConfigList changes.
+
+See the [GoDoc](https://pkg.go.dev/github.com/c2FmZQ/tlsproxy/proxy#ECH) for more details.
+
+**Example:**
+
+```yaml
+ech:
+  publicName: "www.example.com"
+  interval: "1h"
+  endpoint: "https://www.example.com/.well-known/ech-config"
+```
+
+### ForwardECH Configuration (`BackendECH` Object)
+
+The `forwardECH` object configures ECH for connections to backend servers.
+
+*   `echConfigList`: (Optional) String. A static, base64-encoded ECH Config list to use with the backend.
+*   `echPublicName`: (Optional) String. The public name of the backend server's ECH config.
+*   `requireECH`: (Optional) Boolean. If true, connections to the backend will not be attempted without an ECH Config List.
+
+See the [GoDoc](https://pkg.go.dev/github.com/c2FmZQ/tlsproxy/proxy#BackendECH) for more details.
+
+**Example:**
+
+```yaml
+backends:
+- serverNames:
+  - "frontend.example.com"
+  mode: "https"
+  addresses:
+  - "backend.example.com:443"
+  forwardECH:
+    echPublicName: "backend.example.com"
+    requireECH: true
+```
+
 ## 4. Usage
 
 To run TLSPROXY, use the `tlsproxy` executable with the `--config` flag pointing to your configuration file:
@@ -459,23 +507,13 @@ To run TLSPROXY, use the `tlsproxy` executable with the `--config` flag pointing
 *   `--quiet`: Suppresses logging after startup.
 *   `-v`: Shows the version information.
 
-## 5. Advanced Topics
-
-For more detailed information on specific features and advanced configurations, refer to the following documentation:
-
-*   [Hardware-backed keys (TPM)](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/TPM.md)
-*   [QUIC/HTTP3](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/QUIC.md)
-*   [Authentication Flows (OIDC, SAML, Passkeys)](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/authentication.md)
-*   [PROXY Protocol](https://www.haproxy.com/blog/haproxy/proxy-protocol)
-*   [GoDoc for proxy package](https://pkg.go.dev/github.com/c2FmZQ/tlsproxy/proxy#section-documentation)
-
-## 6. Common Use Cases
+## 5. Common Use Cases
 
 This section provides practical examples for common TLSPROXY use cases.
 
-### 6.1. Basic HTTP/HTTPS Proxying
+### 5.1. Basic HTTP/HTTPS Proxying
 
-#### 6.1.1. HTTP Mode (HTTPS to HTTP)
+#### 5.1.1. HTTP Mode (HTTPS to HTTP)
 
 In this mode, TLSPROXY terminates HTTPS connections and forwards requests to a backend HTTP server. This is useful for adding TLS encryption to existing HTTP services without modifying the backend.
 
@@ -488,7 +526,7 @@ backends:
   - 192.168.1.1:80
 ```
 
-#### 6.1.2. HTTPS Mode (HTTPS to HTTPS)
+#### 5.1.2. HTTPS Mode (HTTPS to HTTPS)
 
 This mode is used when the backend server already supports HTTPS. TLSPROXY terminates the client-side HTTPS connection and establishes a new HTTPS connection to the backend.
 
@@ -502,9 +540,9 @@ backends:
   # insecureSkipVerify: true # Use with caution, disables backend cert verification
 ```
 
-### 6.2. TCP Proxying
+### 5.2. TCP Proxying
 
-#### 6.2.1. TCP Mode (TLS to Plain TCP)
+#### 5.2.1. TCP Mode (TLS to Plain TCP)
 
 TLSPROXY terminates TLS connections and forwards the decrypted data to a plain TCP backend. This is commonly used for services like IMAP, SMTP, or SSH that don't natively support TLS.
 
@@ -517,7 +555,7 @@ backends:
   - 192.168.1.3:143 # IMAP
 ```
 
-#### 6.2.2. TLSPASSTHROUGH Mode (TLS Passthrough)
+#### 5.2.2. TLSPASSTHROUGH Mode (TLS Passthrough)
 
 In this mode, TLSPROXY acts as a simple TCP proxy, forwarding the raw TLS connection directly to the backend without decrypting it. The backend server must handle its own TLS termination.
 
@@ -530,7 +568,7 @@ backends:
   - 192.168.1.4:8443
 ```
 
-### 6.3. SSH Proxying with `tlsclient`
+### 5.3. SSH Proxying with `tlsclient`
 
 You can use `tlsclient` to proxy SSH connections through TLSPROXY, allowing you to secure SSH traffic with TLS and leverage TLSPROXY's features like client authentication.
 
@@ -556,7 +594,7 @@ Host ssh.example.com
 
 Then, you can connect using `ssh user@ssh.example.com`.
 
-### 6.4. Setting up an SSH Certificate Authority (CA)
+### 5.4. Setting up an SSH Certificate Authority (CA)
 
 TLSPROXY can act as an SSH Certificate Authority, issuing short-lived SSH user certificates. This is particularly useful in conjunction with SSO for managing access to SSH servers.
 
@@ -570,11 +608,11 @@ sshCertificateAuthorities:
   certificateEndpoint: https://ssh.example.com/cert
 ```
 
-### 6.5. Getting SSH Certificates
+### 5.5. Getting SSH Certificates
 
 Once an SSH CA is configured in TLSPROXY, users can obtain SSH certificates through a web interface. Navigate to the `certificateEndpoint` (e.g., `https://ssh.example.com/cert`) in your browser. You will be prompted to enter your SSH public key, and TLSPROXY will issue a signed certificate if you are authorized.
 
-### 6.6. Setting up PKI (Public Key Infrastructure)
+### 5.6. Setting up PKI (Public Key Infrastructure)
 
 TLSPROXY can also function as a general-purpose PKI, issuing X.509 certificates for clients and backend services.
 
@@ -597,7 +635,7 @@ pki:
   - bob@example.com
 ```
 
-### 6.7. Serving Static Files
+### 5.7. Serving Static Files
 
 TLSPROXY can serve static files directly from a local directory, acting as a simple web server.
 
@@ -609,7 +647,7 @@ backends:
   documentRoot: /var/www/htdocs
 ```
 
-### 6.8. QUIC/HTTP3 Proxying
+### 5.8. QUIC/HTTP3 Proxying
 
 TLSPROXY supports proxying QUIC and HTTP/3 traffic. Ensure `enableQUIC` is set to `true` in your top-level configuration.
 
@@ -621,3 +659,14 @@ backends:
   addresses:
   - 192.168.1.6:4443
 ```
+
+## 6. Advanced Topics
+
+For more detailed information on specific features and advanced configurations, refer to the following documentation:
+
+*   [Hardware-backed keys (TPM)](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/TPM.md)
+*   [QUIC/HTTP3](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/QUIC.md)
+*   [Authentication Flows (OIDC, SAML, Passkeys)](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/authentication.md)
+*   [PROXY Protocol](https://www.haproxy.com/blog/haproxy/proxy-protocol)
+*   [GoDoc for proxy package](https://pkg.go.dev/github.com/c2FmZQ/tlsproxy/proxy#section-documentation)
+
