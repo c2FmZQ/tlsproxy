@@ -637,6 +637,31 @@ pki:
   - bob@example.com
 ```
 
+This example configures a local Certificate Authority (CA) named "EXAMPLE CA". This CA can be used to issue X.509 certificates for client and backend authentication within your environment.
+
+Here is a breakdown of the configuration:
+*   `issuingCertificateUrls`: Specifies the URL where the CA's public certificate is published. Relying parties can use this to verify certificates issued by this CA.
+*   `crlDistributionPoints`: Defines the URL for the Certificate Revocation List (CRL), allowing clients to check for revoked certificates.
+*   `ocspServers`: Provides the endpoint for the Online Certificate Status Protocol (OCSP), offering a real-time method for checking certificate validity.
+*   `endpoint`: Sets up a web interface at `https://pki-internal.example.com/certs` where authenticated users can request and manage their own certificates.
+*   `admins`: Grants administrative privileges to `bob@example.com`, allowing this user to perform actions like revoking any user's certificate.
+
+You can then use this CA to enforce client certificate-based authorization for a backend. In the following example, only clients presenting a valid certificate issued by "EXAMPLE CA" for the identity `user@example.com` are allowed access.
+
+```yaml
+backends:
+- serverNames:
+  - "client-auth.example.com"
+  mode: "https"
+  addresses:
+  - "192.168.1.10:443"
+  clientAuth:
+    rootCAs:
+    - "EXAMPLE CA"
+    acl:
+    - "EMAIL:user@example.com"
+```
+
 ### 5.7. Serving Static Files
 
 TLSPROXY can serve static files directly from a local directory, acting as a simple web server.
