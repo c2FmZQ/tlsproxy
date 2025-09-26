@@ -28,4 +28,4 @@ We welcome pull requests. If you'd like to contribute code, please:
 
 ## License
 
-By contributing to TLSPROXY, you agree that your contributions will be licensed under the MIT License. A copy of the license can be found in the [LICENSE](./LICENSE) file.
+By contributing to TLSPROXY, you agree that your contributions will be licensed under the MIT License. A copy of the license can be found in the [LICENSE](LICENSE) file.
