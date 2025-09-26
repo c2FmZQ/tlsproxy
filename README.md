@@ -205,7 +205,7 @@ The main configuration options are:
 *   `bwLimits`: (Optional) List of `BWLimit` objects. Defines named bandwidth limit groups.
 *   `webSockets`: (Optional) List of `WebSocketConfig` objects. Defines WebSocket endpoints.
 
-See the [GoDoc](https://pkg.go.dev/github.com/c2FmZQ/tlsproxy/proxy#Config) complete up-to-date documentation.
+See the [GoDoc](https://pkg.go.dev/github.com/c2FmZQ/tlsproxy/proxy#Config) for complete and up-to-date documentation.
 
 ### Backend Configuration (`Backend` Object)
 
