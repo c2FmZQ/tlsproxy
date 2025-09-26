@@ -51,7 +51,7 @@
 
 ```mermaid
 flowchart LR
-  subgraph Incoming TLS or QUIC Connections
+  subgraph Incoming TLS Connections
     h1("web.example.com")
     h2("foo.example.com")
     h3("bar.example.com")
