@@ -501,12 +501,3 @@ func TestReadSplitConfig(t *testing.T) {
 		}
 	}
 }
-
-func readConfig(t *testing.T, filename string) *Config {
-	t.Helper()
-	cfg, err := ReadConfig(filename)
-	if err != nil {
-		t.Fatalf("ReadConfig(%q): %v", filename, err)
-	}
-	return cfg
-}
