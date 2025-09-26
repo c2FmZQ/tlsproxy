@@ -302,6 +302,19 @@ In this example:
     *   `clientId`: String. Client ID.
     *   `clientSecret`: String. Client Secret.
     *   `domain`: String. Domain for user identities.
+
+    **Example (Google OpenID Connect):**
+
+    ```yaml
+    oidc:
+    - name: "google"
+      discoveryUrl: "https://accounts.google.com/.well-known/openid-configuration"
+      redirectUrl: "https://login.example.com/oidc/google"
+      clientId: "<YOUR CLIENT ID>"
+      clientSecret: "<YOUR CLIENT SECRET>"
+      hostedDomain: "example.com" # Optional: Restrict to a specific Google Workspace domain
+    ```
+
 *   **`ConfigSAML` (SAML):**
     *   `name`: String. Internal name.
     *   `ssoUrl`: String. SSO URL.
@@ -309,12 +322,37 @@ In this example:
     *   `certs`: String. PEM-encoded certificates.
     *   `acsUrl`: String. ACS URL.
     *   `domain`: String. Domain for user identities.
+
+    **Example (Google Workspace SAML):**
+
+    ```yaml
+    saml:
+    - name: "google-saml"
+      ssoUrl: "https://accounts.google.com/o/saml2/idp?idpid=<YOUR APP ID>"
+      entityId: "https://login.example.com/"
+      certs: |
+        -----BEGIN CERTIFICATE-----
+        ...
+        -----END CERTIFICATE-----
+      acsUrl: "https://login.example.com/saml"
+    ```
+
 *   **`ConfigPasskey` (Passkey):**
     *   `name`: String. Internal name.
     *   `identityProvider`: String. Name of another identity provider for initial authentication.
     *   `refreshInterval`: Duration. Re-authentication interval.
     *   `endpoint`: String. URL for passkey authentication.
     *   `domain`: String. Domain for user identities.
+
+    **Example (Passkey with Google OpenID Connect for initial authentication):**
+
+    ```yaml
+    passkey:
+    - name: "passkey"
+      identityProvider: "google" # Name of the OIDC provider for initial authentication
+      endpoint: "https://login.example.com/passkey"
+      domain: "example.com"
+    ```
 
 ### Group and Member Objects
 
@@ -437,7 +475,7 @@ This section provides practical examples for common TLSPROXY use cases.
 
 ### 6.1. Basic HTTP/HTTPS Proxying
 
-#### 6.1.1. HTTP Mode (HTTP to HTTPS)
+#### 6.1.1. HTTP Mode (HTTPS to HTTP)
 
 In this mode, TLSPROXY terminates HTTPS connections and forwards requests to a backend HTTP server. This is useful for adding TLS encryption to existing HTTP services without modifying the backend.
 
@@ -511,7 +549,7 @@ backends:
 
 **SSH Client Configuration (`~/.ssh/config`):**
 
-```
+```ssh-config
 Host ssh.example.com
   ProxyCommand /path/to/tlsclient -alpn=ssh %h:443
 ```
