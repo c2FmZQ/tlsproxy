@@ -3,86 +3,82 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" href="c2-144x144.png" />
   <title>TLSPROXY - Overview</title>
   <style>
-    body {
-      font-family: -apple-system,BlinkMacSystemFont,"Avenir Next",Avenir,"Nimbus Sans L",Roboto,"Noto Sans","Segoe UI",Arial,Helvetica,"Helvetica Neue",sans-serif;
-      color: #212121;
-      background-color: #fff;
-      line-height: 1.5;
+    html {
       margin: 0;
-      padding: 20px;
+      height: 100%;
+      background: linear-gradient(30deg, skyblue, slateblue);
+      background-attachment: fixed;
+      color: black;
+    }
+    body {
+      font-family: arial,sans-serif;
+      line-height: 1.5;
+      padding: 1rem;;
+    }
+    header {
+      text-align: center;
+      padding: 1rem 0.5rem;
+    }
+    main {
+      max-width: 80vw;
+      margin: 2em auto;
+      padding: 1em 2em;
+      border: 1px solid black;
+      border-radius: 5px;
+      box-shadow: 5px 5px 5px black;
+      background-color: white;
     }
     h1 {
       font-size: 3rem;
       margin-top: 1.5rem;
       margin-bottom: 1rem;
     }
-    h2 {
-      font-size: 2.6rem;
-      margin-top: 3rem;
-      margin-bottom: 1rem;
-    }
-    p {
-      margin: 1.5rem 0;
-    }
-    a {
-      color: #0d47a1;
-      text-decoration: underline;
-    }
-    a:hover {
-      text-decoration: none;
-    }
     ul {
-      list-style-type: disc;
-      margin-left: 20px;
-    }
-    li {
-      margin-bottom: 0.5rem;
-    }
-    strong {
-      font-weight: bold;
+      margin-left: 1rem;
     }
   </style>
 </head>
 <body>
-  <header style="text-align: center; background-color: #f5f7ff; padding: 2rem 0.5rem;">
-    <h1 style="font-size: 3rem; margin: 1rem auto;">TLSPROXY</h1>
+  <header>
+    <h1>TLSPROXY</h1>
   </header>
-  <main style="max-width: 800px; margin: 2em auto; padding: 1em 2em; border: 1px solid #898ea4; border-radius: 5px; box-shadow: 5px 5px 5px black; background-color: white;">
-    <h2 id="1-overview" style="font-size: 2.6rem; margin-top: 3rem; margin-bottom: 1rem;">Overview</h2>
-    <p style="margin: 1.5rem 0;">TLSPROXY is a versatile <a href="https://en.wikipedia.org/wiki/TLS_termination_proxy" style="color: #0d47a1; text-decoration: underline;">TLS termination proxy</a> designed to secure various network services. It automatically handles TLS encryption using <a href="https://letsencrypt.org/" style="color: #0d47a1; text-decoration: underline;">Let's Encrypt</a>, allowing multiple services and server names to share the same port. Beyond TLS termination, TLSPROXY can function as a simple <a href="https://en.wikipedia.org/wiki/Web_server" style="color: #0d47a1; text-decoration: underline;">web server</a>, a <a href="https://en.wikipedia.org/wiki/Reverse_proxy" style="color: #0d47a1; text-decoration: underline;">reverse proxy</a> for HTTP(S) services, and offers robust user authentication and authorization features.</p>
-    <p style="margin: 1.5rem 0;"><strong>Key Features:</strong></p>
-    <ul style="list-style-type: disc; margin-left: 20px;">
-      <li style="margin-bottom: 0.5rem;"><strong>Automatic TLS Certificates:</strong> Integrates with Let's Encrypt for automatic certificate acquisition using http-01 and tls-alpn-01 challenges.</li>
-      <li style="margin-bottom: 0.5rem;"><strong>Flexible TLS Termination:</strong>
-        <ul style="list-style-type: disc; margin-left: 20px;">
-          <li style="margin-bottom: 0.5rem;">Terminates TLS and forwards data to TCP servers in plain text.</li>
-          <li style="margin-bottom: 0.5rem;">Terminates TLS and forwards data to TLS servers (encrypted in transit, proxy sees plain text).</li>
-          <li style="margin-bottom: 0.5rem;">Passes through raw TLS connections to backend TLS servers (proxy does not see plain text).</li>
+  <main>
+    <p><a href="https://github.com/c2FmZQ/tlsproxy">github.com/c2FmZQ/tlsproxy</a></p>
+    <p>TLSPROXY is a versatile <a href="https://en.wikipedia.org/wiki/TLS_termination_proxy">TLS termination proxy</a> designed to secure various network services. It automatically handles TLS encryption using <a href="https://letsencrypt.org/">Let's Encrypt</a>, allowing multiple services and server names to share the same port. Beyond TLS termination, TLSPROXY can function as a simple <a href="https://en.wikipedia.org/wiki/Web_server">web server</a>, a <a href="https://en.wikipedia.org/wiki/Reverse_proxy">reverse proxy</a> for HTTP(S) services, and offers robust user authentication and authorization features.</p>
+    <p><strong>Key Features:</strong></p>
+    <ul>
+      <li><strong>Automatic TLS Certificates:</strong> Integrates with Let's Encrypt for automatic certificate acquisition using http-01 and tls-alpn-01 challenges.</li>
+      <li><strong>Flexible TLS Termination:</strong>
+        <ul>
+          <li>Terminates TLS and forwards data to TCP servers in plain text.</li>
+          <li>Terminates TLS and forwards data to TLS servers (encrypted in transit, proxy sees plain text).</li>
+          <li>Passes through raw TLS connections to backend TLS servers (proxy does not see plain text).</li>
         </ul>
       </li>
-      <li style="margin-bottom: 0.5rem;"><strong>QUIC and HTTP/3 Support:</strong> Terminates QUIC connections and forwards data to QUIC or TLS/TCP servers.</li>
-      <li style="margin-bottom: 0.5rem;"><strong>Encrypted Client Hello (ECH):</strong> Enhances privacy by encrypting ClientHello messages.</li>
-      <li style="margin-bottom: 0.5rem;"><strong>Static File Serving:</strong> Can serve static content directly from the local filesystem.</li>
-      <li style="margin-bottom: 0.5rem;"><strong>PROXY Protocol Support:</strong> Integrates with the PROXY protocol for incoming TCP connections (not for QUIC or HTTP/3 backends).</li>
-      <li style="margin-bottom: 0.5rem;"><strong>Client Authentication & Authorization:</strong> Supports TLS client authentication and authorization when the proxy terminates TLS connections.</li>
-      <li style="margin-bottom: 0.5rem;"><strong>Built-in Certificate Authorities:</strong>
-        <ul style="list-style-type: disc; margin-left: 20px;">
-          <li style="margin-bottom: 0.5rem;">Manages client and backend server TLS certificates.</li>
-          <li style="margin-bottom: 0.5rem;">Issues SSH user certificates based on SSO credentials.</li>
+      <li><strong>QUIC and HTTP/3 Support:</strong> Terminates QUIC connections and forwards data to QUIC or TLS/TCP servers.</li>
+      <li><strong>Encrypted Client Hello (ECH):</strong> Enhances privacy by encrypting ClientHello messages.</li>
+      <li><strong>Static File Serving:</strong> Can serve static content directly from the local filesystem.</li>
+      <li><strong>PROXY Protocol Support:</strong> Integrates with the PROXY protocol for incoming TCP connections (not for QUIC or HTTP/3 backends).</li>
+      <li><strong>Client Authentication & Authorization:</strong> Supports TLS client authentication and authorization when the proxy terminates TLS connections.</li>
+      <li><strong>Built-in Certificate Authorities:</strong>
+        <ul>
+          <li>Manages client and backend server TLS certificates.</li>
+          <li>Issues SSH user certificates based on SSO credentials.</li>
         </ul>
       </li>
-      <li style="margin-bottom: 0.5rem;"><strong>User Authentication:</strong> Supports OpenID Connect, SAML, and Passkeys for HTTP and HTTPS connections. Can optionally issue JSON Web Tokens (JWTs) and run a local OpenID Connect server.</li>
-      <li style="margin-bottom: 0.5rem;"><strong>Access Control:</strong> Implements access control based on IP addresses.</li>
-      <li style="margin-bottom: 0.5rem;"><strong>Routing & Load Balancing:</strong> Routes requests based on Server Name Indication (SNI) with optional default routes and simple round-robin load balancing.</li>
-      <li style="margin-bottom: 0.5rem;"><strong>ALPN Protocol Support:</strong> Supports any ALPN protocol in TLS, TLSPASSTHROUGH, QUIC, or TCP mode.</li>
-      <li style="margin-bottom: 0.5rem;"><strong>OCSP Stapling & Verification:</strong> Includes OCSP stapling and certificate verification.</li>
-      <li style="margin-bottom: 0.5rem;"><strong>Local TLS Certificates:</strong> Supports using locally stored TLS certificates.</li>
-      <li style="margin-bottom: 0.5rem;"><strong>Hardware-backed Cryptographic Keys:</strong> Can use a Trusted Platform Module (TPM) for enhanced security of cryptographic keys.</li>
-      <li style="margin-bottom: 0.5rem;"><strong>Port Sharing:</strong> Allows multiple server names to share the same IP address and port.</li>
+      <li><strong>User Authentication:</strong> Supports OpenID Connect, SAML, and Passkeys for HTTP and HTTPS connections. Can optionally issue JSON Web Tokens (JWTs) and run a local OpenID Connect server.</li>
+      <li><strong>Access Control:</strong> Implements access control based on IP addresses.</li>
+      <li><strong>Routing & Load Balancing:</strong> Routes requests based on Server Name Indication (SNI) with optional default routes and simple round-robin load balancing.</li>
+      <li><strong>ALPN Protocol Support:</strong> Supports any ALPN protocol in TLS, TLSPASSTHROUGH, QUIC, or TCP mode.</li>
+      <li><strong>OCSP Stapling & Verification:</strong> Includes OCSP stapling and certificate verification.</li>
+      <li><strong>Local TLS Certificates:</strong> Supports using locally stored TLS certificates.</li>
+      <li><strong>Hardware-backed Cryptographic Keys:</strong> Can use a Trusted Platform Module (TPM) for enhanced security of cryptographic keys.</li>
+      <li><strong>Port Sharing:</strong> Allows multiple server names to share the same IP address and port.</li>
     </ul>
-    <p style="margin: 1.5rem 0;">For more details, visit the <a href="https://github.com/c2FmZQ/tlsproxy" style="color: #0d47a1; text-decoration: underline;">TLSPROXY GitHub project</a>.</p>
+    <p>For more details, visit the <a href="https://github.com/c2FmZQ/tlsproxy">TLSPROXY GitHub project</a>.</p>
   </main>
 </body>
 </html>
