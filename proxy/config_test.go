@@ -149,19 +149,23 @@ func TestReadConfig(t *testing.T) {
 			},
 		},
 	}
-	want.EnableQUIC = newPtr(quicIsEnabled)
-	if quicIsEnabled {
-		for _, be := range want.Backends {
-			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS || be.Mode == ModeLocal {
-				be.ALPNProtos = defaultALPNProtosPlusH3
-			}
-		}
-	}
+	adjustForQUIC(want)
 
 	if diff := deep.Equal(want, got); diff != nil {
 		t.Errorf("ReadConfig() = %#v, want %#v", got, want)
 		for _, d := range diff {
 			t.Logf("  %s", d)
+		}
+	}
+}
+
+func adjustForQUIC(cfg *Config) {
+	cfg.EnableQUIC = newPtr(quicIsEnabled)
+	if quicIsEnabled {
+		for _, be := range cfg.Backends {
+			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS || be.Mode == ModeLocal {
+				be.ALPNProtos = defaultALPNProtosPlusH3
+			}
 		}
 	}
 }
@@ -273,30 +277,7 @@ func TestReadPKIOIDCConfig(t *testing.T) {
 			},
 		},
 	}
-	want.EnableQUIC = newPtr(quicIsEnabled)
-	if quicIsEnabled {
-		for _, be := range want.Backends {
-			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS || be.Mode == ModeLocal {
-				be.ALPNProtos = defaultALPNProtosPlusH3
-			}
-		}
-	}
-
-	if diff := deep.Equal(want, got); diff != nil {
-		t.Errorf("ReadConfig() = %#v, want %#v", got, want)
-		for _, d := range diff {
-			t.Logf("  %s", d)
-		}
-	}
-
-	want.EnableQUIC = newPtr(quicIsEnabled)
-	if quicIsEnabled {
-		for _, be := range want.Backends {
-			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS || be.Mode == ModeLocal {
-				be.ALPNProtos = defaultALPNProtosPlusH3
-			}
-		}
-	}
+	adjustForQUIC(want)
 
 	if diff := deep.Equal(want, got); diff != nil {
 		t.Errorf("ReadConfig() = %#v, want %#v", got, want)
@@ -358,14 +339,7 @@ func TestReadPasskeyConfig(t *testing.T) {
 			},
 		},
 	}
-	want.EnableQUIC = newPtr(quicIsEnabled)
-	if quicIsEnabled {
-		for _, be := range want.Backends {
-			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS || be.Mode == ModeLocal {
-				be.ALPNProtos = defaultALPNProtosPlusH3
-			}
-		}
-	}
+	adjustForQUIC(want)
 
 	if diff := deep.Equal(want, got); diff != nil {
 		t.Errorf("ReadConfig() = %#v, want %#v", got, want)
@@ -426,14 +400,7 @@ func TestReadSSHCAConfig(t *testing.T) {
 			},
 		},
 	}
-	want.EnableQUIC = newPtr(quicIsEnabled)
-	if quicIsEnabled {
-		for _, be := range want.Backends {
-			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS || be.Mode == ModeLocal {
-				be.ALPNProtos = defaultALPNProtosPlusH3
-			}
-		}
-	}
+	adjustForQUIC(want)
 
 	if diff := deep.Equal(want, got); diff != nil {
 		t.Errorf("ReadConfig() = %#v, want %#v", got, want)
@@ -485,14 +452,7 @@ func TestReadSplitConfig(t *testing.T) {
 			},
 		},
 	}
-	want.EnableQUIC = newPtr(quicIsEnabled)
-	if quicIsEnabled {
-		for _, be := range want.Backends {
-			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS {
-				be.ALPNProtos = defaultALPNProtosPlusH3
-			}
-		}
-	}
+	adjustForQUIC(want)
 
 	if diff := deep.Equal(want, got); diff != nil {
 		t.Errorf("ReadConfig() = %#v, want %#v", got, want)
