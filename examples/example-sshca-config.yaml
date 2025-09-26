@@ -41,4 +41,4 @@ backends:
       rules:
         - acl:
             - "@example.com" # Only allow users from example.com to issue certs
-    documentRoot: /var/www/sshterm # Directory containing the sshterm docroot.
+    documentRoot: /var/www/sshterm # Optional: Directory for a web-based SSH client.

@@ -19,11 +19,11 @@ pki:
       - admin@example.com
       - another-admin@example.com
     issuingCertificateUrls:
-      - http://pki.example.com/ca.crt
+      - https://pki.example.com/ca.crt
     crlDistributionPoints:
-      - http://pki.example.com/ca.crl
+      - https://pki.example.com/ca.crl
     ocspServers:
-      - http://pki.example.com/ocsp
+      - https://pki.example.com/ocsp
 
 # --- OIDC Configuration ---
 oidc:

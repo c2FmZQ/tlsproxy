@@ -66,11 +66,11 @@ func TestReadConfig(t *testing.T) {
 		MaxOpen:   got.MaxOpen,
 		Backends: []*Backend{
 			{
-				ServerNames: []string{
+				ServerNames: Strings{
 					"example.com",
 					"www.example.com",
 				},
-				Addresses: []string{
+				Addresses: Strings{
 					"192.168.0.10:80",
 					"192.168.0.11:80",
 					"192.168.0.12:80",
@@ -166,6 +166,283 @@ func TestReadConfig(t *testing.T) {
 	}
 }
 
+func TestReadPKIOIDCConfig(t *testing.T) {
+	got, err := ReadConfig("../examples/example-pki-oidc-config.yaml")
+	if err != nil {
+		t.Fatalf("ReadConfig: %v", err)
+	}
+
+	want := &Config{
+		AcceptTOS: newPtr(true),
+		Email:     newPtr("<your email address>"),
+		HTTPAddr:  newPtr(":10080"),
+		TLSAddr:   newPtr(":10443"),
+		CacheDir:  got.CacheDir,
+		MaxOpen:   got.MaxOpen,
+		PKI: []*ConfigPKI{
+			{
+				Name:     "my-internal-ca",
+				KeyType:  "rsa-2048",
+				Endpoint: "https://pki.example.com/",
+				Admins: Strings{
+					"admin@example.com",
+					"another-admin@example.com",
+				},
+				IssuingCertificateURLs: Strings{"https://pki.example.com/ca.crt"},
+				CRLDistributionPoints:  Strings{"https://pki.example.com/ca.crl"},
+				OCSPServer:             Strings{"https://pki.example.com/ocsp"},
+			},
+		},
+		OIDCProviders: []*ConfigOIDC{
+			{
+				Name:         "google-oidc",
+				DiscoveryURL: "https://accounts.google.com/.well-known/openid-configuration",
+				RedirectURL:  "https://app.example.com/oauth2/callback",
+				ClientID:     "YOUR_GOOGLE_CLIENT_ID",
+				ClientSecret: "YOUR_GOOGLE_CLIENT_SECRET",
+				Scopes:       Strings{"openid", "email", "profile"},
+				Domain:       "example.com",
+			},
+		},
+		Backends: []*Backend{
+			{
+				ServerNames: Strings{
+					"secure.example.com",
+				},
+				Addresses: Strings{
+					"192.168.2.200:443",
+				},
+				ForwardRateLimit: 5,
+				Mode:             "TLS",
+				ALPNProtos:       &Strings{"h2", "http/1.1"},
+				ClientAuth: &ClientAuth{
+					RootCAs: Strings{"my-internal-ca"},
+					ACL:     &Strings{"SUBJECT:CN=client.example.com", "EMAIL:user@example.com"},
+				},
+				ForwardServerName: "secure-internal.example.com",
+				ForwardRootCAs:    Strings{"my-internal-ca"},
+				ForwardTimeout:    30 * time.Second,
+			},
+			{
+				ServerNames: Strings{
+					"app.example.com",
+				},
+				Addresses: Strings{
+					"192.168.10.100:443",
+				},
+				ForwardRateLimit: 5,
+				Mode:             "HTTPS",
+				ALPNProtos:       &Strings{"h2", "http/1.1"},
+				ClientAuth: &ClientAuth{
+					RootCAs: Strings{"my-internal-ca"},
+					ACL:     &Strings{"SUBJECT:CN=client.example.com", "EMAIL:user@example.com"},
+				},
+				SSO: &BackendSSO{
+					Provider: "google-oidc",
+					Rules: []*SSORule{
+						{
+							Paths: Strings{"/admin/"},
+							ACL:   &Strings{"admin@example.com"},
+						},
+						{
+							Paths:      Strings{"/"},
+							ACL:        &Strings{"@example.com"},
+							Exceptions: Strings{"/public/"},
+						},
+					},
+					HTMLMessage: `<h1>Access Denied</h1>
+<p>You do not have permission to access this resource.</p>
+`,
+				},
+				ForwardTimeout: 30 * time.Second,
+			},
+			{
+				ServerNames: Strings{
+					"pki.example.com",
+				},
+				ForwardRateLimit: 5,
+				Mode:             "LOCAL",
+				ALPNProtos:       &Strings{"h2", "http/1.1"},
+				SSO: &BackendSSO{
+					Provider: "google-oidc",
+					Rules: []*SSORule{
+						{ACL: &Strings{"admin@example.com", "another-admin@example.com"}},
+					},
+				},
+				ForwardTimeout: 30 * time.Second,
+			},
+		},
+	}
+	want.EnableQUIC = newPtr(quicIsEnabled)
+	if quicIsEnabled {
+		for _, be := range want.Backends {
+			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS || be.Mode == ModeLocal {
+				be.ALPNProtos = defaultALPNProtosPlusH3
+			}
+		}
+	}
+
+	if diff := deep.Equal(want, got); diff != nil {
+		t.Errorf("ReadConfig() = %#v, want %#v", got, want)
+		for _, d := range diff {
+			t.Logf("  %s", d)
+		}
+	}
+
+	want.EnableQUIC = newPtr(quicIsEnabled)
+	if quicIsEnabled {
+		for _, be := range want.Backends {
+			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS || be.Mode == ModeLocal {
+				be.ALPNProtos = defaultALPNProtosPlusH3
+			}
+		}
+	}
+
+	if diff := deep.Equal(want, got); diff != nil {
+		t.Errorf("ReadConfig() = %#v, want %#v", got, want)
+		for _, d := range diff {
+			t.Logf("  %s", d)
+		}
+	}
+}
+
+func TestReadPasskeyConfig(t *testing.T) {
+	got, err := ReadConfig("../examples/example-passkey-config.yaml")
+	if err != nil {
+		t.Fatalf("ReadConfig: %v", err)
+	}
+
+	want := &Config{
+		AcceptTOS: newPtr(true),
+		Email:     newPtr("<your email address>"),
+		HTTPAddr:  newPtr(":10080"),
+		TLSAddr:   newPtr(":10443"),
+		CacheDir:  got.CacheDir,
+		MaxOpen:   got.MaxOpen,
+		OIDCProviders: []*ConfigOIDC{
+			{
+				Name:         "google-oidc-for-passkeys",
+				DiscoveryURL: "https://accounts.google.com/.well-known/openid-configuration",
+				RedirectURL:  "https://passkey-app.example.com/oauth2/callback",
+				ClientID:     "YOUR_GOOGLE_CLIENT_ID",
+				ClientSecret: "YOUR_GOOGLE_CLIENT_SECRET",
+				Scopes:       Strings{"openid", "email", "profile"},
+			},
+		},
+		PasskeyProviders: []*ConfigPasskey{
+			{
+				Name:             "my-passkey-provider",
+				IdentityProvider: "google-oidc-for-passkeys",
+				Endpoint:         "https://passkey-app.example.com/login",
+				RefreshInterval:  24 * time.Hour,
+			},
+		},
+		Backends: []*Backend{
+			{
+				ServerNames: Strings{
+					"passkey-app.example.com",
+				},
+				Addresses: Strings{
+					"192.168.10.101:443",
+				},
+				ForwardRateLimit: 5,
+				Mode:             "HTTPS",
+				ALPNProtos:       &Strings{"h2", "http/1.1"},
+				SSO: &BackendSSO{
+					Provider: "my-passkey-provider",
+					Rules: []*SSORule{
+						{ACL: &Strings{"@example.com"}},
+					},
+				},
+				ForwardTimeout: 30 * time.Second,
+			},
+		},
+	}
+	want.EnableQUIC = newPtr(quicIsEnabled)
+	if quicIsEnabled {
+		for _, be := range want.Backends {
+			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS || be.Mode == ModeLocal {
+				be.ALPNProtos = defaultALPNProtosPlusH3
+			}
+		}
+	}
+
+	if diff := deep.Equal(want, got); diff != nil {
+		t.Errorf("ReadConfig() = %#v, want %#v", got, want)
+		for _, d := range diff {
+			t.Logf("  %s", d)
+		}
+	}
+}
+
+func TestReadSSHCAConfig(t *testing.T) {
+	got, err := ReadConfig("../examples/example-sshca-config.yaml")
+	if err != nil {
+		t.Fatalf("ReadConfig: %v", err)
+	}
+
+	want := &Config{
+		AcceptTOS: newPtr(true),
+		Email:     newPtr("<your email address>"),
+		HTTPAddr:  newPtr(":10080"),
+		TLSAddr:   newPtr(":10443"),
+		CacheDir:  got.CacheDir,
+		MaxOpen:   got.MaxOpen,
+		OIDCProviders: []*ConfigOIDC{
+			{
+				Name:         "google-oidc-for-sshca",
+				DiscoveryURL: "https://accounts.google.com/.well-known/openid-configuration",
+				RedirectURL:  "https://sshca.example.com/oauth2/callback",
+				ClientID:     "YOUR_GOOGLE_CLIENT_ID",
+				ClientSecret: "YOUR_GOOGLE_CLIENT_SECRET",
+				Scopes:       Strings{"openid", "email"},
+			},
+		},
+		SSHCertificateAuthorities: []*ConfigSSHCertificateAuthority{
+			{
+				Name:                       "my-ssh-ca",
+				KeyType:                    "ed25519",
+				PublicKeyEndpoint:          "https://sshca.example.com/ssh/ca.pub",
+				CertificateEndpoint:        "https://sshca.example.com/ssh/issue",
+				MaximumCertificateLifetime: 24 * time.Hour,
+			},
+		},
+		Backends: []*Backend{
+			{
+				ServerNames: Strings{
+					"sshca.example.com",
+				},
+				ForwardRateLimit: 5,
+				Mode:             "LOCAL",
+				ALPNProtos:       &Strings{"h2", "http/1.1"},
+				SSO: &BackendSSO{
+					Provider: "google-oidc-for-sshca",
+					Rules: []*SSORule{
+						{ACL: &Strings{"@example.com"}},
+					},
+				},
+				DocumentRoot:   "/var/www/sshterm",
+				ForwardTimeout: 30 * time.Second,
+			},
+		},
+	}
+	want.EnableQUIC = newPtr(quicIsEnabled)
+	if quicIsEnabled {
+		for _, be := range want.Backends {
+			if be.Mode == ModeHTTP || be.Mode == ModeHTTPS || be.Mode == ModeLocal {
+				be.ALPNProtos = defaultALPNProtosPlusH3
+			}
+		}
+	}
+
+	if diff := deep.Equal(want, got); diff != nil {
+		t.Errorf("ReadConfig() = %#v, want %#v", got, want)
+		for _, d := range diff {
+			t.Logf("  %s", d)
+		}
+	}
+}
+
 func TestReadSplitConfig(t *testing.T) {
 	got, err := ReadConfig("testdata/testconfig.yaml")
 	if err != nil {
@@ -223,4 +500,13 @@ func TestReadSplitConfig(t *testing.T) {
 			t.Logf("  %s", d)
 		}
 	}
+}
+
+func readConfig(t *testing.T, filename string) *Config {
+	t.Helper()
+	cfg, err := ReadConfig(filename)
+	if err != nil {
+		t.Fatalf("ReadConfig(%q): %v", filename, err)
+	}
+	return cfg
 }
