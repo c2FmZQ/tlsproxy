@@ -739,7 +739,7 @@ For more detailed information on specific features and advanced configurations, 
 *   [Hardware-backed keys (TPM)](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/TPM.md)
 *   [QUIC/HTTP3](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/QUIC.md)
 *   [Authentication Flows (OIDC, SAML, Passkeys)](https://github.com/c2FmZQ/tlsproxy/blob/main/docs/authentication.md)
-*   [PROXY Protocol](https://www.haproxy.com/blog/haproxy/proxy-protocol)
+*   [PROXY Protocol](https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt)
 *   [GoDoc for proxy package](https://pkg.go.dev/github.com/c2FmZQ/tlsproxy/proxy#section-documentation)
 
 
