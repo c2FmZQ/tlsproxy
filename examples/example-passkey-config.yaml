@@ -1,0 +1,45 @@
+# (Required) Indicate acceptance of the Let's Encrypt Terms of Service.
+acceptTOS: true
+# (Optional) The email address is used by Let's Encrypt to send important notifications.
+email: <your email address>
+
+# The HTTP address must be reachable from the internet via port 80.
+httpAddr: ":10080"
+
+# The TLS address will receive TLS connections and forward them to your
+# backends.
+tlsAddr: ":10443"
+
+# --- OIDC Configuration (required for Passkeys) ---
+oidc:
+  - name: google-oidc-for-passkeys
+    discoveryUrl: https://accounts.google.com/.well-known/openid-configuration
+    redirectUrl: https://passkey-app.example.com/oauth2/callback
+    clientId: YOUR_GOOGLE_CLIENT_ID
+    clientSecret: YOUR_GOOGLE_CLIENT_SECRET
+    scopes:
+      - openid
+      - email
+      - profile
+
+# --- Passkey Configuration ---
+passkey:
+  - name: my-passkey-provider
+    identityProvider: google-oidc-for-passkeys # Reference the OIDC provider defined above
+    endpoint: https://passkey-app.example.com/login
+    refreshInterval: 24h # Users re-authenticate with OIDC every 24 hours
+
+# Each backend has a list of server names (DNS names that clients connect to),
+# and addresses (where to forward connections).
+backends:
+  # --- Backend using Passkey for SSO ---
+  - serverNames:
+      - passkey-app.example.com
+    mode: https
+    addresses:
+      - 192.168.10.101:443
+    sso:
+      provider: my-passkey-provider # Reference the passkey provider defined above
+      rules:
+        - acl:
+            - "@example.com" # Allow all users from example.com
