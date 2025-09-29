@@ -93,16 +93,13 @@ window.logout = logout;
 <script>
 let filename = '########';
 function getCert() {
-  let body = document.getElementById('key').value;
+  let body = 'key=' + encodeURIComponent(document.getElementById('key').value);
   const ttl = document.getElementById('ttl');
-  const ttlValue = ttl.options[ttl.selectedIndex].value;
-  if (ttlValue !== '') {
-    body += '\nttl=' + encodeURIComponent(ttlValue);
-  }
+  body += '&ttl=' + encodeURIComponent(ttl.options[ttl.selectedIndex].value);
   fetch(window.location, {
     method: 'POST',
     headers: {
-      'content-type': 'text/plain',
+      'content-type': 'application/x-www-form-urlencoded',
     },
     body: body,
   })

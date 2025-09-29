@@ -25,7 +25,6 @@
 package sshca
 
 import (
-	"bytes"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
@@ -305,28 +304,25 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if ct := req.Header.Get("content-type"); ct != "text/plain" {
-		ca.opts.Logger.Errorf("ERR content-type: %v", ct)
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return
-	}
-	defer req.Body.Close()
-	body, err := io.ReadAll(&io.LimitedReader{R: req.Body, N: 102400})
-	if err != nil {
-		ca.opts.Logger.Errorf("ERR body: %v", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
+
 	ttl := defaultCertsLifetime
-	key, query, ok := bytes.Cut(body, []byte{'\n'})
-	if ok {
-		v, err := url.ParseQuery(string(bytes.TrimSpace(query)))
+	var key []byte
+
+	switch ct := req.Header.Get("content-type"); ct {
+	case "text/plain":
+		defer req.Body.Close()
+		body, err := io.ReadAll(&io.LimitedReader{R: req.Body, N: 102400})
 		if err != nil {
-			ca.opts.Logger.Errorf("ERR form: %v", err)
-			http.Error(w, "invalid request", http.StatusBadRequest)
+			ca.opts.Logger.Errorf("ERR body: %v", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		if t := v.Get("ttl"); t != "" {
+		key = body
+
+	case "application/x-www-form-urlencoded":
+		req.ParseForm()
+		key = []byte(req.PostForm.Get("key"))
+		if t := req.PostForm.Get("ttl"); t != "" {
 			tt, err := strconv.Atoi(t)
 			if err != nil {
 				ca.opts.Logger.Errorf("ERR ttl: %v", err)
@@ -335,7 +331,13 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 			}
 			ttl = time.Second * time.Duration(tt)
 		}
+
+	default:
+		ca.opts.Logger.Errorf("ERR content-type: %q", ct)
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
 	}
+
 	if ca.opts.MaximumCertificateLifetime != 0 {
 		ttl = min(ca.opts.MaximumCertificateLifetime, ttl)
 	} else {
@@ -344,7 +346,7 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 
 	pub, _, _, _, err := ssh.ParseAuthorizedKey(key)
 	if err != nil {
-		ca.opts.Logger.Errorf("ERR body: %v", err)
+		ca.opts.Logger.Errorf("ERR key: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
