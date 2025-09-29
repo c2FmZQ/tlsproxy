@@ -6,8 +6,6 @@
 
 * Clean up the ssh CA request parsing. When a specific ttl is desired, the request must now use `content-type: application/x-www-form-urlencoded`.
 
-# Please enter the commit message for your changes. Lines starting
-
 ## v0.22.2
 
 ### :wrench: Misc
