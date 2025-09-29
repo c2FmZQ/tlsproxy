@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Clean up the ssh CA request parsing. When a specific ttl is desired, the request must now use `content-type: application/x-www-form-urlencoded`.
+
 ## v0.22.2
 
 ### :wrench: Misc

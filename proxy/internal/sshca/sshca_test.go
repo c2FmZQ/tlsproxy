@@ -30,6 +30,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/c2FmZQ/storage"
@@ -123,44 +124,91 @@ func TestCertificate(t *testing.T) {
 				t.Fatalf("ssh.NewPublicKey: %v", err)
 			}
 
-			req, err := http.NewRequest("POST", server.URL+"/cert", bytes.NewReader(ssh.MarshalAuthorizedKey(sshPub)))
-			if err != nil {
-				t.Fatalf("http.NewRequest: %v", err)
-			}
-			req.Header.Set("content-type", "text/plain")
-			if resp, err = http.DefaultClient.Do(req); err != nil {
-				t.Fatalf("Post(/cert): %v", err)
-			}
-			defer resp.Body.Close()
-			certBytes, err := io.ReadAll(resp.Body)
-			if err != nil {
-				t.Fatalf("cert body: %v", err)
-			}
+			t.Run("text/plain", func(t *testing.T) {
+				req, err := http.NewRequest("POST", server.URL+"/cert", bytes.NewReader(ssh.MarshalAuthorizedKey(sshPub)))
+				if err != nil {
+					t.Fatalf("http.NewRequest: %v", err)
+				}
+				req.Header.Set("content-type", "text/plain")
+				if resp, err = http.DefaultClient.Do(req); err != nil {
+					t.Fatalf("Post(/cert): %v", err)
+				}
+				defer resp.Body.Close()
+				certBytes, err := io.ReadAll(resp.Body)
+				if err != nil {
+					t.Fatalf("cert body: %v", err)
+				}
 
-			c, _, _, _, err := ssh.ParseAuthorizedKey(certBytes)
-			if err != nil {
-				t.Fatalf("ssh.ParseAuthorizedKey: %v", err)
-			}
-			cert, ok := c.(*ssh.Certificate)
-			if !ok {
-				t.Fatalf("Parsed cert is %T", c)
-			}
+				c, _, _, _, err := ssh.ParseAuthorizedKey(certBytes)
+				if err != nil {
+					t.Fatalf("ssh.ParseAuthorizedKey: %v", err)
+				}
+				cert, ok := c.(*ssh.Certificate)
+				if !ok {
+					t.Fatalf("Parsed cert is %T", c)
+				}
 
-			if got, want := cert.SignatureKey.Marshal(), caKey.Marshal(); !bytes.Equal(got, want) {
-				t.Fatalf("cert.SignatureKey doesn't match caKey")
-			}
-			if got, want := cert.Key.Marshal(), sshPub.Marshal(); !bytes.Equal(got, want) {
-				t.Fatalf("cert.Key doesn't match sshKey")
-			}
-			if got, want := cert.KeyId, "alice@example.com"; got != want {
-				t.Fatalf("cert.KeyId = %q, want %q", got, want)
-			}
-			if len(cert.ValidPrincipals) != 1 {
-				t.Fatalf("cert.Principals = %v", cert.ValidPrincipals)
-			}
-			if got, want := cert.ValidPrincipals[0], "alice@example.com"; got != want {
-				t.Fatalf("cert.ValidPrincipals[0] = %q, want %q", got, want)
-			}
+				if got, want := cert.SignatureKey.Marshal(), caKey.Marshal(); !bytes.Equal(got, want) {
+					t.Fatalf("cert.SignatureKey doesn't match caKey")
+				}
+				if got, want := cert.Key.Marshal(), sshPub.Marshal(); !bytes.Equal(got, want) {
+					t.Fatalf("cert.Key doesn't match sshKey")
+				}
+				if got, want := cert.KeyId, "alice@example.com"; got != want {
+					t.Fatalf("cert.KeyId = %q, want %q", got, want)
+				}
+				if len(cert.ValidPrincipals) != 1 {
+					t.Fatalf("cert.Principals = %v", cert.ValidPrincipals)
+				}
+				if got, want := cert.ValidPrincipals[0], "alice@example.com"; got != want {
+					t.Fatalf("cert.ValidPrincipals[0] = %q, want %q", got, want)
+				}
+				if got, want := cert.ValidBefore-cert.ValidAfter, uint64(300+600); got != want {
+					t.Fatalf("cert validity = %d, want %d", got, want)
+				}
+			})
+			t.Run("application/x-www-form-urlencoded", func(t *testing.T) {
+				values := url.Values{}
+				values.Set("key", string(ssh.MarshalAuthorizedKey(sshPub)))
+				values.Set("ttl", "180")
+				resp, err := http.PostForm(server.URL+"/cert", values)
+				if err != nil {
+					t.Fatalf("Post(/cert): %v", err)
+				}
+				defer resp.Body.Close()
+				certBytes, err := io.ReadAll(resp.Body)
+				if err != nil {
+					t.Fatalf("cert body: %v", err)
+				}
+
+				c, _, _, _, err := ssh.ParseAuthorizedKey(certBytes)
+				if err != nil {
+					t.Fatalf("ssh.ParseAuthorizedKey: %v", err)
+				}
+				cert, ok := c.(*ssh.Certificate)
+				if !ok {
+					t.Fatalf("Parsed cert is %T", c)
+				}
+
+				if got, want := cert.SignatureKey.Marshal(), caKey.Marshal(); !bytes.Equal(got, want) {
+					t.Fatalf("cert.SignatureKey doesn't match caKey")
+				}
+				if got, want := cert.Key.Marshal(), sshPub.Marshal(); !bytes.Equal(got, want) {
+					t.Fatalf("cert.Key doesn't match sshKey")
+				}
+				if got, want := cert.KeyId, "alice@example.com"; got != want {
+					t.Fatalf("cert.KeyId = %q, want %q", got, want)
+				}
+				if len(cert.ValidPrincipals) != 1 {
+					t.Fatalf("cert.Principals = %v", cert.ValidPrincipals)
+				}
+				if got, want := cert.ValidPrincipals[0], "alice@example.com"; got != want {
+					t.Fatalf("cert.ValidPrincipals[0] = %q, want %q", got, want)
+				}
+				if got, want := cert.ValidBefore-cert.ValidAfter, uint64(300+180); got != want {
+					t.Fatalf("cert validity = %d, want %d", got, want)
+				}
+			})
 		})
 	}
 }
