@@ -477,6 +477,8 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 			return false
 		}
 		be.setAltSvc(w.Header(), req)
+		// Set a sensible limit for local handlers.
+		req.Body = http.MaxBytesReader(w, req.Body, 102400)
 		be.localHandlers[hi].handler.ServeHTTP(w, req)
 		return false
 	}
