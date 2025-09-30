@@ -344,7 +344,7 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 		Certs:          certs,
 	}
 	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline' 'self'; script-src 'unsafe-inline' 'self'; frame-ancestors 'none'")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline' 'self'; script-src 'unsafe-eval' 'unsafe-inline' 'self'; frame-ancestors 'none'")
 	certsTemplate.Execute(w, data)
 }
 
