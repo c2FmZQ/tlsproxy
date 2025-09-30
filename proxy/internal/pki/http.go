@@ -162,8 +162,9 @@ func (m *PKIManager) ServeOCSP(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		const maxSize = 4096
+		req.Body = http.MaxBytesReader(w, req.Body, maxSize)
 		var err error
-		if raw, err = io.ReadAll(&io.LimitedReader{R: req.Body, N: maxSize}); err != nil || len(raw) == maxSize {
+		if raw, err = io.ReadAll(req.Body); err != nil {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -366,7 +367,7 @@ func (m *PKIManager) handleRequestCert(w http.ResponseWriter, req *http.Request)
 		return
 	}
 	defer req.Body.Close()
-	body, err := io.ReadAll(&io.LimitedReader{R: req.Body, N: 102400})
+	body, err := io.ReadAll(req.Body)
 	if err != nil {
 		m.opts.Logger.Errorf("ERR body: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
