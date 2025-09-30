@@ -294,6 +294,8 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 			Name:  ca.opts.Name,
 			CA:    string(ssh.MarshalAuthorizedKey(ca.signer.PublicKey())),
 		}
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline' 'self'; script-src 'unsafe-inline' 'self'; frame-ancestors 'none'")
 		if err := certTemplate.Execute(w, data); err != nil {
 			ca.opts.Logger.Errorf("ERR cert.html: %v", err)
 		}
