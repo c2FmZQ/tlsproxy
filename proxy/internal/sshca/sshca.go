@@ -311,7 +311,7 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 	switch ct := req.Header.Get("content-type"); ct {
 	case "text/plain":
 		defer req.Body.Close()
-		body, err := io.ReadAll(&io.LimitedReader{R: req.Body, N: 102400})
+		body, err := io.ReadAll(req.Body)
 		if err != nil {
 			ca.opts.Logger.Errorf("ERR body: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
