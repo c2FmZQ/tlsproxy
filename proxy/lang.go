@@ -30,26 +30,26 @@ import (
 )
 
 func getLanguage(lang string) map[string]string {
-	v, ok := languages[lang]
+	regionalTranslations, ok := languages[lang]
 	if !ok {
 		return nil
 	}
 	parts := strings.Split(lang, "-")
 	if len(parts) == 2 {
-		if base, ok := languages[parts[0]]; ok {
+		if baseTranslations, ok := languages[parts[0]]; ok {
 			out := make(map[string]string)
-			for k, v := range base {
-				out[k] = v
+			for key, value := range baseTranslations {
+				out[key] = value
 			}
-			for k, v := range v {
-				out[k] = v
+			for key, value := range regionalTranslations {
+				out[key] = value
 			}
 			return out
 		}
 	}
 	out := make(map[string]string)
-	for k, v := range v {
-		out[k] = v
+	for key, value := range regionalTranslations {
+		out[key] = value
 	}
 	return out
 }
@@ -57,22 +57,22 @@ func getLanguage(lang string) map[string]string {
 func serveLanguagesJSON(w http.ResponseWriter, req *http.Request) {
 	req.ParseForm()
 	var out map[string]map[string]string
-	if lang := req.Form.Get("lang"); lang != "" {
+	if requestedLangs := req.Form.Get("lang"); requestedLangs != "" {
 		out = make(map[string]map[string]string)
-		for _, key := range strings.Split(lang, ",") {
-			if v := getLanguage(key); v != nil {
-				out[key] = v
+		for _, langCode := range strings.Split(requestedLangs, ",") {
+			if translations := getLanguage(langCode); translations != nil {
+				out[langCode] = translations
 				break
 			}
 		}
 	} else {
 		out = make(map[string]map[string]string)
-		for k, v := range languages {
-			m := map[string]string{"lang": v["LANG"]}
-			if d, ok := v["DIR"]; ok {
-				m["dir"] = d
+		for langCode, translations := range languages {
+			langInfo := map[string]string{"lang": translations["LANG"]}
+			if dir, ok := translations["DIR"]; ok {
+				langInfo["dir"] = dir
 			}
-			out[k] = m
+			out[langCode] = langInfo
 		}
 	}
 	content, err := json.MarshalIndent(out, "", "  ")
