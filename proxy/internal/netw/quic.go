@@ -343,10 +343,6 @@ func (c *QUICConn) ConnectionState() quic.ConnectionState {
 	return c.qc.ConnectionState()
 }
 
-func (c *QUICConn) ConnectionStats() quic.ConnectionStats {
-	return c.qc.ConnectionStats()
-}
-
 func (c *QUICConn) AddPath(t quicapi.TransportUnwrapper) (quicapi.Path, error) {
 	return c.qc.AddPath(t)
 }
