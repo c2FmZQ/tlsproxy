@@ -171,9 +171,12 @@ async function applyTranslations(lang) {
   if (changed && !document.getElementById('lang-selector')) {
     const b = document.createElement('select');
     b.id = 'lang-selector';
-    b.addEventListener('click', () => {
+    b.addEventListener('change', () => {
+      console.log('Language selector changed!');
       const s = b.options[b.selectedIndex].value;
+      console.log(`Selected language: ${s}`);
       if (s !== currentLang) {
+        console.log('Applying new translations...');
         applyTranslations(s);
       }
     });
