@@ -47,11 +47,8 @@ func getLanguage(lang string) map[string]string {
 			return out
 		}
 	}
-	out := make(map[string]string)
-	for k, v := range regional {
-		out[k] = v
-	}
-	return out
+	// The map is not modified by the caller, so we can return it directly.
+	return regional
 }
 
 func serveLanguagesJSON(w http.ResponseWriter, req *http.Request) {
