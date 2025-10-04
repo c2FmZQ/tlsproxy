@@ -5,6 +5,10 @@
 ### :wrench: Misc
 
 * Clean up the ssh CA request parsing. When a specific ttl is desired, the request must now use `content-type: application/x-www-form-urlencoded`.
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/http3-go v0.54.0 => v0.55.0
+  * upgraded github.com/c2FmZQ/quic-api v0.54.0 => v0.55.0
+  * upgraded github.com/quic-go/quic-go v0.54.0 => v0.55.0
 
 ## v0.22.2
 
