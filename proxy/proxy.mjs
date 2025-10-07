@@ -117,7 +117,13 @@ function setLanguage(langs) {
       opts.push(m[0]);
     }
   }
-  return fetch('/.sso/languages.json?lang='+encodeURIComponent(opts.join(',')).replaceAll('%2C',','))
+  return fetch('/.sso/languages.json', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'lang='+encodeURIComponent(opts.join(',')).replaceAll('%2C',','),
+    })
     .then(r => r.json())
     .then(data => {
       for (let opt of opts) {
@@ -189,7 +195,7 @@ async function applyTranslations(lang) {
     b.style.backgroundColor = 'white';
     document.body.appendChild(b);
     // Populate the selector with available languages from the server.
-    return fetch('/.sso/languages.json').then(r => r.json()).then(r => {
+    return fetch('/.sso/languages.json', {method: 'POST'}).then(r => r.json()).then(r => {
       for (let key in r) {
         const o = document.createElement('option');
         o.value = key;
