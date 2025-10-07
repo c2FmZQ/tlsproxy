@@ -122,7 +122,7 @@ function setLanguage(langs) {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: 'lang='+encodeURIComponent(opts.join(',')).replaceAll('%2C',','),
+      body: 'lang='+opts.map(encodeURIComponent).join(','),
     })
     .then(r => r.json())
     .then(data => {
