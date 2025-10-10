@@ -176,7 +176,7 @@ func serveStatic(w http.ResponseWriter, req *http.Request, content []byte, conte
 	w.Write(content)
 }
 
-func (be *Backend) serveSSOpitf019(w http.ResponseWriter, req *http.Request) {
+func (be *Backend) serveSSOIDCheckIcon(w http.ResponseWriter, req *http.Request) {
 	serveStatic(w, req, pitf019Embed, "image/svg+xml")
 }
 

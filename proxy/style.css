@@ -36,7 +36,6 @@ a.button:hover {
 .id-check-icon {
   text-align: center;
   width: min(25vw,25vh);
-  color: white;
   border-radius: 1rem;
   background: radial-gradient(circle at center, lightgray 0, darkgray 100%);
   box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.3);

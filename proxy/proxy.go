@@ -489,7 +489,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			localHandler{
 				desc:      "ID Check Icon",
 				path:      "/.sso/ISO_7001_PI_TF_019.svg",
-				handler:   logHandler(http.HandlerFunc(be.serveSSOpitf019)),
+				handler:   logHandler(http.HandlerFunc(be.serveSSOIDCheckIcon)),
 				ssoBypass: true,
 			},
 			localHandler{
