@@ -61,6 +61,8 @@ var (
 	//go:embed sso-status-template.html
 	ssoStatusEmbed    string
 	ssoStatusTemplate *template.Template
+	//go:embed ISO_7001_PI_TF_019.svg
+	pitf019Embed []byte
 	//go:embed style.css
 	styleEmbed []byte
 	//go:embed proxy.mjs
@@ -172,6 +174,10 @@ func serveStatic(w http.ResponseWriter, req *http.Request, content []byte, conte
 	}
 	w.WriteHeader(http.StatusOK)
 	w.Write(content)
+}
+
+func (be *Backend) serveSSOpitf019(w http.ResponseWriter, req *http.Request) {
+	serveStatic(w, req, pitf019Embed, "image/svg+xml")
 }
 
 func (be *Backend) serveSSOStyle(w http.ResponseWriter, req *http.Request) {
