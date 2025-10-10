@@ -15,9 +15,6 @@
   width: 100vw;
   text-align: center;
 }
-.big {
-  font-size: 800%;
-}
 a.button.big {
   line-height: 6rem;
   font-size: 300%;
@@ -44,7 +41,7 @@ a.button.big {
   </div>
   <div id="message">
 {{- if eq .Mode "Login" }}
-    <div class="big">🛂</div>
+    <div><img class="id-check-icon" alt="" src="/.sso/ISO_7001_PI_TF_019.svg"></div>
     <div tkey="passkey-auth-required">Authentication required to access this document.</div>
     <div id="target"><a href="{{.URL}}">{{.DisplayURL}}</a></div>
     <div><input id="loginid" tkey="passkey-email" value="{{.Email}}" placeholder="Email" /></div>

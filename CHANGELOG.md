@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Replace the 🛂 emoji with a svg icon.
+
 ## v0.23.0
 
 ### :wrench: Misc

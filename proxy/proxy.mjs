@@ -162,6 +162,8 @@ async function applyTranslations(lang) {
     const value = translate(e.getAttribute('tkey'));
     if (e.tagName === 'INPUT' && e.hasAttribute('placeholder')) {
       e.setAttribute('placeholder', value);
+    } else if (e.tagName === 'IMG') {
+      e.setAttribute('alt', value);
     } else {
       e.textContent = value;
     }
