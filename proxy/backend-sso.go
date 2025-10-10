@@ -62,7 +62,7 @@ var (
 	ssoStatusEmbed    string
 	ssoStatusTemplate *template.Template
 	//go:embed ISO_7001_PI_TF_019.svg
-	pitf019Embed []byte
+	pitf019Embed []byte // https://en.m.wikipedia.org/wiki/File:ISO_7001_PI_TF_019.svg
 	//go:embed style.css
 	styleEmbed []byte
 	//go:embed proxy.mjs
