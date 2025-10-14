@@ -5,6 +5,15 @@
 ### :wrench: Misc
 
 * Replace the 🛂 emoji with a svg icon.
+* Update go: 1.25.3
+* Update go dependencies:
+  * upgraded golang.org/x/crypto v0.42.0 => v0.43.0
+  * upgraded golang.org/x/mod v0.28.0 => v0.29.0
+  * upgraded golang.org/x/net v0.45.0 => v0.46.0
+  * upgraded golang.org/x/sys v0.36.0 => v0.37.0
+  * upgraded golang.org/x/text v0.29.0 => v0.30.0
+  * upgraded golang.org/x/time v0.13.0 => v0.14.0
+  * upgraded golang.org/x/tools v0.37.0 => v0.38.0
 
 ## v0.23.0
 
