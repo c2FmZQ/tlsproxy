@@ -66,6 +66,7 @@ func main() {
 	enableH3 := flag.Bool("http3", false, "Enable QUIC and HTTP/3.")
 	clientAuth := flag.Bool("client-auth", false, "Enable TLS client authentication.")
 	jwksURL := flag.String("jwks-url", "", "The URL of the JWKS.")
+	allowInsecureJWKSURL := flag.Bool("allow-insecure-jwks-url", false, "Set InsecureSkipVerify when fetching the JWKS")
 	flag.Parse()
 
 	if *addr == "" {
@@ -82,7 +83,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	handler := newService(ctx, *jwksURL)
+	handler := newService(ctx, *jwksURL, *allowInsecureJWKSURL)
 	server := &http.Server{
 		Addr: *addr,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -134,9 +135,21 @@ type service struct {
 	jwksURL string
 }
 
-func newService(ctx context.Context, jwksURL string) *service {
+func newService(ctx context.Context, jwksURL string, insecureSkipVerify bool) *service {
 	ar := jwk.NewAutoRefresh(ctx)
-	ar.Configure(jwksURL, jwk.WithRefreshInterval(60*time.Minute))
+	opts := []jwk.AutoRefreshOption{
+		jwk.WithRefreshInterval(60 * time.Minute),
+	}
+	if insecureSkipVerify {
+		opts = append(opts, jwk.WithHTTPClient(&http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
+			},
+		}))
+	}
+	ar.Configure(jwksURL, opts...)
 	return &service{
 		ctx:     ctx,
 		ar:      ar,
