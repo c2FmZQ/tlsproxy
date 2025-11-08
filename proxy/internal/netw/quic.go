@@ -39,6 +39,7 @@ import (
 
 	quicapi "github.com/c2FmZQ/quic-api"
 	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/qlogwriter"
 	"golang.org/x/time/rate"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
@@ -455,6 +456,10 @@ func (c *QUICConn) SendDatagram(b []byte) error {
 
 func (c *QUICConn) ReceiveDatagram(ctx context.Context) ([]byte, error) {
 	return c.qc.ReceiveDatagram(ctx)
+}
+
+func (c *QUICConn) QlogTrace() qlogwriter.Trace {
+	return c.qc.QlogTrace()
 }
 
 var _ quicapi.Stream = (*SendOnlyStream)(nil)
