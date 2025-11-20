@@ -11,7 +11,7 @@
   * upgraded github.com/c2FmZQ/quic-api v0.55.0 => v0.56.0
   * upgraded github.com/google/go-tpm v0.9.6 => v0.9.7
   * upgraded github.com/quic-go/quic-go v0.55.0 => v0.56.0
-  * upgraded golang.org/x/crypto v0.43.0 => v0.44.0
+  * upgraded golang.org/x/crypto v0.43.0 => v0.45.0
   * upgraded golang.org/x/net v0.46.0 => v0.47.0
   * upgraded golang.org/x/sys v0.37.0 => v0.38.0
   * upgraded golang.org/x/text v0.30.0 => v0.31.0
