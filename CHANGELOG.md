@@ -1,5 +1,15 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/http3-go v0.56.0 => v0.57.0
+  * upgraded github.com/c2FmZQ/quic-api v0.56.0 => v0.57.0
+  * upgraded github.com/quic-go/quic-go v0.56.0 => v0.57.0
+  * upgraded github.com/quic-go/qpack v0.5.1 => v0.6.0
+
 ## v0.23.2
 
 ### :wrench: Misc
