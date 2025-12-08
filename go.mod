@@ -19,7 +19,7 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/pires/go-proxyproto v0.8.1
-	github.com/quic-go/quic-go v0.57.0
+	github.com/quic-go/quic-go v0.57.1
 	github.com/russellhaering/goxmldsig v1.5.0
 	golang.org/x/crypto v0.45.0
 	golang.org/x/net v0.47.0

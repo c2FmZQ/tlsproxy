@@ -4,10 +4,10 @@ go 1.24.6
 
 require (
 	github.com/blend/go-sdk v1.20240719.1
-	github.com/c2FmZQ/tlsproxy v0.23.1
+	github.com/c2FmZQ/tlsproxy v0.23.2
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/lestrrat-go/jwx v1.2.31
-	github.com/quic-go/quic-go v0.56.0
+	github.com/quic-go/quic-go v0.57.1
 )
 
 require (
@@ -20,7 +20,7 @@ require (
 	github.com/lestrrat-go/iter v1.0.2 // indirect
 	github.com/lestrrat-go/option v1.0.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/quic-go/qpack v0.5.1 // indirect
+	github.com/quic-go/qpack v0.6.0 // indirect
 	golang.org/x/crypto v0.45.0 // indirect
 	golang.org/x/net v0.47.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect

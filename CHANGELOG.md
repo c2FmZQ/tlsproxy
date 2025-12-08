@@ -4,6 +4,14 @@
 
 ### :wrench: Misc
 
+* Update go: 1.25.5
+* Update go dependencies:
+  * upgraded github.com/quic-go/quic-go v0.57.0 => v0.57.1
+
+## next
+
+### :wrench: Misc
+
 * Update go dependencies:
   * upgraded github.com/c2FmZQ/http3-go v0.56.0 => v0.57.0
   * upgraded github.com/c2FmZQ/quic-api v0.56.0 => v0.57.0
