@@ -4,19 +4,16 @@
 
 ### :wrench: Misc
 
-* Update go: 1.25.5
-* Update go dependencies:
-  * upgraded github.com/quic-go/quic-go v0.57.0 => v0.57.1
-
-## next
-
-### :wrench: Misc
-
+* Update go: 1.26rc1
 * Update go dependencies:
   * upgraded github.com/c2FmZQ/http3-go v0.56.0 => v0.57.0
   * upgraded github.com/c2FmZQ/quic-api v0.56.0 => v0.57.0
-  * upgraded github.com/quic-go/quic-go v0.56.0 => v0.57.0
+  * upgraded github.com/quic-go/quic-go v0.56.0 => v0.57.1
   * upgraded github.com/quic-go/qpack v0.5.1 => v0.6.0
+  * upgraded golang.org/x/crypto v0.45.0 => v0.46.0
+  * upgraded golang.org/x/net v0.47.0 => v0.48.0
+  * upgraded golang.org/x/sys v0.38.0 => v0.39.0
+  * upgraded golang.org/x/text v0.31.0 => v0.32.0
 
 ## v0.23.2
 
