@@ -374,7 +374,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request, ov
 	// * the backend has ForceReAuth set, and the last authentication
 	//   either on a different host, or too long ago.
 	if claims == nil || (rule.ForceReAuth != 0 && (claims["hhash"] != hex.EncodeToString(hh[:]) || time.Since(iat) > rule.ForceReAuth)) {
-		if req.Method != http.MethodGet {
+		if req.Method != http.MethodGet || rule.Return403ForGetRequests {
 			be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (SSO) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden, userAgent(req))
 			http.Error(w, "authentication required", http.StatusForbidden)
 			return false
@@ -396,7 +396,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request, ov
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return false
 		}
-		if _, ok := be.SSO.p.(*passkeys.Manager); ok || req.Header.Get("x-skip-login-confirmation") != "" {
+		if _, ok := be.SSO.p.(*passkeys.Manager); ok || req.Header.Get("x-skip-login-confirmation") != "" || rule.SkipLoginPage {
 			be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (SSO) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusFound, userAgent(req))
 			http.Redirect(w, req, "/.sso/login?redirect="+token, http.StatusFound)
 			return false

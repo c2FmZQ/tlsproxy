@@ -2,6 +2,12 @@
 
 ## next
 
+### :star: Feature improvement
+
+* Add two new SSO rule options:
+  * `SkipLoginPage` redirects requests directly to the IDP's login page.
+  * `Return403ForGetRequests` returns a simple 403 (Forbidden) response for GET requests. Normally, GET requests get a login page.
+
 ### :wrench: Misc
 
 * Update go: 1.25.5

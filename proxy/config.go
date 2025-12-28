@@ -713,6 +713,13 @@ type SSORule struct {
 	// Scopes restricts access to user identities that have at least one of
 	// these scopes. If empty, there are no scope restrictions.
 	Scopes Strings `yaml:"scopes,flow,omitempty"`
+	// SkipLoginPage indicates that when authentication is required, the
+	// user is redirected to the provider's login page directly.
+	SkipLoginPage bool `yaml:"skipLoginPage,omitempty"`
+	// Return403ForGetRequests indicates that unauthorized GET requests
+	// should return 403 (Forbidden) instead of redirecting to a login
+	// page.
+	Return403ForGetRequests bool `yaml:"return403forGetRequests,omitempty"`
 }
 
 // BackendSSO specifies the identity parameters to use for a backend.
