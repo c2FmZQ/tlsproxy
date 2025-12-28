@@ -719,7 +719,7 @@ type SSORule struct {
 	// Return403ForGetRequests indicates that unauthorized GET requests
 	// should return 403 (Forbidden) instead of redirecting to a login
 	// page.
-	Return403ForGetRequests bool `yaml:"return403forGetRequests,omitempty"`
+	Return403ForGetRequests bool `yaml:"return403ForGetRequests,omitempty"`
 }
 
 // BackendSSO specifies the identity parameters to use for a backend.
