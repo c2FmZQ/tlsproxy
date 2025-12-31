@@ -7,6 +7,7 @@
 * Add two new SSO rule options:
   * `SkipLoginPage` redirects requests directly to the IDP's login page.
   * `Return403ForGetRequests` returns a simple 403 (Forbidden) response for GET requests. Normally, GET requests get a login page.
+* Add `TokenLifetime` to OIDC, SAML, and Passkey providers. This optional field set the lifetime of auth tokens set by tlsproxy.
 
 ### :wrench: Misc
 

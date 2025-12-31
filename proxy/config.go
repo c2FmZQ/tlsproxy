@@ -609,6 +609,9 @@ type ConfigOIDC struct {
 	// be valid. Only set this if all host names in the domain are served
 	// by this proxy.
 	Domain string `yaml:"domain,omitempty"`
+	// TokenLifetime is the amount of time that tokens, issued by the proxy
+	// for this provider, will be valid. The default is 20 hours.
+	TokenLifetime time.Duration `yaml:"tokenLifetime,omitempty"`
 }
 
 // ConfigSAML contains the parameters of a SAML identity provider.
@@ -623,6 +626,9 @@ type ConfigSAML struct {
 	// be valid. Only set this if all host names in the domain are served
 	// by this proxy.
 	Domain string `yaml:"domain,omitempty"`
+	// TokenLifetime is the amount of time that tokens, issued by the proxy
+	// for this provider, will be valid. The default is 20 hours.
+	TokenLifetime time.Duration `yaml:"tokenLifetime,omitempty"`
 }
 
 // ConfigPasskey contains the parameters of a Passkey manager.
@@ -645,6 +651,9 @@ type ConfigPasskey struct {
 	// be valid. Only set this if all host names in the domain are served
 	// by this proxy.
 	Domain string `yaml:"domain,omitempty"`
+	// TokenLifetime is the amount of time that tokens, issued by the proxy
+	// for this provider, will be valid. The default is 20 hours.
+	TokenLifetime time.Duration `yaml:"tokenLifetime,omitempty"`
 }
 
 // ConfigPKI defines the parameters of a local Certificate Authority.
