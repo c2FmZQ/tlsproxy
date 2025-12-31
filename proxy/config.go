@@ -609,6 +609,9 @@ type ConfigOIDC struct {
 	// be valid. Only set this if all host names in the domain are served
 	// by this proxy.
 	Domain string `yaml:"domain,omitempty"`
+	// TokenLifetime is the amount of time that tokens, issued by the proxy
+	// for this provider, will be valid. The default is 20 hours.
+	TokenLifetime time.Duration `yaml:"tokenLifetime,omitempty"`
 }
 
 // ConfigSAML contains the parameters of a SAML identity provider.
@@ -623,6 +626,9 @@ type ConfigSAML struct {
 	// be valid. Only set this if all host names in the domain are served
 	// by this proxy.
 	Domain string `yaml:"domain,omitempty"`
+	// TokenLifetime is the amount of time that tokens, issued by the proxy
+	// for this provider, will be valid. The default is 20 hours.
+	TokenLifetime time.Duration `yaml:"tokenLifetime,omitempty"`
 }
 
 // ConfigPasskey contains the parameters of a Passkey manager.
@@ -645,6 +651,9 @@ type ConfigPasskey struct {
 	// be valid. Only set this if all host names in the domain are served
 	// by this proxy.
 	Domain string `yaml:"domain,omitempty"`
+	// TokenLifetime is the amount of time that tokens, issued by the proxy
+	// for this provider, will be valid. The default is 20 hours.
+	TokenLifetime time.Duration `yaml:"tokenLifetime,omitempty"`
 }
 
 // ConfigPKI defines the parameters of a local Certificate Authority.
@@ -713,6 +722,13 @@ type SSORule struct {
 	// Scopes restricts access to user identities that have at least one of
 	// these scopes. If empty, there are no scope restrictions.
 	Scopes Strings `yaml:"scopes,flow,omitempty"`
+	// SkipLoginPage indicates that when authentication is required, the
+	// user is redirected to the provider's login page directly.
+	SkipLoginPage bool `yaml:"skipLoginPage,omitempty"`
+	// Return403ForGetRequests indicates that unauthorized GET requests
+	// should return 403 (Forbidden) instead of redirecting to a login
+	// page.
+	Return403ForGetRequests bool `yaml:"return403ForGetRequests,omitempty"`
 }
 
 // BackendSSO specifies the identity parameters to use for a backend.
