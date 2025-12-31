@@ -1,19 +1,28 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.24.0
+
+### :star: Feature improvement
+
+* Add two new SSO rule options:
+  * `SkipLoginPage` redirects requests directly to the IDP's login page.
+  * `Return403ForGetRequests` returns a simple 403 (Forbidden) response for GET requests. Normally, GET requests get a login page.
+* Add `TokenLifetime` to OIDC, SAML, and Passkey providers. This optional field set the lifetime of auth tokens set by tlsproxy.
 
 ### :wrench: Misc
 
-* Update go: 1.26rc1
+* Update go: 1.25.5
 * Update go dependencies:
   * upgraded github.com/c2FmZQ/http3-go v0.56.0 => v0.57.0
   * upgraded github.com/c2FmZQ/quic-api v0.56.0 => v0.57.0
-  * upgraded github.com/quic-go/quic-go v0.56.0 => v0.57.1
+  * upgraded github.com/google/go-tpm v0.9.7 => v0.9.8
+  * upgraded github.com/quic-go/quic-go v0.56.0 => v0.58.0
   * upgraded github.com/quic-go/qpack v0.5.1 => v0.6.0
   * upgraded golang.org/x/crypto v0.45.0 => v0.46.0
   * upgraded golang.org/x/net v0.47.0 => v0.48.0
   * upgraded golang.org/x/sys v0.38.0 => v0.39.0
   * upgraded golang.org/x/text v0.31.0 => v0.32.0
+  * upgraded software.sslmate.com/src/go-pkcs12 v0.6.0 => v0.7.0
 
 ## v0.23.2
 

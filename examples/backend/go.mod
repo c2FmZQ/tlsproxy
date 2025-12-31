@@ -7,7 +7,7 @@ require (
 	github.com/c2FmZQ/tlsproxy v0.23.2
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/lestrrat-go/jwx v1.2.31
-	github.com/quic-go/quic-go v0.57.1
+	github.com/quic-go/quic-go v0.58.0
 )
 
 require (

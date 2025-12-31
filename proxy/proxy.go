@@ -331,7 +331,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	for _, pp := range cfg.OIDCProviders {
 		_, host, _, _ := hostAndPath(pp.RedirectURL)
 		issuer := "https://" + host + "/"
-		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer)
+		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer, pp.TokenLifetime)
 		oidcCfg := oidc.Config{
 			DiscoveryURL:     pp.DiscoveryURL,
 			AuthEndpoint:     pp.AuthEndpoint,
@@ -359,7 +359,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	for _, pp := range cfg.SAMLProviders {
 		_, host, _, _ := hostAndPath(pp.ACSURL)
 		issuer := "https://" + host + "/"
-		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer)
+		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer, pp.TokenLifetime)
 		samlCfg := saml.Config{
 			SSOURL:   pp.SSOURL,
 			EntityID: pp.EntityID,
@@ -389,7 +389,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		}
 		_, host, _, _ := hostAndPath(pp.Endpoint)
 		issuer := "https://" + host + "/"
-		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer)
+		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer, pp.TokenLifetime)
 		cfg := passkeys.Config{
 			Store:              p.store,
 			Other:              other.identityProvider,

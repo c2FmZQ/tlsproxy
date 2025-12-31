@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/golang-jwt/jwt/v5 v5.3.0
-	github.com/lestrrat-go/httprc/v3 v3.0.2
+	github.com/lestrrat-go/httprc/v3 v3.0.3
 	github.com/lestrrat-go/jwx/v3 v3.0.12
 	golang.org/x/oauth2 v0.34.0
 )

@@ -46,21 +46,27 @@ const (
 	tlsProxyNonce         = "TLSPROXYNONCE"
 
 	expiredAuthTokenLeeway = 7 * 24 * time.Hour
+	defaultTokenLifetime   = 20 * time.Hour
 )
 
 type CookieManager struct {
-	tm       *tokenmanager.TokenManager
-	provider string
-	domain   string
-	issuer   string
+	tm            *tokenmanager.TokenManager
+	provider      string
+	domain        string
+	issuer        string
+	tokenLifetime time.Duration
 }
 
-func New(tm *tokenmanager.TokenManager, provider, domain, issuer string) *CookieManager {
+func New(tm *tokenmanager.TokenManager, provider, domain, issuer string, tokenLifetime time.Duration) *CookieManager {
+	if tokenLifetime <= 0 {
+		tokenLifetime = defaultTokenLifetime
+	}
 	return &CookieManager{
-		tm:       tm,
-		provider: provider,
-		domain:   domain,
-		issuer:   issuer,
+		tm:            tm,
+		provider:      provider,
+		domain:        domain,
+		issuer:        issuer,
+		tokenLifetime: tokenLifetime,
 	}
 }
 
@@ -109,7 +115,7 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, req *http.Req
 		}
 		claims["th"] = th
 	}
-	token, err := cm.MintToken(claims, 20*time.Hour, cm.issuer, "")
+	token, err := cm.MintToken(claims, cm.tokenLifetime, cm.issuer, "")
 	if err != nil {
 		return err
 	}
@@ -118,7 +124,7 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, req *http.Req
 		Value:    token,
 		Domain:   cm.domain,
 		Path:     "/",
-		Expires:  now.Add(20*time.Hour + expiredAuthTokenLeeway),
+		Expires:  now.Add(cm.tokenLifetime + expiredAuthTokenLeeway),
 		SameSite: http.SameSiteLaxMode,
 		Secure:   true,
 		HttpOnly: true,
