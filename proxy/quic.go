@@ -307,7 +307,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 				}()
 			}
 		}()
-		if qc.ConnectionState().SupportsDatagrams && beConn.ConnectionState().SupportsDatagrams {
+		if qc.ConnectionState().SupportsDatagrams.Remote && beConn.ConnectionState().SupportsDatagrams.Remote {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -499,8 +499,8 @@ func (be *Backend) dialQUIC(ctx context.Context, addr string, tc *tls.Config) (*
 	var enableStreamResetPartialDelivery bool
 	if cc, ok := ctx.Value(connCtxKey).(*netw.QUICConn); ok {
 		cs := cc.ConnectionState()
-		enableDatagrams = cs.SupportsDatagrams
-		enableStreamResetPartialDelivery = cs.SupportsStreamResetPartialDelivery
+		enableDatagrams = cs.SupportsDatagrams.Remote
+		enableStreamResetPartialDelivery = cs.SupportsStreamResetPartialDelivery.Remote
 	}
 	return qt.DialEarly(ctx, udpAddr, tc, enableDatagrams, enableStreamResetPartialDelivery)
 }
