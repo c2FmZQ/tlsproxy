@@ -1,5 +1,15 @@
 # TLSPROXY Release Notes
 
+## v0.24.2
+
+### :wrench: Misc
+
+* Update go: 1.25.6
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/storage v0.3.1 => v0.3.2
+  * upgraded golang.org/x/crypto v0.46.0 => v0.47.0
+  * upgraded golang.org/x/net v0.48.0 => v0.49.0
+
 ## v0.24.1
 
 ### :wrench: Misc
