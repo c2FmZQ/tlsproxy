@@ -378,7 +378,7 @@ func newIDPServer(t *testing.T) *idpServer {
 	if err != nil {
 		t.Fatalf("tokenmanager.New: %v", err)
 	}
-	cm := cookiemanager.New(tm, "idp", "example.com", "https://idp.example.com", 0)
+	cm := cookiemanager.New(tm, "idp", "example.com", "https://idp.example.com", 0, nil)
 	opts := oidc.ServerOptions{
 		CookieManager: cm,
 		Clients: []oidc.Client{

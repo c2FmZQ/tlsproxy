@@ -42,17 +42,21 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"math/big"
 	"net/http"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/tpm"
 	jwt "github.com/golang-jwt/jwt/v5"
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 const (
@@ -93,9 +97,19 @@ type TokenManager struct {
 	store  *storage.Storage
 	tpm    *tpm.TPM
 	logger logger
+	client *retryablehttp.Client
 
-	mu   sync.Mutex
-	keys tokenKeys
+	mu             sync.Mutex
+	keys           tokenKeys
+	trustedIssuers map[string]*trustedIssuer
+}
+
+type trustedIssuer struct {
+	issuer     string
+	jwksURI    string
+	publicKeys map[string]crypto.PublicKey
+	nextUpdate time.Time
+	cancel     func()
 }
 
 // New returns a new TokenManager.
@@ -104,10 +118,13 @@ func New(store *storage.Storage, tpm *tpm.TPM, logger logger) (*TokenManager, er
 		logger = defaultLogger{}
 	}
 	tm := TokenManager{
-		store:  store,
-		tpm:    tpm,
-		logger: logger,
+		store:          store,
+		tpm:            tpm,
+		logger:         logger,
+		client:         retryablehttp.NewClient(),
+		trustedIssuers: make(map[string]*trustedIssuer),
 	}
+	tm.client.Logger = nil
 	store.CreateEmptyFile(tokenKeyFile, &tm.keys)
 	if err := tm.rotateKeys(); err != nil {
 		return nil, err
@@ -127,6 +144,112 @@ func (tm *TokenManager) KeyRotationLoop(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func (tm *TokenManager) SetTrustedIssuers(issuers []struct{ Issuer, JWKSURI string }) {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+
+	inUse := make(map[string]bool)
+	for _, cfg := range issuers {
+		inUse[cfg.Issuer] = true
+		ti, exists := tm.trustedIssuers[cfg.Issuer]
+		if !exists {
+			ctx, cancel := context.WithCancel(context.Background())
+			ti = &trustedIssuer{
+				issuer: cfg.Issuer,
+				cancel: cancel,
+			}
+			tm.trustedIssuers[cfg.Issuer] = ti
+			go tm.backgroundJWKSRefresh(ctx, ti)
+		}
+		// update mutable fields
+		ti.jwksURI = cfg.JWKSURI
+		if ti.nextUpdate.IsZero() {
+			ti.nextUpdate = time.Now() // Trigger immediate update
+		}
+	}
+
+	for k, ti := range tm.trustedIssuers {
+		if !inUse[k] {
+			ti.cancel()
+			delete(tm.trustedIssuers, k)
+		}
+	}
+}
+
+func (tm *TokenManager) backgroundJWKSRefresh(ctx context.Context, ti *trustedIssuer) {
+	for {
+		tm.mu.Lock()
+		nextUpdate := ti.nextUpdate
+		tm.mu.Unlock()
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Until(nextUpdate)):
+		}
+
+		if err := tm.fetchJWKS(ctx, ti); err != nil {
+			tm.logger.Errorf("ERR fetchJWKS(%s): %v", ti.issuer, err)
+			// Retry sooner on error
+			tm.mu.Lock()
+			ti.nextUpdate = time.Now().Add(5 * time.Minute)
+			tm.mu.Unlock()
+		}
+	}
+}
+
+func (tm *TokenManager) fetchJWKS(ctx context.Context, ti *trustedIssuer) error {
+	tm.mu.Lock()
+	uri := ti.jwksURI
+	tm.mu.Unlock()
+
+	req, err := retryablehttp.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := tm.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var keys jwks
+	if err := json.NewDecoder(resp.Body).Decode(&keys); err != nil {
+		return err
+	}
+	publicKeys := make(map[string]crypto.PublicKey)
+	for _, k := range keys.Keys {
+		pk, err := k.PublicKey()
+		if err != nil {
+			tm.logger.Errorf("ERR JWK %s: %v", k.ID, err)
+			continue
+		}
+		publicKeys[k.ID] = pk
+	}
+
+	// Parse Cache-Control
+	ttl := time.Hour
+	if cc := resp.Header.Get("cache-control"); cc != "" {
+		for _, part := range strings.Split(cc, ",") {
+			part = strings.TrimSpace(part)
+			if strings.HasPrefix(part, "max-age=") {
+				if v, err := strconv.Atoi(part[8:]); err == nil && v > 0 {
+					ttl = time.Duration(v) * time.Second
+				}
+			}
+		}
+	}
+
+	tm.mu.Lock()
+	ti.publicKeys = publicKeys
+	ti.nextUpdate = time.Now().Add(ttl)
+	tm.mu.Unlock()
+	return nil
 }
 
 func (tm *TokenManager) HMAC(b []byte) []byte {
@@ -431,14 +554,41 @@ func (m *tpmSigningMethod) Sign(signingString string, key interface{}) ([]byte, 
 }
 
 func (tm *TokenManager) getKey(tok *jwt.Token) (interface{}, error) {
+	kid, ok := tok.Header["kid"].(string)
+	if !ok {
+		return nil, errors.New("kid header missing")
+	}
+
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 	for _, tk := range tm.keys.Keys {
-		if tk.ID == tok.Header["kid"] {
+		if tk.ID == kid {
 			return tk.privKey.Public(), nil
 		}
 	}
+	for _, ti := range tm.trustedIssuers {
+		if pk, ok := ti.publicKeys[kid]; ok {
+			return pk, nil
+		}
+	}
 	return nil, errors.New("not found")
+}
+
+func (tm *TokenManager) IssuerForKey(kid string) (string, bool) {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+
+	for _, tk := range tm.keys.Keys {
+		if tk.ID == kid {
+			return "", true
+		}
+	}
+	for _, ti := range tm.trustedIssuers {
+		if _, ok := ti.publicKeys[kid]; ok {
+			return ti.issuer, true
+		}
+	}
+	return "", false
 }
 
 // ValidateToken validates a JSON Web Token (JWT).
@@ -463,6 +613,40 @@ type jwk struct {
 	// RSA
 	N string `json:"n,omitempty"`
 	E string `json:"e,omitempty"`
+}
+
+func (k jwk) PublicKey() (crypto.PublicKey, error) {
+	switch k.Type {
+	case "EC":
+		curve := elliptic.P256() // Only P-256 is supported for now
+		x, err := base64.RawURLEncoding.DecodeString(k.X)
+		if err != nil {
+			return nil, err
+		}
+		y, err := base64.RawURLEncoding.DecodeString(k.Y)
+		if err != nil {
+			return nil, err
+		}
+		return &ecdsa.PublicKey{Curve: curve, X: new(big.Int).SetBytes(x), Y: new(big.Int).SetBytes(y)}, nil
+	case "RSA":
+		n, err := base64.RawURLEncoding.DecodeString(k.N)
+		if err != nil {
+			return nil, err
+		}
+		eBytes, err := base64.RawURLEncoding.DecodeString(k.E)
+		if err != nil {
+			return nil, err
+		}
+		return &rsa.PublicKey{N: new(big.Int).SetBytes(n), E: int(new(big.Int).SetBytes(eBytes).Int64())}, nil
+	case "OKP": // EdDSA
+		x, err := base64.RawURLEncoding.DecodeString(k.X)
+		if err != nil {
+			return nil, err
+		}
+		return ed25519.PublicKey(x), nil
+	default:
+		return nil, fmt.Errorf("unknown key type %q", k.Type)
+	}
 }
 
 // ServeJWKS returns the current public keys as a JSON Web Key Set (JWKS).
