@@ -6,6 +6,12 @@
 
 * Implement distributed authentication trust via TrustedIssuers. See `trustedIssuers`.
 
+### :wrench: Misc
+
+* Update go dependencies:
+  * upgraded github.com/golang-jwt/jwt/v5 v5.3.0 => v5.3.1
+  * upgraded github.com/pires/go-proxyproto v0.8.1 => v0.9.2
+
 ## v0.24.2
 
 ### :wrench: Misc
