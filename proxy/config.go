@@ -612,6 +612,9 @@ type ConfigOIDC struct {
 	// TokenLifetime is the amount of time that tokens, issued by the proxy
 	// for this provider, will be valid. The default is 20 hours.
 	TokenLifetime time.Duration `yaml:"tokenLifetime,omitempty"`
+	// TrustedIssuers is a list of external issuers whose tokens are accepted
+	// when using this provider.
+	TrustedIssuers []*TrustedIssuer `yaml:"trustedIssuers,omitempty"`
 }
 
 // ConfigSAML contains the parameters of a SAML identity provider.
@@ -629,6 +632,9 @@ type ConfigSAML struct {
 	// TokenLifetime is the amount of time that tokens, issued by the proxy
 	// for this provider, will be valid. The default is 20 hours.
 	TokenLifetime time.Duration `yaml:"tokenLifetime,omitempty"`
+	// TrustedIssuers is a list of external issuers whose tokens are accepted
+	// when using this provider.
+	TrustedIssuers []*TrustedIssuer `yaml:"trustedIssuers,omitempty"`
 }
 
 // ConfigPasskey contains the parameters of a Passkey manager.
@@ -654,6 +660,18 @@ type ConfigPasskey struct {
 	// TokenLifetime is the amount of time that tokens, issued by the proxy
 	// for this provider, will be valid. The default is 20 hours.
 	TokenLifetime time.Duration `yaml:"tokenLifetime,omitempty"`
+	// TrustedIssuers is a list of external issuers whose tokens are accepted
+	// when using this provider.
+	TrustedIssuers []*TrustedIssuer `yaml:"trustedIssuers,omitempty"`
+}
+
+// TrustedIssuer is an external issuer whose tokens are accepted.
+type TrustedIssuer struct {
+	// Issuer is the expected "iss" claim value (e.g., "https://auth.example.com/").
+	Issuer string `yaml:"issuer"`
+	// JWKSURI is the URL to fetch the JSON Web Key Set.
+	// This field is required.
+	JWKSURI string `yaml:"jwksUri"`
 }
 
 // ConfigPKI defines the parameters of a local Certificate Authority.
@@ -959,6 +977,21 @@ func (cfg *Config) clone() *Config {
 	return &out
 }
 
+func validateTrustedIssuers(issuers []*TrustedIssuer) error {
+	for i, ti := range issuers {
+		if ti.Issuer == "" {
+			return fmt.Errorf("[%d].Issuer must be set", i)
+		}
+		if ti.JWKSURI == "" {
+			return fmt.Errorf("[%d].JWKSURI must be set", i)
+		}
+		if _, err := url.Parse(ti.JWKSURI); err != nil {
+			return fmt.Errorf("[%d].JWKSURI: %v", i, err)
+		}
+	}
+	return nil
+}
+
 // Check checks that the Config is valid, sets some default values, and
 // initializes internal data structures.
 func (cfg *Config) Check() error {
@@ -1067,6 +1100,9 @@ func (cfg *Config) Check() error {
 				return fmt.Errorf("oidc[%d].Domain %q must be part of RedirectURL (%s)", i, oi.Domain, host)
 			}
 		}
+		if err := validateTrustedIssuers(oi.TrustedIssuers); err != nil {
+			return fmt.Errorf("oidc[%d].TrustedIssuers%w", i, err)
+		}
 	}
 	for i, s := range cfg.SAMLProviders {
 		if identityProviders[s.Name] {
@@ -1095,6 +1131,9 @@ func (cfg *Config) Check() error {
 				return fmt.Errorf("saml[%d].Domain %q must be part of ACSURL (%s)", i, s.Domain, host)
 			}
 		}
+		if err := validateTrustedIssuers(s.TrustedIssuers); err != nil {
+			return fmt.Errorf("saml[%d].TrustedIssuers%w", i, err)
+		}
 	}
 	for i, pp := range cfg.PasskeyProviders {
 		if identityProviders[pp.Name] {
@@ -1119,6 +1158,9 @@ func (cfg *Config) Check() error {
 			if !strings.HasSuffix(host, pp.Domain) {
 				return fmt.Errorf("passkey[%d].Domain %q must be part of Endpoint (%s)", i, pp.Domain, host)
 			}
+		}
+		if err := validateTrustedIssuers(pp.TrustedIssuers); err != nil {
+			return fmt.Errorf("passkey[%d].TrustedIssuers%w", i, err)
 		}
 	}
 
