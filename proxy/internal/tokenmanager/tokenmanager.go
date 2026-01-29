@@ -618,6 +618,9 @@ type jwk struct {
 func (k jwk) PublicKey() (crypto.PublicKey, error) {
 	switch k.Type {
 	case "EC":
+		if k.Curve != "" && k.Curve != "P-256" {
+			return nil, fmt.Errorf("unsupported EC curve %q", k.Curve)
+		}
 		curve := elliptic.P256() // Only P-256 is supported for now
 		x, err := base64.RawURLEncoding.DecodeString(k.X)
 		if err != nil {

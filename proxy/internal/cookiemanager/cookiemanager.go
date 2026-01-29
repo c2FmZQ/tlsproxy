@@ -262,7 +262,10 @@ func (cm *CookieManager) validateAuthToken(req *http.Request, leeway time.Durati
 	if err != nil {
 		return nil, "", err
 	}
-	kid, _ := token.Header["kid"].(string)
+	kid, ok := token.Header["kid"].(string)
+	if !ok {
+		return nil, "", errors.New("token missing kid")
+	}
 	issuer, found := cm.tm.IssuerForKey(kid)
 	if !found {
 		return nil, "", errors.New("unknown key")
