@@ -219,7 +219,7 @@ func (tm *TokenManager) fetchJWKS(ctx context.Context, ti *trustedIssuer) error 
 	}
 
 	var keys jwks
-	if err := json.NewDecoder(resp.Body).Decode(&keys); err != nil {
+	if err := json.NewDecoder(&io.LimitedReader{R: resp.Body, N: 1048576}).Decode(&keys); err != nil {
 		return err
 	}
 	publicKeys := make(map[string]crypto.PublicKey)
@@ -243,6 +243,14 @@ func (tm *TokenManager) fetchJWKS(ctx context.Context, ti *trustedIssuer) error 
 				}
 			}
 		}
+	}
+	if age := resp.Header.Get("age"); age != "" {
+		if v, err := strconv.Atoi(age); err == nil && v > 0 {
+			ttl -= time.Duration(v) * time.Second
+		}
+	}
+	if ttl < 5*time.Minute {
+		ttl = 5 * time.Minute
 	}
 
 	tm.mu.Lock()
