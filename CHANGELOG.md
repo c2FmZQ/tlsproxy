@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+# next
+
+### :star2: New feature 
+
+* Implement distributed authentication trust via TrustedIssuers. See `trustedIssuers`.
+
 ## v0.24.2
 
 ### :wrench: Misc

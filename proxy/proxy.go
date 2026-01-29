@@ -298,6 +298,15 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 	return p, nil
 }
 
+func extractTrustedIssuers(issuers []*TrustedIssuer, all *[]struct{ Issuer, JWKSURI string }) []string {
+	var out []string
+	for _, ti := range issuers {
+		out = append(out, ti.Issuer)
+		*all = append(*all, struct{ Issuer, JWKSURI string }{ti.Issuer, ti.JWKSURI})
+	}
+	return out
+}
+
 // Reconfigure updates the proxy's configuration. Some parameters cannot be
 // changed after Start has been called, e.g. HTTPAddr, TLSAddr, CacheDir.
 func (p *Proxy) Reconfigure(cfg *Config) error {
@@ -328,10 +337,13 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	}
 	er := eventRecorder{record: p.recordEvent}
 	identityProviders := make(map[string]idp)
+	var allTrustedIssuers []struct{ Issuer, JWKSURI string }
+
 	for _, pp := range cfg.OIDCProviders {
 		_, host, _, _ := hostAndPath(pp.RedirectURL)
 		issuer := "https://" + host + "/"
-		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer, pp.TokenLifetime)
+		trustedIssuers := extractTrustedIssuers(pp.TrustedIssuers, &allTrustedIssuers)
+		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer, pp.TokenLifetime, trustedIssuers)
 		oidcCfg := oidc.Config{
 			DiscoveryURL:     pp.DiscoveryURL,
 			AuthEndpoint:     pp.AuthEndpoint,
@@ -359,7 +371,8 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	for _, pp := range cfg.SAMLProviders {
 		_, host, _, _ := hostAndPath(pp.ACSURL)
 		issuer := "https://" + host + "/"
-		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer, pp.TokenLifetime)
+		trustedIssuers := extractTrustedIssuers(pp.TrustedIssuers, &allTrustedIssuers)
+		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer, pp.TokenLifetime, trustedIssuers)
 		samlCfg := saml.Config{
 			SSOURL:   pp.SSOURL,
 			EntityID: pp.EntityID,
@@ -389,7 +402,8 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 		}
 		_, host, _, _ := hostAndPath(pp.Endpoint)
 		issuer := "https://" + host + "/"
-		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer, pp.TokenLifetime)
+		trustedIssuers := extractTrustedIssuers(pp.TrustedIssuers, &allTrustedIssuers)
+		cm := cookiemanager.New(p.tokenManager, pp.Name, pp.Domain, issuer, pp.TokenLifetime, trustedIssuers)
 		cfg := passkeys.Config{
 			Store:              p.store,
 			Other:              other.identityProvider,
@@ -937,6 +951,9 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	if err := p.rotateECH(true); err != nil && err != storage.ErrRolledBack {
 		return err
 	}
+
+	p.tokenManager.SetTrustedIssuers(allTrustedIssuers)
+
 	go p.reAuthorize()
 	return nil
 }

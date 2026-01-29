@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -50,23 +51,25 @@ const (
 )
 
 type CookieManager struct {
-	tm            *tokenmanager.TokenManager
-	provider      string
-	domain        string
-	issuer        string
-	tokenLifetime time.Duration
+	tm             *tokenmanager.TokenManager
+	provider       string
+	domain         string
+	issuer         string
+	tokenLifetime  time.Duration
+	trustedIssuers []string
 }
 
-func New(tm *tokenmanager.TokenManager, provider, domain, issuer string, tokenLifetime time.Duration) *CookieManager {
+func New(tm *tokenmanager.TokenManager, provider, domain, issuer string, tokenLifetime time.Duration, trustedIssuers []string) *CookieManager {
 	if tokenLifetime <= 0 {
 		tokenLifetime = defaultTokenLifetime
 	}
 	return &CookieManager{
-		tm:            tm,
-		provider:      provider,
-		domain:        domain,
-		issuer:        issuer,
-		tokenLifetime: tokenLifetime,
+		tm:             tm,
+		provider:       provider,
+		domain:         domain,
+		issuer:         issuer,
+		tokenLifetime:  tokenLifetime,
+		trustedIssuers: trustedIssuers,
 	}
 }
 
@@ -253,18 +256,57 @@ func (cm *CookieManager) validateAuthToken(req *http.Request, leeway time.Durati
 	if err != nil {
 		return nil, "", fmt.Errorf("%s: %w", tlsProxyAuthCookie, err)
 	}
+
+	parser := new(jwt.Parser)
+	token, _, err := parser.ParseUnverified(cookie.Value, jwt.MapClaims{})
+	if err != nil {
+		return nil, "", err
+	}
+	kid, ok := token.Header["kid"].(string)
+	if !ok {
+		return nil, "", errors.New("token missing kid")
+	}
+	issuer, found := cm.tm.IssuerForKey(kid)
+	if !found {
+		return nil, "", errors.New("unknown key")
+	}
+
+	var expectedIssuer string
+	if issuer == "" {
+		// Local
+		expectedIssuer = cm.issuer
+	} else {
+		// Trusted
+		if !slices.Contains(cm.trustedIssuers, issuer) {
+			return nil, "", fmt.Errorf("issuer %q is not trusted", issuer)
+		}
+		expectedIssuer = issuer
+	}
+
 	tok, err := cm.tm.ValidateToken(cookie.Value,
-		jwt.WithIssuer(cm.issuer),
-		jwt.WithAudience(cm.issuer),
+		jwt.WithIssuer(expectedIssuer),
+		jwt.WithAudience(expectedIssuer),
 		jwt.WithExpirationRequired(),
 		jwt.WithLeeway(leeway),
 	)
 	if err != nil {
 		return nil, "", err
 	}
-	if c, ok := tok.Claims.(jwt.MapClaims); !ok || c["proxyauth"] != cm.issuer || c["provider"] != cm.provider {
-		return nil, "", errors.New("invalid proxyauth or provider")
+	c, ok := tok.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, "", errors.New("invalid claims")
 	}
+
+	if issuer == "" {
+		if c["proxyauth"] != cm.issuer || c["provider"] != cm.provider {
+			return nil, "", errors.New("invalid proxyauth or provider")
+		}
+	} else {
+		if c["proxyauth"] != issuer {
+			return nil, "", fmt.Errorf("proxyauth %q does not match issuer %q", c["proxyauth"], issuer)
+		}
+	}
+
 	if sub, err := tok.Claims.GetSubject(); err != nil || sub == "" {
 		return nil, "", errors.New("invalid subject")
 	}

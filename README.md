@@ -20,6 +20,7 @@
     - [LocalOIDCServer Object](#localoidcserver-object)
       - [LocalOIDCClient Object](#localoidcclient-object)
       - [LocalOIDCRewriteRule Object](#localoidcrewriterule-object)
+    - [TrustedIssuer Object](#trustedissuer-object)
   - [Identity Provider Configuration](#identity-provider-configuration)
   - [Group and Member Objects](#group-and-member-objects)
     - [`Group` Object](#group-object)
@@ -337,6 +338,28 @@ In this example:
 2.  The client `my-app` is allowed to authenticate, and only users with an email address ending in `@example.com` can use it.
 3.  A `preferred_username` claim will be added to the ID token, containing the local part of the user's email address.
 
+#### TrustedIssuer Object
+
+The `TrustedIssuer` object defines an external identity provider whose tokens are accepted by `tlsproxy`. This is useful for distributed authentication where multiple proxies trust each other's user identity tokens.
+
+*   `issuer`: (Required) String. The expected "iss" claim value (e.g., "https://auth.example.com/").
+*   `jwksUri`: (Required) String. The URL to fetch the JSON Web Key Set (JWKS).
+
+**Example:**
+
+```yaml
+sso:
+  provider: "my-oidc-provider"
+
+oidc:
+  - name: "my-oidc-provider"
+    discoveryUrl: "https://accounts.google.com/.well-known/openid-configuration"
+    ...
+    trustedIssuers:
+      - issuer: "https://other-proxy.example.com/"
+        jwksUri: "https://other-proxy.example.com/.sso/jwks"
+```
+
 
 ### Identity Provider Configuration
 
@@ -352,6 +375,7 @@ In this example:
     *   `clientId`: String. Client ID.
     *   `clientSecret`: String. Client Secret.
     *   `domain`: String. Domain for user identities.
+    *   `trustedIssuers`: List of `TrustedIssuer` objects. Defines external issuers whose tokens are accepted when using this provider.
 
     **Example (Google OpenID Connect):**
 
@@ -372,6 +396,7 @@ In this example:
     *   `certs`: String. PEM-encoded certificates.
     *   `acsUrl`: String. ACS URL.
     *   `domain`: String. Domain for user identities.
+    *   `trustedIssuers`: List of `TrustedIssuer` objects. Defines external issuers whose tokens are accepted when using this provider.
 
     **Example (Google Workspace SAML):**
 
@@ -393,6 +418,7 @@ In this example:
     *   `refreshInterval`: Duration. Re-authentication interval.
     *   `endpoint`: String. URL for passkey authentication.
     *   `domain`: String. Domain for user identities.
+    *   `trustedIssuers`: List of `TrustedIssuer` objects. Defines external issuers whose tokens are accepted when using this provider.
 
     **Example (Passkey with Google OpenID Connect for initial authentication):**
 
