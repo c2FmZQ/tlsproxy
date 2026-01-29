@@ -313,28 +313,6 @@ The paths can be prefixed using the `pathPrefix` field.
 *   `regex`: (Required) String. A regular expression to match against the input claim's value.
 *   `value`: (Required) String. The new value for the output claim. Can use capture groups from the regex.
 
-#### TrustedIssuer Object
-
-The `TrustedIssuer` object defines an external identity provider whose tokens are accepted by `tlsproxy`. This is useful for distributed authentication where multiple proxies trust each other's user identity tokens.
-
-*   `issuer`: (Required) String. The expected "iss" claim value (e.g., "https://auth.example.com/").
-*   `jwksUri`: (Required) String. The URL to fetch the JSON Web Key Set (JWKS).
-
-**Example:**
-
-```yaml
-sso:
-  provider: "my-oidc-provider"
-
-oidc:
-  - name: "my-oidc-provider"
-    discoveryUrl: "https://accounts.google.com/.well-known/openid-configuration"
-    ...
-    trustedIssuers:
-      - issuer: "https://other-proxy.example.com/"
-        jwksUri: "https://other-proxy.example.com/.sso/jwks"
-```
-
 **Example:**
 
 ```yaml
@@ -359,6 +337,28 @@ In this example:
 1.  The local OIDC server will issue tokens with a lifetime of 1 hour.
 2.  The client `my-app` is allowed to authenticate, and only users with an email address ending in `@example.com` can use it.
 3.  A `preferred_username` claim will be added to the ID token, containing the local part of the user's email address.
+
+#### TrustedIssuer Object
+
+The `TrustedIssuer` object defines an external identity provider whose tokens are accepted by `tlsproxy`. This is useful for distributed authentication where multiple proxies trust each other's user identity tokens.
+
+*   `issuer`: (Required) String. The expected "iss" claim value (e.g., "https://auth.example.com/").
+*   `jwksUri`: (Required) String. The URL to fetch the JSON Web Key Set (JWKS).
+
+**Example:**
+
+```yaml
+sso:
+  provider: "my-oidc-provider"
+
+oidc:
+  - name: "my-oidc-provider"
+    discoveryUrl: "https://accounts.google.com/.well-known/openid-configuration"
+    ...
+    trustedIssuers:
+      - issuer: "https://other-proxy.example.com/"
+        jwksUri: "https://other-proxy.example.com/.sso/jwks"
+```
 
 
 ### Identity Provider Configuration
