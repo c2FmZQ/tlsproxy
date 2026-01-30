@@ -164,6 +164,7 @@ func PublicKeyToJWK(pub crypto.PublicKey) *JWK {
 }
 
 // New returns a new JWKS from the provided public keys.
+// Note: RSA keys default to alg:"RS256", which may not be correct, and might need to be updated.
 func New(keys []crypto.PublicKey) *JWKS {
 	var out JWKS
 	for _, pub := range keys {

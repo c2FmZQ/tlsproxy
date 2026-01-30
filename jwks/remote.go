@@ -92,6 +92,11 @@ func NewRemote(client *retryablehttp.Client, logger Logger) *Remote {
 	}
 }
 
+// Stop removes all issuers and stops refreshing.
+func (r *Remote) Stop() {
+	r.SetIssuers(nil)
+}
+
 // SetIssuers updates the list of trusted issuers.
 func (r *Remote) SetIssuers(issuers []Issuer) {
 	r.mu.Lock()
@@ -112,9 +117,6 @@ func (r *Remote) SetIssuers(issuers []Issuer) {
 		}
 		// update mutable fields
 		ti.jwksURI = cfg.JWKSURI
-		if ti.nextUpdate.IsZero() {
-			ti.nextUpdate = time.Now() // Trigger immediate update
-		}
 	}
 
 	for k, ti := range r.trustedIssuers {
@@ -154,6 +156,14 @@ func (r *Remote) IssuerForKey(kid string) (string, bool) {
 
 func (r *Remote) backgroundJWKSRefresh(ctx context.Context, ti *trustedIssuer) {
 	for {
+		if err := r.fetchJWKS(ctx, ti); err != nil {
+			r.logger.Errorf("ERR fetchJWKS(%s): %v", ti.issuer, err)
+			// Retry sooner on error
+			r.mu.Lock()
+			ti.nextUpdate = time.Now().Add(5 * time.Minute)
+			r.mu.Unlock()
+		}
+
 		r.mu.Lock()
 		nextUpdate := ti.nextUpdate
 		r.mu.Unlock()
@@ -162,14 +172,6 @@ func (r *Remote) backgroundJWKSRefresh(ctx context.Context, ti *trustedIssuer) {
 		case <-ctx.Done():
 			return
 		case <-time.After(time.Until(nextUpdate)):
-		}
-
-		if err := r.fetchJWKS(ctx, ti); err != nil {
-			r.logger.Errorf("ERR fetchJWKS(%s): %v", ti.issuer, err)
-			// Retry sooner on error
-			r.mu.Lock()
-			ti.nextUpdate = time.Now().Add(5 * time.Minute)
-			r.mu.Unlock()
 		}
 	}
 }
