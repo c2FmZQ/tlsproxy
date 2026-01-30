@@ -303,7 +303,7 @@ func extractTrustedIssuers(issuers []*TrustedIssuer, all *[]jwks.Issuer) []strin
 	var out []string
 	for _, ti := range issuers {
 		out = append(out, ti.Issuer)
-		*all = append(*all, jwks.Issuer{ti.Issuer, ti.JWKSURI})
+		*all = append(*all, jwks.Issuer{Issuer: ti.Issuer, JWKSURI: ti.JWKSURI})
 	}
 	return out
 }
