@@ -123,6 +123,10 @@ func (r *Remote) SetIssuers(issuers []Issuer) {
 
 	for k, ti := range r.trustedIssuers {
 		if !inUse[k] {
+			if ti.publicKeys == nil {
+				// avoid race condition with Ready()
+				close(ti.ready)
+			}
 			ti.cancel()
 			delete(r.trustedIssuers, k)
 		}
@@ -142,6 +146,7 @@ func (r *Remote) Ready(ctx context.Context) {
 	for _, ready := range chans {
 		select {
 		case <-ctx.Done():
+			return
 		case <-ready:
 		}
 	}
