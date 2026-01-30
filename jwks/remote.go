@@ -74,6 +74,7 @@ type trustedIssuer struct {
 	publicKeys map[string]crypto.PublicKey
 	nextUpdate time.Time
 	cancel     func()
+	ready      chan struct{}
 }
 
 // NewRemote returns a new Remote manager.
@@ -111,6 +112,7 @@ func (r *Remote) SetIssuers(issuers []Issuer) {
 			ti = &trustedIssuer{
 				issuer: cfg.Issuer,
 				cancel: cancel,
+				ready:  make(chan struct{}),
 			}
 			r.trustedIssuers[cfg.Issuer] = ti
 			go r.backgroundJWKSRefresh(ctx, ti)
@@ -123,6 +125,24 @@ func (r *Remote) SetIssuers(issuers []Issuer) {
 		if !inUse[k] {
 			ti.cancel()
 			delete(r.trustedIssuers, k)
+		}
+	}
+}
+
+// Ready returns when all issuer keys have been fetched at least once, or ctx is
+// canceled.
+func (r *Remote) Ready(ctx context.Context) {
+	r.mu.Lock()
+	chans := make([]chan struct{}, 0, len(r.trustedIssuers))
+	for _, ti := range r.trustedIssuers {
+		chans = append(chans, ti.ready)
+	}
+	r.mu.Unlock()
+
+	for _, ready := range chans {
+		select {
+		case <-ctx.Done():
+		case <-ready:
 		}
 	}
 }
@@ -230,6 +250,9 @@ func (r *Remote) fetchJWKS(ctx context.Context, ti *trustedIssuer) error {
 	}
 
 	r.mu.Lock()
+	if ti.publicKeys == nil {
+		close(ti.ready)
+	}
 	ti.publicKeys = publicKeys
 	ti.nextUpdate = time.Now().Add(ttl)
 	r.mu.Unlock()
