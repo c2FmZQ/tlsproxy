@@ -126,6 +126,7 @@ func (r *Remote) SetIssuers(issuers []Issuer) {
 			if ti.publicKeys == nil {
 				// avoid race condition with Ready()
 				close(ti.ready)
+				ti.publicKeys = make(map[string]crypto.PublicKey)
 			}
 			ti.cancel()
 			delete(r.trustedIssuers, k)
