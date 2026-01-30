@@ -11,25 +11,13 @@ import (
 	"testing"
 	"time"
 
+	jwt "github.com/golang-jwt/jwt/v5"
+
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/storage/crypto"
+	"github.com/c2FmZQ/tlsproxy/jwks"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
-	jwt "github.com/golang-jwt/jwt/v5"
 )
-
-type jwks struct {
-	Keys []jwk `json:"keys"`
-}
-
-type jwk struct {
-	Type  string `json:"kty"`
-	Use   string `json:"use"`
-	ID    string `json:"kid"`
-	Alg   string `json:"alg"`
-	Curve string `json:"crv,omitempty"`
-	X     string `json:"x,omitempty"`
-	Y     string `json:"y,omitempty"`
-}
 
 func TestTrustedIssuers(t *testing.T) {
 	// 1. Setup Mock JWKS Server
@@ -38,8 +26,8 @@ func TestTrustedIssuers(t *testing.T) {
 		t.Fatalf("ecdsa.GenerateKey: %v", err)
 	}
 
-	mockJWKS := jwks{
-		Keys: []jwk{
+	mockJWKS := jwks.JWKS{
+		Keys: []jwks.JWK{
 			{
 				Type:  "EC",
 				Use:   "sig",
@@ -71,7 +59,7 @@ func TestTrustedIssuers(t *testing.T) {
 	}
 
 	trustedIssuer := "https://trusted.example.com"
-	tm.SetTrustedIssuers([]struct{ Issuer, JWKSURI string }{
+	tm.SetTrustedIssuers([]jwks.Issuer{
 		{
 			Issuer:  trustedIssuer,
 			JWKSURI: server.URL,

@@ -28,7 +28,7 @@ echo >> CHANGELOG.md-new
 sed -n '3,$p' < CHANGELOG.md >> CHANGELOG.md-new
 mv CHANGELOG.md-new CHANGELOG.md
 
-for dir in $(find examples/ go.mod); do
+for dir in $(find examples/ jwks/ go.mod); do
   exdep=$((cd "$(dirname "${dir}")" && go get -u ./... 2>&1 && go mod tidy) | grep upgrade | sed -re 's/go: //g')
   if [[ -n "${exdeps}" ]]; then
     echo "* Update go dependencies in ${dir}:"
