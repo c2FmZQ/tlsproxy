@@ -8,7 +8,9 @@
 
 ### :wrench: Misc
 
+* Refactored JWKS into a new module.
 * Update go dependencies:
+  * added github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260130170702-223855195ae7
   * upgraded github.com/golang-jwt/jwt/v5 v5.3.0 => v5.3.1
   * upgraded github.com/pires/go-proxyproto v0.8.1 => v0.9.2
 
