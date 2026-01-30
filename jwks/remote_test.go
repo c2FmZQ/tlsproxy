@@ -32,7 +32,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 )
 
 func TestRemote(t *testing.T) {
@@ -57,14 +56,7 @@ func TestRemote(t *testing.T) {
 		Issuer:  "https://example.com",
 		JWKSURI: ts.URL,
 	}})
-
-	// Wait for the key to be fetched
-	for i := 0; i < 10; i++ {
-		if _, err := r.GetKey(ks.Keys[0].ID); err == nil {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	r.Ready(t.Context())
 
 	pk, err := r.GetKey(ks.Keys[0].ID)
 	if err != nil {
