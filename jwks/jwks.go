@@ -62,10 +62,17 @@ type JWK struct {
 func (k JWK) PublicKey() (crypto.PublicKey, error) {
 	switch k.Type {
 	case "EC":
-		if k.Curve != "" && k.Curve != "P-256" {
+		var curve elliptic.Curve
+		switch k.Curve {
+		case "P-256":
+			curve = elliptic.P256()
+		case "P-384":
+			curve = elliptic.P384()
+		case "P-521":
+			curve = elliptic.P521()
+		default:
 			return nil, fmt.Errorf("unsupported EC curve %q", k.Curve)
 		}
-		curve := elliptic.P256() // Only P-256 is supported for now
 		x, err := base64.RawURLEncoding.DecodeString(k.X)
 		if err != nil {
 			return nil, err
@@ -101,13 +108,32 @@ func PublicKeyToJWK(pub crypto.PublicKey) *JWK {
 	var jwk JWK
 	switch pub := pub.(type) {
 	case *ecdsa.PublicKey:
+		var alg, crv string
+		switch pub.Curve {
+		case elliptic.P256():
+			alg = "ES256"
+			crv = "P-256"
+		case elliptic.P384():
+			alg = "ES384"
+			crv = "P-384"
+		case elliptic.P521():
+			alg = "ES512"
+			crv = "P-521"
+		default:
+			return nil
+		}
+		size := (pub.Curve.Params().BitSize + 7) / 8
+		xBytes := make([]byte, size)
+		yBytes := make([]byte, size)
+		pub.X.FillBytes(xBytes)
+		pub.Y.FillBytes(yBytes)
 		jwk = JWK{
 			Type:  "EC",
 			Use:   "sig",
-			Alg:   "ES256",
-			Curve: "P-256",
-			X:     base64.RawURLEncoding.EncodeToString(pub.X.Bytes()),
-			Y:     base64.RawURLEncoding.EncodeToString(pub.Y.Bytes()),
+			Alg:   alg,
+			Curve: crv,
+			X:     base64.RawURLEncoding.EncodeToString(xBytes),
+			Y:     base64.RawURLEncoding.EncodeToString(yBytes),
 		}
 	case ed25519.PublicKey:
 		jwk = JWK{

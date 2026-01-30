@@ -39,6 +39,14 @@ func TestJWKS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ecdsa.GenerateKey: %v", err)
 	}
+	ecKey384, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey(P384): %v", err)
+	}
+	ecKey521, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey(P521): %v", err)
+	}
 	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("rsa.GenerateKey: %v", err)
@@ -50,20 +58,28 @@ func TestJWKS(t *testing.T) {
 
 	ks := New([]crypto.PublicKey{
 		&ecKey.PublicKey,
+		&ecKey384.PublicKey,
+		&ecKey521.PublicKey,
 		&rsaKey.PublicKey,
 		edPub,
 	})
-	if len(ks.Keys) != 3 {
-		t.Errorf("len(ks.Keys) = %d, want 3", len(ks.Keys))
+	if len(ks.Keys) != 5 {
+		t.Errorf("len(ks.Keys) = %d, want 5", len(ks.Keys))
 	}
-	if ks.Keys[0].Type != "EC" {
-		t.Errorf("ks.Keys[0].Type = %q, want EC", ks.Keys[0].Type)
+	if ks.Keys[0].Type != "EC" || ks.Keys[0].Curve != "P-256" {
+		t.Errorf("ks.Keys[0] = %v, want EC/P-256", ks.Keys[0])
 	}
-	if ks.Keys[1].Type != "RSA" {
-		t.Errorf("ks.Keys[1].Type = %q, want RSA", ks.Keys[1].Type)
+	if ks.Keys[1].Type != "EC" || ks.Keys[1].Curve != "P-384" {
+		t.Errorf("ks.Keys[1] = %v, want EC/P-384", ks.Keys[1])
 	}
-	if ks.Keys[2].Type != "OKP" {
-		t.Errorf("ks.Keys[2].Type = %q, want OKP", ks.Keys[2].Type)
+	if ks.Keys[2].Type != "EC" || ks.Keys[2].Curve != "P-521" {
+		t.Errorf("ks.Keys[2] = %v, want EC/P-521", ks.Keys[2])
+	}
+	if ks.Keys[3].Type != "RSA" {
+		t.Errorf("ks.Keys[3].Type = %q, want RSA", ks.Keys[3].Type)
+	}
+	if ks.Keys[4].Type != "OKP" {
+		t.Errorf("ks.Keys[4].Type = %q, want OKP", ks.Keys[4].Type)
 	}
 
 	b, err := json.Marshal(ks)
@@ -74,7 +90,7 @@ func TestJWKS(t *testing.T) {
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
-	if len(got.Keys) != 3 {
-		t.Errorf("len(got.Keys) = %d, want 3", len(got.Keys))
+	if len(got.Keys) != 5 {
+		t.Errorf("len(got.Keys) = %d, want 5", len(got.Keys))
 	}
 }
