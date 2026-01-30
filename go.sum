@@ -12,6 +12,8 @@ github.com/c2FmZQ/quic-api v0.59.0 h1:bLq5g0hX60Uy/SuDhplq07jTun/9GMe28oXLemW54x
 github.com/c2FmZQ/quic-api v0.59.0/go.mod h1:eo7AOXIR//Pf2pfQ+rP18fQTjwyIPPp3cBopMNr/NTU=
 github.com/c2FmZQ/storage v0.3.2 h1:/Qy/uoZTEw1XxrkHK4MAiQliwpZ02Y5w/whym8Q4+qQ=
 github.com/c2FmZQ/storage v0.3.2/go.mod h1:kgLL2yKcpWW62FmdoWwETSAWKpF95dBfhD6N7zfE1PE=
+github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260130170702-223855195ae7 h1:X9sQsvaKIg79vUJ6ER/isN5fDkuEoWsBnEHYm4Z/WF4=
+github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260130170702-223855195ae7/go.mod h1:OmTz0Nc+C8Ent4TvkXv+0zQGdvMFHU/6ZTon629wjOk=
 github.com/c2FmZQ/tpm v0.4.3 h1:b5jjlqVyf5rdU0z0uohi5QylE6hb6vxryWGr3b3qCos=
 github.com/c2FmZQ/tpm v0.4.3/go.mod h1:WOLrMYIX1ueasQqAdWcBjCwAJ+blrHEUxUcT1K0w360=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=

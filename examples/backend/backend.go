@@ -26,7 +26,6 @@ package main
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -39,12 +38,12 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/blend/go-sdk/envoyutil"
 	"github.com/c2FmZQ/tlsproxy/certmanager"
+	"github.com/c2FmZQ/tlsproxy/jwks"
 	jwt "github.com/golang-jwt/jwt/v5"
-	"github.com/lestrrat-go/jwx/jwk"
+	"github.com/hashicorp/go-retryablehttp"
 	"github.com/quic-go/quic-go/http3"
 )
 
@@ -131,50 +130,46 @@ func main() {
 
 type service struct {
 	ctx     context.Context
-	ar      *jwk.AutoRefresh
+	remote  *jwks.Remote
 	jwksURL string
 }
 
 func newService(ctx context.Context, jwksURL string, insecureSkipVerify bool) *service {
-	ar := jwk.NewAutoRefresh(ctx)
-	opts := []jwk.AutoRefreshOption{
-		jwk.WithRefreshInterval(60 * time.Minute),
-	}
-	if insecureSkipVerify {
-		opts = append(opts, jwk.WithHTTPClient(&http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true,
-				},
+	client := retryablehttp.NewClient()
+	client.HTTPClient = &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: insecureSkipVerify,
 			},
-		}))
+		},
 	}
-	ar.Configure(jwksURL, opts...)
+	client.Logger = nil
+
+	remote := jwks.NewRemote(client, nil)
+	remote.SetIssuers([]jwks.Issuer{
+		{
+			Issuer:  "https://login.example.com", // This needs to match the issuer in the token
+			JWKSURI: jwksURL,
+		},
+	})
+	go func() {
+		<-ctx.Done()
+		remote.Stop()
+	}()
+
 	return &service{
 		ctx:     ctx,
-		ar:      ar,
+		remote:  remote,
 		jwksURL: jwksURL,
 	}
 }
 
 func (s *service) getKey(token *jwt.Token) (interface{}, error) {
-	set, err := s.ar.Fetch(s.ctx, s.jwksURL)
-	if err != nil {
-		return nil, err
-	}
 	kid, ok := token.Header["kid"].(string)
 	if !ok {
 		return nil, fmt.Errorf("kid is %T", token.Header["kid"])
 	}
-	if key, ok := set.LookupKeyID(kid); ok {
-		var pubKey ecdsa.PublicKey
-		if err := key.Raw(&pubKey); err != nil {
-			return nil, err
-		}
-		return &pubKey, nil
-	}
-
-	return nil, fmt.Errorf("%s not found", kid)
+	return s.remote.GetKey(kid)
 }
 
 func (s *service) ServeHTTP(w http.ResponseWriter, req *http.Request) {

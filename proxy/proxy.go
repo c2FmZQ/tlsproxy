@@ -66,6 +66,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
+	"github.com/c2FmZQ/tlsproxy/jwks"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
@@ -298,11 +299,11 @@ func NewTestProxy(cfg *Config) (*Proxy, error) {
 	return p, nil
 }
 
-func extractTrustedIssuers(issuers []*TrustedIssuer, all *[]struct{ Issuer, JWKSURI string }) []string {
+func extractTrustedIssuers(issuers []*TrustedIssuer, all *[]jwks.Issuer) []string {
 	var out []string
 	for _, ti := range issuers {
 		out = append(out, ti.Issuer)
-		*all = append(*all, struct{ Issuer, JWKSURI string }{ti.Issuer, ti.JWKSURI})
+		*all = append(*all, jwks.Issuer{Issuer: ti.Issuer, JWKSURI: ti.JWKSURI})
 	}
 	return out
 }
@@ -337,7 +338,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	}
 	er := eventRecorder{record: p.recordEvent}
 	identityProviders := make(map[string]idp)
-	var allTrustedIssuers []struct{ Issuer, JWKSURI string }
+	var allTrustedIssuers []jwks.Issuer
 
 	for _, pp := range cfg.OIDCProviders {
 		_, host, _, _ := hostAndPath(pp.RedirectURL)

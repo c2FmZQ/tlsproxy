@@ -38,22 +38,19 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/asn1"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"math/big"
 	"net/http"
 	"slices"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/c2FmZQ/storage"
+	"github.com/c2FmZQ/tlsproxy/jwks"
 	"github.com/c2FmZQ/tpm"
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/hashicorp/go-retryablehttp"
@@ -99,17 +96,9 @@ type TokenManager struct {
 	logger logger
 	client *retryablehttp.Client
 
-	mu             sync.Mutex
-	keys           tokenKeys
-	trustedIssuers map[string]*trustedIssuer
-}
-
-type trustedIssuer struct {
-	issuer     string
-	jwksURI    string
-	publicKeys map[string]crypto.PublicKey
-	nextUpdate time.Time
-	cancel     func()
+	mu     sync.Mutex
+	keys   tokenKeys
+	remote *jwks.Remote
 }
 
 // New returns a new TokenManager.
@@ -118,13 +107,13 @@ func New(store *storage.Storage, tpm *tpm.TPM, logger logger) (*TokenManager, er
 		logger = defaultLogger{}
 	}
 	tm := TokenManager{
-		store:          store,
-		tpm:            tpm,
-		logger:         logger,
-		client:         retryablehttp.NewClient(),
-		trustedIssuers: make(map[string]*trustedIssuer),
+		store:  store,
+		tpm:    tpm,
+		logger: logger,
+		client: retryablehttp.NewClient(),
 	}
 	tm.client.Logger = nil
+	tm.remote = jwks.NewRemote(tm.client, logger)
 	store.CreateEmptyFile(tokenKeyFile, &tm.keys)
 	if err := tm.rotateKeys(); err != nil {
 		return nil, err
@@ -146,118 +135,8 @@ func (tm *TokenManager) KeyRotationLoop(ctx context.Context) {
 	}
 }
 
-func (tm *TokenManager) SetTrustedIssuers(issuers []struct{ Issuer, JWKSURI string }) {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
-
-	inUse := make(map[string]bool)
-	for _, cfg := range issuers {
-		inUse[cfg.Issuer] = true
-		ti, exists := tm.trustedIssuers[cfg.Issuer]
-		if !exists {
-			ctx, cancel := context.WithCancel(context.Background())
-			ti = &trustedIssuer{
-				issuer: cfg.Issuer,
-				cancel: cancel,
-			}
-			tm.trustedIssuers[cfg.Issuer] = ti
-			go tm.backgroundJWKSRefresh(ctx, ti)
-		}
-		// update mutable fields
-		ti.jwksURI = cfg.JWKSURI
-		if ti.nextUpdate.IsZero() {
-			ti.nextUpdate = time.Now() // Trigger immediate update
-		}
-	}
-
-	for k, ti := range tm.trustedIssuers {
-		if !inUse[k] {
-			ti.cancel()
-			delete(tm.trustedIssuers, k)
-		}
-	}
-}
-
-func (tm *TokenManager) backgroundJWKSRefresh(ctx context.Context, ti *trustedIssuer) {
-	for {
-		tm.mu.Lock()
-		nextUpdate := ti.nextUpdate
-		tm.mu.Unlock()
-
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(time.Until(nextUpdate)):
-		}
-
-		if err := tm.fetchJWKS(ctx, ti); err != nil {
-			tm.logger.Errorf("ERR fetchJWKS(%s): %v", ti.issuer, err)
-			// Retry sooner on error
-			tm.mu.Lock()
-			ti.nextUpdate = time.Now().Add(5 * time.Minute)
-			tm.mu.Unlock()
-		}
-	}
-}
-
-func (tm *TokenManager) fetchJWKS(ctx context.Context, ti *trustedIssuer) error {
-	tm.mu.Lock()
-	uri := ti.jwksURI
-	tm.mu.Unlock()
-
-	req, err := retryablehttp.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := tm.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	var keys jwks
-	if err := json.NewDecoder(&io.LimitedReader{R: resp.Body, N: 1048576}).Decode(&keys); err != nil {
-		return err
-	}
-	publicKeys := make(map[string]crypto.PublicKey)
-	for _, k := range keys.Keys {
-		pk, err := k.PublicKey()
-		if err != nil {
-			tm.logger.Errorf("ERR JWK %s: %v", k.ID, err)
-			continue
-		}
-		publicKeys[k.ID] = pk
-	}
-
-	// Parse Cache-Control
-	ttl := time.Hour
-	if cc := resp.Header.Get("cache-control"); cc != "" {
-		for _, part := range strings.Split(cc, ",") {
-			part = strings.TrimSpace(part)
-			if strings.HasPrefix(part, "max-age=") {
-				if v, err := strconv.Atoi(part[8:]); err == nil && v > 0 {
-					ttl = time.Duration(v) * time.Second
-				}
-			}
-		}
-	}
-	if age := resp.Header.Get("age"); age != "" {
-		if v, err := strconv.Atoi(age); err == nil && v > 0 {
-			ttl -= time.Duration(v) * time.Second
-		}
-	}
-	if ttl < 5*time.Minute {
-		ttl = 5 * time.Minute
-	}
-
-	tm.mu.Lock()
-	ti.publicKeys = publicKeys
-	ti.nextUpdate = time.Now().Add(ttl)
-	tm.mu.Unlock()
-	return nil
+func (tm *TokenManager) SetTrustedIssuers(issuers []jwks.Issuer) {
+	tm.remote.SetIssuers(slices.Clone(issuers))
 }
 
 func (tm *TokenManager) HMAC(b []byte) []byte {
@@ -574,10 +453,8 @@ func (tm *TokenManager) getKey(tok *jwt.Token) (interface{}, error) {
 			return tk.privKey.Public(), nil
 		}
 	}
-	for _, ti := range tm.trustedIssuers {
-		if pk, ok := ti.publicKeys[kid]; ok {
-			return pk, nil
-		}
+	if pk, err := tm.remote.GetKey(kid); err == nil {
+		return pk, nil
 	}
 	return nil, errors.New("not found")
 }
@@ -591,12 +468,7 @@ func (tm *TokenManager) IssuerForKey(kid string) (string, bool) {
 			return "", true
 		}
 	}
-	for _, ti := range tm.trustedIssuers {
-		if _, ok := ti.publicKeys[kid]; ok {
-			return ti.issuer, true
-		}
-	}
-	return "", false
+	return tm.remote.IssuerForKey(kid)
 }
 
 // ValidateToken validates a JSON Web Token (JWT).
@@ -605,95 +477,14 @@ func (tm *TokenManager) ValidateToken(t string, opts ...jwt.ParserOption) (*jwt.
 	return jwt.ParseWithClaims(t, jwt.MapClaims{}, tm.getKey, opts...)
 }
 
-type jwks struct {
-	Keys []jwk `json:"keys"`
-}
-
-type jwk struct {
-	Type string `json:"kty"`
-	Use  string `json:"use"`
-	ID   string `json:"kid"`
-	Alg  string `json:"alg"`
-	// EC
-	Curve string `json:"crv,omitempty"`
-	X     string `json:"x,omitempty"`
-	Y     string `json:"y,omitempty"`
-	// RSA
-	N string `json:"n,omitempty"`
-	E string `json:"e,omitempty"`
-}
-
-func (k jwk) PublicKey() (crypto.PublicKey, error) {
-	switch k.Type {
-	case "EC":
-		if k.Curve != "" && k.Curve != "P-256" {
-			return nil, fmt.Errorf("unsupported EC curve %q", k.Curve)
-		}
-		curve := elliptic.P256() // Only P-256 is supported for now
-		x, err := base64.RawURLEncoding.DecodeString(k.X)
-		if err != nil {
-			return nil, err
-		}
-		y, err := base64.RawURLEncoding.DecodeString(k.Y)
-		if err != nil {
-			return nil, err
-		}
-		return &ecdsa.PublicKey{Curve: curve, X: new(big.Int).SetBytes(x), Y: new(big.Int).SetBytes(y)}, nil
-	case "RSA":
-		n, err := base64.RawURLEncoding.DecodeString(k.N)
-		if err != nil {
-			return nil, err
-		}
-		eBytes, err := base64.RawURLEncoding.DecodeString(k.E)
-		if err != nil {
-			return nil, err
-		}
-		return &rsa.PublicKey{N: new(big.Int).SetBytes(n), E: int(new(big.Int).SetBytes(eBytes).Int64())}, nil
-	case "OKP": // EdDSA
-		x, err := base64.RawURLEncoding.DecodeString(k.X)
-		if err != nil {
-			return nil, err
-		}
-		return ed25519.PublicKey(x), nil
-	default:
-		return nil, fmt.Errorf("unknown key type %q", k.Type)
-	}
-}
-
 // ServeJWKS returns the current public keys as a JSON Web Key Set (JWKS).
 func (tm *TokenManager) ServeJWKS(w http.ResponseWriter, req *http.Request) {
 	tm.mu.Lock()
-	var out jwks
+	var out jwks.JWKS
 	for _, key := range tm.keys.Keys {
-		switch pub := key.privKey.Public().(type) {
-		case *ecdsa.PublicKey:
-			out.Keys = append(out.Keys, jwk{
-				Type:  "EC",
-				Use:   "sig",
-				ID:    key.ID,
-				Alg:   "ES256",
-				Curve: "P-256",
-				X:     base64.RawURLEncoding.EncodeToString(pub.X.Bytes()),
-				Y:     base64.RawURLEncoding.EncodeToString(pub.Y.Bytes()),
-			})
-		case ed25519.PublicKey:
-			out.Keys = append(out.Keys, jwk{
-				Type:  "OKP",
-				Use:   "sig",
-				ID:    key.ID,
-				Alg:   "EdDSA",
-				Curve: "Ed25519",
-				X:     base64.RawURLEncoding.EncodeToString(pub),
-			})
-		case *rsa.PublicKey:
-			out.Keys = append(out.Keys, jwk{
-				Type: "RSA",
-				Use:  "sig",
-				ID:   key.ID,
-				Alg:  "RS256",
-				N:    base64.RawURLEncoding.EncodeToString(pub.N.Bytes()),
-				E:    base64.RawURLEncoding.EncodeToString(big.NewInt(int64(pub.E)).Bytes()),
-			})
+		if k := jwks.PublicKeyToJWK(key.privKey.Public()); k != nil {
+			k.ID = key.ID
+			out.Keys = append(out.Keys, *k)
 		}
 	}
 	tm.mu.Unlock()
