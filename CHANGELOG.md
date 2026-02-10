@@ -1,5 +1,38 @@
 # TLSPROXY Release Notes
 
+## v0.25.0
+
+### :star2: New feature 
+
+* Implement distributed authentication trust via TrustedIssuers. See `trustedIssuers`.
+
+### :wrench: Misc
+
+* Refactored JWKS into a new module.
+* Update go dependencies:
+  * added github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260130170702-223855195ae7
+  * upgraded github.com/golang-jwt/jwt/v5 v5.3.0 => v5.3.1
+  * upgraded github.com/pires/go-proxyproto v0.8.1 => v0.9.2
+
+## v0.24.2
+
+### :wrench: Misc
+
+* Update go: 1.25.6
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/storage v0.3.1 => v0.3.2
+  * upgraded golang.org/x/crypto v0.46.0 => v0.47.0
+  * upgraded golang.org/x/net v0.48.0 => v0.49.0
+
+## v0.24.1
+
+### :wrench: Misc
+
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/http3-go v0.57.0 => v0.59.0
+  * upgraded github.com/c2FmZQ/quic-api v0.57.0 => v0.59.0
+  * upgraded github.com/quic-go/quic-go v0.58.0 => v0.59.0
+
 ## v0.24.0
 
 ### :star: Feature improvement

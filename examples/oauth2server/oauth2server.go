@@ -17,9 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/c2FmZQ/tlsproxy/jwks"
 	jwt "github.com/golang-jwt/jwt/v5"
-	"github.com/lestrrat-go/httprc/v3"
-	"github.com/lestrrat-go/jwx/v3/jwk"
 	"golang.org/x/oauth2"
 )
 
@@ -97,25 +96,31 @@ type Server struct {
 		UserinfoEndpoint      string `json:"userinfo_endpoint"`
 		JWKSURI               string `json:"jwks_uri"`
 	}
-	jwkCache *jwk.Cache
+	remote *jwks.Remote
 }
 
 func (s *Server) Run(ctx context.Context) error {
 	s.ctx = ctx
 	resp, err := http.Get(s.OpenIDConfigURL)
 	if err != nil {
-		return fmt.Errorf("%s: %w", s.OpenIDConfigURL)
+		return fmt.Errorf("%s: %w", s.OpenIDConfigURL, err)
 	}
 	defer resp.Body.Close()
 	if err := json.NewDecoder(resp.Body).Decode(&s.openIDConfig); err != nil {
-		return fmt.Errorf("openid config: %w", s.OpenIDConfigURL)
+		return fmt.Errorf("openid config: %w", err)
 	}
-	if s.jwkCache, err = jwk.NewCache(ctx, httprc.NewClient()); err != nil {
-		return fmt.Errorf("jwk.NewCache: %w", err)
-	}
-	if err := s.jwkCache.Register(ctx, s.openIDConfig.JWKSURI); err != nil {
-		return fmt.Errorf("jwkCache.Register: %w", err)
-	}
+
+	s.remote = jwks.NewRemote(nil, nil)
+	s.remote.SetIssuers([]jwks.Issuer{
+		{
+			Issuer:  "https://login.example.com", // This needs to match the issuer in the token
+			JWKSURI: s.openIDConfig.JWKSURI,
+		},
+	})
+	go func() {
+		<-ctx.Done()
+		s.remote.Stop()
+	}()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, req *http.Request) {
@@ -226,17 +231,5 @@ func (s *Server) getKey(token *jwt.Token) (interface{}, error) {
 	if !ok {
 		return nil, fmt.Errorf("kid is %T", token.Header["kid"])
 	}
-	keySet, err := s.jwkCache.Lookup(s.ctx, s.openIDConfig.JWKSURI)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %v", s.openIDConfig.JWKSURI)
-	}
-	key, ok := keySet.LookupKeyID(kid)
-	if !ok {
-		return nil, fmt.Errorf("%s not found", kid)
-	}
-	var pub any
-	if err := jwk.Export(key, &pub); err != nil {
-		return nil, err
-	}
-	return pub, nil
+	return s.remote.GetKey(kid)
 }

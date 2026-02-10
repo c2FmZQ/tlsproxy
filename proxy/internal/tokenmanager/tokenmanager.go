@@ -38,7 +38,6 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/asn1"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -51,8 +50,10 @@ import (
 	"time"
 
 	"github.com/c2FmZQ/storage"
+	"github.com/c2FmZQ/tlsproxy/jwks"
 	"github.com/c2FmZQ/tpm"
 	jwt "github.com/golang-jwt/jwt/v5"
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 const (
@@ -93,9 +94,11 @@ type TokenManager struct {
 	store  *storage.Storage
 	tpm    *tpm.TPM
 	logger logger
+	client *retryablehttp.Client
 
-	mu   sync.Mutex
-	keys tokenKeys
+	mu     sync.Mutex
+	keys   tokenKeys
+	remote *jwks.Remote
 }
 
 // New returns a new TokenManager.
@@ -107,7 +110,10 @@ func New(store *storage.Storage, tpm *tpm.TPM, logger logger) (*TokenManager, er
 		store:  store,
 		tpm:    tpm,
 		logger: logger,
+		client: retryablehttp.NewClient(),
 	}
+	tm.client.Logger = nil
+	tm.remote = jwks.NewRemote(tm.client, logger)
 	store.CreateEmptyFile(tokenKeyFile, &tm.keys)
 	if err := tm.rotateKeys(); err != nil {
 		return nil, err
@@ -127,6 +133,10 @@ func (tm *TokenManager) KeyRotationLoop(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func (tm *TokenManager) SetTrustedIssuers(issuers []jwks.Issuer) {
+	tm.remote.SetIssuers(slices.Clone(issuers))
 }
 
 func (tm *TokenManager) HMAC(b []byte) []byte {
@@ -431,14 +441,34 @@ func (m *tpmSigningMethod) Sign(signingString string, key interface{}) ([]byte, 
 }
 
 func (tm *TokenManager) getKey(tok *jwt.Token) (interface{}, error) {
+	kid, ok := tok.Header["kid"].(string)
+	if !ok {
+		return nil, errors.New("kid header missing")
+	}
+
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 	for _, tk := range tm.keys.Keys {
-		if tk.ID == tok.Header["kid"] {
+		if tk.ID == kid {
 			return tk.privKey.Public(), nil
 		}
 	}
+	if pk, err := tm.remote.GetKey(kid); err == nil {
+		return pk, nil
+	}
 	return nil, errors.New("not found")
+}
+
+func (tm *TokenManager) IssuerForKey(kid string) (string, bool) {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+
+	for _, tk := range tm.keys.Keys {
+		if tk.ID == kid {
+			return "", true
+		}
+	}
+	return tm.remote.IssuerForKey(kid)
 }
 
 // ValidateToken validates a JSON Web Token (JWT).
@@ -447,58 +477,14 @@ func (tm *TokenManager) ValidateToken(t string, opts ...jwt.ParserOption) (*jwt.
 	return jwt.ParseWithClaims(t, jwt.MapClaims{}, tm.getKey, opts...)
 }
 
-type jwks struct {
-	Keys []jwk `json:"keys"`
-}
-
-type jwk struct {
-	Type string `json:"kty"`
-	Use  string `json:"use"`
-	ID   string `json:"kid"`
-	Alg  string `json:"alg"`
-	// EC
-	Curve string `json:"crv,omitempty"`
-	X     string `json:"x,omitempty"`
-	Y     string `json:"y,omitempty"`
-	// RSA
-	N string `json:"n,omitempty"`
-	E string `json:"e,omitempty"`
-}
-
 // ServeJWKS returns the current public keys as a JSON Web Key Set (JWKS).
 func (tm *TokenManager) ServeJWKS(w http.ResponseWriter, req *http.Request) {
 	tm.mu.Lock()
-	var out jwks
+	var out jwks.JWKS
 	for _, key := range tm.keys.Keys {
-		switch pub := key.privKey.Public().(type) {
-		case *ecdsa.PublicKey:
-			out.Keys = append(out.Keys, jwk{
-				Type:  "EC",
-				Use:   "sig",
-				ID:    key.ID,
-				Alg:   "ES256",
-				Curve: "P-256",
-				X:     base64.RawURLEncoding.EncodeToString(pub.X.Bytes()),
-				Y:     base64.RawURLEncoding.EncodeToString(pub.Y.Bytes()),
-			})
-		case ed25519.PublicKey:
-			out.Keys = append(out.Keys, jwk{
-				Type:  "OKP",
-				Use:   "sig",
-				ID:    key.ID,
-				Alg:   "EdDSA",
-				Curve: "Ed25519",
-				X:     base64.RawURLEncoding.EncodeToString(pub),
-			})
-		case *rsa.PublicKey:
-			out.Keys = append(out.Keys, jwk{
-				Type: "RSA",
-				Use:  "sig",
-				ID:   key.ID,
-				Alg:  "RS256",
-				N:    base64.RawURLEncoding.EncodeToString(pub.N.Bytes()),
-				E:    base64.RawURLEncoding.EncodeToString(big.NewInt(int64(pub.E)).Bytes()),
-			})
+		if k := jwks.PublicKeyToJWK(key.privKey.Public()); k != nil {
+			k.ID = key.ID
+			out.Keys = append(out.Keys, *k)
 		}
 	}
 	tm.mu.Unlock()

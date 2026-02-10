@@ -486,6 +486,10 @@ func (s *SendOnlyStream) SetDeadline(t time.Time) error {
 	return s.SendStream.SetWriteDeadline(t)
 }
 
+func (w *SendOnlyStream) Peek(b []byte) (int, error) {
+	return 0, io.EOF
+}
+
 type ReceiveOnlyStream struct {
 	quicapi.ReceiveStream
 	ctx context.Context
@@ -512,6 +516,9 @@ func (s *ReceiveOnlyStream) SetDeadline(t time.Time) error {
 
 func (s *ReceiveOnlyStream) SetWriteDeadline(time.Time) error {
 	return nil
+}
+
+func (s *ReceiveOnlyStream) SetReliableBoundary() {
 }
 
 var _ net.Conn = (*QUICStream)(nil)

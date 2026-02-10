@@ -8,7 +8,7 @@ require (
 )
 
 require (
-	golang.org/x/sys v0.39.0 // indirect
-	golang.org/x/term v0.38.0 // indirect
+	golang.org/x/sys v0.40.0 // indirect
+	golang.org/x/term v0.39.0 // indirect
 	rsc.io/qr v0.2.0 // indirect
 )
