@@ -1,5 +1,17 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Update go: 1.26.1
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/ech v0.3.7 => v0.4.0
+  * upgraded github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260131152559-a997fb69198a => v0.0.0-20260210222347-c2dddf848fef
+  * upgraded github.com/c2FmZQ/tpm v0.4.3 => v0.5.0
+  * upgraded github.com/google/go-tpm-tools v0.4.5 => v0.4.7
+  * upgraded golang.org/x/net v0.50.0 => v0.51.0
+
 ## v0.25.1
 
 ### :wrench: Misc

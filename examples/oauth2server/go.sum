@@ -1,5 +1,5 @@
-github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260131152559-a997fb69198a h1:RDKyrC2Xl8XRC9X43lVvto/fP7CcuJl25eH5wzF0g3E=
-github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260131152559-a997fb69198a/go.mod h1:OmTz0Nc+C8Ent4TvkXv+0zQGdvMFHU/6ZTon629wjOk=
+github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260210222347-c2dddf848fef h1:1cZ8BSuLb9Lz/KQCJh+SmXIE04t1jirIG/MPH1izdjM=
+github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260210222347-c2dddf848fef/go.mod h1:OmTz0Nc+C8Ent4TvkXv+0zQGdvMFHU/6ZTon629wjOk=
 github.com/fatih/color v1.16.0 h1:zmkK9Ngbjj+K0yRhTVONQh1p/HknKYSlNT+vZCzyokM=
 github.com/fatih/color v1.16.0/go.mod h1:fL2Sau1YI5c0pdGEVCbKQbLXB6edEj1ZgiY4NijnWvE=
 github.com/golang-jwt/jwt/v5 v5.3.1 h1:kYf81DTWFe7t+1VvL7eS+jKFVWaUnK9cB1qbwn63YCY=

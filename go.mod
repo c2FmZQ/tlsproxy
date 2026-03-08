@@ -4,18 +4,18 @@ go 1.26.0
 
 require (
 	github.com/beevik/etree v1.6.0
-	github.com/c2FmZQ/ech v0.3.7
+	github.com/c2FmZQ/ech v0.4.0
 	github.com/c2FmZQ/ech/publish v0.1.2
 	github.com/c2FmZQ/ech/quic v0.3.6
 	github.com/c2FmZQ/http3-go v0.59.0
 	github.com/c2FmZQ/quic-api v0.59.0
 	github.com/c2FmZQ/storage v0.3.2
-	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260131152559-a997fb69198a
-	github.com/c2FmZQ/tpm v0.4.3
+	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260210222347-c2dddf848fef
+	github.com/c2FmZQ/tpm v0.5.0
 	github.com/fxamacker/cbor/v2 v2.9.0
 	github.com/go-test/deep v1.1.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/google/go-tpm-tools v0.4.5
+	github.com/google/go-tpm-tools v0.4.7
 	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/hashicorp/golang-lru/v2 v2.0.7
@@ -23,7 +23,7 @@ require (
 	github.com/quic-go/quic-go v0.59.0
 	github.com/russellhaering/goxmldsig v1.5.0
 	golang.org/x/crypto v0.48.0
-	golang.org/x/net v0.50.0
+	golang.org/x/net v0.51.0
 	golang.org/x/sys v0.41.0
 	golang.org/x/time v0.14.0
 	gopkg.in/yaml.v3 v3.0.1
