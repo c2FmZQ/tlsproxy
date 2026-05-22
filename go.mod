@@ -10,7 +10,7 @@ require (
 	github.com/c2FmZQ/http3-go v0.59.0
 	github.com/c2FmZQ/quic-api v0.59.0
 	github.com/c2FmZQ/storage v0.3.2
-	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260408211437-f3a70db0dbf0
+	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260508202130-0a0e9b94ffe3
 	github.com/c2FmZQ/tpm v0.5.0
 	github.com/fxamacker/cbor/v2 v2.9.2
 	github.com/go-test/deep v1.1.0
@@ -20,11 +20,11 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/pires/go-proxyproto v0.12.0
-	github.com/quic-go/quic-go v0.59.0
+	github.com/quic-go/quic-go v0.59.1
 	github.com/russellhaering/goxmldsig v1.6.0
-	golang.org/x/crypto v0.51.0
-	golang.org/x/net v0.54.0
-	golang.org/x/sys v0.44.0
+	golang.org/x/crypto v0.52.0
+	golang.org/x/net v0.55.0
+	golang.org/x/sys v0.45.0
 	golang.org/x/time v0.15.0
 	gopkg.in/yaml.v3 v3.0.1
 	software.sslmate.com/src/go-pkcs12 v0.7.1

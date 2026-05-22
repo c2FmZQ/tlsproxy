@@ -1,5 +1,16 @@
 # TLSPROXY Release Notes
 
+## v0.25.5
+
+### :wrench: Misc
+
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260408211437-f3a70db0dbf0 => v0.0.0-20260508202130-0a0e9b94ffe3
+  * upgraded github.com/quic-go/quic-go v0.59.0 => v0.59.1
+  * upgraded golang.org/x/crypto v0.51.0 => v0.52.0
+  * upgraded golang.org/x/net v0.54.0 => v0.55.0
+  * upgraded golang.org/x/sys v0.44.0 => v0.45.0
+
 ## v0.25.4
 
 ### :wrench: Misc
