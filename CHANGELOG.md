@@ -4,7 +4,9 @@
 
 ### :wrench: Misc
 
+* Update go: 1.26.4
 * Update go dependencies:
+  * upgraded github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260508202130-0a0e9b94ffe3 => v0.0.0-20260607003827-7389b812f9da
   * upgraded github.com/c2FmZQ/http3-go v0.59.0 => v0.60.0
   * upgraded github.com/c2FmZQ/quic-api v0.59.0 => v0.60.0
   * upgraded github.com/quic-go/quic-go v0.59.1 => v0.60.0

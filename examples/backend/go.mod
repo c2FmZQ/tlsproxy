@@ -4,11 +4,11 @@ go 1.26.0
 
 require (
 	github.com/blend/go-sdk v1.20240719.1
-	github.com/c2FmZQ/tlsproxy v0.25.4
-	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260508202130-0a0e9b94ffe3
+	github.com/c2FmZQ/tlsproxy v0.25.5
+	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260607003827-7389b812f9da
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/hashicorp/go-retryablehttp v0.7.8
-	github.com/quic-go/quic-go v0.59.1
+	github.com/quic-go/quic-go v0.60.0
 )
 
 require (
