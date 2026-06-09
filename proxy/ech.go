@@ -153,7 +153,9 @@ func (p *Proxy) rotateECH(forceCheck bool) (retErr error) {
 	}
 	if changed {
 		if p.quicListener != nil {
-			_ = p.startQUICListener(p.ctx)
+			if err := p.startQUICListener(p.ctx); err != nil {
+				p.logErrorF("ERR startQUICListener: %v", err)
+			}
 		}
 		ctx := p.ctx
 		webhooks := p.cfg.ECH.WebHooks

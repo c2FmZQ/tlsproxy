@@ -1045,8 +1045,9 @@ func (p *Proxy) Start(ctx context.Context) error {
 	p.connClosed = sync.NewCond(&p.mu)
 	var httpServer *http.Server
 	if p.cfg.HTTPAddr != nil && *p.cfg.HTTPAddr != "" {
-		httpServer = &http.Server{ // #nosec G112
-			Handler: p.certManager.HTTPHandler(nil),
+		httpServer = &http.Server{
+			Handler:           p.certManager.HTTPHandler(nil),
+			ReadHeaderTimeout: 30 * time.Second,
 		}
 		httpListener, err := net.Listen("tcp", *p.cfg.HTTPAddr)
 		if err != nil {

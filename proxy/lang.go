@@ -83,7 +83,7 @@ func serveLanguagesJSON(w http.ResponseWriter, req *http.Request) {
 // Translations for various languages. They are mostly AI-generated.
 var languages = map[string]map[string]string{ // #nosec G101
 	// #nosec G101
-	"en": map[string]string{ // #nosec G101
+	"en": map[string]string{
 		// The name of the language itself, in that language.
 		"LANG": "English",
 
@@ -228,7 +228,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"oidc-verify-device-auth":  "Please verify that the device requesting authorisation is in your possession and the User Code matches.",
 		"pki-sn":                   "Serial Number:",
 	},
-	"fr": { // #nosec G101
+	"fr": {
 		"LANG":                                  "Français",
 		"continue-button":                       "Continuer",
 		"login-button":                          "Connexion",
@@ -339,21 +339,21 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-switch-account":                    "Changer de compte",
 		"sso-your-identity":                     "Votre identité",
 	},
-	"fr-BE": { // #nosec G101
+	"fr-BE": {
 		"LANG":                   "Français (Belgique)",
 		"passkey-email":          "Courriel",
 		"passkey-id-not-allowed": "Cette adresse courriel n'est pas autorisée",
 		"pki-title":              "ICP",
 		"pki-email":              "Courriel:",
 	},
-	"fr-CA": { // #nosec G101
+	"fr-CA": {
 		"LANG":                   "Français (Canada)",
 		"passkey-email":          "Courriel",
 		"passkey-id-not-allowed": "Cette adresse courriel n'est pas autorisée",
 		"pki-title":              "ICP",
 		"pki-email":              "Courriel:",
 	},
-	"fr-CH": { // #nosec G101
+	"fr-CH": {
 		"LANG":                   "Français (Suisse)",
 		"passkey-email":          "Courriel",
 		"passkey-id-not-allowed": "Cette adresse courriel n'est pas autorisée",
@@ -361,7 +361,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"pki-email":              "Courriel:",
 	},
 	// #nosec G101
-	"es": map[string]string{ // #nosec G101
+	"es": map[string]string{
 		"LANG":                                  "Español",
 		"continue-button":                       "Continuar",
 		"login-button":                          "Iniciar sesión",
@@ -482,7 +482,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"LANG": "Español (Argentina)",
 	},
 	// #nosec G101
-	"de": map[string]string{ // #nosec G101
+	"de": map[string]string{
 		"LANG":                                  "Deutsch",
 		"continue-button":                       "Weiter",
 		"login-button":                          "Anmelden",
@@ -593,7 +593,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-switch-account":                    "Konto wechseln",
 		"sso-your-identity":                     "Ihre Identität",
 	},
-	"de-AT": { // #nosec G101
+	"de-AT": {
 		"LANG":                                  "Deutsch (Österreich)",
 		"passkey-access-to-this-page":           "Der Zugriff auf diese Seite wird mit Passkeys kontrolliert.",
 		"passkey-auth-required":                 "Authentifizierung erforderlich, um auf dieses Dokument zuzugreifen.",
@@ -606,7 +606,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"ssh-30-min":                            "30 Min.",
 		"sso-auth-required":                     "Authentifizierung erforderlich, um auf dieses Dokument zuzugreifen",
 	},
-	"de-CH": { // #nosec G101
+	"de-CH": {
 		"LANG":                                  "Deutsch (Schweiz)",
 		"passkey-access-to-this-page":           "Der Zugriff auf diese Seite wird mit Passkeys kontrolliert.",
 		"passkey-auth-required":                 "Authentifizierung erforderlich, um auf dieses Dokument zuzugreifen.",
@@ -619,7 +619,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"ssh-30-min":                            "30 Min.",
 		"sso-auth-required":                     "Authentifizierung erforderlich, um auf dieses Dokument zuzugreifen",
 	},
-	"zh-CN": map[string]string{ // #nosec G101
+	"zh-CN": map[string]string{
 		"LANG":                                  "中文",
 		"continue-button":                       "继续",
 		"login-button":                          "登录",
@@ -731,7 +731,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "您的身份",
 	},
 
-	"zh-TW": map[string]string{ // #nosec G101
+	"zh-TW": map[string]string{
 		"LANG":                                  "繁體中文",
 		"continue-button":                       "繼續",
 		"login-button":                          "登入",
@@ -843,7 +843,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "您的身份",
 	},
 	// #nosec G101
-	"ja": map[string]string{ // #nosec G101
+	"ja": map[string]string{
 		"LANG":                                  "日本語",
 		"continue-button":                       "続行",
 		"login-button":                          "ログイン",
@@ -955,7 +955,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "あなたのID",
 	},
 	// #nosec G101
-	"pt": map[string]string{ // #nosec G101
+	"pt": map[string]string{
 		"LANG":                                  "Português",
 		"continue-button":                       "Continuar",
 		"login-button":                          "Entrar",
@@ -1068,7 +1068,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 	},
 
 	// #nosec G101
-	"ru": map[string]string{ // #nosec G101
+	"ru": map[string]string{
 		"LANG":                                  "Русский",
 		"continue-button":                       "Продолжить",
 		"login-button":                          "Войти",
@@ -1180,7 +1180,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "Ваша личность",
 	},
 	// #nosec G101
-	"uk": map[string]string{ // #nosec G101
+	"uk": map[string]string{
 		"LANG":                                  "Українська",
 		"continue-button":                       "Продовжити",
 		"login-button":                          "Увійти",
@@ -1292,7 +1292,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "Ваша особа",
 	},
 	// #nosec G101
-	"ko": map[string]string{ // #nosec G101
+	"ko": map[string]string{
 		"LANG":                                  "한국어",
 		"continue-button":                       "계속",
 		"login-button":                          "로그인",
@@ -1404,7 +1404,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "귀하의 신원",
 	},
 	// #nosec G101
-	"ar": map[string]string{ // #nosec G101
+	"ar": map[string]string{
 		"LANG":                                  "العربية",
 		"DIR":                                   "rtl",
 		"continue-button":                       "متابعة",
@@ -1517,7 +1517,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "هويتك",
 	},
 	// #nosec G101
-	"hi": map[string]string{ // #nosec G101
+	"hi": map[string]string{
 		"LANG":                                  "हिन्दी",
 		"continue-button":                       "जारी रखें",
 		"login-button":                          "लॉगिन करें",
@@ -1741,7 +1741,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "तुमची ओळख",
 	},
 	// #nosec G101
-	"it": map[string]string{ // #nosec G101
+	"it": map[string]string{
 		"LANG":                                  "Italiano",
 		"continue-button":                       "Continua",
 		"login-button":                          "Accedi",
@@ -2076,7 +2076,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-switch-account":                    "Account wisselen",
 		"sso-your-identity":                     "Uw identiteit",
 	},
-	"nl-BE": { // #nosec G101
+	"nl-BE": {
 		"LANG":                       "Vlaams",
 		"continue-button":            "Verdergaan",
 		"login-button":               "Aanmelden",
@@ -2430,7 +2430,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "Vaše identita",
 	},
 	// #nosec G101
-	"he": map[string]string{ // #nosec G101
+	"he": map[string]string{
 		"LANG":                                  "עברית",
 		"DIR":                                   "rtl",
 		"continue-button":                       "המשך",
@@ -2543,7 +2543,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "הזהות שלך",
 	},
 	// #nosec G101
-	"tl": map[string]string{ // #nosec G101
+	"tl": map[string]string{
 		"LANG":                                  "Tagalog",
 		"continue-button":                       "Magpatuloy",
 		"login-button":                          "Mag-log In",
@@ -2655,7 +2655,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "Ang Iyong Identidad",
 	},
 	// #nosec G101
-	"ug": map[string]string{ // #nosec G101
+	"ug": map[string]string{
 		"LANG":                                  "ئۇيغۇرچە",
 		"DIR":                                   "rtl",
 		"continue-button":                       "داۋاملاشتۇرۇش",
@@ -2768,7 +2768,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "سىزنىڭ سالاھىيىتىڭىز",
 	},
 	// #nosec G101
-	"ca": map[string]string{ // #nosec G101
+	"ca": map[string]string{
 		"LANG":                                  "Català",
 		"continue-button":                       "Continua",
 		"login-button":                          "Inicia sessió",
@@ -2880,7 +2880,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "La teva identitat",
 	},
 	// #nosec G101
-	"id": map[string]string{ // #nosec G101
+	"id": map[string]string{
 		"LANG":                                  "Bahasa Indonesia",
 		"continue-button":                       "Lanjutkan",
 		"login-button":                          "Masuk",
@@ -2992,7 +2992,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "Identitas Anda",
 	},
 	// #nosec G101
-	"tr": map[string]string{ // #nosec G101
+	"tr": map[string]string{
 		"LANG":                                  "Türkçe",
 		"continue-button":                       "Devam Et",
 		"login-button":                          "Giriş Yap",
@@ -3104,7 +3104,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "Kimliğiniz",
 	},
 	// #nosec G101
-	"vi": map[string]string{ // #nosec G101
+	"vi": map[string]string{
 		"LANG":                                  "Tiếng Việt",
 		"continue-button":                       "Tiếp tục",
 		"login-button":                          "Đăng nhập",
@@ -3216,7 +3216,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "Danh tính của bạn",
 	},
 	// #nosec G101
-	"pl": map[string]string{ // #nosec G101
+	"pl": map[string]string{
 		"LANG":                                  "Polski",
 		"continue-button":                       "Kontynuuj",
 		"login-button":                          "Zaloguj się",
@@ -3328,7 +3328,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "Twoja tożsamość",
 	},
 	// #nosec G101
-	"fa": map[string]string{ // #nosec G101
+	"fa": map[string]string{
 		"LANG":                                  "فارسی",
 		"DIR":                                   "rtl",
 		"continue-button":                       "ادامه",
@@ -3441,7 +3441,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "هویت شما",
 	},
 	// #nosec G101
-	"th": map[string]string{ // #nosec G101
+	"th": map[string]string{
 		"LANG":                                  "ไทย",
 		"continue-button":                       "ดำเนินการต่อ",
 		"login-button":                          "เข้าสู่ระบบ",
@@ -3553,7 +3553,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "ตัวตนของคุณ",
 	},
 	// #nosec G101
-	"bn": map[string]string{ // #nosec G101
+	"bn": map[string]string{
 		"LANG":                                  "বাংলা",
 		"continue-button":                       "চালিয়ে যান",
 		"login-button":                          "লগইন করুন",
@@ -3665,7 +3665,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "আপনার পরিচয়",
 	},
 	// #nosec G101
-	"ms": map[string]string{ // #nosec G101
+	"ms": map[string]string{
 		"LANG":                                  "Bahasa Melayu",
 		"continue-button":                       "Teruskan",
 		"login-button":                          "Log Masuk",
@@ -3777,7 +3777,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "Identiti Anda",
 	},
 	// #nosec G101
-	"te": map[string]string{ // #nosec G101
+	"te": map[string]string{
 		"LANG":                                  "తెలుగు",
 		"continue-button":                       "కొనసాగించు",
 		"login-button":                          "లాగిన్",
@@ -3889,7 +3889,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "మీ గుర్తింపు",
 	},
 	// #nosec G101
-	"hu": map[string]string{ // #nosec G101
+	"hu": map[string]string{
 		"LANG":                                  "Magyar",
 		"continue-button":                       "Folytatás",
 		"login-button":                          "Bejelentkezés",
@@ -4001,7 +4001,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "Az Ön identitása",
 	},
 	// #nosec G101
-	"ro": map[string]string{ // #nosec G101
+	"ro": map[string]string{
 		"LANG":                                  "Română",
 		"continue-button":                       "Continuă",
 		"login-button":                          "Autentificare",
@@ -4113,7 +4113,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "Identitatea dumneavoastră",
 	},
 	// #nosec G101
-	"el": map[string]string{ // #nosec G101
+	"el": map[string]string{
 		"LANG":                                  "Ελληνικά",
 		"continue-button":                       "Συνέχεια",
 		"login-button":                          "Σύνδεση",
@@ -4225,7 +4225,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "Η Ταυτότητά σας",
 	},
 	// #nosec G101
-	"fi": map[string]string{ // #nosec G101
+	"fi": map[string]string{
 		"LANG":                                  "Suomi",
 		"continue-button":                       "Jatka",
 		"login-button":                          "Kirjaudu sisään",
@@ -4337,7 +4337,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "Identiteettisi",
 	},
 	// #nosec G101
-	"da": map[string]string{ // #nosec G101
+	"da": map[string]string{
 		"LANG":                                  "Dansk",
 		"continue-button":                       "Fortsæt",
 		"login-button":                          "Log ind",
@@ -4449,7 +4449,7 @@ var languages = map[string]map[string]string{ // #nosec G101
 		"sso-your-identity":                     "Din identitet",
 	},
 	// #nosec G101
-	"sk": map[string]string{ // #nosec G101
+	"sk": map[string]string{
 		"LANG":                                  "Slovenčina",
 		"continue-button":                       "Pokračovať",
 		"login-button":                          "Prihlásiť sa",
