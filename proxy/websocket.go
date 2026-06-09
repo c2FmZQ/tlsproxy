@@ -70,7 +70,7 @@ func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 		}
 		p.outConns.add(wc)
 		defer func() {
-			wc.Close()
+			_ = wc.Close()
 			p.outConns.remove(wc)
 		}()
 		out = wc
@@ -89,7 +89,7 @@ func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 			for {
 				select {
 				case <-ctx.Done():
-					out.SetDeadline(time.Now())
+					_ = out.SetDeadline(time.Now())
 					return
 				case <-ticker.C:
 					if time.Since(lastActive) > 30*time.Second {
@@ -146,7 +146,7 @@ func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 						return
 					}
 					if nn, err := w.Write(buf[:n]); err != nil || n != nn {
-						w.Close()
+						_ = w.Close()
 						return
 					}
 					if err := w.Close(); err != nil {

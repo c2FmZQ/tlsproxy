@@ -60,7 +60,7 @@ func main() {
 	flag.Parse()
 
 	if *versionFlag {
-		os.Stdout.WriteString(Version + " " + runtime.Version() + " " + runtime.GOOS + "/" + runtime.GOARCH + "\n")
+		_, _ = os.Stdout.WriteString(Version + " " + runtime.Version() + " " + runtime.GOOS + "/" + runtime.GOARCH + "\n")
 		return
 	}
 	if *stdoutFlag {

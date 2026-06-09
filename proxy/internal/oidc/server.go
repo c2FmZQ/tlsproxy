@@ -131,7 +131,7 @@ type RewriteRule struct {
 type defaultLogger struct{}
 
 func (defaultLogger) Errorf(format string, args ...any) {
-	log.Printf(format, args...)
+	log.Printf(format, args...) // #nosec G706
 }
 
 // NewServer returns a new ProviderServer.
@@ -244,7 +244,7 @@ func (s *ProviderServer) ServeConfig(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	w.Write(content)
+	_, _ = w.Write(content)
 }
 
 func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Request) {
@@ -259,7 +259,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		http.Error(w, "no email", http.StatusInternalServerError)
 		return
 	}
-	req.ParseForm()
+	_ = req.ParseForm()
 
 	handlePost := func(requestID string) (redirect string) {
 		s.mu.Lock()
@@ -345,7 +345,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		enc.Encode(map[string]any{
+		_ = enc.Encode(map[string]any{
 			"redirect": redirect,
 		})
 		return
@@ -453,7 +453,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		Scopes:    strings.Join(scopes, ","),
 	}
 	w.Header().Set("content-type", "text/html; charset=utf-8")
-	authorizeTemplate.Execute(w, data)
+	_ = authorizeTemplate.Execute(w, data)
 	return
 }
 
@@ -463,7 +463,7 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	req.ParseForm()
+	_ = req.ParseForm()
 	switch req.Form.Get("grant_type") {
 	case "authorization_code":
 		code := req.Form.Get("code")
@@ -508,7 +508,7 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 		}
 
 		s.opts.EventRecorder.Record("allow openid token request for " + clientID)
-		content, err := json.MarshalIndent(resp, "", "  ")
+		content, err := json.MarshalIndent(resp, "", "  ") // #nosec G117
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -516,7 +516,7 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-cache, no-store")
 		w.WriteHeader(http.StatusOK)
-		w.Write(content)
+		_, _ = w.Write(content)
 
 	case "urn:ietf:params:oauth:grant-type:device_code":
 		deviceCode := req.Form.Get("device_code")
@@ -561,7 +561,7 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 			resp.Error = "authorization_pending"
 		}
 
-		content, err := json.MarshalIndent(resp, "", "  ")
+		content, err := json.MarshalIndent(resp, "", "  ") // #nosec G117
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -569,7 +569,7 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-cache, no-store")
 		w.WriteHeader(status)
-		w.Write(content)
+		_, _ = w.Write(content)
 
 	default:
 		http.Error(w, "unexpected grant_type", http.StatusBadRequest)
@@ -608,7 +608,7 @@ func (s *ProviderServer) ServeUserInfo(w http.ResponseWriter, req *http.Request)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-cache, no-store")
 	w.WriteHeader(http.StatusOK)
-	w.Write(content)
+	_, _ = w.Write(content)
 }
 
 func (s *ProviderServer) applyRewriteRules(rules []RewriteRule, in, out jwt.MapClaims) {

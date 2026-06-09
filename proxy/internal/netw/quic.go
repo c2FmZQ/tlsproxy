@@ -250,7 +250,7 @@ func (c *QUICConn) OnClose(f func()) {
 	c.onClose = f
 	go func() {
 		<-c.qc.Context().Done()
-		c.Close()
+		_ = c.Close()
 	}()
 }
 

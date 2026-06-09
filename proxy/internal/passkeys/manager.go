@@ -96,7 +96,7 @@ type EventRecorder interface {
 type defaultLogger struct{}
 
 func (defaultLogger) Errorf(format string, args ...any) {
-	log.Printf(format, args...)
+	log.Printf(format, args...) // #nosec G706
 }
 
 type Config struct {
@@ -127,7 +127,9 @@ func NewManager(cfg Config) (*Manager, error) {
 	}
 	m.db.Handles = make(map[string]*user)
 	m.db.Subjects = make(map[string]string)
-	m.cfg.Store.CreateEmptyFile(passkeyFile, &m.db)
+	if err := m.cfg.Store.CreateEmptyFile(passkeyFile, &m.db); err != nil {
+		m.cfg.Logger.Errorf("Error: %v", err)
+	}
 	if err := m.cfg.Store.ReadDataFile(passkeyFile, &m.db); err != nil {
 		return nil, err
 	}
@@ -217,7 +219,7 @@ func (m *Manager) ServeWellKnown(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	w.Write(content)
+	_, _ = w.Write(content)
 }
 
 func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL string, opts ...idp.Option) {
@@ -269,7 +271,7 @@ func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL
 }
 
 func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
-	req.ParseForm()
+	_ = req.ParseForm()
 	nonce := req.Form.Get("nonce")
 
 	m.noncesMu.Lock()
@@ -301,7 +303,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		args.Del("nonce")
 		args.Set("redirect", token)
 		req.URL.RawQuery = args.Encode()
-		http.Redirect(w, req, req.URL.String(), http.StatusFound)
+		http.Redirect(w, req, req.URL.String(), http.StatusFound) // #nosec G710
 		return
 	}
 
@@ -397,7 +399,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		w.Header().Set("content-type", "application/json")
-		json.NewEncoder(w).Encode(opts)
+		_ = json.NewEncoder(w).Encode(opts)
 
 	case "AttestationOptions":
 		if req.Method != "POST" {
@@ -416,7 +418,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		w.Header().Set("content-type", "application/json")
-		json.NewEncoder(w).Encode(opts)
+		_ = json.NewEncoder(w).Encode(opts)
 
 	case "Check":
 		if req.Method != "POST" {
@@ -442,7 +444,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 				u.Host = req.Host
 				u.RawQuery = args.Encode()
 				w.Header().Set("content-type", "application/json")
-				json.NewEncoder(w).Encode(map[string]any{
+				_ = json.NewEncoder(w).Encode(map[string]any{
 					"result": "refresh",
 					"url":    u.String(),
 				})
@@ -481,9 +483,9 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		m.cfg.OtherCookieManager.ClearCookies(w)
+		_ = m.cfg.OtherCookieManager.ClearCookies(w)
 		w.Header().Set("content-type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"result":   "ok",
 			"redirect": originalURL.String(),
 		})
@@ -506,7 +508,7 @@ func serveWebauthnJS(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	w.Write(webauthnJSEmbed)
+	_, _ = w.Write(webauthnJSEmbed)
 }
 
 func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
@@ -529,11 +531,11 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 	if ephost != req.Host {
 		req.URL.Scheme = "https"
 		req.URL.Host = ephost
-		http.Redirect(w, req, req.URL.String(), http.StatusFound)
+		http.Redirect(w, req, req.URL.String(), http.StatusFound) // #nosec G710
 		return
 	}
 
-	req.ParseForm()
+	_ = req.ParseForm()
 	req.URL.Scheme = "https"
 	req.URL.Host = req.Host
 	here := req.URL.String()
@@ -577,7 +579,7 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		w.Header().Set("content-type", "application/json")
-		json.NewEncoder(w).Encode(opts)
+		_ = json.NewEncoder(w).Encode(opts)
 
 	case "AddKey":
 		if req.Method != "POST" {
@@ -590,7 +592,7 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		w.Header().Set("content-type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"result": "ok",
 		})
 		m.cfg.EventRecorder.Record("passkey addkey request")
@@ -614,7 +616,7 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 			m.cfg.Logger.Errorf("ERR deleteKey(%q, %v): %v", email, id, err)
 		}
 		w.Header().Set("content-type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"result": "ok",
 		})
 		m.cfg.EventRecorder.Record("passkey deletekey request")
@@ -637,7 +639,7 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 			CurrentKey: passkeyHash,
 		}
 		w.Header().Set("X-Frame-Options", "DENY")
-		manageTemplate.Execute(w, data)
+		_ = manageTemplate.Execute(w, data)
 
 	default:
 		http.Error(w, "invalid request", http.StatusBadRequest)
@@ -753,7 +755,7 @@ func (m *Manager) setAuthToken(w http.ResponseWriter, req *http.Request, u *url.
 		return
 	}
 	w.Header().Set("content-type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"result":   "ok",
 		"redirect": u.String(),
 	})

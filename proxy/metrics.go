@@ -101,7 +101,7 @@ func (p *Proxy) setCounters(c counterSetter, serverName string) {
 }
 
 func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
-	req.ParseForm()
+	_ = req.ParseForm()
 	if v := req.Form.Get("refresh"); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			w.Header().Set("refresh", strconv.Itoa(i))
@@ -617,11 +617,11 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	var cfgbuf bytes.Buffer
 	enc := yaml.NewEncoder(&cfgbuf)
 	enc.SetIndent(2)
-	enc.Encode(cfg)
-	enc.Close()
+	_ = enc.Encode(cfg)
+	_ = enc.Close()
 	data.Config = cfgbuf.String()
 
-	metricsTemplate.Execute(&buf, data)
+	_ = metricsTemplate.Execute(&buf, data)
 	w.Header().Set("content-type", "text/html; charset=utf-8")
 	w.Header().Set("content-length", fmt.Sprintf("%d", buf.Len()))
 }
@@ -630,5 +630,5 @@ func (p *Proxy) faviconHandler(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(iconBytes)))
 	w.Header().Set("Cache-Control", "public, max-age=86400, immutable")
-	w.Write(iconBytes)
+	_, _ = w.Write(iconBytes)
 }

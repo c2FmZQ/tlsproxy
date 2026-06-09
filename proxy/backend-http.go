@@ -235,7 +235,7 @@ func (be *Backend) reverseProxy() http.Handler {
 
 		if !slices.Contains(be.ServerNames, req.URL.Hostname()) {
 			if req.Body != nil {
-				req.Body.Close()
+				_ = req.Body.Close()
 			}
 			http.Error(w, "Misdirected Request", http.StatusMisdirectedRequest)
 			return
@@ -297,7 +297,7 @@ func (be *Backend) reverseProxy() http.Handler {
 		hostKey := bytes.NewBufferString(serverName + ";" + override)
 		if proxyProtoVersion > 0 {
 			hostKey.WriteByte(';')
-			writeProxyHeader(proxyProtoVersion, hostKey, req.Context().Value(connCtxKey).(anyConn))
+			_ = writeProxyHeader(proxyProtoVersion, hostKey, req.Context().Value(connCtxKey).(anyConn))
 		}
 		h := sha256.Sum256(hostKey.Bytes())
 		req.URL.Host = hex.EncodeToString(h[:])
@@ -311,7 +311,7 @@ func (be *Backend) reverseProxy() http.Handler {
 		for _, via := range hops {
 			if _, via, _ = strings.Cut(via, " "); via == me {
 				if req.Body != nil {
-					req.Body.Close()
+					_ = req.Body.Close()
 				}
 				http.Error(w, req.Header.Get(viaHeader), http.StatusLoopDetected)
 				return
@@ -351,7 +351,7 @@ func (be *Backend) reverseProxy() http.Handler {
 			req.ContentLength = 0
 		}
 		if req.ContentLength == 0 && req.Body != nil {
-			req.Body.Close()
+			_ = req.Body.Close()
 			req.Body = nil
 		}
 		reverseProxy.ServeHTTP(w, req.WithContext(ctx))

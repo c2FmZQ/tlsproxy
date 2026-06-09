@@ -61,11 +61,11 @@ func main() {
 	flag.Parse()
 
 	if *versionFlag {
-		os.Stdout.WriteString(Version + " " + runtime.Version() + " " + runtime.GOOS + "/" + runtime.GOARCH + "\n")
+		_, _ = os.Stdout.WriteString(Version + " " + runtime.Version() + " " + runtime.GOOS + "/" + runtime.GOARCH + "\n")
 		return
 	}
 	if flag.NArg() != 1 || (*key == "") != (*cert == "") {
-		os.Stderr.WriteString("Usage: tlsclient [-key=<keyfile> -cert=<certfile>] [-alpn=<proto>] [-ech=<configlist>] [-publicname=<ECH publicname>] [-quic] host:port\n")
+		_, _ = os.Stderr.WriteString("Usage: tlsclient [-key=<keyfile> -cert=<certfile>] [-alpn=<proto>] [-ech=<configlist>] [-publicname=<ECH publicname>] [-quic] host:port\n")
 		os.Exit(1)
 	}
 	addr := flag.Arg(0)
@@ -156,7 +156,7 @@ func main() {
 			if _, err := io.Copy(stream, os.Stdin); err != nil && !errors.Is(err, net.ErrClosed) {
 				log.Printf("ERR: %v", err)
 			}
-			stream.Close()
+			_ = stream.Close()
 		}()
 		if _, err := io.Copy(os.Stdout, stream); err != nil {
 			stream.CancelRead(0)
@@ -179,7 +179,7 @@ func main() {
 		if _, err := io.Copy(conn, os.Stdin); err != nil && !errors.Is(err, net.ErrClosed) {
 			log.Printf("ERR Stdin: %v", err)
 		}
-		conn.CloseWrite()
+		_ = conn.CloseWrite()
 	}()
 	if _, err := io.Copy(os.Stdout, conn); err != nil && !errors.Is(err, net.ErrClosed) {
 		log.Printf("ERR Conn: %v", err)

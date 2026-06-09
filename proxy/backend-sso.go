@@ -156,7 +156,7 @@ func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.M
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return nil, "", false
 	}
-	http.Redirect(w, req, req.URL.String(), http.StatusFound)
+	http.Redirect(w, req, req.URL.String(), http.StatusFound) // #nosec G710
 	return nil, "", false
 }
 
@@ -173,7 +173,7 @@ func serveStatic(w http.ResponseWriter, req *http.Request, content []byte, conte
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	w.Write(content)
+	_, _ = w.Write(content)
 }
 
 func (be *Backend) serveSSOIDCheckIcon(w http.ResponseWriter, req *http.Request) {
@@ -194,7 +194,7 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 	if req.Method == http.MethodPost {
 		w.Header().Set("content-type", "application/json")
 		if claims == nil {
-			w.Write([]byte("null\n"))
+			_, _ = w.Write([]byte("null\n"))
 			return
 		}
 		out := struct {
@@ -209,7 +209,7 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		enc.Encode(out)
+		_ = enc.Encode(out)
 		return
 	}
 	var keys []string
@@ -251,7 +251,7 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 	}
 	data.Token = token
 	_, data.Passkeys = be.SSO.p.(*passkeys.Manager)
-	ssoStatusTemplate.Execute(w, data)
+	_ = ssoStatusTemplate.Execute(w, data)
 }
 
 func (be *Backend) serveLogin(w http.ResponseWriter, req *http.Request) {
@@ -259,7 +259,7 @@ func (be *Backend) serveLogin(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "sso is not enabled", http.StatusNotFound)
 		return
 	}
-	req.ParseForm()
+	_ = req.ParseForm()
 	tok := req.Form.Get("redirect")
 	if tok == "" {
 		http.Error(w, "invalid request", http.StatusBadRequest)
@@ -287,20 +287,20 @@ func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
 		email, _ = claims["email"].(string)
 	}
 	if req.Method == http.MethodPost {
-		be.SSO.cm.ClearCookies(w)
+		_ = be.SSO.cm.ClearCookies(w)
 	}
-	req.ParseForm()
+	_ = req.ParseForm()
 	if tokenStr := req.Form.Get("u"); tokenStr != "" {
 		url, _, err := be.tm.ValidateURLToken(req, tokenStr)
 		if err != nil {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		be.SSO.cm.ClearCookies(w)
+		_ = be.SSO.cm.ClearCookies(w)
 		be.SSO.p.RequestLogin(w, req, url.String(), idp.WithSelectAccount(true))
 		return
 	}
-	logoutTemplate.Execute(w, struct {
+	_ = logoutTemplate.Execute(w, struct {
 		Email  string
 		Method string
 	}{
@@ -333,7 +333,7 @@ func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Reques
 		URL:        url,
 		DisplayURL: url,
 		Token:      token,
-		Message:    template.HTML(be.SSO.HTMLMessage),
+		Message:    template.HTML(be.SSO.HTMLMessage), // #nosec G203
 	}
 	if len(data.DisplayURL) > 100 {
 		data.DisplayURL = data.DisplayURL[:97] + "..."
@@ -398,7 +398,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request, ov
 		}
 		if _, ok := be.SSO.p.(*passkeys.Manager); ok || req.Header.Get("x-skip-login-confirmation") != "" || rule.SkipLoginPage {
 			be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (SSO) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusFound, userAgent(req))
-			http.Redirect(w, req, "/.sso/login?redirect="+token, http.StatusFound)
+			http.Redirect(w, req, "/.sso/login?redirect="+token, http.StatusFound) // #nosec G710
 			return false
 		}
 		be.logRequestF("REQ %s ➔ %s %s ➔ status:%d (SSO) (%q)", formatReqDesc(req), req.Method, req.RequestURI, http.StatusForbidden, userAgent(req))

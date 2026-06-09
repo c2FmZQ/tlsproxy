@@ -39,10 +39,10 @@ const (
 func SetSessionID(w http.ResponseWriter, req *http.Request, value string) string {
 	if value == "" {
 		var buf [16]byte
-		io.ReadFull(rand.Reader, buf[:])
+		_, _ = io.ReadFull(rand.Reader, buf[:])
 		value = hex.EncodeToString(buf[:])
 	}
-	cookie := &http.Cookie{
+	cookie := &http.Cookie{ // #nosec G124
 		Name:     tlsProxySessionIDCookie,
 		Value:    value,
 		Path:     "/",

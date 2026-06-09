@@ -82,7 +82,7 @@ var (
 type defaultLogger struct{}
 
 func (defaultLogger) Errorf(format string, args ...any) {
-	log.Printf(format, args...)
+	log.Printf(format, args...) // #nosec G706
 }
 
 // Options are used to configure the PKI manager.
@@ -134,7 +134,9 @@ func New(opts Options) (*PKIManager, error) {
 	if m.opts.KeyType == "" {
 		m.opts.KeyType = "ecdsa-p256"
 	}
-	m.opts.Store.CreateEmptyFile(m.pkiFile, &certificateAuthority{})
+	if err := m.opts.Store.CreateEmptyFile(m.pkiFile, &certificateAuthority{}); err != nil {
+		m.opts.Logger.Errorf("Error: %v", err)
+	}
 	if err := m.initCA(); err != nil {
 		return nil, err
 	}
@@ -228,7 +230,7 @@ func (m *PKIManager) initCA() (retErr error) {
 		return err
 	}
 	defer func() {
-		commit(false, &retErr)
+		_ = commit(false, &retErr)
 		if retErr == storage.ErrRolledBack {
 			retErr = nil
 		}
@@ -459,11 +461,11 @@ func (m *PKIManager) RevocationListPEM() ([]byte, error) {
 		return nil, err
 	}
 	var out bytes.Buffer
-	pem.Encode(&out, &pem.Block{
+	_ = pem.Encode(&out, &pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: cert,
 	})
-	pem.Encode(&out, &pem.Block{
+	_ = pem.Encode(&out, &pem.Block{
 		Type:  "X509 CRL",
 		Bytes: crl,
 	})
@@ -484,7 +486,7 @@ func (m *PKIManager) RevocationList() (cert, crl []byte, retErr error) {
 		return nil, nil, err
 	}
 	defer func() {
-		commit(false, &retErr)
+		_ = commit(false, &retErr)
 		if retErr == storage.ErrRolledBack {
 			retErr = nil
 		}
@@ -684,7 +686,7 @@ func (m *PKIManager) RevokeCertificate(serialNumber *big.Int, reasonCode int) (r
 		return err
 	}
 	defer func() {
-		commit(false, &retErr)
+		_ = commit(false, &retErr)
 		if retErr == storage.ErrRolledBack {
 			retErr = nil
 		}
@@ -776,7 +778,7 @@ func (m *PKIManager) signCertificate(cert *x509.Certificate, next func(*certific
 		return nil, err
 	}
 	defer func() {
-		commit(false, &retErr)
+		_ = commit(false, &retErr)
 		if retErr == storage.ErrRolledBack {
 			retErr = nil
 		}

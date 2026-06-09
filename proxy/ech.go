@@ -54,7 +54,9 @@ func (p *Proxy) rotateECH(forceCheck bool) (retErr error) {
 		return nil
 	}
 	var echKeys []echKey
-	p.store.CreateEmptyFile(echFile, &echKeys)
+	if err := p.store.CreateEmptyFile(echFile, &echKeys); err != nil {
+		p.logErrorF("Error: %v", err)
+	}
 
 	commit, err := p.store.OpenForUpdate(echFile, &echKeys)
 	if err != nil {
@@ -151,7 +153,7 @@ func (p *Proxy) rotateECH(forceCheck bool) (retErr error) {
 	}
 	if changed {
 		if p.quicListener != nil {
-			p.startQUICListener(p.ctx)
+			_ = p.startQUICListener(p.ctx)
 		}
 		ctx := p.ctx
 		webhooks := p.cfg.ECH.WebHooks
@@ -174,7 +176,7 @@ func (p *Proxy) rotateECH(forceCheck bool) (retErr error) {
 					p.logErrorF("ERR ECH WebHook %q: %v", wh, err)
 					continue
 				}
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				if resp.StatusCode != 200 {
 					p.logErrorF("ERR ECH WebHook %q: status code %d", wh, resp.StatusCode)
 				}

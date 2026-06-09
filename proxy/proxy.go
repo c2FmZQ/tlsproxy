@@ -970,18 +970,18 @@ func (p *Proxy) reAuthorize() {
 		if err != nil {
 			p.recordEvent(err.Error())
 			be.logErrorF("BAD [-] ReAuth %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
-			conn.Close()
+			_ = conn.Close()
 			continue
 		}
 		if oldBE := connBackend(conn); be.Mode != oldBE.Mode {
 			be.logErrorF("INF [-] ReAuth %s ➔  %q backend mode changed %s->%s", conn.RemoteAddr(), idnaToUnicode(serverName), oldBE.Mode, be.Mode)
-			conn.Close()
+			_ = conn.Close()
 			continue
 		}
 		if err := be.checkIP(conn.RemoteAddr()); err != nil {
 			p.recordEvent(serverName + " CheckIP " + err.Error())
 			be.logErrorF("BAD [-] ReAuth %s ➔ %q CheckIP: %v", conn.RemoteAddr(), idnaToUnicode(serverName), err)
-			conn.Close()
+			_ = conn.Close()
 			continue
 		}
 		if be.ClientAuth == nil {
@@ -991,7 +991,7 @@ func (p *Proxy) reAuthorize() {
 		if err := be.authorize(clientCert); err != nil {
 			p.recordEvent(err.Error())
 			be.logErrorF("BAD [-] ReAuth %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), idnaToUnicode(serverName), certSummary(clientCert), err)
-			conn.Close()
+			_ = conn.Close()
 			continue
 		}
 	}
@@ -1045,7 +1045,7 @@ func (p *Proxy) Start(ctx context.Context) error {
 	p.connClosed = sync.NewCond(&p.mu)
 	var httpServer *http.Server
 	if p.cfg.HTTPAddr != nil && *p.cfg.HTTPAddr != "" {
-		httpServer = &http.Server{
+		httpServer = &http.Server{ // #nosec G112
 			Handler: p.certManager.HTTPHandler(nil),
 		}
 		httpListener, err := net.Listen("tcp", *p.cfg.HTTPAddr)
@@ -1081,7 +1081,7 @@ func (p *Proxy) ctxWait(s *http.Server) {
 		select {
 		case <-p.ctx.Done():
 			if s != nil {
-				s.Close()
+				_ = s.Close()
 			}
 			p.Stop()
 			return
@@ -1124,9 +1124,9 @@ func (p *Proxy) Stop() {
 	if p.cancel != nil {
 		p.cancel()
 	}
-	p.listener.Close()
+	_ = p.listener.Close()
 	if p.quicTransport != nil {
-		p.quicTransport.Close()
+		_ = p.quicTransport.Close()
 	}
 	if p.mk != nil {
 		p.mk.Wipe()
@@ -1141,10 +1141,10 @@ func (p *Proxy) Stop() {
 		be.close(nil)
 	}
 	for _, conn := range conns {
-		conn.Close()
+		_ = conn.Close()
 	}
 	if p.tpm != nil {
-		p.tpm.Close()
+		_ = p.tpm.Close()
 	}
 }
 
@@ -1152,9 +1152,9 @@ func (p *Proxy) Stop() {
 // connections to close or ctx to be canceled.
 func (p *Proxy) Shutdown(ctx context.Context) {
 	p.mu.Lock()
-	p.listener.Close()
+	_ = p.listener.Close()
 	if p.quicTransport != nil {
-		p.quicTransport.Close()
+		_ = p.quicTransport.Close()
 	}
 	for _, be := range p.cfg.Backends {
 		be.close(ctx)
@@ -1281,13 +1281,13 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		if r := recover(); r != nil {
 			p.recordEvent("panic")
 			p.logErrorF("ERR [%s] %s: PANIC: %v\n%s", certSummary(connClientCert(conn)), conn.RemoteAddr(), r, debug.Stack())
-			conn.Close()
+			_ = conn.Close()
 		}
 	}()
 	closeConnNeeded := true
 	defer func() {
 		if closeConnNeeded {
-			conn.Close()
+			_ = conn.Close()
 		}
 	}()
 	conn.SetAnnotation(startTimeKey, time.Now())
@@ -1312,7 +1312,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	if numOpen >= *p.cfg.MaxOpen {
 		p.recordEvent("too many open connections")
 		p.logErrorF("ERR [-] %s: too many open connections: %d >= %d", conn.RemoteAddr(), numOpen, *p.cfg.MaxOpen)
-		sendCloseNotify(conn)
+		_ = sendCloseNotify(conn)
 		return
 	}
 	setKeepAlive(conn)
@@ -1343,7 +1343,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	if err != nil {
 		p.recordEvent(err.Error())
 		p.logErrorF("BAD [-] %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
-		sendUnrecognizedName(conn)
+		_ = sendUnrecognizedName(conn)
 		return
 	}
 	conn.SetAnnotation(backendKey, be)
@@ -1390,7 +1390,7 @@ func (p *Proxy) checkIP(conn *netw.Conn) error {
 		serverName := idnaToUnicode(connServerName(conn))
 		p.recordEvent(serverName + " CheckIP " + err.Error())
 		be.logConnF("BAD [-] %s ➔ %q CheckIP: %v", conn.RemoteAddr(), serverName, err)
-		sendUnrecognizedName(conn)
+		_ = sendUnrecognizedName(conn)
 		return err
 	}
 	return nil
@@ -1455,7 +1455,7 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 
 func (p *Proxy) handleHTTPConnection(conn *tls.Conn) {
 	if !p.authorizeTLSConnection(conn) {
-		conn.Close()
+		_ = conn.Close()
 		return
 	}
 	serverName := connServerName(conn)
@@ -1463,19 +1463,19 @@ func (p *Proxy) handleHTTPConnection(conn *tls.Conn) {
 	if err := be.connLimit.Wait(p.ctx); err != nil {
 		p.recordEvent(err.Error())
 		be.logErrorF("ERR [-] %s ➔  %q Wait: %v", conn.RemoteAddr(), idnaToUnicode(serverName), err)
-		conn.Close()
+		_ = conn.Close()
 		return
 	}
 	if be.Mode != ModeConsole && be.Mode != ModeLocal && be.Mode != ModeHTTP && be.Mode != ModeHTTPS {
 		p.recordEvent("wrong mode")
 		be.logErrorF("ERR [-] %s ➔  %q Mode is not [CONSOLE, LOCAL, HTTP, HTTPS]", conn.RemoteAddr(), idnaToUnicode(serverName))
-		conn.Close()
+		_ = conn.Close()
 		return
 	}
 	if be.httpConnChan == nil {
 		p.recordEvent("conn chan nil")
 		be.logErrorF("ERR [-] %s ➔  %q conn channel is nil", conn.RemoteAddr(), idnaToUnicode(serverName))
-		conn.Close()
+		_ = conn.Close()
 		return
 	}
 	annotatedConn(conn).SetAnnotation(reportEndKey, true)
@@ -1534,7 +1534,7 @@ func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
 	if err := be.connLimit.Wait(p.ctx); err != nil {
 		p.recordEvent(err.Error())
 		be.logErrorF("ERR [-] %s ➔  %q Wait: %v", extConn.RemoteAddr(), idnaToUnicode(serverName), err)
-		sendInternalError(extConn)
+		_ = sendInternalError(extConn)
 		return
 	}
 
@@ -1542,7 +1542,7 @@ func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
 	if err != nil {
 		p.recordEvent("dial error")
 		be.logErrorF("ERR [-] %s ➔  %q Dial: %v", extConn.RemoteAddr(), idnaToUnicode(serverName), err)
-		sendInternalError(extConn)
+		_ = sendInternalError(extConn)
 		return
 	}
 	defer intConn.Close()
@@ -1662,8 +1662,8 @@ func setKeepAlive(conn net.Conn) {
 	case *tls.Conn:
 		setKeepAlive(c.NetConn())
 	case *net.TCPConn:
-		c.SetKeepAlivePeriod(30 * time.Second)
-		c.SetKeepAlive(true)
+		_ = c.SetKeepAlivePeriod(30 * time.Second)
+		_ = c.SetKeepAlive(true)
 	case *netw.Conn:
 		setKeepAlive(c.Conn)
 	default:
@@ -1674,7 +1674,7 @@ func loadCerts(p *x509.CertPool, s string) error {
 	var b []byte
 	if len(s) > 0 && s[0] == '/' {
 		var err error
-		if b, err = os.ReadFile(s); err != nil {
+		if b, err = os.ReadFile(s); err != nil { // #nosec G304
 			return err
 		}
 	} else {
