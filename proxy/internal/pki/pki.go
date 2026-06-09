@@ -135,7 +135,7 @@ func New(opts Options) (*PKIManager, error) {
 		m.opts.KeyType = "ecdsa-p256"
 	}
 	if err := m.opts.Store.CreateEmptyFile(m.pkiFile, &certificateAuthority{}); err != nil {
-		m.opts.Logger.Errorf("Error: %v", err)
+		m.opts.Logger.Errorf("failed to create empty pki file: %v", err)
 	}
 	if err := m.initCA(); err != nil {
 		return nil, err

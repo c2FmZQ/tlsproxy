@@ -64,7 +64,7 @@ func (p *Proxy) startQUIC(ctx context.Context) error {
 	var statelessResetKey [32]byte
 	var empty []byte
 	if err := p.store.CreateEmptyFile(statelessResetKeyFile, &empty); err != nil {
-		p.logErrorF("Error: %v", err)
+		p.logErrorF("ERR failed to create empty stateless reset key file: %v", err)
 	}
 	if err := p.store.ReadDataFile(statelessResetKeyFile, &statelessResetKey); err != nil {
 		if _, err := io.ReadFull(rand.Reader, statelessResetKey[:]); err != nil {

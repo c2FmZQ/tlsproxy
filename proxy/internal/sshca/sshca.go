@@ -110,7 +110,7 @@ func New(opts Options) (*SSHCA, error) {
 		ca.opts.KeyType = "ecdsa-p256"
 	}
 	if err := ca.opts.Store.CreateEmptyFile(ca.caFile, &certificateAuthority{}); err != nil {
-		ca.opts.Logger.Errorf("Error: %v", err)
+		ca.opts.Logger.Errorf("failed to create empty sshca file: %v", err)
 	}
 	if err := ca.initCA(); err != nil {
 		return nil, err

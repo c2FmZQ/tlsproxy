@@ -128,7 +128,7 @@ func NewManager(cfg Config) (*Manager, error) {
 	m.db.Handles = make(map[string]*user)
 	m.db.Subjects = make(map[string]string)
 	if err := m.cfg.Store.CreateEmptyFile(passkeyFile, &m.db); err != nil {
-		m.cfg.Logger.Errorf("Error: %v", err)
+		m.cfg.Logger.Errorf("failed to create empty passkey file: %v", err)
 	}
 	if err := m.cfg.Store.ReadDataFile(passkeyFile, &m.db); err != nil {
 		return nil, err

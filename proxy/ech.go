@@ -55,7 +55,7 @@ func (p *Proxy) rotateECH(forceCheck bool) (retErr error) {
 	}
 	var echKeys []echKey
 	if err := p.store.CreateEmptyFile(echFile, &echKeys); err != nil {
-		p.logErrorF("Error: %v", err)
+		p.logErrorF("ERR failed to create empty ECH file: %v", err)
 	}
 
 	commit, err := p.store.OpenForUpdate(echFile, &echKeys)

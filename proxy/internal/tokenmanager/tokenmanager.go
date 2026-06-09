@@ -115,7 +115,7 @@ func New(store *storage.Storage, tpm *tpm.TPM, logger logger) (*TokenManager, er
 	tm.client.Logger = nil
 	tm.remote = jwks.NewRemote(tm.client, logger)
 	if err := store.CreateEmptyFile(tokenKeyFile, &tm.keys); err != nil {
-		logger.Errorf("Error: %v", err)
+		logger.Errorf("failed to create empty token key file: %v", err)
 	}
 	if err := tm.rotateKeys(); err != nil {
 		return nil, err

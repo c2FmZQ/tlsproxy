@@ -60,7 +60,7 @@ type logger interface {
 func New(store *storage.Storage, logger logger) *OCSPCache {
 	var empty []ocspCacheItem
 	if err := store.CreateEmptyFile(ocspFile, &empty); err != nil {
-		logger.Errorf("Error: %v", err)
+		logger.Errorf("failed to create empty ocsp file: %v", err)
 	}
 	c, err := lru.New2Q[string, *ocsp.Response](ocspCacheSize)
 	if err != nil {
