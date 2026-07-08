@@ -1,5 +1,19 @@
 # TLSPROXY Release Notes
 
+## v0.25.8
+
+### :wrench: Misc
+
+* Update go: 1.26.5
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260607003827-7389b812f9da => v0.0.0-20260607011050-6d6478ff2733
+  * upgraded github.com/pires/go-proxyproto v0.12.0 => v0.14.0
+  * upgraded golang.org/x/crypto v0.52.0 => v0.53.0
+  * upgraded golang.org/x/net v0.55.0 => v0.56.0
+  * upgraded golang.org/x/sys v0.45.0 => v0.47.0
+  * upgraded golang.org/x/text v0.37.0 => v0.39.0
+  * upgraded software.sslmate.com/src/go-pkcs12 v0.7.1 => v0.7.3
+
 ## v0.25.7
 
 ### :wrench: Misc
