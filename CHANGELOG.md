@@ -6,6 +6,18 @@
 
 * Fix potential panic on config change
 
+### :wrench: Misc
+
+* Update go dependencies:
+  * upgraded github.com/beevik/etree v1.6.0 => v1.7.0
+  * upgraded github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260607011050-6d6478ff2733 => v0.0.0-20260708140351-a2b4527a234e
+  * upgraded github.com/pires/go-proxyproto v0.14.0 => v0.15.0
+  * upgraded github.com/quic-go/quic-go v0.60.0 => v0.61.0
+  * upgraded github.com/russellhaering/goxmldsig v1.6.0 => v1.6.1
+  * upgraded golang.org/x/crypto v0.53.0 => v0.54.0
+  * upgraded golang.org/x/net v0.56.0 => v0.57.0
+  * upgraded golang.org/x/text v0.39.0 => v0.40.0
+
 ## v0.25.8
 
 ### :wrench: Misc
