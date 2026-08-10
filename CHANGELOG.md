@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Bug fix
+
+* Fix potential panic on config change
+
 ## v0.25.8
 
 ### :wrench: Misc
