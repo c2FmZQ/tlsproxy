@@ -1,6 +1,6 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.25.9
 
 ### :wrench: Bug fix
 
