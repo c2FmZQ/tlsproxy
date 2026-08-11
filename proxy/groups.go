@@ -64,6 +64,9 @@ func (m *aclMatcher) emailMatches(acl []string, email string) bool {
 
 func (m *aclMatcher) certMatches(acl []string, cert *x509.Certificate) bool {
 	match := func(member string) bool {
+		if cert == nil {
+			return false
+		}
 		if subject := cert.Subject.String(); (member != "" && member == subject) || member == "SUBJECT:"+subject {
 			return true
 		}
