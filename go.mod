@@ -3,6 +3,7 @@ module github.com/c2FmZQ/tlsproxy
 go 1.26.0
 
 require (
+	github.com/ProtonMail/go-crypto v1.4.1
 	github.com/beevik/etree v1.7.0
 	github.com/c2FmZQ/ech v0.4.2
 	github.com/c2FmZQ/ech/publish v0.1.2
@@ -31,6 +32,7 @@ require (
 )
 
 require (
+	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect

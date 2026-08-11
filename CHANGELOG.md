@@ -8,6 +8,7 @@
 
 ### :wrench: Misc
 
+* Switch the pki client to ProtonMail openpgp.
 * Update go dependencies:
   * upgraded github.com/beevik/etree v1.6.0 => v1.7.0
   * upgraded github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260607011050-6d6478ff2733 => v0.0.0-20260708140351-a2b4527a234e

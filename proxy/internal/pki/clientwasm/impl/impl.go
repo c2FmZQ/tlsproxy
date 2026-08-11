@@ -37,7 +37,7 @@ import (
 	"net/http"
 	"strings"
 
-	"golang.org/x/crypto/openpgp"
+	"github.com/ProtonMail/go-crypto/openpgp"
 	pkcs12 "software.sslmate.com/src/go-pkcs12"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki/keys"

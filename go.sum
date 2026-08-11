@@ -1,3 +1,5 @@
+github.com/ProtonMail/go-crypto v1.4.1 h1:9RfcZHqEQUvP8RzecWEUafnZVtEvrBVL9BiF67IQOfM=
+github.com/ProtonMail/go-crypto v1.4.1/go.mod h1:e1OaTyu5SYVrO9gKOEhTc+5UcXtTUa+P3uLudwcgPqo=
 github.com/beevik/etree v1.7.0 h1:xjBk9O4p4x7D1YajePjfLzdaFC4/uYUENA7P0pv6gXA=
 github.com/beevik/etree v1.7.0/go.mod h1:bh4zJxiIr62SOf9pRzN7UUYaEDa9HEKafK25+sLc0Gc=
 github.com/c2FmZQ/ech v0.4.2 h1:enNE9Lj3B+IeXhN/o5s7g76A3n7jWxdgVTW0FUKoyzo=
@@ -16,6 +18,8 @@ github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260708140351-a2b4527a234e h1:RKuypiXFGy
 github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260708140351-a2b4527a234e/go.mod h1:OmTz0Nc+C8Ent4TvkXv+0zQGdvMFHU/6ZTon629wjOk=
 github.com/c2FmZQ/tpm v0.5.0 h1:b0YNCbiwnmUvIQQ7MiQfr1v7gz4h339/KusOGIrDLz8=
 github.com/c2FmZQ/tpm v0.5.0/go.mod h1:R0HVAfw+Q//s64EwvyPB8UDMLsOD8OEcffkYYTbddQE=
+github.com/cloudflare/circl v1.6.3 h1:9GPOhQGF9MCYUeXyMYlqTR6a5gTrgR/fBLXvUgtVcg8=
+github.com/cloudflare/circl v1.6.3/go.mod h1:2eXP6Qfat4O/Yhh8BznvKnJ+uzEoTQ6jVKJRn81BiS4=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
