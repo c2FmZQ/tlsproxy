@@ -11,7 +11,7 @@ require (
 	github.com/c2FmZQ/http3-go v0.60.0
 	github.com/c2FmZQ/quic-api v0.60.0
 	github.com/c2FmZQ/storage v0.3.2
-	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260708140351-a2b4527a234e
+	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260811002012-644de39a8509
 	github.com/c2FmZQ/tpm v0.5.0
 	github.com/fxamacker/cbor/v2 v2.9.2
 	github.com/go-test/deep v1.1.0
@@ -23,8 +23,8 @@ require (
 	github.com/pires/go-proxyproto v0.15.0
 	github.com/quic-go/quic-go v0.61.0
 	github.com/russellhaering/goxmldsig v1.6.1
-	golang.org/x/crypto v0.54.0
-	golang.org/x/net v0.57.0
+	golang.org/x/crypto v0.55.0
+	golang.org/x/net v0.58.0
 	golang.org/x/sys v0.47.0
 	golang.org/x/time v0.15.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -32,13 +32,13 @@ require (
 )
 
 require (
-	github.com/cloudflare/circl v1.6.3 // indirect
+	github.com/cloudflare/circl v1.6.5 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/protobuf v1.36.5 // indirect
 )

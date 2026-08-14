@@ -1,5 +1,17 @@
 # TLSPROXY Release Notes
 
+## v0.25.10
+
+### :wrench: Misc
+
+* Update go: 1.26.6
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260708140351-a2b4527a234e => v0.0.0-20260811002012-644de39a8509
+  * upgraded github.com/cloudflare/circl v1.6.3 => v1.6.5
+  * upgraded golang.org/x/crypto v0.54.0 => v0.55.0
+  * upgraded golang.org/x/net v0.57.0 => v0.58.0
+  * upgraded golang.org/x/text v0.40.0 => v0.41.0
+
 ## v0.25.9
 
 ### :wrench: Bug fix
