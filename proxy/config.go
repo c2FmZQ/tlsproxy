@@ -973,7 +973,9 @@ func (cfg *Config) equal(other *Config) bool {
 func (cfg *Config) clone() *Config {
 	b := cfg.serialize()
 	var out Config
-	yaml.Unmarshal(b, &out)
+	if err := yaml.Unmarshal(b, &out); err != nil {
+		panic(err)
+	}
 	return &out
 }
 
@@ -1467,7 +1469,7 @@ func validateProxyProtoVersion(s string) (byte, error) {
 	if err != nil {
 		return 0, err
 	}
-	return byte(v), nil
+	return byte(v), nil // #nosec G115
 }
 
 // ReadConfig reads and validates a YAML config file.
@@ -1507,7 +1509,7 @@ func mergeConfig(cfg *Config, seen map[string]bool, filename string) error {
 	dec := yaml.NewDecoder(f)
 	dec.KnownFields(true)
 	err = dec.Decode(&cfg2)
-	f.Close()
+	_ = f.Close()
 	if err != nil {
 		return err
 	}

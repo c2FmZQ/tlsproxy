@@ -65,7 +65,7 @@ func init() {
 type defaultLogger struct{}
 
 func (defaultLogger) Errorf(format string, args ...any) {
-	log.Printf(format, args...)
+	log.Printf(format, args...) // #nosec G706
 }
 
 // Options are used to configure the CA.
@@ -109,7 +109,9 @@ func New(opts Options) (*SSHCA, error) {
 	if ca.opts.KeyType == "" {
 		ca.opts.KeyType = "ecdsa-p256"
 	}
-	ca.opts.Store.CreateEmptyFile(ca.caFile, &certificateAuthority{})
+	if err := ca.opts.Store.CreateEmptyFile(ca.caFile, &certificateAuthority{}); err != nil {
+		ca.opts.Logger.Errorf("failed to create empty sshca file: %v", err)
+	}
 	if err := ca.initCA(); err != nil {
 		return nil, err
 	}
@@ -147,7 +149,7 @@ func (ca *SSHCA) initCA() (retErr error) {
 		return err
 	}
 	defer func() {
-		commit(false, &retErr)
+		_ = commit(false, &retErr)
 		if retErr == storage.ErrRolledBack {
 			retErr = nil
 		}
@@ -260,7 +262,7 @@ func (ca *SSHCA) ServePublicKey(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("cache-control", "public, max-age=86400")
 	w.Header().Set("content-type", "text/plain")
 	w.Header().Set("content-length", fmt.Sprintf("%d", len(out)))
-	w.Write(out)
+	_, _ = w.Write(out)
 }
 
 func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
@@ -322,7 +324,7 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		key = body
 
 	case "application/x-www-form-urlencoded":
-		req.ParseForm()
+		_ = req.ParseForm()
 		key = []byte(req.PostForm.Get("key"))
 		if t := req.PostForm.Get("ttl"); t != "" {
 			tt, err := strconv.Atoi(t)
@@ -382,8 +384,8 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		CertType:        ssh.UserCert,
 		KeyId:           email,
 		ValidPrincipals: []string{email},
-		ValidAfter:      uint64(now.Add(-5 * time.Minute).Unix()),
-		ValidBefore:     uint64(now.Add(ttl).Unix()),
+		ValidAfter:      uint64(now.Add(-5 * time.Minute).Unix()), // #nosec G115
+		ValidBefore:     uint64(now.Add(ttl).Unix()),              // #nosec G115
 		Permissions: ssh.Permissions{
 			Extensions: map[string]string{
 				"permit-X11-forwarding":   "",
@@ -407,5 +409,5 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("cache-control", "no-store")
 	w.Header().Set("content-type", "text/plain")
 	w.Header().Set("content-length", fmt.Sprintf("%d", len(out)))
-	w.Write(out)
+	_, _ = w.Write(out)
 }

@@ -53,7 +53,7 @@ func addXFCCHeader(req *http.Request, which []string) {
 			for _, chain := range req.TLS.VerifiedChains {
 				var buf bytes.Buffer
 				for _, cert := range chain {
-					pem.Encode(&buf, &pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
+					_ = pem.Encode(&buf, &pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
 				}
 				fields = append(fields, "Chain="+encodeXFCC(url.QueryEscape(buf.String())))
 			}

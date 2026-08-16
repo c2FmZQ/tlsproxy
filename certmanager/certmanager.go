@@ -141,7 +141,7 @@ func createRootKeyAndCert(name string, d time.Duration) (*rsa.PrivateKey, *x509.
 }
 
 func readRootKeyAndCert(fileName string) (*rsa.PrivateKey, *x509.Certificate, error) {
-	b, err := os.ReadFile(fileName)
+	b, err := os.ReadFile(fileName) // #nosec G304
 	if err != nil {
 		return nil, nil, fmt.Errorf("os.ReadFile(%q) = %w", fileName, err)
 	}

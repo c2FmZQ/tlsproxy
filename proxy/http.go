@@ -76,7 +76,7 @@ func (l *proxyListener) Accept() (net.Conn, error) {
 		return nil, net.ErrClosed
 	case c, ok := <-l.ch:
 		if !ok {
-			l.Close()
+			_ = l.Close()
 			return nil, net.ErrClosed
 		}
 		return c, nil

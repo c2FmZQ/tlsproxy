@@ -67,14 +67,14 @@ func (be *Backend) logRequestF(format string, args ...any) {
 	if !shouldLog(logRequest, be.LogFilter, be.defaultLogFilter) {
 		return
 	}
-	log.Printf(format, args...)
+	log.Printf(format, args...) // #nosec G706
 }
 
 func (be *Backend) logErrorF(format string, args ...any) {
 	if !shouldLog(logError, be.LogFilter, be.defaultLogFilter) {
 		return
 	}
-	log.Printf(format, args...)
+	log.Printf(format, args...) // #nosec G706
 }
 
 func (be *Backend) logError(args ...any) {

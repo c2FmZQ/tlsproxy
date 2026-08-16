@@ -150,7 +150,7 @@ func (p *Provider) RequestLogin(w http.ResponseWriter, req *http.Request, origUR
 
 func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	p.er.Record("saml auth callback")
-	req.ParseForm()
+	_ = req.ParseForm()
 
 	if req.Method != http.MethodPost {
 		http.Error(w, "invalid method", http.StatusForbidden)
@@ -264,7 +264,7 @@ func readCerts(s string) ([]*x509.Certificate, error) {
 	var b []byte
 	if len(s) > 0 && s[0] == '/' {
 		var err error
-		if b, err = os.ReadFile(s); err != nil {
+		if b, err = os.ReadFile(s); err != nil { // #nosec G304
 			return nil, err
 		}
 	} else {

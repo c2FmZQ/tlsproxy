@@ -128,7 +128,7 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 		return nil, errors.New("no backend addresses")
 	}
 	tc := &tls.Config{
-		InsecureSkipVerify:   insecureSkipVerify,
+		InsecureSkipVerify:   insecureSkipVerify, // #nosec G402
 		ServerName:           serverName,
 		NextProtos:           protos,
 		RootCAs:              rootCAs,
@@ -179,7 +179,7 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 			setKeepAlive(c)
 			if proxyProtoVersion > 0 {
 				if err := writeProxyHeader(proxyProtoVersion, c, ctx.Value(connCtxKey).(anyConn)); err != nil {
-					c.Close()
+					_ = c.Close()
 					return nil, err
 				}
 			}
@@ -188,7 +188,7 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 			}
 			conn := tls.Client(c, tc)
 			if err := conn.HandshakeContext(ctx); err != nil {
-				conn.Close()
+				_ = conn.Close()
 				return nil, err
 			}
 			return conn, nil
@@ -336,10 +336,10 @@ func forward(out net.Conn, in net.Conn, closeWhenDone bool, halfClosedTimeout ti
 	writeCanceled, readCanceled := quicEndCopy(out, in, &writeErr, &readErr)
 	closeAll := func() {
 		if !writeCanceled {
-			out.Close()
+			_ = out.Close()
 		}
 		if !readCanceled {
-			in.Close()
+			_ = in.Close()
 		}
 	}
 	err := writeErr
@@ -368,7 +368,7 @@ func forward(out net.Conn, in net.Conn, closeWhenDone bool, halfClosedTimeout ti
 	// some broken clients or network devices that never close their end of
 	// the connection. So, we need to set a deadline to avoid keeping
 	// connections open forever.
-	out.SetReadDeadline(time.Now().Add(halfClosedTimeout))
+	_ = out.SetReadDeadline(time.Now().Add(halfClosedTimeout))
 	return nil
 }
 

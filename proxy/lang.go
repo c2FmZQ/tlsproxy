@@ -52,7 +52,7 @@ func getLanguage(lang string) map[string]string {
 }
 
 func serveLanguagesJSON(w http.ResponseWriter, req *http.Request) {
-	req.ParseForm()
+	_ = req.ParseForm()
 	var out map[string]map[string]string
 	if lang := req.Form.Get("lang"); lang != "" {
 		out = make(map[string]map[string]string)
@@ -81,7 +81,8 @@ func serveLanguagesJSON(w http.ResponseWriter, req *http.Request) {
 }
 
 // Translations for various languages. They are mostly AI-generated.
-var languages = map[string]map[string]string{
+var languages = map[string]map[string]string{ // #nosec G101
+	// #nosec G101
 	"en": map[string]string{
 		// The name of the language itself, in that language.
 		"LANG": "English",
@@ -359,6 +360,7 @@ var languages = map[string]map[string]string{
 		"pki-title":              "ICP",
 		"pki-email":              "Courriel:",
 	},
+	// #nosec G101
 	"es": map[string]string{
 		"LANG":                                  "Español",
 		"continue-button":                       "Continuar",
@@ -479,6 +481,7 @@ var languages = map[string]map[string]string{
 	"es-AR": {
 		"LANG": "Español (Argentina)",
 	},
+	// #nosec G101
 	"de": map[string]string{
 		"LANG":                                  "Deutsch",
 		"continue-button":                       "Weiter",
@@ -839,6 +842,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "切換帳戶",
 		"sso-your-identity":                     "您的身份",
 	},
+	// #nosec G101
 	"ja": map[string]string{
 		"LANG":                                  "日本語",
 		"continue-button":                       "続行",
@@ -950,6 +954,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "アカウントを切り替える",
 		"sso-your-identity":                     "あなたのID",
 	},
+	// #nosec G101
 	"pt": map[string]string{
 		"LANG":                                  "Português",
 		"continue-button":                       "Continuar",
@@ -1062,6 +1067,7 @@ var languages = map[string]map[string]string{
 		"sso-your-identity":                     "Sua Identidade",
 	},
 
+	// #nosec G101
 	"ru": map[string]string{
 		"LANG":                                  "Русский",
 		"continue-button":                       "Продолжить",
@@ -1173,6 +1179,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Сменить аккаунт",
 		"sso-your-identity":                     "Ваша личность",
 	},
+	// #nosec G101
 	"uk": map[string]string{
 		"LANG":                                  "Українська",
 		"continue-button":                       "Продовжити",
@@ -1284,6 +1291,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Змінити обліковий запис",
 		"sso-your-identity":                     "Ваша особа",
 	},
+	// #nosec G101
 	"ko": map[string]string{
 		"LANG":                                  "한국어",
 		"continue-button":                       "계속",
@@ -1395,6 +1403,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "계정 전환",
 		"sso-your-identity":                     "귀하의 신원",
 	},
+	// #nosec G101
 	"ar": map[string]string{
 		"LANG":                                  "العربية",
 		"DIR":                                   "rtl",
@@ -1507,6 +1516,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "تبديل الحساب",
 		"sso-your-identity":                     "هويتك",
 	},
+	// #nosec G101
 	"hi": map[string]string{
 		"LANG":                                  "हिन्दी",
 		"continue-button":                       "जारी रखें",
@@ -1618,6 +1628,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "खाता बदलें",
 		"sso-your-identity":                     "आपकी पहचान",
 	},
+	// #nosec G101
 	"mr": map[string]string{ // Marathi
 		"LANG":                                  "मराठी",
 		"continue-button":                       "पुढे चालू ठेवा",
@@ -1729,6 +1740,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "खाते बदला",
 		"sso-your-identity":                     "तुमची ओळख",
 	},
+	// #nosec G101
 	"it": map[string]string{
 		"LANG":                                  "Italiano",
 		"continue-button":                       "Continua",
@@ -1840,7 +1852,8 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Cambia Account",
 		"sso-your-identity":                     "La Tua Identità",
 	},
-	"gsw": map[string]string{ // Swiss German
+	// #nosec G101
+	"gsw": map[string]string{ // Swiss German #nosec G101
 		"LANG":                                  "Schwiizerdüütsch",
 		"continue-button":                       "Wiiter",
 		"login-button":                          "Aamälde",
@@ -1951,7 +1964,8 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Konto wächsle",
 		"sso-your-identity":                     "Ihri Identität",
 	},
-	"nl": map[string]string{ // Dutch
+	// #nosec G101
+	"nl": map[string]string{ // Dutch #nosec G101
 		"LANG":                                  "Nederlands",
 		"continue-button":                       "Doorgaan",
 		"login-button":                          "Inloggen",
@@ -2079,7 +2093,8 @@ var languages = map[string]map[string]string{
 		"sso-logout-title":           "Afmelden",
 		"sso-not-logged-in":          "U bent niet aangemeld",
 	},
-	"sv": map[string]string{ // Swedish
+	// #nosec G101
+	"sv": map[string]string{ // Swedish #nosec G101
 		"LANG":                                  "Svenska",
 		"continue-button":                       "Fortsätt",
 		"login-button":                          "Logga in",
@@ -2190,7 +2205,8 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Byt konto",
 		"sso-your-identity":                     "Din identitet",
 	},
-	"no": map[string]string{ // Norwegian
+	// #nosec G101
+	"no": map[string]string{ // Norwegian #nosec G101
 		"LANG":                                  "Norsk",
 		"continue-button":                       "Fortsett",
 		"login-button":                          "Logg inn",
@@ -2301,7 +2317,8 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Bytt konto",
 		"sso-your-identity":                     "Din identitet",
 	},
-	"cs": map[string]string{ // Czech
+	// #nosec G101
+	"cs": map[string]string{ // Czech #nosec G101
 		"LANG":                                  "Čeština",
 		"continue-button":                       "Pokračovat",
 		"login-button":                          "Přihlásit se",
@@ -2412,6 +2429,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Přepnout účet",
 		"sso-your-identity":                     "Vaše identita",
 	},
+	// #nosec G101
 	"he": map[string]string{
 		"LANG":                                  "עברית",
 		"DIR":                                   "rtl",
@@ -2524,6 +2542,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "החלף חשבון",
 		"sso-your-identity":                     "הזהות שלך",
 	},
+	// #nosec G101
 	"tl": map[string]string{
 		"LANG":                                  "Tagalog",
 		"continue-button":                       "Magpatuloy",
@@ -2635,6 +2654,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Lumipat ng Account",
 		"sso-your-identity":                     "Ang Iyong Identidad",
 	},
+	// #nosec G101
 	"ug": map[string]string{
 		"LANG":                                  "ئۇيغۇرچە",
 		"DIR":                                   "rtl",
@@ -2747,6 +2767,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "ھېسابات ئالماشتۇرۇش",
 		"sso-your-identity":                     "سىزنىڭ سالاھىيىتىڭىز",
 	},
+	// #nosec G101
 	"ca": map[string]string{
 		"LANG":                                  "Català",
 		"continue-button":                       "Continua",
@@ -2858,6 +2879,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Canvia de compte",
 		"sso-your-identity":                     "La teva identitat",
 	},
+	// #nosec G101
 	"id": map[string]string{
 		"LANG":                                  "Bahasa Indonesia",
 		"continue-button":                       "Lanjutkan",
@@ -2969,6 +2991,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Ganti Akun",
 		"sso-your-identity":                     "Identitas Anda",
 	},
+	// #nosec G101
 	"tr": map[string]string{
 		"LANG":                                  "Türkçe",
 		"continue-button":                       "Devam Et",
@@ -3080,6 +3103,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Hesap Değiştir",
 		"sso-your-identity":                     "Kimliğiniz",
 	},
+	// #nosec G101
 	"vi": map[string]string{
 		"LANG":                                  "Tiếng Việt",
 		"continue-button":                       "Tiếp tục",
@@ -3191,6 +3215,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Chuyển tài khoản",
 		"sso-your-identity":                     "Danh tính của bạn",
 	},
+	// #nosec G101
 	"pl": map[string]string{
 		"LANG":                                  "Polski",
 		"continue-button":                       "Kontynuuj",
@@ -3302,6 +3327,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Zmień konto",
 		"sso-your-identity":                     "Twoja tożsamość",
 	},
+	// #nosec G101
 	"fa": map[string]string{
 		"LANG":                                  "فارسی",
 		"DIR":                                   "rtl",
@@ -3414,6 +3440,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "تغییر حساب",
 		"sso-your-identity":                     "هویت شما",
 	},
+	// #nosec G101
 	"th": map[string]string{
 		"LANG":                                  "ไทย",
 		"continue-button":                       "ดำเนินการต่อ",
@@ -3525,6 +3552,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "เปลี่ยนบัญชี",
 		"sso-your-identity":                     "ตัวตนของคุณ",
 	},
+	// #nosec G101
 	"bn": map[string]string{
 		"LANG":                                  "বাংলা",
 		"continue-button":                       "চালিয়ে যান",
@@ -3636,6 +3664,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "অ্যাকাউন্ট পরিবর্তন করুন",
 		"sso-your-identity":                     "আপনার পরিচয়",
 	},
+	// #nosec G101
 	"ms": map[string]string{
 		"LANG":                                  "Bahasa Melayu",
 		"continue-button":                       "Teruskan",
@@ -3747,6 +3776,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Tukar Akaun",
 		"sso-your-identity":                     "Identiti Anda",
 	},
+	// #nosec G101
 	"te": map[string]string{
 		"LANG":                                  "తెలుగు",
 		"continue-button":                       "కొనసాగించు",
@@ -3858,6 +3888,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "ఖాతాను మార్చు",
 		"sso-your-identity":                     "మీ గుర్తింపు",
 	},
+	// #nosec G101
 	"hu": map[string]string{
 		"LANG":                                  "Magyar",
 		"continue-button":                       "Folytatás",
@@ -3969,6 +4000,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Fiók váltása",
 		"sso-your-identity":                     "Az Ön identitása",
 	},
+	// #nosec G101
 	"ro": map[string]string{
 		"LANG":                                  "Română",
 		"continue-button":                       "Continuă",
@@ -4080,6 +4112,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Schimbă contul",
 		"sso-your-identity":                     "Identitatea dumneavoastră",
 	},
+	// #nosec G101
 	"el": map[string]string{
 		"LANG":                                  "Ελληνικά",
 		"continue-button":                       "Συνέχεια",
@@ -4191,6 +4224,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Αλλαγή Λογαριασμού",
 		"sso-your-identity":                     "Η Ταυτότητά σας",
 	},
+	// #nosec G101
 	"fi": map[string]string{
 		"LANG":                                  "Suomi",
 		"continue-button":                       "Jatka",
@@ -4302,6 +4336,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Vaihda tiliä",
 		"sso-your-identity":                     "Identiteettisi",
 	},
+	// #nosec G101
 	"da": map[string]string{
 		"LANG":                                  "Dansk",
 		"continue-button":                       "Fortsæt",
@@ -4413,6 +4448,7 @@ var languages = map[string]map[string]string{
 		"sso-switch-account":                    "Skift konto",
 		"sso-your-identity":                     "Din identitet",
 	},
+	// #nosec G101
 	"sk": map[string]string{
 		"LANG":                                  "Slovenčina",
 		"continue-button":                       "Pokračovať",

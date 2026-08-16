@@ -114,7 +114,9 @@ func New(store *storage.Storage, tpm *tpm.TPM, logger logger) (*TokenManager, er
 	}
 	tm.client.Logger = nil
 	tm.remote = jwks.NewRemote(tm.client, logger)
-	store.CreateEmptyFile(tokenKeyFile, &tm.keys)
+	if err := store.CreateEmptyFile(tokenKeyFile, &tm.keys); err != nil {
+		logger.Errorf("failed to create empty token key file: %v", err)
+	}
 	if err := tm.rotateKeys(); err != nil {
 		return nil, err
 	}
@@ -506,5 +508,5 @@ func (tm *TokenManager) ServeJWKS(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	w.Write(content)
+	_, _ = w.Write(content)
 }

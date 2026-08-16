@@ -190,12 +190,12 @@ func (k *fakeAuthKey) makeAuthData(rpIDHash, coseKey []byte) ([]byte, error) {
 		bits |= 1 << 6 // AT
 	}
 	buf.Write([]byte{bits})
-	binary.Write(&buf, binary.BigEndian, k.signCount)
+	_ = binary.Write(&buf, binary.BigEndian, k.signCount)
 
 	if coseKey != nil {
 		var aaguid [16]byte
 		buf.Write(aaguid[:])
-		binary.Write(&buf, binary.BigEndian, uint16(len(k.id)))
+		_ = binary.Write(&buf, binary.BigEndian, uint16(len(k.id))) // #nosec G115
 		buf.Write(k.id)
 		buf.Write(coseKey)
 	}

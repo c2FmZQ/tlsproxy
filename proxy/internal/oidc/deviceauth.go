@@ -72,7 +72,7 @@ func (s *ProviderServer) ServeDeviceAuthorization(w http.ResponseWriter, req *ht
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	req.ParseForm()
+	_ = req.ParseForm()
 	clientID := req.Form.Get("client_id")
 	if !slices.ContainsFunc(s.opts.Clients, func(c Client) bool { return c.ID == clientID }) {
 		s.opts.Logger.Errorf("ERR ServeAuthorization: invalid client_id %q", clientID)
@@ -141,7 +141,7 @@ func (s *ProviderServer) ServeDeviceAuthorization(w http.ResponseWriter, req *ht
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-cache, no-store")
 	w.WriteHeader(http.StatusOK)
-	w.Write(content)
+	_, _ = w.Write(content)
 }
 
 func (s *ProviderServer) AuthorizeClient(clientID, email string) bool {
@@ -163,7 +163,7 @@ func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *htt
 		http.Error(w, "no email", http.StatusInternalServerError)
 		return
 	}
-	req.ParseForm()
+	_ = req.ParseForm()
 
 	if req.Method == http.MethodGet {
 		data := struct {
@@ -174,7 +174,7 @@ func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *htt
 			UserCode: req.Form.Get("user_code"),
 		}
 		w.Header().Set("content-type", "text/html; charset=utf-8")
-		verifyTemplate.Execute(w, data)
+		_ = verifyTemplate.Execute(w, data)
 		return
 	}
 	if req.Method != http.MethodPost {
@@ -208,7 +208,7 @@ func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *htt
 	if approve := req.Form.Get("approve"); approve != "true" {
 		devToken.denied = true
 		s.opts.EventRecorder.Record("device authorization denied for " + data.clientID)
-		w.Write([]byte("denied\n"))
+		_, _ = w.Write([]byte("denied\n"))
 		return
 	}
 
@@ -256,5 +256,5 @@ func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *htt
 	devToken.accessToken = tok
 
 	s.opts.EventRecorder.Record("device authorization granted for " + data.clientID)
-	w.Write([]byte("approved\n"))
+	_, _ = w.Write([]byte("approved\n"))
 }

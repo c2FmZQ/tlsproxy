@@ -63,7 +63,9 @@ const (
 func (p *Proxy) startQUIC(ctx context.Context) error {
 	var statelessResetKey [32]byte
 	var empty []byte
-	p.store.CreateEmptyFile(statelessResetKeyFile, &empty)
+	if err := p.store.CreateEmptyFile(statelessResetKeyFile, &empty); err != nil {
+		p.logErrorF("ERR failed to create empty stateless reset key file: %v", err)
+	}
 	if err := p.store.ReadDataFile(statelessResetKeyFile, &statelessResetKey); err != nil {
 		if _, err := io.ReadFull(rand.Reader, statelessResetKey[:]); err != nil {
 			return err
@@ -85,7 +87,7 @@ func (p *Proxy) startQUIC(ctx context.Context) error {
 
 func (p *Proxy) startQUICListener(ctx context.Context) error {
 	if p.quicListener != nil {
-		p.quicListener.Close()
+		_ = p.quicListener.Close()
 		p.quicListener = nil
 	}
 	tc := p.baseTLSConfig()
@@ -132,7 +134,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		if r := recover(); r != nil {
 			p.recordEvent("panic")
 			p.logErrorF("ERR [%s] %s: PANIC: %v", certSummary(connClientCert(qc)), qc.RemoteAddr(), r)
-			qc.Close()
+			_ = qc.Close()
 		}
 	}()
 	ctx := context.WithValue(qc.Context(), connCtxKey, qc)
@@ -178,7 +180,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 	if !ok {
 		p.recordEvent("unexpected SNI")
 		p.logErrorF("BAD [%s] %s:%s ➔ %q: unexpected SNI", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), cs.ServerName)
-		qc.CloseWithError(quicUnrecognizedName, "unrecognized name")
+		_ = qc.CloseWithError(quicUnrecognizedName, "unrecognized name")
 		return
 	}
 	be.incInFlight(1)
@@ -198,7 +200,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 	if err := be.checkIP(qc.RemoteAddr()); err != nil {
 		p.recordEvent(idnaToUnicode(cs.ServerName) + " CheckIP " + err.Error())
 		be.logErrorF("BAD [%s] %s:%s ➔ %q CheckIP: %v", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), idnaToUnicode(cs.ServerName), err)
-		qc.CloseWithError(quicAccessDenied, "access denied")
+		_ = qc.CloseWithError(quicAccessDenied, "access denied")
 		return
 	}
 
@@ -240,7 +242,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 	if be.Mode == ModeQUIC {
 		beConn, err := be.dialQUICBackend(ctx, cs.NegotiatedProtocol)
 		if err != nil {
-			qc.CloseWithError(quicBadGateway, "bad gateway")
+			_ = qc.CloseWithError(quicBadGateway, "bad gateway")
 			be.logErrorF("ERR [%s] %s:%s ➔ %s|%s:%s dialQUICBackend: %v", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol, err)
 			return
 		}
@@ -384,7 +386,7 @@ func (p *Proxy) handleQUICTCPStream(ctx context.Context, be *Backend, conn *netw
 	closeConnNeeded := true
 	defer func() {
 		if closeConnNeeded {
-			conn.Close()
+			_ = conn.Close()
 		}
 	}()
 
@@ -555,7 +557,7 @@ func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUI
 	}
 
 	tc := &tls.Config{
-		InsecureSkipVerify:   insecureSkipVerify,
+		InsecureSkipVerify:   insecureSkipVerify, // #nosec G402
 		ServerName:           serverName,
 		NextProtos:           []string{proto},
 		RootCAs:              rootCAs,

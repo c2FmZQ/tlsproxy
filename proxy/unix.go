@@ -38,5 +38,5 @@ func openFileLimit() (int, error) {
 	if err := unix.Setrlimit(unix.RLIMIT_NOFILE, &rl); err != nil {
 		return 0, err
 	}
-	return int(rl.Cur), nil
+	return int(rl.Cur), nil // #nosec G115
 }

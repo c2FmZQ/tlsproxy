@@ -187,11 +187,11 @@ func (m *PKIManager) ServeOCSP(w http.ResponseWriter, req *http.Request) {
 	}
 	w.Header().Set("cache-control", "public, max-age=1800")
 	w.Header().Set("content-type", "application/ocsp-response")
-	w.Write(resp)
+	_, _ = w.Write(resp) // #nosec G705
 }
 
 func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http.Request) {
-	req.ParseForm()
+	_ = req.ParseForm()
 
 	enableAdmin := req.Form.Get("admin")
 	claims := fromctx.Claims(req.Context())
@@ -345,7 +345,7 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 	}
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline' 'self'; script-src 'unsafe-eval' 'unsafe-inline' 'self'; frame-ancestors 'none'")
-	certsTemplate.Execute(w, data)
+	_ = certsTemplate.Execute(w, data)
 }
 
 func (m *PKIManager) handleRequestCert(w http.ResponseWriter, req *http.Request) {
@@ -404,7 +404,7 @@ func (m *PKIManager) handleRequestCert(w http.ResponseWriter, req *http.Request)
 		return
 	}
 	w.Header().Set("content-type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"result": "ok",
 		"cert":   string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert})),
 	})
@@ -437,7 +437,7 @@ func (m *PKIManager) handleRevokeCert(w http.ResponseWriter, req *http.Request, 
 	}
 	if !isAdmin && !slices.Contains(c.EmailAddresses, email) {
 		w.Header().Set("content-type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"result": "permission denied",
 		})
 		return
@@ -448,7 +448,7 @@ func (m *PKIManager) handleRevokeCert(w http.ResponseWriter, req *http.Request, 
 		return
 	}
 	w.Header().Set("content-type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"result": "ok",
 	})
 }
@@ -469,7 +469,7 @@ func (m *PKIManager) handleDownloadCert(w http.ResponseWriter, req *http.Request
 	}
 	w.Header().Set("content-type", "application/x-pem-file")
 	w.Header().Set("content-disposition", "attachment; filename=\""+strings.ReplaceAll(sn, ":", "")+".pem\"")
-	pem.Encode(w, &pem.Block{Type: "CERTIFICATE", Bytes: c.Raw})
+	_ = pem.Encode(w, &pem.Block{Type: "CERTIFICATE", Bytes: c.Raw})
 }
 
 func (m *PKIManager) handleStaticFile(w http.ResponseWriter, req *http.Request) {
@@ -502,7 +502,7 @@ func (m *PKIManager) handleStaticFile(w http.ResponseWriter, req *http.Request) 
 			return
 		}
 	}
-	io.Copy(w, rr)
+	_, _ = io.Copy(w, rr) // #nosec G110
 }
 
 func (m *PKIManager) findCert(sn string) (*x509.Certificate, error) {
@@ -532,5 +532,5 @@ func etag(w http.ResponseWriter, req *http.Request, body []byte) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	w.Write(body)
+	_, _ = w.Write(body)
 }

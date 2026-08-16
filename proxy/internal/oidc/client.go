@@ -205,7 +205,7 @@ func (p *ProviderClient) RequestLogin(w http.ResponseWriter, req *http.Request, 
 
 func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	p.er.Record("oidc auth callback")
-	req.ParseForm()
+	_ = req.ParseForm()
 
 	p.mu.Lock()
 	for k, v := range p.states {

@@ -216,7 +216,7 @@ func (cm *CookieManager) SetNonce(w http.ResponseWriter, nonce string) {
 }
 
 func (cm *CookieManager) Nonce(w http.ResponseWriter, req *http.Request) string {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124
 		Name:     tlsProxyNonce,
 		Domain:   cm.domain,
 		Path:     "/",
@@ -231,7 +231,7 @@ func (cm *CookieManager) Nonce(w http.ResponseWriter, req *http.Request) string 
 }
 
 func (cm *CookieManager) ClearCookies(w http.ResponseWriter) error {
-	cookie := &http.Cookie{
+	cookie := &http.Cookie{ // #nosec G124
 		Name:     tlsProxyAuthCookie,
 		Domain:   cm.domain,
 		Path:     "/",
@@ -240,7 +240,7 @@ func (cm *CookieManager) ClearCookies(w http.ResponseWriter) error {
 		HttpOnly: true,
 	}
 	http.SetCookie(w, cookie)
-	cookie = &http.Cookie{
+	cookie = &http.Cookie{ // #nosec G124
 		Name:     tlsProxyIDTokenCookie,
 		Path:     "/",
 		MaxAge:   -1,
