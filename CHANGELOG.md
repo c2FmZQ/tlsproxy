@@ -1,5 +1,15 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Update go: 1.27.0
+* Update go dependencies:
+  * upgraded github.com/beevik/etree v1.7.0 => v1.7.1
+  * upgraded github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260811002012-644de39a8509 => v0.0.0-20260814232134-21593609a286
+  * upgraded github.com/fxamacker/cbor/v2 v2.9.2 => v2.9.3
+
 ## v0.25.10
 
 ### :wrench: Misc

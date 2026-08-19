@@ -1,7 +1,7 @@
 github.com/ProtonMail/go-crypto v1.4.1 h1:9RfcZHqEQUvP8RzecWEUafnZVtEvrBVL9BiF67IQOfM=
 github.com/ProtonMail/go-crypto v1.4.1/go.mod h1:e1OaTyu5SYVrO9gKOEhTc+5UcXtTUa+P3uLudwcgPqo=
-github.com/beevik/etree v1.7.0 h1:xjBk9O4p4x7D1YajePjfLzdaFC4/uYUENA7P0pv6gXA=
-github.com/beevik/etree v1.7.0/go.mod h1:bh4zJxiIr62SOf9pRzN7UUYaEDa9HEKafK25+sLc0Gc=
+github.com/beevik/etree v1.7.1 h1:xBlSFAjlMfZkrCNKCEdZ2MSN9pfQYeRBaISDnAVi4Ek=
+github.com/beevik/etree v1.7.1/go.mod h1:bh4zJxiIr62SOf9pRzN7UUYaEDa9HEKafK25+sLc0Gc=
 github.com/c2FmZQ/ech v0.4.2 h1:enNE9Lj3B+IeXhN/o5s7g76A3n7jWxdgVTW0FUKoyzo=
 github.com/c2FmZQ/ech v0.4.2/go.mod h1:efG3ukNhMom+/MxsJnClR6awhxaEpxr5C9ruAeKj92k=
 github.com/c2FmZQ/ech/publish v0.1.2 h1:/p6F5KyFAbo8nPzMljq1GSX1h57jwevvnLFSRQRw8LE=
@@ -14,8 +14,8 @@ github.com/c2FmZQ/quic-api v0.60.0 h1:X9HP1k0s1yzZmVm5vtJPzoW23c8Sxg8vNBlNkVjevl
 github.com/c2FmZQ/quic-api v0.60.0/go.mod h1:ow0AqjIT1sr1m9qbjhfXG2RFHHAiP8CQ11404vczeLI=
 github.com/c2FmZQ/storage v0.3.2 h1:/Qy/uoZTEw1XxrkHK4MAiQliwpZ02Y5w/whym8Q4+qQ=
 github.com/c2FmZQ/storage v0.3.2/go.mod h1:kgLL2yKcpWW62FmdoWwETSAWKpF95dBfhD6N7zfE1PE=
-github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260811002012-644de39a8509 h1:f0LB9TRdjgPuXw6M2jDSeyYJm/YjAKVexYSrLOOfkKU=
-github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260811002012-644de39a8509/go.mod h1:OmTz0Nc+C8Ent4TvkXv+0zQGdvMFHU/6ZTon629wjOk=
+github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260814232134-21593609a286 h1:Gme5VSj30xnX76R5WbQGLRAVEtJvt24j4C1+PrdDQkg=
+github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260814232134-21593609a286/go.mod h1:OmTz0Nc+C8Ent4TvkXv+0zQGdvMFHU/6ZTon629wjOk=
 github.com/c2FmZQ/tpm v0.5.0 h1:b0YNCbiwnmUvIQQ7MiQfr1v7gz4h339/KusOGIrDLz8=
 github.com/c2FmZQ/tpm v0.5.0/go.mod h1:R0HVAfw+Q//s64EwvyPB8UDMLsOD8OEcffkYYTbddQE=
 github.com/cloudflare/circl v1.6.5 h1:O64F26HEqNhznd/hrC5KZXVKYuKM2rx4deZDTc4ihQA=
@@ -25,8 +25,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/fatih/color v1.16.0 h1:zmkK9Ngbjj+K0yRhTVONQh1p/HknKYSlNT+vZCzyokM=
 github.com/fatih/color v1.16.0/go.mod h1:fL2Sau1YI5c0pdGEVCbKQbLXB6edEj1ZgiY4NijnWvE=
-github.com/fxamacker/cbor/v2 v2.9.2 h1:X4Ksno9+x3cz0TZv69ec1hxP/+tymuR8PXQJyDwfh78=
-github.com/fxamacker/cbor/v2 v2.9.2/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
+github.com/fxamacker/cbor/v2 v2.9.3 h1:oQBnFATpNdY8gJHTndDDv5Xl4QqNaz51G5LLEPhng3Q=
+github.com/fxamacker/cbor/v2 v2.9.3/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
 github.com/go-test/deep v1.1.0 h1:WOcxcdHcvdgThNXjw0t76K42FXTU7HpNQWHpA2HHNlg=
 github.com/go-test/deep v1.1.0/go.mod h1:5C2ZWiW0ErCdrYzpqxLbTX7MG14M9iiw8DgHncVwcsE=
 github.com/golang-jwt/jwt/v5 v5.3.1 h1:kYf81DTWFe7t+1VvL7eS+jKFVWaUnK9cB1qbwn63YCY=

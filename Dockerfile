@@ -1,4 +1,4 @@
-FROM golang:1.26.6-alpine3.24 AS build
+FROM golang:1.27.0-alpine3.24 AS build
 RUN apk update && apk upgrade
 RUN apk add ca-certificates bluefish
 

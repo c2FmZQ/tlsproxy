@@ -1,6 +1,6 @@
 module github.com/c2FmZQ/tlsproxy/examples/deviceauth
 
-go 1.26
+go 1.27.0
 
 require (
 	github.com/mdp/qrterminal/v3 v3.2.1
