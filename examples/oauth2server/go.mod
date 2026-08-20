@@ -1,9 +1,9 @@
 module github.com/c2FmZQ/tlsproxy/example/oauth2server
 
-go 1.26.0
+go 1.27.0
 
 require (
-	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260811002012-644de39a8509
+	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260814232134-21593609a286
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	golang.org/x/oauth2 v0.36.0
 )

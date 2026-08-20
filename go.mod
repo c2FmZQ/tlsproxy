@@ -1,19 +1,19 @@
 module github.com/c2FmZQ/tlsproxy
 
-go 1.26.0
+go 1.27.0
 
 require (
 	github.com/ProtonMail/go-crypto v1.4.1
-	github.com/beevik/etree v1.7.0
+	github.com/beevik/etree v1.7.1
 	github.com/c2FmZQ/ech v0.4.2
 	github.com/c2FmZQ/ech/publish v0.1.2
 	github.com/c2FmZQ/ech/quic v0.3.6
 	github.com/c2FmZQ/http3-go v0.60.0
 	github.com/c2FmZQ/quic-api v0.60.0
 	github.com/c2FmZQ/storage v0.3.2
-	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260811002012-644de39a8509
+	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260814232134-21593609a286
 	github.com/c2FmZQ/tpm v0.5.0
-	github.com/fxamacker/cbor/v2 v2.9.2
+	github.com/fxamacker/cbor/v2 v2.9.3
 	github.com/go-test/deep v1.1.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-tpm-tools v0.4.7
