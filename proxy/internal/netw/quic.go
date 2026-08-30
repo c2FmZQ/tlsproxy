@@ -490,6 +490,21 @@ func (w *SendOnlyStream) Peek(b []byte) (int, error) {
 	return 0, io.EOF
 }
 
+func (s *SendOnlyStream) SetPriority(a int8, b bool) {
+	s.SendStream.SetPriority(a, b)
+}
+
+func (s *SendOnlyStream) TryWriteAll(b []byte) error {
+	return s.SendStream.TryWriteAll(b)
+}
+
+func (s *SendOnlyStream) WriteWithLimit(b []byte, f func(int) int) (int, error) {
+	return s.SendStream.WriteWithLimit(b, f)
+}
+
+func (s *SendOnlyStream) SetReceiveFinalSizeCallback(func(int64)) {
+}
+
 type ReceiveOnlyStream struct {
 	quicapi.ReceiveStream
 	ctx context.Context
@@ -519,6 +534,21 @@ func (s *ReceiveOnlyStream) SetWriteDeadline(time.Time) error {
 }
 
 func (s *ReceiveOnlyStream) SetReliableBoundary() {
+}
+
+func (s *ReceiveOnlyStream) SetPriority(a int8, b bool) {
+}
+
+func (s *ReceiveOnlyStream) TryWriteAll(b []byte) error {
+	return nil
+}
+
+func (s *ReceiveOnlyStream) WriteWithLimit(b []byte, f func(int) int) (int, error) {
+	return 0, nil
+}
+
+func (s *ReceiveOnlyStream) SetReceiveFinalSizeCallback(f func(int64)) {
+	s.ReceiveStream.SetReceiveFinalSizeCallback(f)
 }
 
 var _ net.Conn = (*QUICStream)(nil)
@@ -636,4 +666,8 @@ func (s *QUICStream) SetReliableBoundary() {
 	if ss, ok := s.Stream.(quicapi.SendStream); ok {
 		ss.SetReliableBoundary()
 	}
+}
+
+func (s *QUICStream) SetPriority(a int8, b bool) {
+	s.Stream.SetPriority(a, b)
 }
