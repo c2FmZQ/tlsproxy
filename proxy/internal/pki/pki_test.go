@@ -30,6 +30,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"sync"
 	"testing"
 
 	"github.com/c2FmZQ/storage"
@@ -187,6 +188,53 @@ func TestIssueRevoke(t *testing.T) {
 			if got, want := rl.RevokedCertificateEntries[0].ReasonCode, RevokeReasonKeyCompromise; got != want {
 				t.Errorf("ReasonCode = %d, want %d", got, want)
 			}
+
+			// Revoke another cert right away, i.e. within the same
+			// second. The new CRL must include it.
+			certBytes2, err := m.IssueCertificate(cr)
+			if err != nil {
+				t.Fatalf("m.IssueCertificate: %v", err)
+			}
+			cert2, err := x509.ParseCertificate(certBytes2)
+			if err != nil {
+				t.Fatalf("x509.ParseCertificate: %v", err)
+			}
+			if err := m.RevokeCertificate(cert2.SerialNumber, RevokeReasonKeyCompromise); err != nil {
+				t.Fatalf("m.Revoke: %v", err)
+			}
+			_, crl3, err := m.RevocationList()
+			if err != nil {
+				t.Fatalf("m.RevocationList: %v", err)
+			}
+			if rl, err = x509.ParseRevocationList(crl3); err != nil {
+				t.Fatalf("x509.ParseRevocationList: %v", err)
+			}
+			if got, want := len(rl.RevokedCertificateEntries), 2; got != want {
+				t.Fatalf("len(RevokedCertificateEntries) = %d, want %d", got, want)
+			}
 		})
+	}
+}
+
+func TestConcurrentRevocationList(t *testing.T) {
+	m := newPKI(t, nil)
+	var wg sync.WaitGroup
+	for range 10 {
+		wg.Go(func() {
+			if _, _, err := m.RevocationList(); err != nil {
+				t.Errorf("m.RevocationList: %v", err)
+			}
+		})
+		wg.Go(func() {
+			if _, err := m.CACert(); err != nil {
+				t.Errorf("m.CACert: %v", err)
+			}
+		})
+	}
+	wg.Wait()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if got, want := len(m.db.DelegateCerts), 1; got != want {
+		t.Errorf("len(DelegateCerts) = %d, want %d", got, want)
 	}
 }

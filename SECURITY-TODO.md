@@ -226,7 +226,11 @@ deleted when every item is resolved.
   panic is recovered but logs a full stack trace per request.
   Fix: check `be.SSO == nil`.
 
-- [ ] **22. Built-in PKI CRL staleness and data race** (Low)
+- [x] **22. Built-in PKI CRL staleness and data race** (Low)
+  *Fixed: CRLs are regenerated after any revocation (tracked with a
+  counter instead of second-resolution timestamps) and halfway to
+  `NextUpdate`. `maybeRotateDelegateCert` checks under `m.mu` and
+  re-checks inside the signing callback.*
   `proxy/internal/pki/pki.go`: the cached CRL is reused up to 30m past
   `NextUpdate`; same-second revocations can be missed by the
   `ThisUpdate.Before(lastRevocation)` check. `maybeRotateDelegateCert` reads

@@ -176,6 +176,8 @@ type certificateAuthority struct {
 	CRLNumber       int64
 	RevocationLists []revocationList
 	Revoked         map[string]bool
+	// NumRevocations is incremented every time a cert is revoked.
+	NumRevocations int64
 }
 
 type certificate struct {
@@ -221,6 +223,9 @@ type revocation struct {
 type revocationList struct {
 	RawCert []byte
 	RawCRL  []byte
+	// NumRevocations is the value of certificateAuthority.NumRevocations
+	// when the CRL was created.
+	NumRevocations int64
 }
 
 func (m *PKIManager) open() (func(commit bool, errp *error) error, error) {
@@ -398,29 +403,34 @@ func (m *PKIManager) parseKeyBytes(b []byte) (any, error) {
 	return x509.ParsePKCS8PrivateKey(b)
 }
 
+var errAlreadyRotated = errors.New("already rotated")
+
+// needDelegateRotation returns true if the delegate cert needs to be rotated.
+// m.mu must be held.
+func (m *PKIManager) needDelegateRotation() bool {
+	if len(m.db.DelegateCerts) == 0 {
+		return true
+	}
+	c, err := m.db.DelegateCerts[0].parse()
+	return err != nil || c.NotBefore.Add(c.NotAfter.Sub(c.NotBefore)/2).Before(time.Now().UTC()) || c.PublicKeyAlgorithm == x509.Ed25519
+}
+
 func (m *PKIManager) maybeRotateDelegateCert() error {
+	m.mu.Lock()
 	if m.db == nil {
+		m.mu.Unlock()
 		return errors.New("no ca")
 	}
-	now := time.Now().UTC()
-
-	var needUpdate bool
-	if len(m.db.DelegateCerts) == 0 {
-		needUpdate = true
-	} else {
-		c, err := m.db.DelegateCerts[0].parse()
-		if err != nil || c.NotBefore.Add(c.NotAfter.Sub(c.NotBefore)/2).Before(now) || c.PublicKeyAlgorithm == x509.Ed25519 {
-			needUpdate = true
-		}
-	}
-	if !needUpdate {
+	if !m.needDelegateRotation() {
+		m.mu.Unlock()
 		return nil
 	}
-
 	caCert, err := m.db.CACert.parse()
+	m.mu.Unlock()
 	if err != nil {
 		return err
 	}
+	now := time.Now().UTC()
 
 	kt := m.opts.KeyType
 	if kt == "ed25519" {
@@ -456,6 +466,10 @@ func (m *PKIManager) maybeRotateDelegateCert() error {
 		OCSPServer:            m.opts.OCSPServer,
 	}
 	_, err = m.signCertificate(templ, func(c *certificate) error {
+		// Another request may have rotated the cert in the meantime.
+		if !m.needDelegateRotation() {
+			return errAlreadyRotated
+		}
 		m.db.DelegateKey = keyBytes
 		old := m.db.DelegateCerts
 		m.db.DelegateCerts = make([]*certificate, 0, 2)
@@ -465,6 +479,9 @@ func (m *PKIManager) maybeRotateDelegateCert() error {
 		}
 		return nil
 	})
+	if err == errAlreadyRotated {
+		return nil
+	}
 	return err
 }
 
@@ -512,18 +529,14 @@ func (m *PKIManager) RevocationList() (cert, crl []byte, retErr error) {
 	now := time.Now().UTC()
 
 	if len(m.db.RevocationLists) > 0 {
-		var lastRevocation time.Time
-		for _, c := range m.db.IssuedCerts {
-			if c.Revocation != nil && c.Revocation.Time.After(lastRevocation) {
-				lastRevocation = c.Revocation.Time
-			}
-		}
 		last := m.db.RevocationLists[len(m.db.RevocationLists)-1]
 		rl, err := x509.ParseRevocationList(last.RawCRL)
 		if err != nil {
 			return nil, nil, err
 		}
-		if !rl.ThisUpdate.Before(lastRevocation) && rl.NextUpdate.Add(crlRefreshPeriod/2).After(now) {
+		// Reuse the last CRL if no certs were revoked since it was
+		// created, and it isn't halfway to its NextUpdate.
+		if last.NumRevocations == m.db.NumRevocations && rl.NextUpdate.Add(-crlRefreshPeriod/2).After(now) {
 			return last.RawCert, rl.Raw, nil
 		}
 	}
@@ -569,8 +582,9 @@ func (m *PKIManager) RevocationList() (cert, crl []byte, retErr error) {
 		return nil, nil, err
 	}
 	m.db.RevocationLists = append(m.db.RevocationLists, revocationList{
-		RawCert: signCert.Raw,
-		RawCRL:  crl,
+		RawCert:        signCert.Raw,
+		RawCRL:         crl,
+		NumRevocations: m.db.NumRevocations,
 	})
 	if n := len(m.db.RevocationLists) - maxNumCRL; n > 0 {
 		m.db.RevocationLists = m.db.RevocationLists[n:]
@@ -717,6 +731,7 @@ func (m *PKIManager) RevokeCertificate(serialNumber *big.Int, reasonCode int) (r
 				m.db.Revoked = make(map[string]bool)
 			}
 			m.db.Revoked[snh] = true
+			m.db.NumRevocations++
 			return commit(true, nil)
 		}
 	}
