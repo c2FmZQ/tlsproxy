@@ -317,8 +317,9 @@ deleted when every item is resolved.
   *No change needed: the delegate cert also signs the CRLs, and Go's
   `RevocationList.CheckSignatureFrom` requires the signer to be a CA. It
   can't issue certs (KeyUsage is CRLSign only, root has MaxPathLenZero).*
-- [ ] **42.** PKI `?owner=all` lists every user's certs to any user with the
+- [x] **42.** PKI `?owner=all` lists every user's certs to any user with the
   `pki` scope (may be intended).
+  *Declined (by decision): intended.*
 - [ ] **43.** `certmanager` (test-only) generates and caches an RSA key per SNI
   name without bound.
 - [ ] **44.** OIDC RP nonce cookie is scoped to the parent domain, so an
