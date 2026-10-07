@@ -30,7 +30,9 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/c2FmZQ/ech"
@@ -236,4 +238,64 @@ func echGetQUIC(name, addr, msg string, rootCA *certmanager.CertManager, configL
 		return "", err
 	}
 	return string(b), nil
+}
+
+func TestECHEventsUnknownName(t *testing.T) {
+	ctx := t.Context()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
+			Backends: []*Backend{
+				{
+					ServerNames:  Strings{"local.example.com"},
+					Mode:         "LOCAL",
+					DocumentRoot: ".",
+				},
+			},
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	defer proxy.Stop()
+
+	// ECH configs with public names that the proxy doesn't know. The proxy
+	// can't decrypt them, so it sees the public names in the outer
+	// ClientHello.
+	for i := range 5 {
+		_, conf, err := ech.NewConfig(uint8(i), []byte(fmt.Sprintf("unknown-%d.example.net", i)))
+		if err != nil {
+			t.Fatalf("ech.NewConfig: %v", err)
+		}
+		configList, err := ech.ConfigList([]ech.Config{conf})
+		if err != nil {
+			t.Fatalf("ech.ConfigList: %v", err)
+		}
+		conn, err := tls.Dial("tcp", proxy.listener.Addr().String(), &tls.Config{
+			ServerName:                     "local.example.com",
+			RootCAs:                        extCA.RootCACertPool(),
+			EncryptedClientHelloConfigList: configList,
+		})
+		if err == nil {
+			conn.Close()
+			t.Fatalf("tls.Dial: unexpected success")
+		}
+	}
+
+	proxy.eventsmu.Lock()
+	defer proxy.eventsmu.Unlock()
+	for k := range proxy.events {
+		if strings.Contains(k, "unknown-") {
+			t.Errorf("unexpected event %q", k)
+		}
+	}
 }

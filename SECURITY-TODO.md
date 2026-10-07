@@ -141,7 +141,8 @@ deleted when every item is resolved.
   Fix: short-lived host-only `SameSite=None; Secure; HttpOnly` cookie bound to
   the request ID, checked in `HandleCallback`.
 
-- [ ] **13. Unbounded `events` map growth from attacker-chosen SNI** (Low–Medium)
+- [x] **13. Unbounded `events` map growth from attacker-chosen SNI** (Low–Medium)
+  *Fixed: ECH events are recorded after a successful backend lookup.*
   `proxy/proxy.go` `handleConnection`: ECH accepted/rejected events include the
   outer SNI and are recorded before the backend lookup. ECH needn't be
   configured.

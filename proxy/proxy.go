@@ -1333,10 +1333,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	}
 	conn.Conn = echConn
 	if echConn.ECHAccepted() {
-		p.recordEvent("encrypted client hello accepted " + idnaToUnicode(echConn.ServerName()))
 		conn.SetAnnotation(echAcceptedKey, true)
-	} else if echConn.ECHPresented() {
-		p.recordEvent("encrypted client hello rejected " + idnaToUnicode(echConn.ServerName()))
 	}
 	serverName := echConn.ServerName()
 	if serverName == "" {
@@ -1351,6 +1348,13 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		p.logErrorF("BAD [-] %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
 		sendUnrecognizedName(conn)
 		return
+	}
+	// Record ECH events only after the server name is known to be valid.
+	// Otherwise, clients could create any number of distinct events.
+	if echConn.ECHAccepted() {
+		p.recordEvent("encrypted client hello accepted " + idnaToUnicode(serverName))
+	} else if echConn.ECHPresented() {
+		p.recordEvent("encrypted client hello rejected " + idnaToUnicode(serverName))
 	}
 	conn.SetAnnotation(backendKey, be)
 	be.incInFlight(1)
