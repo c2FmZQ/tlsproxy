@@ -259,8 +259,12 @@ deleted when every item is resolved.
 - [x] **27.** WebAuthn signature counter is ignored.
   *Fixed: the counter is stored per key and must increase when either
   value is non-zero (authenticators without a counter always send 0).*
-- [ ] **28.** Revoking a cert doesn't close connections already open with it
+- [x] **28.** Revoking a cert doesn't close connections already open with it
   (`reAuthorize` only re-checks ACLs, only on reconfigure).
+  *Fixed for the built-in PKI: revoking a cert triggers `reAuthorize`,
+  which now also checks revocation. Also fixed a nil pointer dereference
+  in `reAuthorize` when a connection's backend no longer exists.
+  Certs from external CAs (OCSP) are still only checked at handshake.*
 - [ ] **29.** SSH CA accepts DSA keys (`sshca.go`).
 - [ ] **30.** SSH CA holds `ca.mu` while reading the request body; a slow
   upload blocks all issuance.

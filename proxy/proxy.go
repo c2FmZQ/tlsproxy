@@ -453,6 +453,8 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			EventRecorder:         er,
 			AdminMatcher:          aclMatcher.emailMatches,
 			ServerCertificates:    serverCerts,
+			// Close connections that use revoked certificates.
+			OnRevoke: p.reAuthorize,
 		}
 		m, err := pki.New(opts)
 		if err != nil {
@@ -979,7 +981,7 @@ func (p *Proxy) reAuthorize() {
 		be, err := p.backend(serverName, proto)
 		if err != nil {
 			p.recordEvent(err.Error())
-			be.logErrorF("BAD [-] ReAuth %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
+			p.logErrorF("BAD [-] ReAuth %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
 			conn.Close()
 			continue
 		}
@@ -1001,6 +1003,15 @@ func (p *Proxy) reAuthorize() {
 		if err := be.authorize(clientCert); err != nil {
 			p.recordEvent(err.Error())
 			be.logErrorF("BAD [-] ReAuth %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), idnaToUnicode(serverName), certSummary(clientCert), err)
+			conn.Close()
+			continue
+		}
+		if clientCert == nil {
+			continue
+		}
+		if m, ok := be.pkiMap[hex.EncodeToString(clientCert.AuthorityKeyId)]; ok && m.IsRevoked(clientCert.SerialNumber) {
+			p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (revoked)", certSummary(clientCert), idnaToUnicode(serverName)))
+			be.logErrorF("BAD [-] ReAuth %s ➔ %q %q is revoked", conn.RemoteAddr(), idnaToUnicode(serverName), certSummary(clientCert))
 			conn.Close()
 			continue
 		}

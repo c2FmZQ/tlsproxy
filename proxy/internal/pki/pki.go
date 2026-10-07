@@ -119,6 +119,9 @@ type Options struct {
 	}
 	// AdminMatcher returns true if group contains email.
 	AdminMatcher func(acl []string, email string) bool
+	// OnRevoke, if set, is called in a new goroutine after a certificate
+	// is revoked.
+	OnRevoke func()
 	// ServerCertificates defines which DNS names users can request in
 	// server certificates. When empty, server certificates can't be
 	// requested.
@@ -732,7 +735,13 @@ func (m *PKIManager) RevokeCertificate(serialNumber *big.Int, reasonCode int) (r
 			}
 			m.db.Revoked[snh] = true
 			m.db.NumRevocations++
-			return commit(true, nil)
+			if err := commit(true, nil); err != nil {
+				return err
+			}
+			if m.opts.OnRevoke != nil {
+				go m.opts.OnRevoke()
+			}
+			return nil
 		}
 	}
 	return errNotFound
