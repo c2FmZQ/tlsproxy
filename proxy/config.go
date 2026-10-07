@@ -985,8 +985,12 @@ func validateTrustedIssuers(issuers []*TrustedIssuer) error {
 		if ti.JWKSURI == "" {
 			return fmt.Errorf("[%d].JWKSURI must be set", i)
 		}
-		if _, err := url.Parse(ti.JWKSURI); err != nil {
+		u, err := url.Parse(ti.JWKSURI)
+		if err != nil {
 			return fmt.Errorf("[%d].JWKSURI: %v", i, err)
+		}
+		if u.Scheme != "https" {
+			return fmt.Errorf("[%d].JWKSURI must be an https URL", i)
 		}
 	}
 	return nil

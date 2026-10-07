@@ -461,3 +461,19 @@ func TestReadSplitConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateTrustedIssuers(t *testing.T) {
+	for _, tc := range []struct {
+		uri     string
+		wantErr bool
+	}{
+		{"https://example.com/.sso/jwks", false},
+		{"http://example.com/.sso/jwks", true},
+		{"example.com/.sso/jwks", true},
+	} {
+		err := validateTrustedIssuers([]*TrustedIssuer{{Issuer: "https://example.com", JWKSURI: tc.uri}})
+		if gotErr := err != nil; gotErr != tc.wantErr {
+			t.Errorf("validateTrustedIssuers(%q) = %v, wantErr %v", tc.uri, err, tc.wantErr)
+		}
+	}
+}

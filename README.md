@@ -343,7 +343,7 @@ In this example:
 The `TrustedIssuer` object defines an external identity provider whose tokens are accepted by `tlsproxy`. This is useful for distributed authentication where multiple proxies trust each other's user identity tokens.
 
 *   `issuer`: (Required) String. The expected "iss" claim value (e.g., "https://auth.example.com/").
-*   `jwksUri`: (Required) String. The URL to fetch the JSON Web Key Set (JWKS).
+*   `jwksUri`: (Required) String. The `https` URL to fetch the JSON Web Key Set (JWKS).
 
 **Example:**
 

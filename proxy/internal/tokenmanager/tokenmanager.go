@@ -453,10 +453,20 @@ func (tm *TokenManager) getKey(tok *jwt.Token) (interface{}, error) {
 			return tk.privKey.Public(), nil
 		}
 	}
-	if pk, err := tm.remote.GetKey(kid); err == nil {
-		return pk, nil
-	}
 	return nil, errors.New("not found")
+}
+
+func (tm *TokenManager) getRemoteKey(issuer string) jwt.Keyfunc {
+	return func(tok *jwt.Token) (interface{}, error) {
+		kid, ok := tok.Header["kid"].(string)
+		if !ok {
+			return nil, errors.New("kid header missing")
+		}
+		if iss, ok := tm.remote.IssuerForKey(kid); !ok || iss != issuer {
+			return nil, errors.New("not found")
+		}
+		return tm.remote.GetKey(kid)
+	}
 }
 
 func (tm *TokenManager) IssuerForKey(kid string) (string, bool) {
@@ -471,10 +481,18 @@ func (tm *TokenManager) IssuerForKey(kid string) (string, bool) {
 	return tm.remote.IssuerForKey(kid)
 }
 
-// ValidateToken validates a JSON Web Token (JWT).
+// ValidateToken validates a JSON Web Token (JWT) signed by one of the local
+// keys.
 func (tm *TokenManager) ValidateToken(t string, opts ...jwt.ParserOption) (*jwt.Token, error) {
 	opts = append(opts, jwt.WithValidMethods([]string{"ES256", "RS256", "EdDSA"}))
 	return jwt.ParseWithClaims(t, jwt.MapClaims{}, tm.getKey, opts...)
+}
+
+// ValidateRemoteToken validates a JSON Web Token (JWT) signed by one of the
+// keys of a trusted issuer. The token's iss claim must be that issuer.
+func (tm *TokenManager) ValidateRemoteToken(t, issuer string, opts ...jwt.ParserOption) (*jwt.Token, error) {
+	opts = append(opts, jwt.WithIssuer(issuer), jwt.WithValidMethods([]string{"ES256", "RS256", "EdDSA"}))
+	return jwt.ParseWithClaims(t, jwt.MapClaims{}, tm.getRemoteKey(issuer), opts...)
 }
 
 // ServeJWKS returns the current public keys as a JSON Web Key Set (JWKS).

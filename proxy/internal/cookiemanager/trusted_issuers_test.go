@@ -154,4 +154,45 @@ func TestTrustedIssuers(t *testing.T) {
 	if err == nil {
 		t.Error("ValidateAuthTokenCookie(wrong proxyauth): expected error, got nil")
 	}
+
+	// Case E: Trusted Issuer's key, local issuer claim, as bearer token
+	tokenLocalIss := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
+		"iss":   "https://idp.example.com",
+		"aud":   "https://example.com/",
+		"sub":   "user123",
+		"email": "admin@example.com",
+		"exp":   time.Now().Add(time.Hour).Unix(),
+	})
+	tokenLocalIss.Header["kid"] = "test-kid-1"
+	signedTokenLocalIss, _ := tokenLocalIss.SignedString(privKey)
+
+	reqBearer, _ := http.NewRequest("GET", "https://example.com", nil)
+	reqBearer.Header.Set("Authorization", "Bearer "+signedTokenLocalIss)
+	if _, err := cm.ValidateAuthorizationHeader(reqBearer); err == nil {
+		t.Error("ValidateAuthorizationHeader(trusted key, local iss): expected error, got nil")
+	}
+
+	// Case F: Local key, bearer token with and without exp
+	localClaims := jwt.MapClaims{
+		"iss": "https://idp.example.com",
+		"aud": "https://example.com/",
+		"sub": "user123",
+	}
+	signedNoExp, err := tm.CreateToken(localClaims, "")
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+	reqBearer.Header.Set("Authorization", "Bearer "+signedNoExp)
+	if _, err := cm.ValidateAuthorizationHeader(reqBearer); err == nil {
+		t.Error("ValidateAuthorizationHeader(no exp): expected error, got nil")
+	}
+	localClaims["exp"] = time.Now().Add(time.Hour).Unix()
+	signedWithExp, err := tm.CreateToken(localClaims, "")
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+	reqBearer.Header.Set("Authorization", "Bearer "+signedWithExp)
+	if _, err := cm.ValidateAuthorizationHeader(reqBearer); err != nil {
+		t.Errorf("ValidateAuthorizationHeader(local key, exp): %v", err)
+	}
 }

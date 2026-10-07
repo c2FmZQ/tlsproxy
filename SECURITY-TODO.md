@@ -18,7 +18,10 @@ deleted when every item is resolved.
   Fix: match only on the cleaned path; make sure the path that is checked is
   the path that is forwarded, also when `sanitizePath: false`.
 
-- [ ] **2. Bearer tokens with local `iss` accepted when signed by any trusted issuer's key** (High)
+- [x] **2. Bearer tokens with local `iss` accepted when signed by any trusted issuer's key** (High)
+  *Fixed: `ValidateToken` only uses local keys; trusted-issuer tokens go
+  through `ValidateRemoteToken`, which requires the key to belong to `iss`.
+  Bearer and ID token cookies require `exp`. `jwksUri` must be https.*
   `proxy/internal/tokenmanager/tokenmanager.go` `ValidateToken`/`getKey` fall
   back to the global remote key set (union of every provider's
   `trustedIssuers`) and only check `iss == local issuer`. `exp` is not

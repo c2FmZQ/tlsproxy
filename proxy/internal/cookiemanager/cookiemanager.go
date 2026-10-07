@@ -271,24 +271,26 @@ func (cm *CookieManager) validateAuthToken(req *http.Request, leeway time.Durati
 		return nil, "", errors.New("unknown key")
 	}
 
-	var expectedIssuer string
+	var tok *jwt.Token
 	if issuer == "" {
 		// Local
-		expectedIssuer = cm.issuer
+		tok, err = cm.tm.ValidateToken(cookie.Value,
+			jwt.WithIssuer(cm.issuer),
+			jwt.WithAudience(cm.issuer),
+			jwt.WithExpirationRequired(),
+			jwt.WithLeeway(leeway),
+		)
 	} else {
 		// Trusted
 		if !slices.Contains(cm.trustedIssuers, issuer) {
 			return nil, "", fmt.Errorf("issuer %q is not trusted", issuer)
 		}
-		expectedIssuer = issuer
+		tok, err = cm.tm.ValidateRemoteToken(cookie.Value, issuer,
+			jwt.WithAudience(issuer),
+			jwt.WithExpirationRequired(),
+			jwt.WithLeeway(leeway),
+		)
 	}
-
-	tok, err := cm.tm.ValidateToken(cookie.Value,
-		jwt.WithIssuer(expectedIssuer),
-		jwt.WithAudience(expectedIssuer),
-		jwt.WithExpirationRequired(),
-		jwt.WithLeeway(leeway),
-	)
 	if err != nil {
 		return nil, "", err
 	}
@@ -347,7 +349,7 @@ func (cm *CookieManager) ValidateIDTokenCookie(req *http.Request, authToken *jwt
 	if err != nil {
 		return err
 	}
-	tok, err := cm.tm.ValidateToken(cookie.Value, jwt.WithIssuer(cm.issuer), jwt.WithAudience(audience))
+	tok, err := cm.tm.ValidateToken(cookie.Value, jwt.WithIssuer(cm.issuer), jwt.WithAudience(audience), jwt.WithExpirationRequired())
 	if err != nil {
 		return err
 	}
@@ -363,7 +365,7 @@ func (cm *CookieManager) ValidateAuthorizationHeader(req *http.Request) (*jwt.To
 	if len(h) < 7 || strings.ToUpper(h[:7]) != "BEARER " {
 		return nil, errors.New("invalid authorization header")
 	}
-	tok, err := cm.tm.ValidateToken(h[7:], jwt.WithIssuer(cm.issuer), jwt.WithAudience(audienceFromReq(req)))
+	tok, err := cm.tm.ValidateToken(h[7:], jwt.WithIssuer(cm.issuer), jwt.WithAudience(audienceFromReq(req)), jwt.WithExpirationRequired())
 	if err != nil {
 		return nil, err
 	}
