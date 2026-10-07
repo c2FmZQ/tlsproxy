@@ -252,8 +252,10 @@ deleted when every item is resolved.
   *Fixed: `redirect_uri` must match the authorization request; PKCE
   (S256/plain) is enforced when the client sent a code challenge, and
   advertised in the discovery document.*
-- [ ] **26.** OIDC RP accepts a missing `email_verified`
+- [x] **26.** OIDC RP accepts a missing `email_verified`
   (`oidc/client.go`); the local OP then asserts `email_verified: true`.
+  *Declined (by decision): upstream IdPs are trusted for email identity;
+  some IdPs never send `email_verified`.*
 - [ ] **27.** WebAuthn signature counter is ignored.
 - [ ] **28.** Revoking a cert doesn't close connections already open with it
   (`reAuthorize` only re-checks ACLs, only on reconfigure).
