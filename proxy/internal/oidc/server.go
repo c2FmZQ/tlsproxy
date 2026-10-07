@@ -26,6 +26,7 @@ package oidc
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	_ "embed"
 	"encoding/base64"
 	"encoding/hex"
@@ -514,7 +515,7 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 
 		var found bool
 		for _, client := range s.opts.Clients {
-			if client.ID == clientID && client.Secret != "" && client.Secret == clientSecret && redirectURI != "" && slices.Contains(client.RedirectURI, redirectURI) {
+			if client.ID == clientID && client.Secret != "" && subtle.ConstantTimeCompare([]byte(client.Secret), []byte(clientSecret)) == 1 && redirectURI != "" && slices.Contains(client.RedirectURI, redirectURI) {
 				found = true
 				break
 			}

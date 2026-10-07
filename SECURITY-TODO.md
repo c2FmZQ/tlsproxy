@@ -244,8 +244,9 @@ deleted when every item is resolved.
   cookies (`proxy/internal/csrf/csrf.go`).
   *Fixed: skipped only when the identity came from a validated bearer
   token (`fromctx.BearerAuth`).*
-- [ ] **24.** OIDC client secret compared with `==` instead of a constant-time
+- [x] **24.** OIDC client secret compared with `==` instead of a constant-time
   compare (`proxy/internal/oidc/server.go`).
+  *Fixed: `subtle.ConstantTimeCompare`.*
 - [ ] **25.** OIDC token endpoint doesn't compare `redirect_uri` with the one
   used in the authorization request (RFC 6749 §4.1.3) and ignores PKCE.
 - [ ] **26.** OIDC RP accepts a missing `email_verified`
