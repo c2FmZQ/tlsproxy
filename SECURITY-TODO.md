@@ -313,7 +313,10 @@ deleted when every item is resolved.
   value.
   *Fixed: ACL entries that are group names are not compared with the
   email directly; empty emails never match.*
-- [ ] **41.** OCSP delegate cert has `IsCA: true` (`pki.go`); not needed.
+- [x] **41.** OCSP delegate cert has `IsCA: true` (`pki.go`); not needed.
+  *No change needed: the delegate cert also signs the CRLs, and Go's
+  `RevocationList.CheckSignatureFrom` requires the signer to be a CA. It
+  can't issue certs (KeyUsage is CRLSign only, root has MaxPathLenZero).*
 - [ ] **42.** PKI `?owner=all` lists every user's certs to any user with the
   `pki` scope (may be intended).
 - [ ] **43.** `certmanager` (test-only) generates and caches an RSA key per SNI
