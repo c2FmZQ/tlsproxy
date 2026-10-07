@@ -173,7 +173,11 @@ deleted when every item is resolved.
   without the `pki`/`ssh` scope when rules don't cover their paths.
   Fix: still check `overrideScopes` when no rule matches.
 
-- [ ] **16. Unbounded login-state maps in OIDC RP, SAML and passkeys** (Low)
+- [x] **16. Unbounded login-state maps in OIDC RP, SAML and passkeys** (Low)
+  *Fixed: new `idp.PendingLogins` (expiry checked on lookup, pruned on
+  insert every 30s or when full, max 50000 entries) used by the OIDC RP,
+  SAML, and passkeys (nonces and challenges). Return URLs over 4096 bytes
+  are rejected.*
   `oidc/client.go`, `saml/saml.go`, `passkeys/manager.go`: state (including an
   attacker-sized `OriginalURL`) is only expired inside `HandleCallback`.
   Fix: periodic expiry and a size cap.

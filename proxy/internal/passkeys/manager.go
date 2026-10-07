@@ -122,8 +122,8 @@ func NewManager(cfg Config) (*Manager, error) {
 	}
 	m := &Manager{
 		cfg:        cfg,
-		challenges: make(map[string]*challenge),
-		nonces:     make(map[string]*nonceData),
+		challenges: idp.NewPendingLogins(5*time.Minute, func(c *challenge) time.Time { return c.created }),
+		nonces:     idp.NewPendingLogins(5*time.Minute, func(n *nonceData) time.Time { return n.created }),
 	}
 	m.db.Handles = make(map[string]*user)
 	m.db.Subjects = make(map[string]string)
@@ -143,10 +143,10 @@ type Manager struct {
 	acl *[]string
 
 	mu         sync.Mutex
-	challenges map[string]*challenge
+	challenges *idp.PendingLogins[*challenge]
 
 	noncesMu sync.Mutex
-	nonces   map[string]*nonceData
+	nonces   *idp.PendingLogins[*nonceData]
 }
 
 type challenge struct {
@@ -177,17 +177,6 @@ func (m *Manager) SetACL(acl *[]string) {
 			continue
 		}
 		*m.acl = append(*m.acl, a)
-	}
-}
-
-func (m *Manager) vacuum() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	now := time.Now().UTC()
-	for k, v := range m.challenges {
-		if v.created.Add(5 * time.Minute).Before(now) {
-			delete(m.challenges, k)
-		}
 	}
 }
 
@@ -222,6 +211,10 @@ func (m *Manager) ServeWellKnown(w http.ResponseWriter, req *http.Request) {
 
 func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL string, opts ...idp.Option) {
 	m.cfg.EventRecorder.Record("passkey auth request")
+	if len(origURL) > idp.MaxOriginalURLLength {
+		http.Error(w, "URL too long", http.StatusRequestURITooLong)
+		return
+	}
 
 	n := make([]byte, 16)
 	if _, err := io.ReadFull(rand.Reader, n); err != nil {
@@ -237,12 +230,16 @@ func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL
 	}
 
 	m.noncesMu.Lock()
-	m.nonces[nonce] = &nonceData{
+	added := m.nonces.Add(nonce, &nonceData{
 		created: time.Now().UTC(),
 		origURL: ou,
 		opts:    idp.ApplyOptions(opts),
-	}
+	})
 	m.noncesMu.Unlock()
+	if !added {
+		http.Error(w, "too many pending login requests", http.StatusServiceUnavailable)
+		return
+	}
 
 	u, err := url.Parse(m.cfg.Endpoint)
 	if err != nil {
@@ -273,14 +270,8 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	nonce := req.Form.Get("nonce")
 
 	m.noncesMu.Lock()
-	now := time.Now().UTC()
-	for k, v := range m.nonces {
-		if v.created.Add(5 * time.Minute).Before(now) {
-			delete(m.nonces, k)
-		}
-	}
-	nData, ok := m.nonces[nonce]
-	delete(m.nonces, nonce)
+	nData, ok := m.nonces.Get(nonce)
+	m.nonces.Delete(nonce)
 	m.noncesMu.Unlock()
 
 	if ok {
@@ -762,7 +753,6 @@ func (m *Manager) setAuthToken(w http.ResponseWriter, req *http.Request, u *url.
 }
 
 func (m *Manager) attestationOptions(claims map[string]any) (*AttestationOptions, error) {
-	m.vacuum()
 	opts, err := newAttestationOptions()
 	if err != nil {
 		return nil, err
@@ -803,16 +793,17 @@ func (m *Manager) attestationOptions(claims map[string]any) (*AttestationOptions
 		opts.User.ID = uid
 	}
 
-	m.challenges[base64.RawURLEncoding.EncodeToString(opts.Challenge)] = &challenge{
+	if !m.challenges.Add(base64.RawURLEncoding.EncodeToString(opts.Challenge), &challenge{
 		created: time.Now().UTC(),
 		claims:  claims,
 		uid:     opts.User.ID,
+	}) {
+		return nil, errors.New("too many pending requests")
 	}
 	return opts, nil
 }
 
 func (m *Manager) processAttestation(claims map[string]any, host, jsargs string, allowNewKey bool) (newClaims map[string]any, retErr error) {
-	m.vacuum()
 	email, ok := claims["email"].(string)
 	if !ok {
 		return nil, errors.New("invalid email")
@@ -839,8 +830,8 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	challenge, ok := m.challenges[cd.Challenge]
-	delete(m.challenges, cd.Challenge)
+	challenge, ok := m.challenges.Get(cd.Challenge)
+	m.challenges.Delete(cd.Challenge)
 
 	if !ok || !reflect.DeepEqual(challenge.claims, claims) {
 		return nil, errors.New("invalid challenge")
@@ -907,15 +898,16 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 }
 
 func (m *Manager) assertionOptions(email string) (*AssertionOptions, error) {
-	m.vacuum()
 	opts, err := newAssertionOptions()
 	if err != nil {
 		return nil, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.challenges[base64.RawURLEncoding.EncodeToString(opts.Challenge)] = &challenge{
+	if !m.challenges.Add(base64.RawURLEncoding.EncodeToString(opts.Challenge), &challenge{
 		created: time.Now().UTC(),
+	}) {
+		return nil, errors.New("too many pending requests")
 	}
 	if h, ok := m.db.Subjects[email]; ok {
 		if u, ok := m.db.Handles[h]; ok {
@@ -940,7 +932,6 @@ func (m *Manager) assertionOptions(email string) (*AssertionOptions, error) {
 }
 
 func (m *Manager) processAssertion(jsargs string, token *jwt.Token) (claims map[string]any, retErr error) {
-	m.vacuum()
 	var args struct {
 		ID                string `json:"id"`
 		ClientDataJSON    Bytes  `json:"clientDataJSON"`
@@ -972,10 +963,10 @@ func (m *Manager) processAssertion(jsargs string, token *jwt.Token) (claims map[
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.challenges[cd.Challenge]; !ok {
+	if _, ok := m.challenges.Get(cd.Challenge); !ok {
 		return nil, errors.New("invalid challenge")
 	}
-	delete(m.challenges, cd.Challenge)
+	m.challenges.Delete(cd.Challenge)
 
 	commit, err := m.cfg.Store.OpenForUpdate(passkeyFile, &m.db)
 	if err != nil {

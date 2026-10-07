@@ -75,7 +75,7 @@ type Provider struct {
 	dsigCtx *dsig.ValidationContext
 
 	mu     sync.Mutex
-	states map[string]*samlState
+	states *idp.PendingLogins[*samlState]
 }
 
 type samlState struct {
@@ -97,7 +97,7 @@ func New(cfg Config, er EventRecorder, cm CookieManager) (*Provider, error) {
 		er:      er,
 		cm:      cm,
 		dsigCtx: dsigCtx,
-		states:  make(map[string]*samlState),
+		states:  idp.NewPendingLogins(5*time.Minute, func(s *samlState) time.Time { return s.Created }),
 	}
 	if _, err := url.Parse(cfg.SSOURL); err != nil {
 		return nil, fmt.Errorf("SSOURL: %v", err)
@@ -109,6 +109,10 @@ func New(cfg Config, er EventRecorder, cm CookieManager) (*Provider, error) {
 }
 
 func (p *Provider) RequestLogin(w http.ResponseWriter, req *http.Request, origURL string, opts ...idp.Option) {
+	if len(origURL) > idp.MaxOriginalURLLength {
+		http.Error(w, "URL too long", http.StatusRequestURITooLong)
+		return
+	}
 	ou, err := url.Parse(origURL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -121,12 +125,16 @@ func (p *Provider) RequestLogin(w http.ResponseWriter, req *http.Request, origUR
 	}
 	idStr := hex.EncodeToString(id[:])
 	p.mu.Lock()
-	p.states[idStr] = &samlState{
+	added := p.states.Add(idStr, &samlState{
 		Created:     time.Now(),
 		OriginalURL: origURL,
 		Host:        ou.Host,
-	}
+	})
 	p.mu.Unlock()
+	if !added {
+		http.Error(w, "too many pending login requests", http.StatusServiceUnavailable)
+		return
+	}
 
 	authReq := &samlAuthnRequest{
 		XMLName:                     xml.Name{Local: "samlp:samlAuthnRequest"},
@@ -193,15 +201,8 @@ func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	id := findElementAttr(v, "./Subject/SubjectConfirmation/SubjectConfirmationData", "InResponseTo")
 
 	p.mu.Lock()
-	for k, v := range p.states {
-		if time.Since(v.Created) > 5*time.Minute {
-			delete(p.states, k)
-		}
-	}
-	state, ok := p.states[id]
-	if ok {
-		delete(p.states, id)
-	}
+	state, ok := p.states.Get(id)
+	p.states.Delete(id)
 	p.mu.Unlock()
 
 	if nonce := p.cm.SAMLNonce(w, req); !ok || nonce == "" || subtle.ConstantTimeCompare([]byte(nonce), []byte(id)) != 1 {
