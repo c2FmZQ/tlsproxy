@@ -151,7 +151,12 @@ deleted when every item is resolved.
 
 ## Low
 
-- [ ] **14. Spoofable forwarding/identity headers** (Low)
+- [x] **14. Spoofable forwarding/identity headers** (Low)
+  *Fixed: `delHeaderVariants` strips `_`/`-` and case variants of the
+  identity header, `forwardHttpHeaders` keys, XFF and XFCC. Client
+  `Forwarded`/`X-Forwarded-Host`/`X-Forwarded-Proto` are removed; the proxy
+  now sets `X-Forwarded-Host` and `X-Forwarded-Proto: https` (overridable
+  via `forwardHttpHeaders`).*
   `proxy/backend-sso.go`, `proxy/backend-http.go` `reverseProxyDirector`:
   `X_tlsproxy_user_id` (underscore variant) and underscore variants of
   `forwardHttpHeaders` keys aren't stripped (CGI-style backends map `_`/`-` to

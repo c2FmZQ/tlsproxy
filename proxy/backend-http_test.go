@@ -25,8 +25,10 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -185,4 +187,98 @@ func TestMisdirectedRequest(t *testing.T) {
 			t.Errorf("SNI %q Host %q: got %q, want %q", tc.sni, tc.host, first, tc.want)
 		}
 	}
+}
+
+func TestForwardedHeaders(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+
+	// A backend that returns all the request headers.
+	l, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	beServer := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			var lines []string
+			for k, v := range req.Header {
+				lines = append(lines, fmt.Sprintf("%s: %s", k, strings.Join(v, ",")))
+			}
+			slices.Sort(lines)
+			fmt.Fprintln(w, strings.Join(lines, "\n"))
+		}),
+	}
+	go beServer.Serve(l)
+	defer beServer.Close()
+
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
+			Backends: []*Backend{
+				{
+					ServerNames: Strings{"http.example.com"},
+					Mode:        "HTTP",
+					Addresses:   Strings{l.Addr().String()},
+					ForwardHTTPHeaders: map[string]string{
+						"X-Server-Name": "${SERVER_NAME}",
+					},
+				},
+			},
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	defer proxy.Stop()
+
+	msg := "GET / HTTP/1.1\r\n" +
+		"Host: http.example.com\r\n" +
+		"X_tlsproxy_user_id: admin@example.com\r\n" +
+		"x-tlsproxy-user-id: admin@example.com\r\n" +
+		"X_Server_Name: evil.example.com\r\n" +
+		"X_Forwarded_For: 1.2.3.4\r\n" +
+		"X-Forwarded-Host: evil.example.com\r\n" +
+		"X-Forwarded-Proto: http\r\n" +
+		"Forwarded: for=1.2.3.4\r\n" +
+		"X-Other: foo\r\n" +
+		"Connection: close\r\n\r\n"
+	got, _, err := tlsGet("http.example.com", proxy.listener.Addr().String(), msg, extCA, nil, []string{"http/1.1"})
+	if err != nil {
+		t.Fatalf("tlsGet: %v", err)
+	}
+	_, body, _ := strings.Cut(got, "\r\n\r\n")
+	headers := make(map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(body), "\n") {
+		if k, v, ok := strings.Cut(line, ": "); ok {
+			headers[k] = v
+		}
+	}
+	for k, want := range map[string]string{
+		"X-Server-Name":     "http.example.com",
+		"X-Forwarded-Host":  "http.example.com",
+		"X-Forwarded-Proto": "https",
+		"X-Other":           "foo",
+	} {
+		if got := headers[k]; got != want {
+			t.Errorf("%s = %q, want %q", k, got, want)
+		}
+	}
+	for _, k := range []string{"X_tlsproxy_user_id", "X-Tlsproxy-User-Id", "X_server_name", "X_forwarded_for", "Forwarded"} {
+		if v, ok := headers[k]; ok {
+			t.Errorf("unexpected header %s: %q", k, v)
+		}
+	}
+	if got := headers["X-Forwarded-For"]; got == "" || strings.Contains(got, "1.2.3.4") {
+		t.Errorf("X-Forwarded-For = %q", got)
+	}
+	t.Logf("Headers:\n%s", body)
 }

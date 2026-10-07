@@ -80,7 +80,7 @@ func init() {
 // available. It modifies the request headers and context.
 // It returns true if processing of the request should continue.
 func (be *Backend) authenticateUser(w http.ResponseWriter, req **http.Request) bool {
-	(*req).Header.Del(xTLSProxyUserIDHeader)
+	delHeaderVariants((*req).Header, xTLSProxyUserIDHeader)
 	if be.SSO != nil {
 		claims, tokenHash, cont := be.checkCookies(w, *req)
 		if !cont {

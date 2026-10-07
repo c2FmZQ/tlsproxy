@@ -236,7 +236,7 @@ Each `Backend` object defines a service and its behavior:
 *   `forwardServerName`: (Optional) String. ServerName to send in TLS handshake with backend.
 *   `forwardRootCAs`: (Optional) List of strings. CA names or PEM-encoded certificates for backend verification.
 *   `forwardTimeout`: (Optional) Duration. Connection timeout to backend servers.
-*   `forwardHttpHeaders`: (Optional) Map of strings. HTTP headers to add to forwarded requests.
+*   `forwardHttpHeaders`: (Optional) Map of strings. HTTP headers to add to forwarded requests. Headers with the same names sent by clients are removed, including variants with `_` instead of `-`. `X-Forwarded-For`, `X-Forwarded-Host`, and `X-Forwarded-Proto` are always set by the proxy, and `Forwarded` is removed. They can be overridden here.
 *   `forwardECH`: (Optional) Object. ECH parameters for connecting to the backend.
 *   `pathOverrides`: (Optional) List of `PathOverride` objects. Defines different backend parameters for specific path prefixes.
 *   `proxyProtocolVersion`: (Optional) String. Enables PROXY protocol on this backend (`v1` or `v2`).

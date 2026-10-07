@@ -55,9 +55,12 @@ const (
 	hstsHeader = "Strict-Transport-Security"
 	hstsValue  = "max-age=2592000" // 30 days
 
-	viaHeader           = "Via"
-	hostHeader          = "Host"
-	xForwardedForHeader = "X-Forwarded-For"
+	viaHeader             = "Via"
+	hostHeader            = "Host"
+	xForwardedForHeader   = "X-Forwarded-For"
+	xForwardedHostHeader  = "X-Forwarded-Host"
+	xForwardedProtoHeader = "X-Forwarded-Proto"
+	forwardedHeader       = "Forwarded"
 )
 
 type ctxURLKeyType int
@@ -331,7 +334,13 @@ func (be *Backend) reverseProxy() http.Handler {
 		if sanitizePath {
 			req.URL.Path = cleanPath
 		}
+		delHeaderVariants(req.Header, forwardedHeader)
+		delHeaderVariants(req.Header, xForwardedHostHeader)
+		delHeaderVariants(req.Header, xForwardedProtoHeader)
+		req.Header.Set(xForwardedHostHeader, req.Host)
+		req.Header.Set(xForwardedProtoHeader, "https")
 		for k, v := range httpHeaders {
+			delHeaderVariants(req.Header, k)
 			v = expandVars(v, req)
 			if v != "" {
 				req.Header.Set(k, v)
@@ -509,8 +518,8 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 }
 
 func (be *Backend) reverseProxyDirector(req *http.Request) {
-	req.Header.Del(xForwardedForHeader)
-	req.Header.Del(xFCCHeader)
+	delHeaderVariants(req.Header, xForwardedForHeader)
+	delHeaderVariants(req.Header, xFCCHeader)
 	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 && be.ClientAuth != nil && len(be.ClientAuth.AddClientCertHeader) > 0 {
 		addXFCCHeader(req, be.ClientAuth.AddClientCertHeader)
 	}
