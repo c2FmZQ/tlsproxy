@@ -86,6 +86,9 @@ func (be *Backend) localHandler() http.Handler {
 				be.logPanic(req, r)
 			}
 		}()
+		if !be.checkRequestHost(w, req) {
+			return
+		}
 		if !be.authenticateUser(w, &req) {
 			return
 		}
@@ -94,6 +97,24 @@ func (be *Backend) localHandler() http.Handler {
 		}
 		be.serveStaticFiles(w, req, be.documentRoot, "")
 	})
+}
+
+// checkRequestHost verifies that the HTTP request is directed at a server name
+// that's configured for this backend. This prevents clients from using one
+// server name in the TLS handshake, and then a different server name in the
+// request. It must be called before anything uses req.Host.
+func (be *Backend) checkRequestHost(w http.ResponseWriter, req *http.Request) bool {
+	if req.Host == "" {
+		req.Host = connServerName(req.Context().Value(connCtxKey).(anyConn))
+	}
+	if !slices.Contains(be.ServerNames, hostFromReq(req)) {
+		if req.Body != nil {
+			req.Body.Close()
+		}
+		http.Error(w, "Misdirected Request", http.StatusMisdirectedRequest)
+		return false
+	}
+	return true
 }
 
 func (be *Backend) redirectPermanently(w http.ResponseWriter, req *http.Request, path string) {
@@ -208,6 +229,9 @@ func (be *Backend) reverseProxy() http.Handler {
 				be.logPanic(req, r)
 			}
 		}()
+		if !be.checkRequestHost(w, req) {
+			return
+		}
 		if !be.authenticateUser(w, &req) {
 			return
 		}
@@ -215,30 +239,14 @@ func (be *Backend) reverseProxy() http.Handler {
 			return
 		}
 
-		// Verify that the HTTP request is directed at a server name
-		// that's configured for this backend. This prevents clients
-		// from using one server name in the TLS handshake, and then
-		// a different server name in the request.
 		ctx := req.Context()
 		serverName := connServerName(ctx.Value(connCtxKey).(anyConn))
-		host := req.Host
-		if host == "" {
-			host = serverName
-		}
-		req.URL.Host = host
-		req.Header.Set(hostHeader, host)
+		req.URL.Host = req.Host
+		req.Header.Set(hostHeader, req.Host)
 
 		req.URL.Scheme = "https"
 		if be.Mode == ModeHTTP {
 			req.URL.Scheme = "http"
-		}
-
-		if !slices.Contains(be.ServerNames, req.URL.Hostname()) {
-			if req.Body != nil {
-				req.Body.Close()
-			}
-			http.Error(w, "Misdirected Request", http.StatusMisdirectedRequest)
-			return
 		}
 		ctx = context.WithValue(ctx, ctxURLKey, req.URL.String())
 

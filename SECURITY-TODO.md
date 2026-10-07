@@ -48,7 +48,9 @@ deleted when every item is resolved.
   `backendProto` with an h3 client).
   Fix: delegate to `c.qc`; add a test with `BackendProto: "h3"`.
 
-- [ ] **5. Host header not checked against `ServerNames` before authentication** (Medium)
+- [x] **5. Host header not checked against `ServerNames` before authentication** (Medium)
+  *Fixed: `checkRequestHost` returns 421 before authentication in both
+  `localHandler` and `reverseProxy`.*
   `proxy/backend-http.go`: `localHandler()` never checks Host; in
   `reverseProxy()` the 421 check runs after `authenticateUser` and
   `handleLocalEndpointsAndAuthorize`. The Bearer token audience

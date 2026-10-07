@@ -27,10 +27,12 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 
 	jwt "github.com/golang-jwt/jwt/v5"
 
+	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 )
 
@@ -121,4 +123,66 @@ func (mockConn) ByteRateSent() float64 {
 
 func (mockConn) ByteRateReceived() float64 {
 	return 0
+}
+
+func TestMisdirectedRequest(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	be := newHTTPServer(t, ctx, "https", nil)
+
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
+			Backends: []*Backend{
+				{
+					ServerNames:  Strings{"local.example.com"},
+					Mode:         "LOCAL",
+					DocumentRoot: ".",
+				},
+				{
+					ServerNames: Strings{"http.example.com"},
+					Mode:        "HTTP",
+					Addresses:   Strings{be.String()},
+				},
+				{
+					ServerNames:  Strings{"other.example.com"},
+					Mode:         "LOCAL",
+					DocumentRoot: ".",
+				},
+			},
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	defer proxy.Stop()
+
+	for _, tc := range []struct {
+		sni, host, want string
+	}{
+		{"local.example.com", "local.example.com", "HTTP/1.1 200 OK"},
+		{"local.example.com", "local.example.com:443", "HTTP/1.1 200 OK"},
+		{"local.example.com", "other.example.com", "HTTP/1.1 421 Misdirected Request"},
+		{"http.example.com", "http.example.com", "HTTP/1.1 200 OK"},
+		{"http.example.com", "other.example.com", "HTTP/1.1 421 Misdirected Request"},
+	} {
+		msg := "GET /proxy.go HTTP/1.1\r\nHost: " + tc.host + "\r\nConnection: close\r\n\r\n"
+		got, _, err := tlsGet(tc.sni, proxy.listener.Addr().String(), msg, extCA, nil, []string{"http/1.1"})
+		if err != nil {
+			t.Fatalf("tlsGet(%q, %q): %v", tc.sni, tc.host, err)
+		}
+		if !strings.HasPrefix(got, tc.want) {
+			first, _, _ := strings.Cut(got, "\r\n")
+			t.Errorf("SNI %q Host %q: got %q, want %q", tc.sni, tc.host, first, tc.want)
+		}
+	}
 }
