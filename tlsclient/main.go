@@ -28,6 +28,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"flag"
@@ -37,6 +38,7 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"slices"
 	"time"
 
 	"github.com/c2FmZQ/ech"
@@ -104,17 +106,29 @@ func main() {
 			if len(cs.OCSPResponse) == 0 {
 				return errors.New("no ocsp response")
 			}
-			cert := cs.PeerCertificates[0]
-			issuer := cert
-			if len(cs.PeerCertificates) > 1 {
-				issuer = cs.PeerCertificates[1]
+			// Use the verified chain, not the certs sent by the server.
+			if len(cs.VerifiedChains) == 0 || len(cs.VerifiedChains[0]) == 0 {
+				return errors.New("no verified chain")
+			}
+			chain := cs.VerifiedChains[0]
+			cert, issuer := chain[0], chain[0]
+			if len(chain) > 1 {
+				issuer = chain[1]
 			}
 			resp, err := ocsp.ParseResponseForCert(cs.OCSPResponse, cert, issuer)
 			if err != nil {
 				return err
 			}
+			// The response must be signed by the issuer or by a
+			// delegated responder (RFC 6960 section 4.2.2.2).
+			if rc := resp.Certificate; rc != nil && !rc.Equal(issuer) && !slices.Contains(rc.ExtKeyUsage, x509.ExtKeyUsageOCSPSigning) {
+				return errors.New("ocsp responder is not authorized")
+			}
 			if time.Now().After(resp.NextUpdate) {
 				return errors.New("ocsp response is expired")
+			}
+			if resp.ThisUpdate.After(time.Now().Add(5 * time.Minute)) {
+				return errors.New("ocsp response is not yet valid")
 			}
 			if resp.Status != ocsp.Good {
 				return errors.New("ocsp response status is not good")

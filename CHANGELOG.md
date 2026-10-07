@@ -1,5 +1,123 @@
 # TLSPROXY Release Notes
 
+## next
+
+This release fixes a number of security issues found during a security review. Some of the fixes change the
+behavior of the proxy in ways that may require config changes. Please read the breaking changes below before
+upgrading.
+
+### :warning: Breaking changes
+
+* **PKI server certificates must be allowed explicitly.** Users can no longer request server certificates for
+  arbitrary DNS names. The new `serverCertificates` option of `pki` lists the DNS names (or one-label wildcards)
+  that can be requested, and optionally which users or groups can request them. Without it, only client
+  certificates can be issued. For example:
+  ```yaml
+  pki:
+  - name: "EXAMPLE CA"
+    endpoint: https://pki-internal.example.com/certs
+    serverCertificates:
+    - dnsNames:
+      - "*.internal.example.com"
+      acl:
+      - bob@example.com
+  ```
+* **`jwksUri` must be an https URL** in `trustedIssuers`.
+* **Bearer tokens and ID token cookies must have an `exp` claim.** Tokens issued by TLSPROXY always have one.
+* **The Host header must match one of the backend's `serverNames`.** This was already enforced for `HTTP` and
+  `HTTPS` backends, but only after authentication. It is now checked first, and also for `LOCAL` and `CONSOLE`
+  backends. Requests with a different Host header get `421 Misdirected Request`.
+* **Forwarded headers are set by the proxy.** `X-Forwarded-Host` and `X-Forwarded-Proto` are now set on forwarded
+  requests, and the client's `Forwarded`, `X-Forwarded-Host`, and `X-Forwarded-Proto` headers are removed. Client
+  headers with the same name as `X-Forwarded-For`, `X-Forwarded-Client-Cert`, `X-tlsproxy-user-id`, or any
+  `forwardHttpHeaders` key, ignoring case and with `_` instead of `-` (e.g. `X_tlsproxy_user_id`), are removed.
+  `forwardHttpHeaders` can still override or remove `X-Forwarded-Host` and `X-Forwarded-Proto`.
+* **Backends can't set TLSPROXY's cookies.** `Set-Cookie` headers from backends for `TLSPROXYAUTH`,
+  `TLSPROXYIDTOKEN`, `TLSPROXYNONCE`, `TLSPROXYSAMLNONCE`, or `__tlsproxySid` are dropped.
+* **SSH certificate authority:**
+  * DSA keys are rejected.
+  * A `ttl` that is not a positive number of seconds is rejected with `400 Bad Request`. Larger values are still
+    capped at `maximumCertificateLifetime`.
+* **Login links expire.** The links used on the login, logout, and permission denied pages expire after a week,
+  and must point to the same backend.
+* **Device authorization page.** The device verification page now has two steps: after entering the user code,
+  the page shows which client is requesting access and with which scopes, before the user can approve or deny the
+  request.
+* **Local OIDC server:**
+  * The `redirect_uri` sent to the token endpoint must be the same as in the authorization request.
+  * When the client sends a PKCE `code_challenge`, the token request must include a matching `code_verifier`.
+  * An authorization request must be approved by the same user who made it.
+* **Passkeys:**
+  * The origin of passkey assertions is checked, like it already was for registrations.
+  * Authenticators with a signature counter must increase it on every login. Authenticators that don't implement
+    a counter are not affected.
+* **Connection limits:**
+  * The TLS handshake timeout is reduced from 2 minutes to 30 seconds.
+  * Connections and requests that would wait more than 30 seconds for `forwardRateLimit` are rejected instead of
+    waiting indefinitely.
+  * Each stream of a non-HTTP/3 QUIC connection counts toward `forwardRateLimit`.
+  * The plain HTTP server (`httpAddr`) has 10-second timeouts, and accepts at most 1000 concurrent connections, or
+    `maxOpen` if it is lower.
+  * At most 50000 pending logins are kept per identity provider, and the local OIDC server keeps at most 10000
+    pending authorization or device authorization requests. URLs longer than 4096 bytes can't be used as the
+    destination of a login.
+* **ACLs:** an ACL entry that is the name of a group is no longer also compared to the user's email address.
+* **`tlsclient --ocsp`** verifies OCSP responses against the verified certificate chain, and rejects responses
+  signed by certificates that aren't authorized to sign OCSP responses.
+
+### :lock: Security fixes
+
+* SSO rules and exceptions were matched against the raw request path. A path like `/public/../admin` matched an
+  exception for `/public/`, and was then forwarded as `/admin` without authentication.
+* Bearer tokens signed by any trusted issuer's key were accepted as if they had been issued by TLSPROXY.
+* The SSH certificate authority issued certificates that never expire when given a negative or very large `ttl`.
+* Forwarding a request to a backend with HTTP/3 crashed the proxy.
+* ID tokens issued for one backend could be used on another backend with a different Host header.
+* OCSP responses, stapled or fetched, could be signed by any certificate issued by the same CA, including the
+  revoked certificate itself. Fetched responses weren't checked for the serial number or freshness.
+* Any PKI user could get a server certificate for any DNS name.
+* The plain HTTP server had no timeouts, and idle connections could use up all the available file descriptors.
+* Unauthenticated device authorization requests could make the local OIDC server very slow.
+* Open redirects after login and after setting the ID token cookie.
+* SAML responses weren't tied to the browser that started the login, which allowed an attacker to log a victim
+  into the attacker's account.
+* Client-supplied headers could spoof the user identity header for CGI-style backends.
+* The scopes required by built-in endpoints (pki, ssh, etc) weren't checked when no SSO rule matched the path.
+* The CSRF check was skipped for any request with an `Authorization` header, even when cookies were used for
+  authentication.
+* Passkey logins were accepted from other origins, and the existence of passkeys for an email address could be
+  detected.
+* A user could approve another user's OIDC authorization request and get tokens despite the client's ACL.
+* Revoking a certificate issued by the built-in PKI didn't close connections already using it.
+* The built-in PKI could serve a CRL that didn't include the latest revocations.
+* Memory use could be increased without limit with ECH client hellos with arbitrary server names, and with
+  pending login requests.
+
+### :star2: New features
+
+* New `maxOpenPerIP` option to limit the number of open connections from a single client IP address. There is no
+  limit by default.
+* New `serverCertificates` option for `pki` (see above).
+* The local OIDC server supports PKCE (RFC 7636), and advertises `code_challenge_methods_supported`.
+
+### :wrench: Misc
+
+* Hardening:
+  * Constant-time comparison of OIDC client secrets.
+  * Client-provided server names are quoted in QUIC logs.
+  * More secrets are redacted from the config shown on the metrics page: static `forwardHttpHeaders` values and
+    ECH webhook URLs.
+  * `proxy.mjs` only sends the CSRF token to the same origin.
+  * A warning is logged when `--passphrase` is used. `$TLSPROXY_PASSPHRASE` should be used instead.
+* Bug fixes:
+  * Data races on the ECH keys and in the PKI's OCSP/CRL signing certificate rotation.
+  * Panic on `/.sso/` for backends without SSO.
+  * Possible panic when re-authorizing connections after a backend was removed.
+  * The session chain claim (`th`) wasn't carried over after an OIDC login.
+  * The ephemeral certificate manager (for testing) keeps a bounded number of certificates in memory, and reissues
+    expired certificates.
+* New tests for all the changes above.
+
 ## v0.25.12
 
 ### :wrench: Misc

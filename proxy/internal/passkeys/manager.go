@@ -86,6 +86,9 @@ type userKey struct {
 	Transports []string
 	CreatedAt  time.Time
 	LastSeen   time.Time
+	// SignCount is the authenticator's signature counter. It is always 0
+	// for authenticators that don't implement it.
+	SignCount uint32
 }
 
 // EventRecorder is used to record events.
@@ -122,8 +125,8 @@ func NewManager(cfg Config) (*Manager, error) {
 	}
 	m := &Manager{
 		cfg:        cfg,
-		challenges: make(map[string]*challenge),
-		nonces:     make(map[string]*nonceData),
+		challenges: idp.NewPendingLogins(5*time.Minute, func(c *challenge) time.Time { return c.created }),
+		nonces:     idp.NewPendingLogins(5*time.Minute, func(n *nonceData) time.Time { return n.created }),
 	}
 	m.db.Handles = make(map[string]*user)
 	m.db.Subjects = make(map[string]string)
@@ -143,10 +146,10 @@ type Manager struct {
 	acl *[]string
 
 	mu         sync.Mutex
-	challenges map[string]*challenge
+	challenges *idp.PendingLogins[*challenge]
 
 	noncesMu sync.Mutex
-	nonces   map[string]*nonceData
+	nonces   *idp.PendingLogins[*nonceData]
 }
 
 type challenge struct {
@@ -177,17 +180,6 @@ func (m *Manager) SetACL(acl *[]string) {
 			continue
 		}
 		*m.acl = append(*m.acl, a)
-	}
-}
-
-func (m *Manager) vacuum() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	now := time.Now().UTC()
-	for k, v := range m.challenges {
-		if v.created.Add(5 * time.Minute).Before(now) {
-			delete(m.challenges, k)
-		}
 	}
 }
 
@@ -222,6 +214,10 @@ func (m *Manager) ServeWellKnown(w http.ResponseWriter, req *http.Request) {
 
 func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL string, opts ...idp.Option) {
 	m.cfg.EventRecorder.Record("passkey auth request")
+	if len(origURL) > idp.MaxOriginalURLLength {
+		http.Error(w, "URL too long", http.StatusRequestURITooLong)
+		return
+	}
 
 	n := make([]byte, 16)
 	if _, err := io.ReadFull(rand.Reader, n); err != nil {
@@ -237,12 +233,16 @@ func (m *Manager) RequestLogin(w http.ResponseWriter, req *http.Request, origURL
 	}
 
 	m.noncesMu.Lock()
-	m.nonces[nonce] = &nonceData{
+	added := m.nonces.Add(nonce, &nonceData{
 		created: time.Now().UTC(),
 		origURL: ou,
 		opts:    idp.ApplyOptions(opts),
-	}
+	})
 	m.noncesMu.Unlock()
+	if !added {
+		http.Error(w, "too many pending login requests", http.StatusServiceUnavailable)
+		return
+	}
 
 	u, err := url.Parse(m.cfg.Endpoint)
 	if err != nil {
@@ -273,14 +273,8 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	nonce := req.Form.Get("nonce")
 
 	m.noncesMu.Lock()
-	now := time.Now().UTC()
-	for k, v := range m.nonces {
-		if v.created.Add(5 * time.Minute).Before(now) {
-			delete(m.nonces, k)
-		}
-	}
-	nData, ok := m.nonces[nonce]
-	delete(m.nonces, nonce)
+	nData, ok := m.nonces.Get(nonce)
+	m.nonces.Delete(nonce)
 	m.noncesMu.Unlock()
 
 	if ok {
@@ -301,6 +295,8 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		args.Del("nonce")
 		args.Set("redirect", token)
 		req.URL.RawQuery = args.Encode()
+		req.URL.Scheme = "https"
+		req.URL.Host = req.Host
 		http.Redirect(w, req, req.URL.String(), http.StatusFound)
 		return
 	}
@@ -423,7 +419,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		claims, err := m.processAssertion(req.Form.Get("args"), token)
+		claims, err := m.processAssertion(req.Host, req.Form.Get("args"), token)
 		if err != nil {
 			m.cfg.Logger.Errorf("ERR processAssertion: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -760,7 +756,6 @@ func (m *Manager) setAuthToken(w http.ResponseWriter, req *http.Request, u *url.
 }
 
 func (m *Manager) attestationOptions(claims map[string]any) (*AttestationOptions, error) {
-	m.vacuum()
 	opts, err := newAttestationOptions()
 	if err != nil {
 		return nil, err
@@ -801,16 +796,17 @@ func (m *Manager) attestationOptions(claims map[string]any) (*AttestationOptions
 		opts.User.ID = uid
 	}
 
-	m.challenges[base64.RawURLEncoding.EncodeToString(opts.Challenge)] = &challenge{
+	if !m.challenges.Add(base64.RawURLEncoding.EncodeToString(opts.Challenge), &challenge{
 		created: time.Now().UTC(),
 		claims:  claims,
 		uid:     opts.User.ID,
+	}) {
+		return nil, errors.New("too many pending requests")
 	}
 	return opts, nil
 }
 
 func (m *Manager) processAttestation(claims map[string]any, host, jsargs string, allowNewKey bool) (newClaims map[string]any, retErr error) {
-	m.vacuum()
 	email, ok := claims["email"].(string)
 	if !ok {
 		return nil, errors.New("invalid email")
@@ -837,8 +833,8 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	challenge, ok := m.challenges[cd.Challenge]
-	delete(m.challenges, cd.Challenge)
+	challenge, ok := m.challenges.Get(cd.Challenge)
+	m.challenges.Delete(cd.Challenge)
 
 	if !ok || !reflect.DeepEqual(challenge.claims, claims) {
 		return nil, errors.New("invalid challenge")
@@ -896,6 +892,7 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 		Transports: args.Transports,
 		CreatedAt:  now,
 		LastSeen:   now,
+		SignCount:  ao.AuthData.SignCount,
 	})
 
 	c := maps.Clone(claims)
@@ -905,15 +902,16 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 }
 
 func (m *Manager) assertionOptions(email string) (*AssertionOptions, error) {
-	m.vacuum()
 	opts, err := newAssertionOptions()
 	if err != nil {
 		return nil, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.challenges[base64.RawURLEncoding.EncodeToString(opts.Challenge)] = &challenge{
+	if !m.challenges.Add(base64.RawURLEncoding.EncodeToString(opts.Challenge), &challenge{
 		created: time.Now().UTC(),
+	}) {
+		return nil, errors.New("too many pending requests")
 	}
 	if h, ok := m.db.Subjects[email]; ok {
 		if u, ok := m.db.Handles[h]; ok {
@@ -926,19 +924,20 @@ func (m *Manager) assertionOptions(email string) (*AssertionOptions, error) {
 			}
 		}
 	} else if email != "" {
-		// Add fake credential ID to force the client to return an error
-		// like "No passkey registered for ..."
+		// Add a fake credential ID to force the client to return an
+		// error like "No passkey registered for ...". The ID looks
+		// like a real one, and is always the same for a given email,
+		// so that it doesn't reveal whether the email is registered.
 		opts.AllowCredentials = append(opts.AllowCredentials, CredentialID{
 			Type:       "public-key",
-			ID:         Bytes{0xff},
-			Transports: []string{"internal"},
+			ID:         Bytes(m.cfg.TokenManager.HMAC([]byte("fake passkey id\x00" + email))),
+			Transports: []string{"hybrid", "internal"},
 		})
 	}
 	return opts, nil
 }
 
-func (m *Manager) processAssertion(jsargs string, token *jwt.Token) (claims map[string]any, retErr error) {
-	m.vacuum()
+func (m *Manager) processAssertion(host, jsargs string, token *jwt.Token) (claims map[string]any, retErr error) {
 	var args struct {
 		ID                string `json:"id"`
 		ClientDataJSON    Bytes  `json:"clientDataJSON"`
@@ -957,6 +956,10 @@ func (m *Manager) processAssertion(jsargs string, token *jwt.Token) (claims map[
 	if cd.Type != "webauthn.get" {
 		return nil, errors.New("unexpected clientData.type")
 	}
+	if origin := "https://" + host; cd.Origin != origin {
+		m.cfg.Logger.Errorf("ERR cd.Origin: %q != %q", cd.Origin, origin)
+		return nil, errors.New("unexpected clientData.origin")
+	}
 	var authData authenticatorData
 	if err := parseAuthenticatorData(args.AuthenticatorData, &authData); err != nil {
 		return nil, err
@@ -970,10 +973,10 @@ func (m *Manager) processAssertion(jsargs string, token *jwt.Token) (claims map[
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.challenges[cd.Challenge]; !ok {
+	if _, ok := m.challenges.Get(cd.Challenge); !ok {
 		return nil, errors.New("invalid challenge")
 	}
-	delete(m.challenges, cd.Challenge)
+	m.challenges.Delete(cd.Challenge)
 
 	commit, err := m.cfg.Store.OpenForUpdate(passkeyFile, &m.db)
 	if err != nil {
@@ -1011,6 +1014,15 @@ func (m *Manager) processAssertion(jsargs string, token *jwt.Token) (claims map[
 	}
 	if err := verifySignature(key.PublicKey, args.AuthenticatorData, args.ClientDataJSON, args.Signature); err != nil {
 		return nil, err
+	}
+	// A signature counter that doesn't increase may indicate that the
+	// authenticator was cloned. https://www.w3.org/TR/webauthn-3/#sctn-sign-counter
+	if authData.SignCount != 0 || key.SignCount != 0 {
+		if authData.SignCount <= key.SignCount {
+			m.cfg.Logger.Errorf("ERR signature counter %d <= %d for key %v", authData.SignCount, key.SignCount, key.ID)
+			return nil, errors.New("invalid signature counter")
+		}
+		key.SignCount = authData.SignCount
 	}
 	key.LastSeen = time.Now().UTC()
 

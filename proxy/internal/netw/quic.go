@@ -231,11 +231,11 @@ func (c *QUICConn) ByteRateReceived() float64 {
 }
 
 func (c *QUICConn) HandshakeComplete() <-chan struct{} {
-	return c.HandshakeComplete()
+	return c.qc.HandshakeComplete()
 }
 
 func (c *QUICConn) NextConnection(ctx context.Context) (quicapi.Conn, error) {
-	return c.NextConnection(ctx)
+	return c.qc.NextConnection(ctx)
 }
 
 func (c *QUICConn) TLSConnectionState() tls.ConnectionState {

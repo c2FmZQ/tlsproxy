@@ -35,6 +35,7 @@ var (
 	claimsKey        = ctxKeyType(1)
 	expiredClaimsKey = ctxKeyType(2)
 	tokenHashKey     = ctxKeyType(3)
+	bearerAuthKey    = ctxKeyType(4)
 )
 
 func WithClaims(ctx context.Context, v jwt.MapClaims) context.Context {
@@ -68,4 +69,16 @@ func TokenHash(ctx context.Context) string {
 		return v.(string)
 	}
 	return ""
+}
+
+// WithBearerAuth marks the request as authenticated with a bearer token.
+func WithBearerAuth(ctx context.Context) context.Context {
+	return context.WithValue(ctx, bearerAuthKey, true)
+}
+
+// BearerAuth returns true if the request was authenticated with a bearer
+// token.
+func BearerAuth(ctx context.Context) bool {
+	v, _ := ctx.Value(bearerAuthKey).(bool)
+	return v
 }

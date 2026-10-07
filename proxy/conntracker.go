@@ -24,6 +24,7 @@
 package proxy
 
 import (
+	"net"
 	"sync"
 )
 
@@ -68,4 +69,35 @@ func (t *connTracker) remove(c annotatedConnection) int {
 	cc := localNetConn(c)
 	delete(t.conns, connKey{src: cc.LocalAddr().String(), dst: cc.RemoteAddr().String()})
 	return len(t.conns)
+}
+
+// ipCounter counts open connections per client IP address.
+type ipCounter struct {
+	mu sync.Mutex
+	m  map[string]int
+}
+
+// inc increments the number of connections for addr's IP address. It returns
+// the IP address and its new number of connections.
+func (c *ipCounter) inc(addr net.Addr) (string, int) {
+	ip := addr.String()
+	if h, _, err := net.SplitHostPort(ip); err == nil {
+		ip = h
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.m == nil {
+		c.m = make(map[string]int)
+	}
+	c.m[ip]++
+	return ip, c.m[ip]
+}
+
+// dec decrements the number of connections for ip.
+func (c *ipCounter) dec(ip string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.m[ip]--; c.m[ip] <= 0 {
+		delete(c.m, ip)
+	}
 }

@@ -92,15 +92,20 @@ func (p *Proxy) startQUICListener(ctx context.Context) error {
 	tc.MinVersion = tls.VersionTLS13
 	tc.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 		p.mu.RLock()
-		defer p.mu.RUnlock()
+		var be *Backend
 		for _, proto := range hello.SupportedProtos {
-			be, ok := p.backends[beKey{serverName: hello.ServerName, proto: proto}]
-			if ok && be.Mode != ModeTLSPassthrough {
-				return be.tlsConfig(true), nil
+			if b, ok := p.backends[beKey{serverName: hello.ServerName, proto: proto}]; ok && b.Mode != ModeTLSPassthrough {
+				be = b
+				break
 			}
 		}
-		p.logErrorF("ERR QUIC connection %s %s", hello.ServerName, hello.SupportedProtos)
-		return nil, tlsUnrecognizedName
+		p.mu.RUnlock()
+		if be == nil {
+			p.logErrorF("ERR QUIC connection %q %q", hello.ServerName, hello.SupportedProtos)
+			return nil, tlsUnrecognizedName
+		}
+		// be.tlsConfig acquires p.mu.
+		return be.tlsConfig(true), nil
 	}
 	quicListener, err := p.quicTransport.(*netw.QUICTransport).Listen(tc)
 	if err != nil {
@@ -140,8 +145,10 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 	defer qc.Close()
 
 	numOpen := p.inConns.add(qc)
+	ip, numOpenIP := p.ipConns.inc(qc.RemoteAddr())
 	qc.OnClose(func() {
 		p.inConns.remove(qc)
+		p.ipConns.dec(ip)
 		if be := connBackend(qc); be != nil {
 			be.incInFlight(-1)
 			startTime := qc.Annotation(startTimeKey, time.Time{}).(time.Time)
@@ -190,6 +197,11 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		be.logErrorF("ERR [%s] %s:%s: too many open connections: %d >= %d", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), numOpen, *p.cfg.MaxOpen)
 		return
 	}
+	if max := p.cfg.MaxOpenPerIP; max != nil && *max > 0 && numOpenIP > *max {
+		p.recordEvent("too many open connections from IP")
+		be.logErrorF("ERR [%s] %s:%s: too many open connections from IP: %d > %d", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), numOpenIP, *max)
+		return
+	}
 
 	if l := be.bwLimit; l != nil {
 		qc.SetLimiters(l.ingress, l.egress)
@@ -207,12 +219,18 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		showECH = "+ECH"
 	}
 	be.logConnF("QUC [%s] %s:%s ➔ %s|%s:%s%s", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol, showECH)
-	if err := be.connLimit.Wait(ctx); err != nil {
-		if !errors.Is(err, context.Canceled) {
-			p.recordEvent(err.Error())
-			be.logErrorF("ERR [%s] %s ➔  %q Wait: %v", sum, qc.RemoteAddr(), idnaToUnicode(cs.ServerName), err)
+	serv, isH3 := be.http3Server.(*http3.Server)
+	isH3 = isH3 && cs.NegotiatedProtocol == "h3"
+	// Other QUIC connections are rate limited per stream, in
+	// handleQUICTCPStream.
+	if isH3 || be.Mode == ModeQUIC {
+		if err := be.waitConnLimit(ctx); err != nil {
+			if !errors.Is(err, context.Canceled) {
+				p.recordEvent(err.Error())
+				be.logErrorF("ERR [%s] %s ➔  %q Wait: %v", sum, qc.RemoteAddr(), idnaToUnicode(cs.ServerName), err)
+			}
+			return
 		}
-		return
 	}
 
 	reportErr := func(err error, tag string) {
@@ -230,7 +248,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		be.logErrorF("ERR [%s] %s:%s ➔ %s|%s:%s %s: %v", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol, tag, err)
 	}
 
-	if serv, ok := be.http3Server.(*http3.Server); ok && cs.NegotiatedProtocol == "h3" {
+	if isH3 {
 		if err := serv.ServeQUICConn(qc); err != nil {
 			reportErr(err, "ServeQUICConn")
 		}
@@ -389,6 +407,15 @@ func (p *Proxy) handleQUICTCPStream(ctx context.Context, be *Backend, conn *netw
 	}()
 
 	conn.SetAnnotation(startTimeKey, time.Now())
+
+	// Each stream counts as a new connection.
+	if err := be.waitConnLimit(ctx); err != nil {
+		if !errors.Is(err, context.Canceled) {
+			p.recordEvent(err.Error())
+			be.logErrorF("ERR [-] %s:%s ➔  %q Wait: %v", conn.RemoteAddr().Network(), conn.RemoteAddr(), serverName, err)
+		}
+		return
+	}
 
 	switch be.Mode {
 	case ModeConsole, ModeLocal, ModeHTTP, ModeHTTPS:

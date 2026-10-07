@@ -31,6 +31,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -109,6 +111,28 @@ func TestAuthenticateUser(t *testing.T) {
 	}
 	if got, want := w.Code, 200; got != want {
 		t.Errorf("response code = %d, want %d", got, want)
+	}
+}
+
+func TestIDTokenRedirect(t *testing.T) {
+	proxy := newBackendSSOTestProxy(t)
+
+	req := httptest.NewRequest("GET", "https://example.com//evil.example.org/foo?a=b", nil)
+	// Server requests don't have a scheme and host in the URL.
+	req.URL.Scheme = ""
+	req.URL.Host = ""
+	if err := setAuthCookie(req, "bob@", "example.com", "https://example.com/", proxy.tokenManager); err != nil {
+		t.Fatalf("setAuthCookie: %v", err)
+	}
+	w := httptest.NewRecorder()
+	if got, want := proxy.cfg.Backends[0].authenticateUser(w, &req), false; got != want {
+		t.Fatalf("authenticateUser() = %v, want %v", got, want)
+	}
+	if got, want := w.Code, 302; got != want {
+		t.Errorf("response code = %d, want %d", got, want)
+	}
+	if got, want := w.Header().Get("Location"), "https://example.com//evil.example.org/foo?a=b"; got != want {
+		t.Errorf("Location = %q, want %q", got, want)
 	}
 }
 
@@ -293,6 +317,56 @@ func TestEnforceSSOPolicy(t *testing.T) {
 		t.Fatalf("response code = %d, want %d", got, want)
 	}
 
+	// No rule matches, but the local handler's scopes still apply.
+	proxy.cfg.Backends[0].SSO.Rules = []*SSORule{{
+		Paths: Strings{"/bar"},
+	}}
+	for _, tc := range []struct {
+		scope any
+		want  bool
+	}{
+		{nil, true},
+		{[]any{"pki"}, true},
+		{[]any{"openid"}, false},
+	} {
+		claims := jwt.MapClaims{"email": "bob@example.org"}
+		if tc.scope != nil {
+			claims["scope"] = tc.scope
+		}
+		scopeReq := req.WithContext(fromctx.WithClaims(req.Context(), claims))
+		w = httptest.NewRecorder()
+		if got := proxy.cfg.Backends[0].enforceSSOPolicy(w, scopeReq, Strings{"pki"}); got != tc.want {
+			t.Errorf("enforceSSOPolicy(scope=%v) = %v, want %v", tc.scope, got, tc.want)
+		}
+	}
+
+	// Dot-segments can't be used to match an exception or a more
+	// permissive rule.
+	proxy.cfg.Backends[0].SSO.Rules = []*SSORule{
+		{
+			Paths: Strings{"/public/"},
+		},
+		{
+			Exceptions: Strings{"/favicon.ico"},
+			ACL:        &Strings{"alice@example.org"},
+		},
+	}
+	for _, p := range []string{
+		"/public/../foo",
+		"/public/%2e%2e/foo",
+		"/favicon.ico/../foo",
+		"/favicon.ico/%2E%2E/foo",
+	} {
+		dotReq := httptest.NewRequest("GET", "https://example.com"+p, nil).WithContext(req.Context())
+		w = httptest.NewRecorder()
+		if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, dotReq, nil), false; got != want {
+			t.Errorf("encorceSSOPolicy(%q) = %v, want %v", p, got, want)
+		}
+		if got, want := w.Code, 403; got != want {
+			t.Errorf("response code for %q = %d, want %d", p, got, want)
+		}
+	}
+
 	// ForceReAuth fail
 	proxy.cfg.Backends[0].SSO.Rules = []*SSORule{{
 		ForceReAuth: 5 * time.Minute,
@@ -319,6 +393,47 @@ func TestEnforceSSOPolicy(t *testing.T) {
 	}
 	if got, want := w.Code, 200; got != want {
 		t.Fatalf("response code = %d, want %d", got, want)
+	}
+}
+
+func TestServeLoginRedirectHost(t *testing.T) {
+	proxy := newBackendSSOTestProxy(t)
+	be := proxy.cfg.Backends[0]
+
+	for _, tc := range []struct {
+		url  string
+		want int
+	}{
+		{"https://example.com/foo", http.StatusFound},
+		{"https://evil.example.org/foo", http.StatusBadRequest},
+	} {
+		req := httptest.NewRequest("GET", "https://example.com/", nil)
+		w := httptest.NewRecorder()
+		sid.SetSessionID(w, req, "")
+		req.Header.Set("Cookie", w.Header().Get("Set-Cookie"))
+
+		u, err := url.Parse(tc.url)
+		if err != nil {
+			t.Fatalf("url.Parse: %v", err)
+		}
+		token, _, err := be.tm.URLToken(httptest.NewRecorder(), req, u, nil)
+		if err != nil {
+			t.Fatalf("URLToken: %v", err)
+		}
+
+		for _, path := range []string{"/.sso/login?redirect=", "/.sso/logout?u="} {
+			req := httptest.NewRequest("GET", "https://example.com"+path+url.QueryEscape(token), nil)
+			req.Header.Set("Cookie", w.Header().Get("Set-Cookie"))
+			rec := httptest.NewRecorder()
+			if strings.HasPrefix(path, "/.sso/login") {
+				be.serveLogin(rec, req)
+			} else {
+				be.serveLogout(rec, req)
+			}
+			if got := rec.Code; got != tc.want {
+				t.Errorf("%s%s: code %d, want %d", path, tc.url, got, tc.want)
+			}
+		}
 	}
 }
 
@@ -468,4 +583,20 @@ func (testAddr) Network() string {
 
 func (testAddr) String() string {
 	return "12.34.56.78:90"
+}
+
+func TestSSOStatusWithoutSSO(t *testing.T) {
+	be := &Backend{}
+
+	w := httptest.NewRecorder()
+	be.serveSSOStatus(w, httptest.NewRequest("GET", "https://example.com/.sso/", nil))
+	if got, want := w.Code, http.StatusNotFound; got != want {
+		t.Errorf("GET: code %d, want %d", got, want)
+	}
+
+	w = httptest.NewRecorder()
+	be.serveSSOStatus(w, httptest.NewRequest("POST", "https://example.com/.sso/", nil))
+	if got, want := w.Body.String(), "null\n"; got != want {
+		t.Errorf("POST: body %q, want %q", got, want)
+	}
 }

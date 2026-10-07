@@ -77,6 +77,9 @@ func TestGroups(t *testing.T) {
 		{email: "carol@example.com", groups: []string{"group3", "group4"}},
 		{email: "oscar@example.com", groups: []string{"group4"}},
 		{email: "mike@example.NET", groups: nil},
+		// An email equal to a group name doesn't match the group.
+		{email: "group1", groups: nil},
+		{email: "", groups: nil},
 	} {
 		if got, want := matcher.groupsForEmail(tc.email), tc.groups; !reflect.DeepEqual(got, want) {
 			t.Errorf("groupsForEmail(%q) = %v, want %v", tc.email, got, want)

@@ -32,18 +32,27 @@ function sessionId() {
 
 /**
  * @summary Wraps the global fetch() function to automatically add an
- * x-csrf-token header to all requests.
+ * x-csrf-token header to same-origin requests.
  * @description This is a security measure to prevent Cross-Site Request Forgery (CSRF) attacks.
+ * The token is not sent to other origins.
  */
 const ofetch = window.fetch;
 window.fetch = function(res, opt) {
+  const url = new URL(res instanceof Request ? res.url : res, window.location.href);
+  if (url.origin !== window.location.origin) {
+    return ofetch(res, opt);
+  }
   if (!opt) {
     opt = {};
   }
   if (!opt.headers) {
     opt.headers = {};
   }
-  opt.headers['x-csrf-token'] = sessionId();
+  if (opt.headers instanceof Headers) {
+    opt.headers.set('x-csrf-token', sessionId());
+  } else {
+    opt.headers['x-csrf-token'] = sessionId();
+  }
   return ofetch(res, opt);
 };
 

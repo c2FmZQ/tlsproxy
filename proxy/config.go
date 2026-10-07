@@ -180,6 +180,10 @@ type Config struct {
 	RevokeUnusedCertificates *bool `yaml:"revokeUnusedCertificates,omitempty"`
 	// MaxOpen is the maximum number of open incoming connections.
 	MaxOpen *int `yaml:"maxOpen,omitempty"`
+	// MaxOpenPerIP is the maximum number of open incoming connections
+	// from a single IP address. The default is no limit. Many clients
+	// can share an IP address, e.g. behind NAT.
+	MaxOpenPerIP *int `yaml:"maxOpenPerIP,omitempty"`
 	// AcceptTOS indicates acceptance of the Let's Encrypt Terms of Service.
 	// See https://letsencrypt.org/repository/
 	AcceptTOS *bool `yaml:"acceptTOS"`
@@ -501,6 +505,8 @@ type Backend struct {
 	quicTransport    io.Closer
 	defaultLogFilter LogFilter
 
+	// tlsConfig returns the backend's TLS config. It acquires p.mu, which
+	// must not be held by the caller.
 	tlsConfig            func(isQUIC bool) *tls.Config
 	clientCAs            *x509.CertPool
 	forwardRootCAs       *x509.CertPool
@@ -699,6 +705,22 @@ type ConfigPKI struct {
 	// Admins is a list of users who are allowed to perform administrative
 	// tasks on the CA, e.g. revoke any certificate.
 	Admins Strings `yaml:"admins"`
+	// ServerCertificates defines which DNS names users can request in
+	// server certificates. When empty, server certificates can't be
+	// requested.
+	ServerCertificates []*PKIServerCertificates `yaml:"serverCertificates,omitempty"`
+}
+
+// PKIServerCertificates defines which DNS names can be requested in server
+// certificates, and by whom.
+type PKIServerCertificates struct {
+	// DNSNames is a list of DNS names or wildcards, e.g. foo.example.com
+	// or *.example.com. A wildcard matches exactly one label.
+	DNSNames Strings `yaml:"dnsNames"`
+	// ACL is a list of users and groups who are allowed to request these
+	// DNS names. When ACL is nil, all users with access to the PKI
+	// endpoint can request them.
+	ACL *Strings `yaml:"acl,omitempty"`
 }
 
 // ConfigSSHCertificateAuthority defines a certificate authority.
@@ -985,8 +1007,12 @@ func validateTrustedIssuers(issuers []*TrustedIssuer) error {
 		if ti.JWKSURI == "" {
 			return fmt.Errorf("[%d].JWKSURI must be set", i)
 		}
-		if _, err := url.Parse(ti.JWKSURI); err != nil {
+		u, err := url.Parse(ti.JWKSURI)
+		if err != nil {
 			return fmt.Errorf("[%d].JWKSURI: %v", i, err)
+		}
+		if u.Scheme != "https" {
+			return fmt.Errorf("[%d].JWKSURI must be an https URL", i)
 		}
 	}
 	return nil
@@ -1237,6 +1263,16 @@ func (cfg *Config) Check() error {
 				return fmt.Errorf("pki[%d].Endpoint %q: backend not found", i, p.Endpoint)
 			} else if mode := strings.ToUpper(be.Mode); mode != ModeLocal && mode != ModeConsole {
 				return fmt.Errorf("pki[%d].Endpoint %q: backend must have mode %s or %s, found %s", i, p.Endpoint, ModeLocal, ModeConsole, mode)
+			}
+		}
+		for j, sc := range p.ServerCertificates {
+			if len(sc.DNSNames) == 0 {
+				return fmt.Errorf("pki[%d].ServerCertificates[%d].DNSNames: must be set", i, j)
+			}
+			for _, n := range sc.DNSNames {
+				if !validDNSNamePattern(n) {
+					return fmt.Errorf("pki[%d].ServerCertificates[%d].DNSNames: invalid name %q", i, j, n)
+				}
 			}
 		}
 	}
@@ -1588,4 +1624,24 @@ func reflectMerge(v1, v2 reflect.Value) error {
 		}
 		return nil
 	}
+}
+
+// validDNSNamePattern returns true if p is a DNS name, or a wildcard that
+// matches one label, e.g. *.example.com.
+func validDNSNamePattern(p string) bool {
+	name, _ := strings.CutPrefix(p, "*.")
+	if name == "" || len(name) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(name, ".") {
+		if label == "" || len(label) > 63 || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+			return false
+		}
+		for _, c := range label {
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-') {
+				return false
+			}
+		}
+	}
+	return true
 }

@@ -99,6 +99,12 @@ func (s *ProviderServer) ServeDeviceAuthorization(w http.ResponseWriter, req *ht
 
 	now := time.Now().UTC()
 	s.mu.Lock()
+	if len(s.deviceTokens) >= maxPendingRequests || len(s.deviceCodes) >= maxPendingRequests {
+		s.mu.Unlock()
+		s.opts.Logger.Errorf("ERR ServeDeviceAuthorization: too many pending requests")
+		http.Error(w, "too many pending requests", http.StatusServiceUnavailable)
+		return
+	}
 	s.deviceCodes[userCode] = &deviceCodeData{
 		created:    now,
 		clientID:   clientID,
@@ -169,10 +175,27 @@ func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *htt
 		data := struct {
 			Email    string
 			UserCode string
+			Invalid  bool
+			ClientID string
+			Scopes   string
 		}{
 			Email:    email,
 			UserCode: req.Form.Get("user_code"),
 		}
+		// Show which client is requesting access, and to what, before
+		// the user approves the request.
+		if data.UserCode != "" {
+			s.mu.Lock()
+			if dc, ok := s.deviceCodes[strings.ToUpper(data.UserCode)]; ok && !expired(dc.created) {
+				if dt, ok := s.deviceTokens[dc.deviceCode]; ok {
+					data.ClientID = dc.clientID
+					data.Scopes = strings.Join(dt.scope, ",")
+				}
+			}
+			s.mu.Unlock()
+			data.Invalid = data.ClientID == ""
+		}
+		setNoFrameHeaders(w)
 		w.Header().Set("content-type", "text/html; charset=utf-8")
 		verifyTemplate.Execute(w, data)
 		return
@@ -189,8 +212,10 @@ func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *htt
 	data, ok := s.deviceCodes[userCode]
 	delete(s.deviceCodes, userCode)
 	var devToken *deviceToken
-	if ok {
+	if ok && !expired(data.created) {
 		devToken, ok = s.deviceTokens[data.deviceCode]
+	} else {
+		ok = false
 	}
 	if !ok {
 		http.Error(w, "request expired", http.StatusBadRequest)

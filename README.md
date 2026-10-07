@@ -196,6 +196,8 @@ The main configuration options are:
 *   `hwBacked`: (Optional) Boolean. Enables hardware-backed cryptographic keys (e.g., with a TPM).
 *   `cacheDir`: (Optional) String. Directory for storing TLS certificates, OCSP responses, etc. Defaults to a system cache directory.
 *   `defaultServerName`: (Optional) String. Server name to use when SNI is not provided by the client.
+*   `maxOpen`: (Optional) Integer. Maximum number of open incoming connections. Defaults to half of the open file limit.
+*   `maxOpenPerIP`: (Optional) Integer. Maximum number of open incoming connections from a single client IP address. No limit by default. Keep in mind that many clients can share one IP address, e.g. behind NAT.
 *   `logFilter`: (Optional) Object. Controls what gets logged (connections, requests, errors).
 *   `groups`: (Optional) List of `Group` objects. Defines user groups for access control.
 *   `backends`: (Required) List of `Backend` objects. Defines the services TLSPROXY will forward traffic to.
@@ -236,7 +238,7 @@ Each `Backend` object defines a service and its behavior:
 *   `forwardServerName`: (Optional) String. ServerName to send in TLS handshake with backend.
 *   `forwardRootCAs`: (Optional) List of strings. CA names or PEM-encoded certificates for backend verification.
 *   `forwardTimeout`: (Optional) Duration. Connection timeout to backend servers.
-*   `forwardHttpHeaders`: (Optional) Map of strings. HTTP headers to add to forwarded requests.
+*   `forwardHttpHeaders`: (Optional) Map of strings. HTTP headers to add to forwarded requests. Headers with the same names sent by clients are removed, including variants with `_` instead of `-`. `X-Forwarded-For`, `X-Forwarded-Host`, and `X-Forwarded-Proto` are always set by the proxy, and `Forwarded` is removed. They can be overridden here.
 *   `forwardECH`: (Optional) Object. ECH parameters for connecting to the backend.
 *   `pathOverrides`: (Optional) List of `PathOverride` objects. Defines different backend parameters for specific path prefixes.
 *   `proxyProtocolVersion`: (Optional) String. Enables PROXY protocol on this backend (`v1` or `v2`).
@@ -343,7 +345,7 @@ In this example:
 The `TrustedIssuer` object defines an external identity provider whose tokens are accepted by `tlsproxy`. This is useful for distributed authentication where multiple proxies trust each other's user identity tokens.
 
 *   `issuer`: (Required) String. The expected "iss" claim value (e.g., "https://auth.example.com/").
-*   `jwksUri`: (Required) String. The URL to fetch the JSON Web Key Set (JWKS).
+*   `jwksUri`: (Required) String. The `https` URL to fetch the JSON Web Key Set (JWKS).
 
 **Example:**
 
@@ -489,6 +491,9 @@ Defines a local Certificate Authority:
 *   `ocspServers`: List of strings. URLs for OCSP.
 *   `endpoint`: String. URL for certificate management.
 *   `admins`: List of strings. Users allowed to perform administrative tasks.
+*   `serverCertificates`: (Optional) List of objects. Defines which DNS names users can request in server certificates. Without it, only client certificates can be requested.
+    *   `dnsNames`: List of strings. DNS names (e.g. `foo.example.com`) or wildcards (e.g. `*.example.com`). A wildcard matches exactly one label.
+    *   `acl`: (Optional) List of strings. Users or groups who can request these names. If not set, all users with access to the `endpoint` can.
 
 ### SSH Certificate Authority Configuration (`ConfigSSHCertificateAuthority`)
 
@@ -573,7 +578,7 @@ To run TLSPROXY, use the `tlsproxy` executable with the `--config` flag pointing
 
 *   `--config <file>`: Specifies the path to the configuration YAML file.
 *   `--revoke-all-certificates <reason>`: Revokes all cached certificates. `reason` can be `unspecified`, `keyCompromise`, `superseded`, or `cessationOfOperation`.
-*   `--passphrase <passphrase>`: The passphrase to encrypt TLS keys on disk. Can also be set via `TLSPROXY_PASSPHRASE` environment variable.
+*   `--passphrase <passphrase>`: The passphrase to encrypt TLS keys on disk. Prefer the `TLSPROXY_PASSPHRASE` environment variable: command line arguments are visible to other users on the host.
 *   `--shutdown-grace-period <duration>`: Graceful shutdown period (e.g., `1m`, `30s`).
 *   `--use-ephemeral-certificate-manager`: (For testing) Uses an ephemeral certificate manager.
 *   `--stdout`: Logs output to STDOUT.
@@ -708,6 +713,12 @@ pki:
   # Optional: Admins can revoke anybody's certificates.
   admins:
   - bob@example.com
+  # Optional: Allow server certificates for some DNS names.
+  serverCertificates:
+  - dnsNames:
+    - "*.internal.example.com"
+    acl:
+    - bob@example.com
 ```
 
 This example configures a local Certificate Authority (CA) named "EXAMPLE CA". This CA can be used to issue X.509 certificates for client and backend authentication within your environment.
@@ -718,6 +729,7 @@ Here is a breakdown of the configuration:
 *   `ocspServers`: Provides the endpoint for the Online Certificate Status Protocol (OCSP), offering a real-time method for checking certificate validity.
 *   `endpoint`: Sets up a web interface at `https://pki-internal.example.com/certs` where authenticated users can request and manage their own certificates.
 *   `admins`: Grants administrative privileges to `bob@example.com`, allowing this user to perform actions like revoking any user's certificate.
+*   `serverCertificates`: Allows `bob@example.com` to request server certificates for names like `foo.internal.example.com`. Without this, users can only request client certificates.
 
 You can then use this CA to enforce client certificate-based authorization for a backend. In the following example, only clients presenting a valid certificate issued by "EXAMPLE CA" for the identity `user@example.com` are allowed access.
 

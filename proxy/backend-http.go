@@ -49,15 +49,19 @@ import (
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/csrf"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/sid"
 )
 
 const (
 	hstsHeader = "Strict-Transport-Security"
 	hstsValue  = "max-age=2592000" // 30 days
 
-	viaHeader           = "Via"
-	hostHeader          = "Host"
-	xForwardedForHeader = "X-Forwarded-For"
+	viaHeader             = "Via"
+	hostHeader            = "Host"
+	xForwardedForHeader   = "X-Forwarded-For"
+	xForwardedHostHeader  = "X-Forwarded-Host"
+	xForwardedProtoHeader = "X-Forwarded-Proto"
+	forwardedHeader       = "Forwarded"
 )
 
 type ctxURLKeyType int
@@ -86,6 +90,9 @@ func (be *Backend) localHandler() http.Handler {
 				be.logPanic(req, r)
 			}
 		}()
+		if !be.checkRequestHost(w, req) {
+			return
+		}
 		if !be.authenticateUser(w, &req) {
 			return
 		}
@@ -94,6 +101,24 @@ func (be *Backend) localHandler() http.Handler {
 		}
 		be.serveStaticFiles(w, req, be.documentRoot, "")
 	})
+}
+
+// checkRequestHost verifies that the HTTP request is directed at a server name
+// that's configured for this backend. This prevents clients from using one
+// server name in the TLS handshake, and then a different server name in the
+// request. It must be called before anything uses req.Host.
+func (be *Backend) checkRequestHost(w http.ResponseWriter, req *http.Request) bool {
+	if req.Host == "" {
+		req.Host = connServerName(req.Context().Value(connCtxKey).(anyConn))
+	}
+	if !slices.Contains(be.ServerNames, hostFromReq(req)) {
+		if req.Body != nil {
+			req.Body.Close()
+		}
+		http.Error(w, "Misdirected Request", http.StatusMisdirectedRequest)
+		return false
+	}
+	return true
 }
 
 func (be *Backend) redirectPermanently(w http.ResponseWriter, req *http.Request, path string) {
@@ -208,6 +233,9 @@ func (be *Backend) reverseProxy() http.Handler {
 				be.logPanic(req, r)
 			}
 		}()
+		if !be.checkRequestHost(w, req) {
+			return
+		}
 		if !be.authenticateUser(w, &req) {
 			return
 		}
@@ -215,30 +243,14 @@ func (be *Backend) reverseProxy() http.Handler {
 			return
 		}
 
-		// Verify that the HTTP request is directed at a server name
-		// that's configured for this backend. This prevents clients
-		// from using one server name in the TLS handshake, and then
-		// a different server name in the request.
 		ctx := req.Context()
 		serverName := connServerName(ctx.Value(connCtxKey).(anyConn))
-		host := req.Host
-		if host == "" {
-			host = serverName
-		}
-		req.URL.Host = host
-		req.Header.Set(hostHeader, host)
+		req.URL.Host = req.Host
+		req.Header.Set(hostHeader, req.Host)
 
 		req.URL.Scheme = "https"
 		if be.Mode == ModeHTTP {
 			req.URL.Scheme = "http"
-		}
-
-		if !slices.Contains(be.ServerNames, req.URL.Hostname()) {
-			if req.Body != nil {
-				req.Body.Close()
-			}
-			http.Error(w, "Misdirected Request", http.StatusMisdirectedRequest)
-			return
 		}
 		ctx = context.WithValue(ctx, ctxURLKey, req.URL.String())
 
@@ -247,7 +259,7 @@ func (be *Backend) reverseProxy() http.Handler {
 		if conn, ok := ctx.Value(connCtxKey).(annotatedConnection); ok {
 			if !conn.Annotation(requestFlagKey, false).(bool) {
 				conn.SetAnnotation(requestFlagKey, true)
-			} else if err := be.connLimit.Wait(ctx); err != nil {
+			} else if err := be.waitConnLimit(ctx); err != nil {
 				http.Error(w, "ctx", http.StatusInternalServerError)
 				return
 			}
@@ -323,15 +335,21 @@ func (be *Backend) reverseProxy() http.Handler {
 		if sanitizePath {
 			req.URL.Path = cleanPath
 		}
+		delHeaderVariants(req.Header, xForwardedForHeader)
+		delHeaderVariants(req.Header, xFCCHeader)
+		delHeaderVariants(req.Header, forwardedHeader)
+		delHeaderVariants(req.Header, xForwardedHostHeader)
+		delHeaderVariants(req.Header, xForwardedProtoHeader)
+		req.Header.Set(xForwardedHostHeader, req.Host)
+		req.Header.Set(xForwardedProtoHeader, "https")
 		for k, v := range httpHeaders {
+			delHeaderVariants(req.Header, k)
 			v = expandVars(v, req)
 			if v != "" {
 				req.Header.Set(k, v)
 				if strings.ToLower(k) == strings.ToLower(hostHeader) {
 					req.Host = v
 				}
-			} else {
-				req.Header.Del(k)
 			}
 		}
 		// A value of -1 for ContentLength indicates that the size of
@@ -501,8 +519,6 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 }
 
 func (be *Backend) reverseProxyDirector(req *http.Request) {
-	req.Header.Del(xForwardedForHeader)
-	req.Header.Del(xFCCHeader)
 	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 && be.ClientAuth != nil && len(be.ClientAuth.AddClientCertHeader) > 0 {
 		addXFCCHeader(req, be.ClientAuth.AddClientCertHeader)
 	}
@@ -582,8 +598,28 @@ func (be *Backend) reverseProxyModifyResponse(resp *http.Response) error {
 	if resp.StatusCode != http.StatusMisdirectedRequest && resp.Header.Get(hstsHeader) == "" {
 		resp.Header.Set(hstsHeader, hstsValue)
 	}
+	filterOutProxyCookies(resp.Header)
 	if resp.StatusCode >= 200 && resp.StatusCode < 400 && resp.Header.Get("Alt-Svc") == "" {
 		be.setAltSvc(resp.Header, req)
 	}
 	return nil
+}
+
+// filterOutProxyCookies removes the Set-Cookie headers that would set the
+// proxy's own cookies. Backends must not be able to set them, e.g. to log users
+// into another account.
+func filterOutProxyCookies(h http.Header) {
+	cookies := h.Values("Set-Cookie")
+	if len(cookies) == 0 {
+		return
+	}
+	h.Del("Set-Cookie")
+	for _, c := range cookies {
+		name, _, _ := strings.Cut(c, "=")
+		name = strings.TrimSpace(name)
+		if cookiemanager.IsProxyCookie(name) || sid.IsCookie(name) {
+			continue
+		}
+		h.Add("Set-Cookie", c)
+	}
 }

@@ -9,7 +9,7 @@ This JavaScript module provides client-side functionality for HTML pages served 
 The script automatically protects against Cross-Site Request Forgery (CSRF) attacks.
 
 - It wraps the standard `window.fetch` function.
-- Before any `fetch` request is sent, it reads the session ID from the `__tlsproxySid` cookie.
+- Before any same-origin `fetch` request is sent, it reads the session ID from the `__tlsproxySid` cookie. The session ID is never sent to other origins.
 - It then adds the session ID to the request headers as `x-csrf-token`.
 
 This process is automatic. Any page that includes this module will have its `fetch` requests protected.

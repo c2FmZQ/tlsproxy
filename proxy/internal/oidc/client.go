@@ -94,7 +94,7 @@ type ProviderClient struct {
 	er  EventRecorder
 
 	mu     sync.Mutex
-	states map[string]*oauthState
+	states *idp.PendingLogins[*oauthState]
 }
 
 type oauthState struct {
@@ -112,7 +112,7 @@ func New(cfg Config, er EventRecorder, cm CookieManager) (*ProviderClient, error
 		cfg:    cfg,
 		cm:     cm,
 		er:     er,
-		states: make(map[string]*oauthState),
+		states: idp.NewPendingLogins(5*time.Minute, func(s *oauthState) time.Time { return s.Created }),
 	}
 	if p.cfg.DiscoveryURL != "" {
 		resp, err := http.Get(p.cfg.DiscoveryURL)
@@ -149,6 +149,10 @@ func New(cfg Config, er EventRecorder, cm CookieManager) (*ProviderClient, error
 
 func (p *ProviderClient) RequestLogin(w http.ResponseWriter, req *http.Request, originalURL string, opts ...idp.Option) {
 	loginOptions := idp.ApplyOptions(opts)
+	if len(originalURL) > idp.MaxOriginalURLLength {
+		http.Error(w, "URL too long", http.StatusRequestURITooLong)
+		return
+	}
 	ou, err := url.Parse(originalURL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -168,14 +172,18 @@ func (p *ProviderClient) RequestLogin(w http.ResponseWriter, req *http.Request, 
 	codeVerifierStr := base64.RawURLEncoding.EncodeToString(codeVerifier[:])
 	cvh := sha256.Sum256([]byte(codeVerifierStr))
 	p.mu.Lock()
-	p.states[nonceStr] = &oauthState{
+	added := p.states.Add(nonceStr, &oauthState{
 		Created:      time.Now(),
 		OriginalURL:  originalURL,
 		Host:         ou.Host,
 		CodeVerifier: codeVerifierStr,
 		Depth:        loginOptions.Depth(),
-	}
+	})
 	p.mu.Unlock()
+	if !added {
+		http.Error(w, "too many pending login requests", http.StatusServiceUnavailable)
+		return
+	}
 	scopes := p.cfg.Scopes
 	if len(scopes) == 0 {
 		scopes = []string{"openid", "email"}
@@ -208,13 +216,8 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 	req.ParseForm()
 
 	p.mu.Lock()
-	for k, v := range p.states {
-		if time.Since(v.Created) > 5*time.Minute {
-			delete(p.states, k)
-		}
-	}
 	nonce := req.Form.Get("state")
-	state, ok := p.states[nonce]
+	state, ok := p.states.Get(nonce)
 	invalid := !ok || state.Seen || nonce != p.cm.Nonce(w, req)
 	if ok {
 		state.Seen = true
@@ -236,14 +239,14 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 	form.Add("grant_type", "authorization_code")
 	form.Add("code_verifier", state.CodeVerifier)
 
-	req, err := http.NewRequest(http.MethodPost, p.cfg.TokenEndpoint, strings.NewReader(form.Encode()))
+	tokenReq, err := http.NewRequest(http.MethodPost, p.cfg.TokenEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	req.Header.Set("content-type", "application/x-www-form-urlencoded")
-	req.Header.Set("accept", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	tokenReq.Header.Set("content-type", "application/x-www-form-urlencoded")
+	tokenReq.Header.Set("accept", "application/json")
+	resp, err := http.DefaultClient.Do(tokenReq)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -280,14 +283,14 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 			return
 		}
 	} else if p.cfg.UserinfoEndpoint != "" && (data.TokenType == "" || strings.ToLower(data.TokenType) == "bearer") {
-		req, err := http.NewRequest(http.MethodGet, p.cfg.UserinfoEndpoint, nil)
+		userinfoReq, err := http.NewRequest(http.MethodGet, p.cfg.UserinfoEndpoint, nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		req.Header.Set("authorization", "Bearer "+data.AccessToken)
-		req.Header.Set("accept", "application/json")
-		resp, err := http.DefaultClient.Do(req)
+		userinfoReq.Header.Set("authorization", "Bearer "+data.AccessToken)
+		userinfoReq.Header.Set("accept", "application/json")
+		resp, err := http.DefaultClient.Do(userinfoReq)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -306,8 +309,8 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 		claims.Nonce = nonce
 	}
 	p.mu.Lock()
-	state, ok = p.states[claims.Nonce]
-	delete(p.states, claims.Nonce)
+	state, ok = p.states.Get(claims.Nonce)
+	p.states.Delete(claims.Nonce)
 	p.mu.Unlock()
 	if !ok {
 		p.er.Record("invalid nonce")

@@ -24,6 +24,7 @@
 package proxy
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -581,11 +582,40 @@ func TestAuthnAuthz(t *testing.T) {
 		}
 	}
 
+	// Open a connection before the cert is revoked.
+	conn, err := tls.Dial("tcp", proxy.listener.Addr().String(), &tls.Config{
+		ServerName:   "pkitest.example.com",
+		RootCAs:      extCA.RootCACertPool(),
+		Certificates: []tls.Certificate{pkiTLSCert},
+		NextProtos:   []string{"http/1.1"},
+	})
+	if err != nil {
+		t.Fatalf("tls.Dial: %v", err)
+	}
+	defer conn.Close()
+	// Make sure the connection is fully established.
+	if _, err := conn.Write([]byte("GET / HTTP/1.1\r\nHost: pkitest.example.com\r\n\r\n")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	connReader := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(connReader, nil)
+	if err != nil {
+		t.Fatalf("ReadResponse: %v", err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
 	if err := proxy.pkis["TEST CA"].RevokeCertificate(pkiCert.SerialNumber, 0); err != nil {
 		t.Fatalf("RevokeCertificate: %v", err)
 	}
 	if _, err := get("pkitest.example.com", "pki"); err == nil {
 		t.Error("get with revoked cert should have failed")
+	}
+
+	// The existing connection is closed.
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := connReader.ReadByte(); err == nil || errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Errorf("Read on connection with revoked cert: %v", err)
 	}
 }
 

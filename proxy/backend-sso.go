@@ -80,11 +80,14 @@ func init() {
 // available. It modifies the request headers and context.
 // It returns true if processing of the request should continue.
 func (be *Backend) authenticateUser(w http.ResponseWriter, req **http.Request) bool {
-	(*req).Header.Del(xTLSProxyUserIDHeader)
+	delHeaderVariants((*req).Header, xTLSProxyUserIDHeader)
 	if be.SSO != nil {
-		claims, tokenHash, cont := be.checkCookies(w, *req)
+		claims, tokenHash, fromHeader, cont := be.checkCookies(w, *req)
 		if !cont {
 			return false
+		}
+		if fromHeader {
+			*req = (*req).WithContext(fromctx.WithBearerAuth((*req).Context()))
 		}
 		if claims != nil {
 			if email, ok := claims["email"].(string); ok && email != "" {
@@ -112,7 +115,10 @@ func (be *Backend) authenticateUser(w http.ResponseWriter, req **http.Request) b
 	return true
 }
 
-func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.MapClaims, string, bool) {
+// checkCookies returns the user's claims from the authorization header or the
+// auth cookies. fromHeader is true when the claims came from a valid bearer
+// token in the authorization header.
+func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (claims jwt.MapClaims, tokenHash string, fromHeader bool, cont bool) {
 	// If a valid ID Token is in the authorization header, use it and
 	// ignore the cookies.
 	if tok, err := be.SSO.cm.ValidateAuthorizationHeader(req); err == nil {
@@ -121,43 +127,48 @@ func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.M
 		if clientID, ok := c["client_id"].(string); ok {
 			if email, ok := c["email"].(string); !ok || be.SSO.oidcServer == nil || !be.SSO.oidcServer.AuthorizeClient(clientID, email) {
 				w.WriteHeader(http.StatusForbidden)
-				return nil, "", false
+				return nil, "", false, false
 			}
 		}
-		return c, "", true
+		return c, "", true, true
 	}
 
 	authToken, tokenHash, err := be.SSO.cm.ValidateAuthTokenCookie(req)
 	if err != nil {
-		return nil, "", true
+		return nil, "", false, true
 	}
 	authClaims, ok := authToken.Claims.(jwt.MapClaims)
 	if !ok {
-		return nil, "", true
+		return nil, "", false, true
 	}
 	email, ok := authClaims["email"].(string)
 	if !ok || email == "" {
-		return nil, "", true
+		return nil, "", false, true
 	}
 
 	if !be.SSO.GenerateIDTokens {
-		return authClaims, tokenHash, true
+		return authClaims, tokenHash, false, true
 	}
 
 	if !slices.Contains(be.ServerNames, hostFromReq(req)) {
-		return authClaims, tokenHash, true
+		return authClaims, tokenHash, false, true
 	}
 
 	if err := be.SSO.cm.ValidateIDTokenCookie(req, authToken); err == nil {
 		// Token is already set, and is valid.
-		return authClaims, tokenHash, true
+		return authClaims, tokenHash, false, true
 	}
 	if err := be.SSO.cm.SetIDTokenCookie(w, req, authClaims, be.aclMatcher.groupsForEmail(email)); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
-		return nil, "", false
+		return nil, "", false, false
 	}
-	http.Redirect(w, req, req.URL.String(), http.StatusFound)
-	return nil, "", false
+	// Use an absolute URL. A relative URL like //evil.com/ would redirect
+	// to another host.
+	u := *req.URL
+	u.Scheme = "https"
+	u.Host = req.Host
+	http.Redirect(w, req, u.String(), http.StatusFound)
+	return nil, "", false, false
 }
 
 func serveStatic(w http.ResponseWriter, req *http.Request, content []byte, contentType string) {
@@ -210,6 +221,10 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		enc.Encode(out)
+		return
+	}
+	if be.SSO == nil {
+		http.Error(w, "sso is not enabled", http.StatusNotFound)
 		return
 	}
 	var keys []string
@@ -266,7 +281,7 @@ func (be *Backend) serveLogin(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	url, claims, err := be.tm.ValidateURLToken(req, tok)
-	if err != nil {
+	if err != nil || !slices.Contains(be.ServerNames, url.Hostname()) {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
@@ -292,7 +307,7 @@ func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
 	req.ParseForm()
 	if tokenStr := req.Form.Get("u"); tokenStr != "" {
 		url, _, err := be.tm.ValidateURLToken(req, tokenStr)
-		if err != nil {
+		if err != nil || !slices.Contains(be.ServerNames, url.Hostname()) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -359,6 +374,11 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request, ov
 	}
 	rule := be.findSSORule(req)
 	if rule == nil {
+		// No rule applies, but the scopes of local handlers still
+		// apply to authenticated users.
+		if overrideScopes != nil && fromctx.Claims(req.Context()) != nil {
+			return be.checkScopes(overrideScopes, w, req)
+		}
 		return true
 	}
 	claims := fromctx.Claims(req.Context())
@@ -447,9 +467,11 @@ func pathMatches(prefixes []string, path string) bool {
 	if len(prefixes) == 0 {
 		return true
 	}
+	// Only match the clean path. Matching the raw path too would let
+	// requests like /public/../admin match an exception for /public/.
 	cleanPath := pathClean(path)
 	for _, p := range prefixes {
-		if strings.HasPrefix(path, p) || strings.HasPrefix(cleanPath, p) {
+		if strings.HasPrefix(cleanPath, p) {
 			return true
 		}
 	}

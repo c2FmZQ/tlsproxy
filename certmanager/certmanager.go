@@ -59,7 +59,12 @@ type CertManager struct {
 
 	mu    sync.Mutex
 	certs map[string]*tls.Certificate
+	// maxCachedCerts is the maximum number of certificates kept in memory.
+	maxCachedCerts int
 }
+
+// defaultMaxCachedCerts is the default value of maxCachedCerts.
+const defaultMaxCachedCerts = 1000
 
 // New returns a new ephemeral certificate manager.
 func New(name string, logger func(string, ...interface{})) (*CertManager, error) {
@@ -107,6 +112,8 @@ func New(name string, logger func(string, ...interface{})) (*CertManager, error)
 		pool:      pool,
 		logger:    logger,
 		certs:     make(map[string]*tls.Certificate),
+
+		maxCachedCerts: defaultMaxCachedCerts,
 	}, nil
 }
 
@@ -234,8 +241,11 @@ func (cm *CertManager) GetCert(name string) (*tls.Certificate, error) {
 	}
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	if c := cm.certs[name]; c != nil {
+	if c := cm.certs[name]; c != nil && time.Now().Before(c.Leaf.NotAfter.Add(-5*time.Minute)) {
 		return c, nil
+	}
+	if len(cm.certs) >= cm.maxCachedCerts {
+		clear(cm.certs)
 	}
 
 	cm.logger("[%s] GetCert(%q)", cm.name, name)

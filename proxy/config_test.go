@@ -461,3 +461,45 @@ func TestReadSplitConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateTrustedIssuers(t *testing.T) {
+	for _, tc := range []struct {
+		uri     string
+		wantErr bool
+	}{
+		{"https://example.com/.sso/jwks", false},
+		{"http://example.com/.sso/jwks", true},
+		{"example.com/.sso/jwks", true},
+	} {
+		err := validateTrustedIssuers([]*TrustedIssuer{{Issuer: "https://example.com", JWKSURI: tc.uri}})
+		if gotErr := err != nil; gotErr != tc.wantErr {
+			t.Errorf("validateTrustedIssuers(%q) = %v, wantErr %v", tc.uri, err, tc.wantErr)
+		}
+	}
+}
+
+func TestValidDNSNamePattern(t *testing.T) {
+	for _, tc := range []struct {
+		pattern string
+		want    bool
+	}{
+		{"example.com", true},
+		{"foo.example.com", true},
+		{"*.example.com", true},
+		{"xn--bcher-kva.example", true},
+		{"", false},
+		{"*", false},
+		{"*.", false},
+		{"**.example.com", false},
+		{"foo.*.example.com", false},
+		{"*foo.example.com", false},
+		{"foo..example.com", false},
+		{"-foo.example.com", false},
+		{"foo_bar.example.com", false},
+		{"foo.example.com.", false},
+	} {
+		if got := validDNSNamePattern(tc.pattern); got != tc.want {
+			t.Errorf("validDNSNamePattern(%q) = %v, want %v", tc.pattern, got, tc.want)
+		}
+	}
+}

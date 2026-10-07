@@ -26,6 +26,7 @@ package oidc
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	_ "embed"
 	"encoding/base64"
 	"encoding/hex"
@@ -62,6 +63,10 @@ const (
 	defaultTokenLifetime = time.Hour
 	codeExpiration       = 10 * time.Minute
 	pollInterval         = 5 * time.Second
+	vacuumInterval       = 30 * time.Second
+	// maxPendingRequests is the maximum number of pending authorization
+	// requests and device authorization requests.
+	maxPendingRequests = 10000
 )
 
 var (
@@ -88,18 +93,26 @@ type openIDConfiguration struct {
 	IDTokenSigningAlgValuesSupported []string `json:"id_token_signing_alg_values_supported"`
 	ScopesSupported                  []string `json:"scopes_supported"`
 	ClaimsSupported                  []string `json:"claims_supported"`
+	CodeChallengeMethodsSupported    []string `json:"code_challenge_methods_supported"`
 }
 
 type codeData struct {
 	created     time.Time
 	requestID   string
 	clientID    string
+	email       string
+	sub         string
 	redirectURI *url.URL
-	nonce       string
-	state       string
-	scopes      []string
-	accessToken string
-	idToken     string
+	// origRedirectURI is the redirect_uri of the authorization request.
+	origRedirectURI string
+	// codeChallenge and codeChallengeMethod are used for PKCE (RFC 7636).
+	codeChallenge       string
+	codeChallengeMethod string
+	nonce               string
+	state               string
+	scopes              []string
+	accessToken         string
+	idToken             string
 }
 
 // ServerOptions contains the parameters needed to configure a ProviderServer.
@@ -154,6 +167,7 @@ type ProviderServer struct {
 	opts ServerOptions
 
 	mu           sync.Mutex
+	lastVacuum   time.Time
 	codes        map[string]*codeData
 	deviceCodes  map[string]*deviceCodeData
 	deviceTokens map[string]*deviceToken
@@ -166,22 +180,53 @@ type Client struct {
 	ACL         *[]string
 }
 
+// verifyCodeChallenge verifies the PKCE code verifier, if a code challenge was
+// sent with the authorization request.
+func (d *codeData) verifyCodeChallenge(verifier string) bool {
+	if d.codeChallenge == "" {
+		return true
+	}
+	want := verifier
+	if d.codeChallengeMethod == "S256" {
+		h := sha256.Sum256([]byte(verifier))
+		want = base64.RawURLEncoding.EncodeToString(h[:])
+	}
+	return verifier != "" && subtle.ConstantTimeCompare([]byte(want), []byte(d.codeChallenge)) == 1
+}
+
+// setNoFrameHeaders prevents the page from being framed by other pages, e.g. for
+// clickjacking.
+func setNoFrameHeaders(w http.ResponseWriter) {
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+}
+
+func expired(created time.Time) bool {
+	return created.Add(codeExpiration).Before(time.Now().UTC())
+}
+
+// vacuum removes expired requests. It scans all the pending requests at most
+// once every vacuumInterval. Lookups must still check expiration.
 func (s *ProviderServer) vacuum() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
+	if now.Sub(s.lastVacuum) < vacuumInterval {
+		return
+	}
+	s.lastVacuum = now
 	for k, v := range s.codes {
-		if v.created.Add(codeExpiration).Before(now) {
+		if expired(v.created) {
 			delete(s.codes, k)
 		}
 	}
 	for k, v := range s.deviceCodes {
-		if v.created.Add(codeExpiration).Before(now) {
+		if expired(v.created) {
 			delete(s.deviceCodes, k)
 		}
 	}
 	for k, v := range s.deviceTokens {
-		if v.created.Add(codeExpiration).Before(now) {
+		if expired(v.created) {
 			delete(s.deviceTokens, k)
 		}
 	}
@@ -209,7 +254,8 @@ func (s *ProviderServer) ServeConfig(w http.ResponseWriter, req *http.Request) {
 			"RS256",
 			"ES256",
 		},
-		ScopesSupported: s.opts.Scopes,
+		ScopesSupported:               s.opts.Scopes,
+		CodeChallengeMethodsSupported: []string{"S256", "plain"},
 		ClaimsSupported: []string{
 			"aud",
 			"email",
@@ -268,13 +314,20 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		var code string
 		var data *codeData
 		for k, v := range s.codes {
-			if v.requestID == requestID {
+			if v.requestID == requestID && !expired(v.created) {
 				code = k
 				data = v
 				break
 			}
 		}
 		if data == nil {
+			http.Error(w, "request expired", http.StatusBadRequest)
+			return
+		}
+		// The request must be approved by the same user who made it.
+		// The client ACL and scopes were checked for that user.
+		if sub, _ := userClaims["sub"].(string); data.email != email || data.sub != sub {
+			s.opts.EventRecorder.Record("openid auth request approved by wrong user for " + data.clientID)
 			http.Error(w, "request expired", http.StatusBadRequest)
 			return
 		}
@@ -357,6 +410,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	}
 
 	// GET
+	sub, _ := userClaims["sub"].(string)
 	if rt := req.Form.Get("response_type"); rt != "code" {
 		s.opts.Logger.Errorf("ERR ServeAuthorization: invalid response_type %q", rt)
 		http.Error(w, "invalid response_type", http.StatusBadRequest)
@@ -386,6 +440,16 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	if err != nil {
 		s.opts.Logger.Errorf("ERR ServeAuthorization: invalid redirect_uri %q", redirectURI)
 		http.Error(w, "invalid redirect_uri", http.StatusBadRequest)
+		return
+	}
+	codeChallenge := req.Form.Get("code_challenge")
+	codeChallengeMethod := req.Form.Get("code_challenge_method")
+	if codeChallenge != "" && codeChallengeMethod == "" {
+		codeChallengeMethod = "plain"
+	}
+	if codeChallenge != "" && codeChallengeMethod != "S256" && codeChallengeMethod != "plain" {
+		s.opts.Logger.Errorf("ERR ServeAuthorization: invalid code_challenge_method %q", codeChallengeMethod)
+		http.Error(w, "invalid code_challenge_method", http.StatusBadRequest)
 		return
 	}
 
@@ -424,14 +488,26 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	}
 
 	s.mu.Lock()
+	if len(s.codes) >= maxPendingRequests {
+		s.mu.Unlock()
+		s.opts.Logger.Errorf("ERR ServeAuthorization: too many pending requests")
+		http.Error(w, "too many pending requests", http.StatusServiceUnavailable)
+		return
+	}
 	s.codes[code] = &codeData{
 		created:     time.Now().UTC(),
 		clientID:    clientID,
 		requestID:   requestID,
+		email:       email,
+		sub:         sub,
 		redirectURI: ru,
 		state:       req.Form.Get("state"),
 		nonce:       req.Form.Get("nonce"),
 		scopes:      scopes,
+
+		origRedirectURI:     redirectURI,
+		codeChallenge:       codeChallenge,
+		codeChallengeMethod: codeChallengeMethod,
 	}
 	s.mu.Unlock()
 
@@ -452,6 +528,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		RequestID: requestID,
 		Scopes:    strings.Join(scopes, ","),
 	}
+	setNoFrameHeaders(w)
 	w.Header().Set("content-type", "text/html; charset=utf-8")
 	authorizeTemplate.Execute(w, data)
 	return
@@ -473,7 +550,7 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 
 		var found bool
 		for _, client := range s.opts.Clients {
-			if client.ID == clientID && client.Secret != "" && client.Secret == clientSecret && redirectURI != "" && slices.Contains(client.RedirectURI, redirectURI) {
+			if client.ID == clientID && client.Secret != "" && subtle.ConstantTimeCompare([]byte(client.Secret), []byte(clientSecret)) == 1 && redirectURI != "" && slices.Contains(client.RedirectURI, redirectURI) {
 				found = true
 				break
 			}
@@ -488,7 +565,7 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 		delete(s.codes, code)
 		s.mu.Unlock()
 
-		if !ok || data.clientID != clientID {
+		if !ok || expired(data.created) || data.clientID != clientID || data.origRedirectURI != redirectURI || !data.verifyCodeChallenge(req.Form.Get("code_verifier")) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -534,6 +611,10 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 		}
 		s.mu.Lock()
 		data, ok = s.deviceTokens[deviceCode]
+		if ok && expired(data.created) {
+			delete(s.deviceTokens, deviceCode)
+			ok = false
+		}
 		defer s.mu.Unlock()
 
 		var resp struct {

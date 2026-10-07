@@ -30,8 +30,10 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/c2FmZQ/storage"
@@ -43,6 +45,7 @@ import (
 const (
 	ocspCacheSize = 200
 	ocspFile      = "ocsp-cache"
+	ocspMaxSkew   = 5 * time.Minute
 )
 
 var (
@@ -134,13 +137,17 @@ func (c *OCSPCache) flush() error {
 func (c *OCSPCache) VerifyChains(ctx context.Context, chains [][]*x509.Certificate, stapled []byte) error {
 	if stapled != nil && len(chains) > 0 && len(chains[0]) > 1 {
 		cert, issuer := chains[0][0], chains[0][1]
-		if resp, err := ocsp.ParseResponseForCert(stapled, cert, issuer); err == nil && time.Now().Before(resp.NextUpdate) && resp.Status == ocsp.Good {
+		if resp, err := parseResponse(stapled, cert, issuer); err == nil && !resp.NextUpdate.IsZero() && resp.Status == ocsp.Good {
 			hash := certHash(cert.Raw)
-			if resp, ok := c.cache.Get(hash); ok && resp.Status == ocsp.Revoked {
+			cached, ok := c.cache.Get(hash)
+			if ok && cached.Status == ocsp.Revoked {
 				// Someone is playing tricks on us.
 				return errOCSPRevoked
 			}
-			c.cache.Add(hash, resp)
+			// Only replace the cached response with a newer one.
+			if !ok || resp.ThisUpdate.After(cached.ThisUpdate) {
+				c.cache.Add(hash, resp)
+			}
 		}
 	}
 	var lastError error
@@ -248,10 +255,34 @@ func (c *OCSPCache) fetchOneOCSP(ctx context.Context, cert, issuer *x509.Certifi
 		c.logger.Errorf("ERR body: %v", err)
 		return nil, errOCSPProtocol
 	}
-	ocspResp, err := ocsp.ParseResponse(body, issuer)
+	ocspResp, err := parseResponse(body, cert, issuer)
 	if err != nil {
-		c.logger.Errorf("ERR ocsp.ParseResponse for %s from %s: %v", cert.Subject, server, err)
+		c.logger.Errorf("ERR OCSP response for %s from %s: %v", cert.Subject, server, err)
 		return nil, errOCSPProtocol
 	}
 	return ocspResp, nil
+}
+
+// parseResponse parses an OCSP response for cert, and verifies that it is
+// signed by issuer, or by a delegated responder that is authorized to sign
+// OCSP responses on behalf of issuer, and that it is current.
+func parseResponse(raw []byte, cert, issuer *x509.Certificate) (*ocsp.Response, error) {
+	resp, err := ocsp.ParseResponseForCert(raw, cert, issuer)
+	if err != nil {
+		return nil, err
+	}
+	// ParseResponseForCert verifies that the responder certificate is
+	// signed by issuer, but not that it is authorized to sign OCSP
+	// responses (RFC 6960 section 4.2.2.2).
+	if rc := resp.Certificate; rc != nil && !rc.Equal(issuer) && !slices.Contains(rc.ExtKeyUsage, x509.ExtKeyUsageOCSPSigning) {
+		return nil, errors.New("responder certificate is not authorized to sign OCSP responses")
+	}
+	now := time.Now()
+	if resp.ThisUpdate.After(now.Add(ocspMaxSkew)) {
+		return nil, fmt.Errorf("response is not yet valid: %v", resp.ThisUpdate)
+	}
+	if !resp.NextUpdate.IsZero() && !now.Before(resp.NextUpdate) {
+		return nil, fmt.Errorf("response is expired: %v", resp.NextUpdate)
+	}
+	return resp, nil
 }

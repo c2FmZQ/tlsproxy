@@ -264,9 +264,11 @@ func (ca *SSHCA) ServePublicKey(w http.ResponseWriter, req *http.Request) {
 }
 
 func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
+	// Don't hold the lock while reading the request.
 	ca.mu.Lock()
-	defer ca.mu.Unlock()
-	if ca.signer == nil {
+	signer := ca.signer
+	ca.mu.Unlock()
+	if signer == nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -292,7 +294,7 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		}{
 			Email: email,
 			Name:  ca.opts.Name,
-			CA:    string(ssh.MarshalAuthorizedKey(ca.signer.PublicKey())),
+			CA:    string(ssh.MarshalAuthorizedKey(signer.PublicKey())),
 		}
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline' 'self'; script-src 'unsafe-inline' 'self'; frame-ancestors 'none'")
@@ -307,7 +309,11 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	ttl := defaultCertsLifetime
+	maxTTL := defaultMaxCertsLifetime
+	if ca.opts.MaximumCertificateLifetime != 0 {
+		maxTTL = ca.opts.MaximumCertificateLifetime
+	}
+	ttl := min(defaultCertsLifetime, maxTTL)
 	var key []byte
 
 	switch ct := req.Header.Get("content-type"); ct {
@@ -325,25 +331,20 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		req.ParseForm()
 		key = []byte(req.PostForm.Get("key"))
 		if t := req.PostForm.Get("ttl"); t != "" {
-			tt, err := strconv.Atoi(t)
-			if err != nil {
-				ca.opts.Logger.Errorf("ERR ttl: %v", err)
+			tt, err := strconv.ParseInt(t, 10, 64)
+			if err != nil || tt <= 0 {
+				ca.opts.Logger.Errorf("ERR ttl: %q %v", t, err)
 				http.Error(w, "invalid request", http.StatusBadRequest)
 				return
 			}
-			ttl = time.Second * time.Duration(tt)
+			// Cap before multiplying to avoid overflow.
+			ttl = time.Second * time.Duration(min(tt, int64(maxTTL/time.Second)))
 		}
 
 	default:
 		ca.opts.Logger.Errorf("ERR content-type: %q", ct)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
-	}
-
-	if ca.opts.MaximumCertificateLifetime != 0 {
-		ttl = min(ca.opts.MaximumCertificateLifetime, ttl)
-	} else {
-		ttl = min(defaultMaxCertsLifetime, ttl)
 	}
 
 	pub, _, _, _, err := ssh.ParseAuthorizedKey(key)
@@ -357,7 +358,6 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 	}
 	switch kt := pub.Type(); kt {
 	case ssh.KeyAlgoRSA:
-	case ssh.KeyAlgoDSA:
 	case ssh.KeyAlgoECDSA256:
 	case ssh.KeyAlgoSKECDSA256:
 	case ssh.KeyAlgoECDSA384:
@@ -366,7 +366,7 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 	case ssh.KeyAlgoSKED25519:
 	default:
 		ca.opts.Logger.Errorf("ERR unexpected ssh key type: %v", kt)
-		http.Error(w, "unexpected key type", http.StatusInternalServerError)
+		http.Error(w, "unexpected key type", http.StatusBadRequest)
 		return
 	}
 	rnd := make([]byte, 8)
@@ -394,7 +394,10 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 			},
 		},
 	}
-	if err := cert.SignCert(rand.Reader, ca.signer); err != nil {
+	ca.mu.Lock()
+	err = cert.SignCert(rand.Reader, signer)
+	ca.mu.Unlock()
+	if err != nil {
 		ca.opts.Logger.Errorf("ERR SignCert: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

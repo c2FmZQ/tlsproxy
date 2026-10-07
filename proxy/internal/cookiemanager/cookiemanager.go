@@ -45,6 +45,7 @@ const (
 	tlsProxyAuthCookie    = "TLSPROXYAUTH"
 	tlsProxyIDTokenCookie = "TLSPROXYIDTOKEN"
 	tlsProxyNonce         = "TLSPROXYNONCE"
+	tlsProxySAMLNonce     = "TLSPROXYSAMLNONCE"
 
 	expiredAuthTokenLeeway = 7 * 24 * time.Hour
 	defaultTokenLifetime   = 20 * time.Hour
@@ -230,6 +231,39 @@ func (cm *CookieManager) Nonce(w http.ResponseWriter, req *http.Request) string 
 	return ""
 }
 
+// SetSAMLNonce sets a cookie that binds a SAML request to the browser. The SAML
+// response is a cross-site POST, so the cookie must be SameSite=None.
+func (cm *CookieManager) SetSAMLNonce(w http.ResponseWriter, nonce string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     tlsProxySAMLNonce,
+		Value:    nonce,
+		Domain:   cm.domain,
+		Path:     "/",
+		MaxAge:   600,
+		SameSite: http.SameSiteNoneMode,
+		Secure:   true,
+		HttpOnly: true,
+	})
+}
+
+// SAMLNonce returns the value of the cookie set by SetSAMLNonce, and deletes
+// the cookie.
+func (cm *CookieManager) SAMLNonce(w http.ResponseWriter, req *http.Request) string {
+	http.SetCookie(w, &http.Cookie{
+		Name:     tlsProxySAMLNonce,
+		Domain:   cm.domain,
+		Path:     "/",
+		MaxAge:   -1,
+		SameSite: http.SameSiteNoneMode,
+		Secure:   true,
+		HttpOnly: true,
+	})
+	if c, err := req.Cookie(tlsProxySAMLNonce); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
 func (cm *CookieManager) ClearCookies(w http.ResponseWriter) error {
 	cookie := &http.Cookie{
 		Name:     tlsProxyAuthCookie,
@@ -271,24 +305,26 @@ func (cm *CookieManager) validateAuthToken(req *http.Request, leeway time.Durati
 		return nil, "", errors.New("unknown key")
 	}
 
-	var expectedIssuer string
+	var tok *jwt.Token
 	if issuer == "" {
 		// Local
-		expectedIssuer = cm.issuer
+		tok, err = cm.tm.ValidateToken(cookie.Value,
+			jwt.WithIssuer(cm.issuer),
+			jwt.WithAudience(cm.issuer),
+			jwt.WithExpirationRequired(),
+			jwt.WithLeeway(leeway),
+		)
 	} else {
 		// Trusted
 		if !slices.Contains(cm.trustedIssuers, issuer) {
 			return nil, "", fmt.Errorf("issuer %q is not trusted", issuer)
 		}
-		expectedIssuer = issuer
+		tok, err = cm.tm.ValidateRemoteToken(cookie.Value, issuer,
+			jwt.WithAudience(issuer),
+			jwt.WithExpirationRequired(),
+			jwt.WithLeeway(leeway),
+		)
 	}
-
-	tok, err := cm.tm.ValidateToken(cookie.Value,
-		jwt.WithIssuer(expectedIssuer),
-		jwt.WithAudience(expectedIssuer),
-		jwt.WithExpirationRequired(),
-		jwt.WithLeeway(leeway),
-	)
 	if err != nil {
 		return nil, "", err
 	}
@@ -347,7 +383,7 @@ func (cm *CookieManager) ValidateIDTokenCookie(req *http.Request, authToken *jwt
 	if err != nil {
 		return err
 	}
-	tok, err := cm.tm.ValidateToken(cookie.Value, jwt.WithIssuer(cm.issuer), jwt.WithAudience(audience))
+	tok, err := cm.tm.ValidateToken(cookie.Value, jwt.WithIssuer(cm.issuer), jwt.WithAudience(audience), jwt.WithExpirationRequired())
 	if err != nil {
 		return err
 	}
@@ -363,7 +399,7 @@ func (cm *CookieManager) ValidateAuthorizationHeader(req *http.Request) (*jwt.To
 	if len(h) < 7 || strings.ToUpper(h[:7]) != "BEARER " {
 		return nil, errors.New("invalid authorization header")
 	}
-	tok, err := cm.tm.ValidateToken(h[7:], jwt.WithIssuer(cm.issuer), jwt.WithAudience(audienceFromReq(req)))
+	tok, err := cm.tm.ValidateToken(h[7:], jwt.WithIssuer(cm.issuer), jwt.WithAudience(audienceFromReq(req)), jwt.WithExpirationRequired())
 	if err != nil {
 		return nil, err
 	}
@@ -371,6 +407,17 @@ func (cm *CookieManager) ValidateAuthorizationHeader(req *http.Request) (*jwt.To
 		return nil, errors.New("invalid proxyauth")
 	}
 	return tok, nil
+}
+
+// IsProxyCookie returns true if name is the name of one of the cookies set by
+// the cookie manager.
+func IsProxyCookie(name string) bool {
+	for _, n := range []string{tlsProxyAuthCookie, tlsProxyIDTokenCookie, tlsProxyNonce, tlsProxySAMLNonce} {
+		if strings.EqualFold(name, n) {
+			return true
+		}
+	}
+	return false
 }
 
 func FilterOutAuthTokenCookie(req *http.Request) {

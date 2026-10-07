@@ -154,7 +154,7 @@ func (a *FakeAuthenticator) Get(options *AssertionOptions) (id []byte, clientDat
 	cd := clientData{
 		Type:      "webauthn.get",
 		Challenge: base64.RawURLEncoding.EncodeToString(options.Challenge),
-		Origin:    "https://example.com/",
+		Origin:    a.origin,
 	}
 	if clientDataJSON, err = json.Marshal(cd); err != nil {
 		return
@@ -165,6 +165,15 @@ func (a *FakeAuthenticator) Get(options *AssertionOptions) (id []byte, clientDat
 	}
 	signature, err = sign(authKey, authData, clientDataJSON)
 	return
+}
+
+// ResetSignCount resets the signature counter of all the keys, like a cloned
+// authenticator would.
+func (a *FakeAuthenticator) ResetSignCount() {
+	for k, v := range a.keys {
+		v.signCount = 0
+		a.keys[k] = v
+	}
 }
 
 func (a *FakeAuthenticator) RotateKeys() error {

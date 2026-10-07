@@ -29,6 +29,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"strings"
 
 	"github.com/pires/go-proxyproto"
 	"golang.org/x/net/idna"
@@ -206,4 +208,20 @@ func quicStream(c anyConn) (*netw.QUICStream, bool) {
 	default:
 		return nil, false
 	}
+}
+
+// delHeaderVariants deletes all the headers whose name matches name, ignoring
+// case and treating '_' and '-' as the same character. Some backends, e.g.
+// CGI, map both X-Foo-Bar and X_Foo_Bar to the same variable.
+func delHeaderVariants(h http.Header, name string) {
+	want := normalizeHeaderName(name)
+	for k := range h {
+		if normalizeHeaderName(k) == want {
+			delete(h, k)
+		}
+	}
+}
+
+func normalizeHeaderName(name string) string {
+	return strings.ToLower(strings.ReplaceAll(name, "_", "-"))
 }

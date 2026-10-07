@@ -144,6 +144,7 @@ type Proxy struct {
 	ocspCache     *ocspcache.OCSPCache
 	bwLimits      map[string]*bwLimit
 	inConns       *connTracker
+	ipConns       ipCounter
 	outConns      *connTracker
 
 	metrics   map[string]*backendMetrics
@@ -431,6 +432,15 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 
 	pkis := make(map[string]*pki.PKIManager)
 	for _, pp := range cfg.PKI {
+		var serverCerts []pki.ServerCertificatePolicy
+		for _, sc := range pp.ServerCertificates {
+			policy := pki.ServerCertificatePolicy{DNSNames: sc.DNSNames}
+			if sc.ACL != nil {
+				acl := []string(*sc.ACL)
+				policy.ACL = &acl
+			}
+			serverCerts = append(serverCerts, policy)
+		}
 		opts := pki.Options{
 			Name:                  pp.Name,
 			KeyType:               pp.KeyType,
@@ -443,6 +453,9 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			Store:                 p.store,
 			EventRecorder:         er,
 			AdminMatcher:          aclMatcher.emailMatches,
+			ServerCertificates:    serverCerts,
+			// Close connections that use revoked certificates.
+			OnRevoke: p.reAuthorize,
 		}
 		m, err := pki.New(opts)
 		if err != nil {
@@ -675,7 +688,9 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			}
 		}
 		be.tlsConfig = func(forQUIC bool) *tls.Config {
+			p.mu.RLock()
 			tc := p.baseTLSConfig()
+			p.mu.RUnlock()
 			if forQUIC {
 				tc.MinVersion = tls.VersionTLS13
 			}
@@ -969,7 +984,7 @@ func (p *Proxy) reAuthorize() {
 		be, err := p.backend(serverName, proto)
 		if err != nil {
 			p.recordEvent(err.Error())
-			be.logErrorF("BAD [-] ReAuth %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
+			p.logErrorF("BAD [-] ReAuth %s ➔ %q: %v", conn.RemoteAddr(), serverName, err)
 			conn.Close()
 			continue
 		}
@@ -991,6 +1006,15 @@ func (p *Proxy) reAuthorize() {
 		if err := be.authorize(clientCert); err != nil {
 			p.recordEvent(err.Error())
 			be.logErrorF("BAD [-] ReAuth %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), idnaToUnicode(serverName), certSummary(clientCert), err)
+			conn.Close()
+			continue
+		}
+		if clientCert == nil {
+			continue
+		}
+		if m, ok := be.pkiMap[hex.EncodeToString(clientCert.AuthorityKeyId)]; ok && m.IsRevoked(clientCert.SerialNumber) {
+			p.recordEvent(fmt.Sprintf("deny X509 [%s] to %s (revoked)", certSummary(clientCert), idnaToUnicode(serverName)))
+			be.logErrorF("BAD [-] ReAuth %s ➔ %q %q is revoked", conn.RemoteAddr(), idnaToUnicode(serverName), certSummary(clientCert))
 			conn.Close()
 			continue
 		}
@@ -1045,15 +1069,11 @@ func (p *Proxy) Start(ctx context.Context) error {
 	p.connClosed = sync.NewCond(&p.mu)
 	var httpServer *http.Server
 	if p.cfg.HTTPAddr != nil && *p.cfg.HTTPAddr != "" {
-		httpServer = &http.Server{
-			Handler: p.certManager.HTTPHandler(nil),
-		}
 		httpListener, err := net.Listen("tcp", *p.cfg.HTTPAddr)
 		if err != nil {
 			return err
 		}
-		httpServer.SetKeepAlivesEnabled(false)
-		go serveHTTP(httpServer, httpListener)
+		httpServer = startPlainHTTPServer(p.certManager.HTTPHandler(nil), httpListener, *p.cfg.MaxOpen)
 	}
 	p.ctx, p.cancel = context.WithCancel(ctx)
 
@@ -1185,6 +1205,7 @@ func (p *Proxy) Shutdown(ctx context.Context) {
 	p.Stop()
 }
 
+// baseTLSConfig returns a new TLS config. p.mu must be held.
 func (p *Proxy) baseTLSConfig() *tls.Config {
 	tc := p.certManager.TLSConfig()
 	getCert := tc.GetCertificate
@@ -1296,8 +1317,10 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		conn.Conn = cc
 	}
 	numOpen := p.inConns.add(conn)
+	ip, numOpenIP := p.ipConns.inc(conn.RemoteAddr())
 	conn.OnClose(func() {
 		p.inConns.remove(conn)
+		p.ipConns.dec(ip)
 		if be := connBackend(conn); be != nil {
 			be.incInFlight(-1)
 			if conn.Annotation(reportEndKey, false).(bool) {
@@ -1315,11 +1338,20 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		sendCloseNotify(conn)
 		return
 	}
+	if max := p.cfg.MaxOpenPerIP; max != nil && *max > 0 && numOpenIP > *max {
+		p.recordEvent("too many open connections from IP")
+		p.logErrorF("ERR [-] %s: too many open connections from IP: %d > %d", conn.RemoteAddr(), numOpenIP, *max)
+		sendCloseNotify(conn)
+		return
+	}
 	setKeepAlive(conn)
 
 	ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
 	defer cancel()
-	echConn, err := ech.NewConn(ctx, conn.Conn, ech.WithKeys(p.echKeys))
+	p.mu.RLock()
+	echKeys := p.echKeys
+	p.mu.RUnlock()
+	echConn, err := ech.NewConn(ctx, conn.Conn, ech.WithKeys(echKeys))
 	if err != nil {
 		p.recordEvent("invalid ClientHello")
 		p.logErrorF("BAD [-] %s ➔ %q: invalid ClientHello: %v", conn.RemoteAddr(), echConn.ServerName(), err)
@@ -1327,10 +1359,7 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	}
 	conn.Conn = echConn
 	if echConn.ECHAccepted() {
-		p.recordEvent("encrypted client hello accepted " + idnaToUnicode(echConn.ServerName()))
 		conn.SetAnnotation(echAcceptedKey, true)
-	} else if echConn.ECHPresented() {
-		p.recordEvent("encrypted client hello rejected " + idnaToUnicode(echConn.ServerName()))
 	}
 	serverName := echConn.ServerName()
 	if serverName == "" {
@@ -1346,6 +1375,13 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		sendUnrecognizedName(conn)
 		return
 	}
+	// Record ECH events only after the server name is known to be valid.
+	// Otherwise, clients could create any number of distinct events.
+	if echConn.ECHAccepted() {
+		p.recordEvent("encrypted client hello accepted " + idnaToUnicode(serverName))
+	} else if echConn.ECHPresented() {
+		p.recordEvent("encrypted client hello rejected " + idnaToUnicode(serverName))
+	}
 	conn.SetAnnotation(backendKey, be)
 	be.incInFlight(1)
 	p.setCounters(conn, serverName)
@@ -1360,7 +1396,9 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		p.handleTLSPassthroughConnection(conn)
 
 	case len(alpnProtos) == 1 && alpnProtos[0] == acme.ALPNProto && echConn.ServerName() != "":
+		p.mu.RLock()
 		tc := p.baseTLSConfig()
+		p.mu.RUnlock()
 		tc.NextProtos = []string{acme.ALPNProto}
 		p.handleACMEConnection(tls.Server(conn, tc))
 
@@ -1397,7 +1435,7 @@ func (p *Proxy) checkIP(conn *netw.Conn) error {
 }
 
 func (p *Proxy) handleACMEConnection(conn *tls.Conn) {
-	ctx, cancel := context.WithTimeout(p.ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(p.ctx, tlsHandshakeTimeout)
 	defer cancel()
 	serverName := idnaToUnicode(connServerName(conn))
 	p.logConnF("INF ACME %s ➔  %s", conn.RemoteAddr(), serverName)
@@ -1411,7 +1449,7 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 	serverName := connServerName(conn)
 	be := connBackend(conn)
 
-	ctx, cancel := context.WithTimeout(p.ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(p.ctx, tlsHandshakeTimeout)
 	defer cancel()
 	if err := conn.HandshakeContext(ctx); err != nil {
 		switch {
@@ -1460,7 +1498,7 @@ func (p *Proxy) handleHTTPConnection(conn *tls.Conn) {
 	}
 	serverName := connServerName(conn)
 	be := connBackend(conn)
-	if err := be.connLimit.Wait(p.ctx); err != nil {
+	if err := be.waitConnLimit(p.ctx); err != nil {
 		p.recordEvent(err.Error())
 		be.logErrorF("ERR [-] %s ➔  %q Wait: %v", conn.RemoteAddr(), idnaToUnicode(serverName), err)
 		conn.Close()
@@ -1489,7 +1527,7 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 	}
 	serverName := connServerName(extConn)
 	be := connBackend(extConn)
-	if err := be.connLimit.Wait(p.ctx); err != nil {
+	if err := be.waitConnLimit(p.ctx); err != nil {
 		p.recordEvent(err.Error())
 		be.logErrorF("ERR [-] %s ➔  %q Wait: %v", extConn.RemoteAddr(), idnaToUnicode(serverName), err)
 		return
@@ -1531,7 +1569,7 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
 	serverName := connServerName(extConn)
 	be := connBackend(extConn)
-	if err := be.connLimit.Wait(p.ctx); err != nil {
+	if err := be.waitConnLimit(p.ctx); err != nil {
 		p.recordEvent(err.Error())
 		be.logErrorF("ERR [-] %s ➔  %q Wait: %v", extConn.RemoteAddr(), idnaToUnicode(serverName), err)
 		sendInternalError(extConn)

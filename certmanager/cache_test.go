@@ -1,7 +1,7 @@
 // MIT License
 //
-// Copyright (c) 2025 TTBT Enterprises LLC
-// Copyright (c) 2025 Robin Thellend <rthellend@rthellend.com>
+// Copyright (c) 2026 TTBT Enterprises LLC
+// Copyright (c) 2026 Robin Thellend <rthellend@rthellend.com>
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -21,31 +21,38 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-package csrf
+// Package certmanager implements an X509 certificate manager that can replace
+// https://pkg.go.dev/golang.org/x/crypto/acme/autocert#Manager for testing
+// purposes.
+// This certificate manager is a self-signed certificate authority that is not
+// and should not be trusted for securing any real life communication.
+package certmanager
 
 import (
-	"net/http"
-
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/sid"
+	"fmt"
+	"testing"
 )
 
-func Check(w http.ResponseWriter, req *http.Request) bool {
-	if req.Method != http.MethodPost {
-		return true
+func TestGetCertCache(t *testing.T) {
+	cm, err := New("test", t.Logf)
+	if err != nil {
+		t.Fatalf("New: %v", err)
 	}
-	// Requests authenticated with a bearer token don't use cookies.
-	// Browsers can send other authorization headers automatically, e.g.
-	// cached Basic credentials.
-	if fromctx.BearerAuth(req.Context()) {
-		return true
+	// Generating keys is slow. Use a small cache.
+	cm.maxCachedCerts = 5
+	c1, err := cm.GetCert("foo.example.com")
+	if err != nil {
+		t.Fatalf("GetCert: %v", err)
 	}
-	if id := sid.SessionID(nil, req); id != "" {
-		th := fromctx.TokenHash(req.Context())
-		if req.Header.Get("x-csrf-token") == id && (th == "" || th == id) {
-			return true
+	if c2, err := cm.GetCert("foo.example.com"); err != nil || c2 != c1 {
+		t.Errorf("GetCert didn't return cached cert: %v", err)
+	}
+	for i := range cm.maxCachedCerts + 1 {
+		if _, err := cm.GetCert(fmt.Sprintf("n%d.example.com", i)); err != nil {
+			t.Fatalf("GetCert: %v", err)
 		}
 	}
-	http.Error(w, "session expired", http.StatusBadRequest)
-	return false
+	if n := len(cm.certs); n > cm.maxCachedCerts {
+		t.Errorf("len(certs) = %d", n)
+	}
 }

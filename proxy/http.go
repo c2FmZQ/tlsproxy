@@ -30,11 +30,36 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"golang.org/x/net/netutil"
 )
 
 type ctxKey int
 
 var connCtxKey ctxKey = 1
+
+var (
+	// plainHTTPTimeout is the read and write timeout of the plain HTTP
+	// server, i.e. the one serving ACME challenges and redirects.
+	plainHTTPTimeout = 10 * time.Second
+	// plainHTTPMaxConns is the maximum number of concurrent connections
+	// to the plain HTTP server.
+	plainHTTPMaxConns = 1000
+)
+
+// startPlainHTTPServer starts the HTTP server that serves ACME challenges and
+// redirects to HTTPS.
+func startPlainHTTPServer(handler http.Handler, l net.Listener, maxConns int) *http.Server {
+	s := &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: plainHTTPTimeout,
+		ReadTimeout:       plainHTTPTimeout,
+		WriteTimeout:      plainHTTPTimeout,
+	}
+	s.SetKeepAlivesEnabled(false)
+	go serveHTTP(s, netutil.LimitListener(l, min(maxConns, plainHTTPMaxConns)))
+	return s
+}
 
 func startInternalHTTPServer(handler http.Handler, conns <-chan net.Conn) *http.Server {
 	l := &proxyListener{

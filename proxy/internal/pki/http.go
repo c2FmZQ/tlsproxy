@@ -334,6 +334,7 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 		CASN           string
 		CASubjectKeyId string
 		Certs          []cert
+		ServerCerts    bool
 	}{
 		Status:         statusFilter,
 		Owner:          ownerFilter,
@@ -342,6 +343,7 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 		CASN:           bytesToHex(caCert.SerialNumber.Bytes()),
 		CASubjectKeyId: bytesToHex(caCert.SubjectKeyId),
 		Certs:          certs,
+		ServerCerts:    m.canRequestServerCerts(email),
 	}
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline' 'self'; script-src 'unsafe-eval' 'unsafe-inline' 'self'; frame-ancestors 'none'")
@@ -385,6 +387,16 @@ func (m *PKIManager) handleRequestCert(w http.ResponseWriter, req *http.Request)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
+	var dnsNames []string
+	for _, name := range in.DNSNames {
+		name = strings.ToLower(name)
+		if !m.canRequestDNSName(email, name) {
+			m.opts.Logger.Errorf("ERR %s not allowed to request DNS name %q", email, name)
+			http.Error(w, "DNS name not allowed", http.StatusForbidden)
+			return
+		}
+		dnsNames = append(dnsNames, name)
+	}
 	cr := &x509.CertificateRequest{
 		PublicKeyAlgorithm: in.PublicKeyAlgorithm,
 		PublicKey:          in.PublicKey,
@@ -392,7 +404,7 @@ func (m *PKIManager) handleRequestCert(w http.ResponseWriter, req *http.Request)
 		EmailAddresses: []string{
 			email,
 		},
-		DNSNames: in.DNSNames,
+		DNSNames: dnsNames,
 	}
 	if in.Subject.CommonName != "" {
 		cr.Subject.CommonName += "::" + in.Subject.CommonName

@@ -36,6 +36,11 @@ const (
 	tlsProxySessionIDCookie = "__tlsproxySid"
 )
 
+// IsCookie returns true if name is the name of the session ID cookie.
+func IsCookie(name string) bool {
+	return strings.EqualFold(name, tlsProxySessionIDCookie)
+}
+
 func SetSessionID(w http.ResponseWriter, req *http.Request, value string) string {
 	if value == "" {
 		var buf [16]byte
