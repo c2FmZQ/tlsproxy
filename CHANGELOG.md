@@ -38,7 +38,7 @@ upgrading.
   * DSA keys are rejected.
   * A `ttl` that is not a positive number of seconds is rejected with `400 Bad Request`. Larger values are still
     capped at `maximumCertificateLifetime`.
-* **Login links expire.** The links used on the login, logout, and permission denied pages expire after 24 hours,
+* **Login links expire.** The links used on the login, logout, and permission denied pages expire after a week,
   and must point to the same backend.
 * **Device authorization page.** The device verification page now has two steps: after entering the user code,
   the page shows which client is requesting access and with which scopes, before the user can approve or deny the

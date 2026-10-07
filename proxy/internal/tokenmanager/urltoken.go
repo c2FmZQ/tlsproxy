@@ -40,7 +40,7 @@ import (
 )
 
 // urlTokenLifetime is how long URL tokens are valid.
-const urlTokenLifetime = 24 * time.Hour
+const urlTokenLifetime = 7 * 24 * time.Hour
 
 // URLToken returns a signed token for URL u in the context of request req.
 func (tm *TokenManager) URLToken(w http.ResponseWriter, req *http.Request, u *url.URL, extra map[string]any) (string, string, error) {
