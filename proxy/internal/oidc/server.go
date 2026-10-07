@@ -98,6 +98,8 @@ type codeData struct {
 	created     time.Time
 	requestID   string
 	clientID    string
+	email       string
+	sub         string
 	redirectURI *url.URL
 	nonce       string
 	state       string
@@ -293,6 +295,13 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 			http.Error(w, "request expired", http.StatusBadRequest)
 			return
 		}
+		// The request must be approved by the same user who made it.
+		// The client ACL and scopes were checked for that user.
+		if sub, _ := userClaims["sub"].(string); data.email != email || data.sub != sub {
+			s.opts.EventRecorder.Record("openid auth request approved by wrong user for " + data.clientID)
+			http.Error(w, "request expired", http.StatusBadRequest)
+			return
+		}
 		if req.Form.Get("approve") != "true" && !AutoApproveForTests {
 			s.opts.EventRecorder.Record("denied openid auth request for " + data.clientID)
 			http.Error(w, "request was denied", http.StatusForbidden)
@@ -372,6 +381,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	}
 
 	// GET
+	sub, _ := userClaims["sub"].(string)
 	if rt := req.Form.Get("response_type"); rt != "code" {
 		s.opts.Logger.Errorf("ERR ServeAuthorization: invalid response_type %q", rt)
 		http.Error(w, "invalid response_type", http.StatusBadRequest)
@@ -449,6 +459,8 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		created:     time.Now().UTC(),
 		clientID:    clientID,
 		requestID:   requestID,
+		email:       email,
+		sub:         sub,
 		redirectURI: ru,
 		state:       req.Form.Get("state"),
 		nonce:       req.Form.Get("nonce"),

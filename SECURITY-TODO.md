@@ -189,7 +189,10 @@ deleted when every item is resolved.
   check it). A subdomain page can obtain an assertion for the RP ID.
   Fix: require the expected origin.
 
-- [ ] **18. OIDC consent approval not bound to the user who started the request** (Low)
+- [x] **18. OIDC consent approval not bound to the user who started the request** (Low)
+  *Fixed: the pending code stores the requesting user's email and sub;
+  approval by a different user is rejected. (ACL and scope filtering
+  done at GET time therefore apply to the approver.)*
   `proxy/internal/oidc/server.go`: `AuthorizeClient` and scope filtering run on
   the GET; the token is minted for whoever POSTs the `request_id`.
   Fix: store the user in `codeData`, require a match on POST, re-run

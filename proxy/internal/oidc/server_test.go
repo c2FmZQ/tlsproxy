@@ -24,9 +24,19 @@
 package oidc
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
+	"github.com/c2FmZQ/storage"
+	"github.com/c2FmZQ/storage/crypto"
 	jwt "github.com/golang-jwt/jwt/v5"
+
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
 func TestRewriteRules(t *testing.T) {
@@ -85,5 +95,65 @@ func TestRewriteRules(t *testing.T) {
 	}
 	if want, got := "jdoe", out["username2"]; want != got {
 		t.Errorf("username2 = %q, want %q", got, want)
+	}
+}
+
+func TestAuthorizationSameUser(t *testing.T) {
+	mk, err := crypto.CreateAESMasterKeyForTest()
+	if err != nil {
+		t.Fatalf("crypto.CreateAESMasterKeyForTest: %v", err)
+	}
+	tm, err := tokenmanager.New(storage.New(t.TempDir(), mk), nil, nil)
+	if err != nil {
+		t.Fatalf("tokenmanager.New: %v", err)
+	}
+	s := NewServer(ServerOptions{
+		CookieManager:  cookiemanager.New(tm, "idp", "example.com", "https://idp.example.com", 0, nil),
+		Clients:        []Client{{ID: "client", RedirectURI: []string{"https://app.example.com/callback"}}},
+		ACLMatcher:     func([]string, string) bool { return true },
+		GroupsForEmail: func(string) []string { return nil },
+		EventRecorder:  nopRecorder{},
+		Logger:         nopLogger{},
+	})
+
+	withUser := func(req *http.Request, email string) *http.Request {
+		return req.WithContext(fromctx.WithClaims(req.Context(), jwt.MapClaims{"email": email, "sub": email}))
+	}
+
+	// Alice makes the request.
+	args := url.Values{
+		"response_type": {"code"},
+		"client_id":     {"client"},
+		"redirect_uri":  {"https://app.example.com/callback"},
+		"scope":         {"openid email"},
+	}
+	req := withUser(httptest.NewRequest(http.MethodGet, "https://idp.example.com/authorization?"+args.Encode(), nil), "alice@example.com")
+	w := httptest.NewRecorder()
+	s.ServeAuthorization(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET: code %d", w.Code)
+	}
+	var requestID string
+	s.mu.Lock()
+	for _, v := range s.codes {
+		requestID = v.requestID
+	}
+	s.mu.Unlock()
+
+	approve := func(email string) int {
+		form := url.Values{"request_id": {requestID}, "approve": {"true"}}
+		req := httptest.NewRequest(http.MethodPost, "https://idp.example.com/authorization", strings.NewReader(form.Encode()))
+		req.Header.Set("content-type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		s.ServeAuthorization(w, withUser(req, email))
+		return w.Code
+	}
+	// Bob can't approve it.
+	if got, want := approve("bob@example.com"), http.StatusBadRequest; got != want {
+		t.Errorf("approve(bob) = %d, want %d", got, want)
+	}
+	// Alice can.
+	if got, want := approve("alice@example.com"), http.StatusOK; got != want {
+		t.Errorf("approve(alice) = %d, want %d", got, want)
 	}
 }
