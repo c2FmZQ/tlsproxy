@@ -167,6 +167,15 @@ func (a *FakeAuthenticator) Get(options *AssertionOptions) (id []byte, clientDat
 	return
 }
 
+// ResetSignCount resets the signature counter of all the keys, like a cloned
+// authenticator would.
+func (a *FakeAuthenticator) ResetSignCount() {
+	for k, v := range a.keys {
+		v.signCount = 0
+		a.keys[k] = v
+	}
+}
+
 func (a *FakeAuthenticator) RotateKeys() error {
 	for k, v := range a.keys {
 		privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

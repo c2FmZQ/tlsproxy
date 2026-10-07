@@ -256,7 +256,9 @@ deleted when every item is resolved.
   (`oidc/client.go`); the local OP then asserts `email_verified: true`.
   *Declined (by decision): upstream IdPs are trusted for email identity;
   some IdPs never send `email_verified`.*
-- [ ] **27.** WebAuthn signature counter is ignored.
+- [x] **27.** WebAuthn signature counter is ignored.
+  *Fixed: the counter is stored per key and must increase when either
+  value is non-zero (authenticators without a counter always send 0).*
 - [ ] **28.** Revoking a cert doesn't close connections already open with it
   (`reAuthorize` only re-checks ACLs, only on reconfigure).
 - [ ] **29.** SSH CA accepts DSA keys (`sshca.go`).

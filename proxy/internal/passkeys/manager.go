@@ -86,6 +86,9 @@ type userKey struct {
 	Transports []string
 	CreatedAt  time.Time
 	LastSeen   time.Time
+	// SignCount is the authenticator's signature counter. It is always 0
+	// for authenticators that don't implement it.
+	SignCount uint32
 }
 
 // EventRecorder is used to record events.
@@ -889,6 +892,7 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 		Transports: args.Transports,
 		CreatedAt:  now,
 		LastSeen:   now,
+		SignCount:  ao.AuthData.SignCount,
 	})
 
 	c := maps.Clone(claims)
@@ -1010,6 +1014,15 @@ func (m *Manager) processAssertion(host, jsargs string, token *jwt.Token) (claim
 	}
 	if err := verifySignature(key.PublicKey, args.AuthenticatorData, args.ClientDataJSON, args.Signature); err != nil {
 		return nil, err
+	}
+	// A signature counter that doesn't increase may indicate that the
+	// authenticator was cloned. https://www.w3.org/TR/webauthn-3/#sctn-sign-counter
+	if authData.SignCount != 0 || key.SignCount != 0 {
+		if authData.SignCount <= key.SignCount {
+			m.cfg.Logger.Errorf("ERR signature counter %d <= %d for key %v", authData.SignCount, key.SignCount, key.ID)
+			return nil, errors.New("invalid signature counter")
+		}
+		key.SignCount = authData.SignCount
 	}
 	key.LastSeen = time.Now().UTC()
 

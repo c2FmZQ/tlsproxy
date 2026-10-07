@@ -286,8 +286,9 @@ func TestSSOEnforcePasskey(t *testing.T) {
 			token = m[1]
 			t.Logf("TOKEN: %s", token)
 
+			pkHost := host
 			check := func(origin string) (int, string) {
-				code, body, _ := get("https://"+host+"/passkey?get=AssertionOptions&redirect="+token, nil, []byte{})
+				code, body, _ := get("https://"+pkHost+"/passkey?get=AssertionOptions&redirect="+token, nil, []byte{})
 				if got, want := code, 200; got != want {
 					t.Errorf("Code = %v, want %v", got, want)
 				}
@@ -316,7 +317,7 @@ func TestSSOEnforcePasskey(t *testing.T) {
 				dataJSON, _ := json.Marshal(data)
 				hdr := http.Header{}
 				hdr.Set("content-type", "application/x-www-form-urlencoded")
-				code, body, _ = get("https://"+host+"/passkey?get=Check&redirect="+token, hdr, []byte("args="+url.QueryEscape(string(dataJSON))))
+				code, body, _ = get("https://"+pkHost+"/passkey?get=Check&redirect="+token, hdr, []byte("args="+url.QueryEscape(string(dataJSON))))
 				return code, body
 			}
 
@@ -341,6 +342,13 @@ func TestSSOEnforcePasskey(t *testing.T) {
 			}
 			if got, want := body, "[https-server] /blah\n"; got != want {
 				t.Errorf("Body = %v, want %v", got, want)
+			}
+
+			// An authenticator whose signature counter didn't
+			// increase, e.g. a clone, is rejected.
+			auth.ResetSignCount()
+			if code, _ := check("https://" + pkHost); code == 200 {
+				t.Errorf("Check with old signature counter: Code = %v", code)
 			}
 		})
 	}
