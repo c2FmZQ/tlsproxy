@@ -219,12 +219,18 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		showECH = "+ECH"
 	}
 	be.logConnF("QUC [%s] %s:%s ➔ %s|%s:%s%s", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol, showECH)
-	if err := be.waitConnLimit(ctx); err != nil {
-		if !errors.Is(err, context.Canceled) {
-			p.recordEvent(err.Error())
-			be.logErrorF("ERR [%s] %s ➔  %q Wait: %v", sum, qc.RemoteAddr(), idnaToUnicode(cs.ServerName), err)
+	serv, isH3 := be.http3Server.(*http3.Server)
+	isH3 = isH3 && cs.NegotiatedProtocol == "h3"
+	// Other QUIC connections are rate limited per stream, in
+	// handleQUICTCPStream.
+	if isH3 || be.Mode == ModeQUIC {
+		if err := be.waitConnLimit(ctx); err != nil {
+			if !errors.Is(err, context.Canceled) {
+				p.recordEvent(err.Error())
+				be.logErrorF("ERR [%s] %s ➔  %q Wait: %v", sum, qc.RemoteAddr(), idnaToUnicode(cs.ServerName), err)
+			}
+			return
 		}
-		return
 	}
 
 	reportErr := func(err error, tag string) {
@@ -242,7 +248,7 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		be.logErrorF("ERR [%s] %s:%s ➔ %s|%s:%s %s: %v", sum, qc.RemoteAddr().Network(), qc.RemoteAddr(), idnaToUnicode(cs.ServerName), be.Mode, cs.NegotiatedProtocol, tag, err)
 	}
 
-	if serv, ok := be.http3Server.(*http3.Server); ok && cs.NegotiatedProtocol == "h3" {
+	if isH3 {
 		if err := serv.ServeQUICConn(qc); err != nil {
 			reportErr(err, "ServeQUICConn")
 		}

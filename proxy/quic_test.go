@@ -46,6 +46,7 @@ import (
 	"github.com/c2FmZQ/http3-go"
 	quicapi "github.com/c2FmZQ/quic-api"
 	"github.com/quic-go/quic-go"
+	"golang.org/x/time/rate"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
@@ -895,5 +896,53 @@ func TestH3Backend(t *testing.T) {
 	}
 	if want := "HTTP/2.0 200 OK\n[h3 backend] HTTP/3.0 /foo\n"; got != want {
 		t.Errorf("Got %q, want %q", got, want)
+	}
+}
+
+func TestQUICStreamRateLimit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	be := newTCPServer(t, ctx, "TCP Backend", nil)
+
+	cfg := &Config{
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(1000),
+		Backends: []*Backend{
+			{
+				ServerNames: Strings{"tcp.example.com"},
+				Mode:        "TCP",
+				Addresses:   Strings{be.listener.Addr().String()},
+				ALPNProtos:  &Strings{"http/1.1"},
+			},
+		},
+	}
+	proxy := newTestProxy(cfg, extCA)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	defer proxy.Stop()
+
+	// One token every 100 seconds. The first stream must get it, i.e. the
+	// QUIC connection itself must not use it.
+	proxy.mu.Lock()
+	for _, b := range proxy.backends {
+		b.connLimit = rate.NewLimiter(rate.Every(100*time.Second), 1)
+	}
+	proxy.mu.Unlock()
+
+	addr := proxy.quicTransport.(*netw.QUICTransport).Addr().String()
+	want := "Hello from TCP Backend\n"
+	if got, err := quicGet("tcp.example.com", addr, "Hello!\n", extCA, []string{"http/1.1"}); err != nil || got != want {
+		t.Fatalf("quicGet #1 = %q, %v, want %q", got, err, want)
+	}
+	if got, err := quicGet("tcp.example.com", addr, "Hello!\n", extCA, []string{"http/1.1"}); err == nil && got == want {
+		t.Fatalf("quicGet #2 = %q, %v, want rate limit error", got, err)
 	}
 }
