@@ -1,6 +1,6 @@
 # TLSPROXY Release Notes
 
-## v0.26.0
+## next
 
 This release fixes a number of security issues found during a security review. Some of the fixes change the
 behavior of the proxy in ways that may require config changes. Please read the breaking changes below before
