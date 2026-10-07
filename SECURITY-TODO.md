@@ -271,8 +271,10 @@ deleted when every item is resolved.
 - [x] **30.** SSH CA holds `ca.mu` while reading the request body; a slow
   upload blocks all issuance.
   *Fixed: the lock is only held while signing.*
-- [ ] **31.** `tlsclient -ocsp` uses `PeerCertificates[1]` as the issuer
+- [x] **31.** `tlsclient -ocsp` uses `PeerCertificates[1]` as the issuer
   instead of `VerifiedChains[0][1]` (`tlsclient/main.go`).
+  *Fixed: uses the verified chain, requires an authorized responder, and
+  checks `ThisUpdate`. (No tests for tlsclient; build and vet only.)*
 - [ ] **32.** `--passphrase` flag is visible in `/proc/*/cmdline`
   (`main.go`); `TLSPROXY_PASSPHRASE` is the safer route.
 - [ ] **33.** QUIC `GetConfigForClient` logs SNI and ALPN with `%s` (log
