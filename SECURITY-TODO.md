@@ -60,7 +60,11 @@ deleted when every item is resolved.
   `Host: <its own name>`.
   Fix: reject Host not in `be.ServerNames` at the top of both handlers.
 
-- [ ] **6. OCSP checks bypassable with a forged stapled response** (Medium)
+- [x] **6. OCSP checks bypassable with a forged stapled response** (Medium)
+  *Fixed: `parseResponse` requires the responder to be the issuer or have
+  the OCSPSigning EKU, binds to the cert serial, and checks
+  `ThisUpdate`/`NextUpdate` for both stapled and fetched responses. A
+  staple only replaces a cached response if it is newer.*
   `proxy/internal/ocspcache/ocsp.go`: `ocsp.ParseResponseForCert` accepts an
   embedded responder cert without the `OCSPSigning` EKU, so any cert from the
   same CA (even the revoked one) can sign "Good". Stapled responses (including
