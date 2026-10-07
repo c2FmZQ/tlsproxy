@@ -268,8 +268,9 @@ deleted when every item is resolved.
 - [x] **29.** SSH CA accepts DSA keys (`sshca.go`).
   *Fixed: DSA keys are rejected with 400 (unsupported key types now get
   400 instead of 500).*
-- [ ] **30.** SSH CA holds `ca.mu` while reading the request body; a slow
+- [x] **30.** SSH CA holds `ca.mu` while reading the request body; a slow
   upload blocks all issuance.
+  *Fixed: the lock is only held while signing.*
 - [ ] **31.** `tlsclient -ocsp` uses `PeerCertificates[1]` as the issuer
   instead of `VerifiedChains[0][1]` (`tlsclient/main.go`).
 - [ ] **32.** `--passphrase` flag is visible in `/proc/*/cmdline`

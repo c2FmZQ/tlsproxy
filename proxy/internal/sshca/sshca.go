@@ -264,9 +264,11 @@ func (ca *SSHCA) ServePublicKey(w http.ResponseWriter, req *http.Request) {
 }
 
 func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
+	// Don't hold the lock while reading the request.
 	ca.mu.Lock()
-	defer ca.mu.Unlock()
-	if ca.signer == nil {
+	signer := ca.signer
+	ca.mu.Unlock()
+	if signer == nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -292,7 +294,7 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		}{
 			Email: email,
 			Name:  ca.opts.Name,
-			CA:    string(ssh.MarshalAuthorizedKey(ca.signer.PublicKey())),
+			CA:    string(ssh.MarshalAuthorizedKey(signer.PublicKey())),
 		}
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline' 'self'; script-src 'unsafe-inline' 'self'; frame-ancestors 'none'")
@@ -392,7 +394,10 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 			},
 		},
 	}
-	if err := cert.SignCert(rand.Reader, ca.signer); err != nil {
+	ca.mu.Lock()
+	err = cert.SignCert(rand.Reader, signer)
+	ca.mu.Unlock()
+	if err != nil {
 		ca.opts.Logger.Errorf("ERR SignCert: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

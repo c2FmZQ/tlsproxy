@@ -34,6 +34,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/storage/crypto"
@@ -278,5 +279,43 @@ func TestCertificateDSAKey(t *testing.T) {
 	m.ServeCertificate(w, req)
 	if got, want := w.Code, http.StatusBadRequest; got != want {
 		t.Errorf("ServeCertificate(dsa) = %d, want %d", got, want)
+	}
+}
+
+func TestCertificateSlowRequest(t *testing.T) {
+	m := newCA(t, nil)
+	withClaims := func(req *http.Request) *http.Request {
+		req.Header.Set("content-type", "text/plain")
+		return req.WithContext(fromctx.WithClaims(req.Context(), jwt.MapClaims{
+			"email": "alice@example.com",
+		}))
+	}
+
+	// A request whose body never finishes.
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	go m.ServeCertificate(httptest.NewRecorder(), withClaims(httptest.NewRequest("POST", "https://example.com/cert", pr)))
+
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("ed25519.GenerateKey: %v", err)
+	}
+	sshPub, err := ssh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatalf("ssh.NewPublicKey: %v", err)
+	}
+	done := make(chan int)
+	go func() {
+		w := httptest.NewRecorder()
+		m.ServeCertificate(w, withClaims(httptest.NewRequest("POST", "https://example.com/cert", bytes.NewReader(ssh.MarshalAuthorizedKey(sshPub)))))
+		done <- w.Code
+	}()
+	select {
+	case code := <-done:
+		if code != http.StatusOK {
+			t.Errorf("ServeCertificate = %d", code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("ServeCertificate is blocked by another request")
 	}
 }
