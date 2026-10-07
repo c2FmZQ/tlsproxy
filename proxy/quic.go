@@ -99,7 +99,7 @@ func (p *Proxy) startQUICListener(ctx context.Context) error {
 				return be.tlsConfig(true), nil
 			}
 		}
-		p.logErrorF("ERR QUIC connection %s %s", hello.ServerName, hello.SupportedProtos)
+		p.logErrorF("ERR QUIC connection %q %q", hello.ServerName, hello.SupportedProtos)
 		return nil, tlsUnrecognizedName
 	}
 	quicListener, err := p.quicTransport.(*netw.QUICTransport).Listen(tc)

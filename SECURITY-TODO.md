@@ -279,8 +279,10 @@ deleted when every item is resolved.
   (`main.go`); `TLSPROXY_PASSPHRASE` is the safer route.
   *Fixed (non-breaking): a warning is logged when the flag is used, and
   the README recommends the environment variable.*
-- [ ] **33.** QUIC `GetConfigForClient` logs SNI and ALPN with `%s` (log
+- [x] **33.** QUIC `GetConfigForClient` logs SNI and ALPN with `%s` (log
   injection); use `%q` (`proxy/quic.go`).
+  *Fixed: `%q`. Other log lines with SNI already used `%q` or a validated
+  name.*
 - [ ] **34.** Connection-level DoS: no per-IP limit, 2-minute handshake
   timeout, per-backend `connLimit.Wait` with no deadline before
   authentication, non-h3 QUIC streams skip the first-request rate limit.
