@@ -59,10 +59,12 @@ type CertManager struct {
 
 	mu    sync.Mutex
 	certs map[string]*tls.Certificate
+	// maxCachedCerts is the maximum number of certificates kept in memory.
+	maxCachedCerts int
 }
 
-// maxCachedCerts is the maximum number of certificates kept in memory.
-const maxCachedCerts = 1000
+// defaultMaxCachedCerts is the default value of maxCachedCerts.
+const defaultMaxCachedCerts = 1000
 
 // New returns a new ephemeral certificate manager.
 func New(name string, logger func(string, ...interface{})) (*CertManager, error) {
@@ -110,6 +112,8 @@ func New(name string, logger func(string, ...interface{})) (*CertManager, error)
 		pool:      pool,
 		logger:    logger,
 		certs:     make(map[string]*tls.Certificate),
+
+		maxCachedCerts: defaultMaxCachedCerts,
 	}, nil
 }
 
@@ -240,13 +244,11 @@ func (cm *CertManager) GetCert(name string) (*tls.Certificate, error) {
 	if c := cm.certs[name]; c != nil && time.Now().Before(c.Leaf.NotAfter.Add(-5*time.Minute)) {
 		return c, nil
 	}
-	if len(cm.certs) >= maxCachedCerts {
+	if len(cm.certs) >= cm.maxCachedCerts {
 		clear(cm.certs)
 	}
 
 	cm.logger("[%s] GetCert(%q)", cm.name, name)
-	// All the certs use the same key. Generating a new key for each
-	// name is expensive.
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return nil, fmt.Errorf("rsa.GenerateKey: %w", err)

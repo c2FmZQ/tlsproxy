@@ -38,6 +38,8 @@ func TestGetCertCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	// Generating keys is slow. Use a small cache.
+	cm.maxCachedCerts = 5
 	c1, err := cm.GetCert("foo.example.com")
 	if err != nil {
 		t.Fatalf("GetCert: %v", err)
@@ -45,12 +47,12 @@ func TestGetCertCache(t *testing.T) {
 	if c2, err := cm.GetCert("foo.example.com"); err != nil || c2 != c1 {
 		t.Errorf("GetCert didn't return cached cert: %v", err)
 	}
-	for i := range maxCachedCerts + 1 {
+	for i := range cm.maxCachedCerts + 1 {
 		if _, err := cm.GetCert(fmt.Sprintf("n%d.example.com", i)); err != nil {
 			t.Fatalf("GetCert: %v", err)
 		}
 	}
-	if n := len(cm.certs); n > maxCachedCerts {
+	if n := len(cm.certs); n > cm.maxCachedCerts {
 		t.Errorf("len(certs) = %d", n)
 	}
 }
