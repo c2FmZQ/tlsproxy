@@ -431,6 +431,15 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 
 	pkis := make(map[string]*pki.PKIManager)
 	for _, pp := range cfg.PKI {
+		var serverCerts []pki.ServerCertificatePolicy
+		for _, sc := range pp.ServerCertificates {
+			policy := pki.ServerCertificatePolicy{DNSNames: sc.DNSNames}
+			if sc.ACL != nil {
+				acl := []string(*sc.ACL)
+				policy.ACL = &acl
+			}
+			serverCerts = append(serverCerts, policy)
+		}
 		opts := pki.Options{
 			Name:                  pp.Name,
 			KeyType:               pp.KeyType,
@@ -443,6 +452,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			Store:                 p.store,
 			EventRecorder:         er,
 			AdminMatcher:          aclMatcher.emailMatches,
+			ServerCertificates:    serverCerts,
 		}
 		m, err := pki.New(opts)
 		if err != nil {

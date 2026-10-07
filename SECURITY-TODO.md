@@ -76,7 +76,11 @@ deleted when every item is resolved.
   `ParseResponseForCert` on fetch; check `ThisUpdate`/`NextUpdate`; don't
   trust or cache client-supplied staples.
 
-- [ ] **7. PKI users can get serverAuth certs for any DNS name** (Medium)
+- [x] **7. PKI users can get serverAuth certs for any DNS name** (Medium)
+  *Fixed (by decision): new `pki[].serverCertificates` allowlist
+  (`dnsNames` patterns + optional `acl`). Without it, server certificates
+  are denied. **Breaking change: needs a release note.** CA name
+  constraints were not added (they'd require re-issuing existing CAs).*
   `proxy/internal/pki/http.go` copies CSR `DNSNames` unchecked; `pki.go` adds
   `ServerAuth` EKU. Any PKI user can get a cert for `*.example.com` or a
   backend's name, which matters if the CA is in `forwardRootCAs`.

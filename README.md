@@ -489,6 +489,9 @@ Defines a local Certificate Authority:
 *   `ocspServers`: List of strings. URLs for OCSP.
 *   `endpoint`: String. URL for certificate management.
 *   `admins`: List of strings. Users allowed to perform administrative tasks.
+*   `serverCertificates`: (Optional) List of objects. Defines which DNS names users can request in server certificates. Without it, only client certificates can be requested.
+    *   `dnsNames`: List of strings. DNS names (e.g. `foo.example.com`) or wildcards (e.g. `*.example.com`). A wildcard matches exactly one label.
+    *   `acl`: (Optional) List of strings. Users or groups who can request these names. If not set, all users with access to the `endpoint` can.
 
 ### SSH Certificate Authority Configuration (`ConfigSSHCertificateAuthority`)
 
@@ -708,6 +711,12 @@ pki:
   # Optional: Admins can revoke anybody's certificates.
   admins:
   - bob@example.com
+  # Optional: Allow server certificates for some DNS names.
+  serverCertificates:
+  - dnsNames:
+    - "*.internal.example.com"
+    acl:
+    - bob@example.com
 ```
 
 This example configures a local Certificate Authority (CA) named "EXAMPLE CA". This CA can be used to issue X.509 certificates for client and backend authentication within your environment.
@@ -718,6 +727,7 @@ Here is a breakdown of the configuration:
 *   `ocspServers`: Provides the endpoint for the Online Certificate Status Protocol (OCSP), offering a real-time method for checking certificate validity.
 *   `endpoint`: Sets up a web interface at `https://pki-internal.example.com/certs` where authenticated users can request and manage their own certificates.
 *   `admins`: Grants administrative privileges to `bob@example.com`, allowing this user to perform actions like revoking any user's certificate.
+*   `serverCertificates`: Allows `bob@example.com` to request server certificates for names like `foo.internal.example.com`. Without this, users can only request client certificates.
 
 You can then use this CA to enforce client certificate-based authorization for a backend. In the following example, only clients presenting a valid certificate issued by "EXAMPLE CA" for the identity `user@example.com` are allowed access.
 

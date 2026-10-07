@@ -106,7 +106,10 @@ key is never sent to the server.
 <div><b tkey="pki-label">Label:</b></div><div><input type="text" tkey="pki-label-desc" name="label" size="20" placeholder="optional common name suffix" /></div>
 <div><b tkey="pki-usage">Usage:</b></div><div><select name="usage" onchange="selectUsage(this)">
 <option tkey="pki-client" value="client">Client</option>
-<option tkey="pki-server" value="server">Server</select>
+{{- if .ServerCerts }}
+<option tkey="pki-server" value="server">Server</option>
+{{- end }}
+</select>
 </div>
 <div class="dnsinput"><b tkey="pki-dns-name">DNS Name:</b></div><div class="dnsinput"><input type="text" tkey="pki-required" name="dnsname" size="20" placeholder="required" /></div>
 <div><b tkey="pki-password">Password:</b></div><div><input type="password" tkey="pki-required" name="pw1" size="20" placeholder="required" autocomplete="new-password" /></div>

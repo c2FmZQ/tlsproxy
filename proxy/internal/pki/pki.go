@@ -119,6 +119,22 @@ type Options struct {
 	}
 	// AdminMatcher returns true if group contains email.
 	AdminMatcher func(acl []string, email string) bool
+	// ServerCertificates defines which DNS names users can request in
+	// server certificates. When empty, server certificates can't be
+	// requested.
+	ServerCertificates []ServerCertificatePolicy
+}
+
+// ServerCertificatePolicy defines which DNS names can be requested in server
+// certificates, and by whom.
+type ServerCertificatePolicy struct {
+	// DNSNames is a list of DNS name patterns. A pattern is either a
+	// DNS name, e.g. foo.example.com, or a wildcard, e.g. *.example.com.
+	// A wildcard matches exactly one label, like in TLS certificates.
+	DNSNames []string
+	// ACL is a list of users and groups who can request these names,
+	// using AdminMatcher. When nil, all users can request them.
+	ACL *[]string
 }
 
 // New returns a new initialized PKI manager. The Certificate Authority's key
@@ -841,4 +857,49 @@ func wipe(b []byte) {
 	for i := range b {
 		b[i] = 0
 	}
+}
+
+// canRequestServerCerts returns true if email is allowed to request server
+// certificates for at least some DNS names.
+func (m *PKIManager) canRequestServerCerts(email string) bool {
+	for _, p := range m.opts.ServerCertificates {
+		if p.ACL == nil || m.opts.AdminMatcher(*p.ACL, email) {
+			return true
+		}
+	}
+	return false
+}
+
+// canRequestDNSName returns true if email is allowed to request a server
+// certificate for name.
+func (m *PKIManager) canRequestDNSName(email, name string) bool {
+	for _, p := range m.opts.ServerCertificates {
+		if !slices.ContainsFunc(p.DNSNames, func(pattern string) bool { return DNSNameMatches(pattern, name) }) {
+			continue
+		}
+		if p.ACL == nil || m.opts.AdminMatcher(*p.ACL, email) {
+			return true
+		}
+	}
+	return false
+}
+
+// DNSNameMatches returns true if name matches pattern. The pattern is either a
+// DNS name, or a wildcard that matches exactly one label, e.g. *.example.com
+// matches foo.example.com, but not foo.bar.example.com. A wildcard name only
+// matches the same wildcard pattern.
+func DNSNameMatches(pattern, name string) bool {
+	pattern, name = strings.ToLower(pattern), strings.ToLower(name)
+	if name == "" {
+		return false
+	}
+	if pattern == name {
+		return true
+	}
+	suffix, ok := strings.CutPrefix(pattern, "*")
+	if !ok || !strings.HasPrefix(suffix, ".") {
+		return false
+	}
+	label, ok := strings.CutSuffix(name, suffix)
+	return ok && label != "" && !strings.ContainsAny(label, ".*")
 }

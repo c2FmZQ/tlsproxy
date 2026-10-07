@@ -699,6 +699,22 @@ type ConfigPKI struct {
 	// Admins is a list of users who are allowed to perform administrative
 	// tasks on the CA, e.g. revoke any certificate.
 	Admins Strings `yaml:"admins"`
+	// ServerCertificates defines which DNS names users can request in
+	// server certificates. When empty, server certificates can't be
+	// requested.
+	ServerCertificates []*PKIServerCertificates `yaml:"serverCertificates,omitempty"`
+}
+
+// PKIServerCertificates defines which DNS names can be requested in server
+// certificates, and by whom.
+type PKIServerCertificates struct {
+	// DNSNames is a list of DNS names or wildcards, e.g. foo.example.com
+	// or *.example.com. A wildcard matches exactly one label.
+	DNSNames Strings `yaml:"dnsNames"`
+	// ACL is a list of users and groups who are allowed to request these
+	// DNS names. When ACL is nil, all users with access to the PKI
+	// endpoint can request them.
+	ACL *Strings `yaml:"acl,omitempty"`
 }
 
 // ConfigSSHCertificateAuthority defines a certificate authority.
@@ -1243,6 +1259,16 @@ func (cfg *Config) Check() error {
 				return fmt.Errorf("pki[%d].Endpoint %q: backend must have mode %s or %s, found %s", i, p.Endpoint, ModeLocal, ModeConsole, mode)
 			}
 		}
+		for j, sc := range p.ServerCertificates {
+			if len(sc.DNSNames) == 0 {
+				return fmt.Errorf("pki[%d].ServerCertificates[%d].DNSNames: must be set", i, j)
+			}
+			for _, n := range sc.DNSNames {
+				if !validDNSNamePattern(n) {
+					return fmt.Errorf("pki[%d].ServerCertificates[%d].DNSNames: invalid name %q", i, j, n)
+				}
+			}
+		}
 	}
 
 	sshCAs := make(map[string]bool)
@@ -1592,4 +1618,24 @@ func reflectMerge(v1, v2 reflect.Value) error {
 		}
 		return nil
 	}
+}
+
+// validDNSNamePattern returns true if p is a DNS name, or a wildcard that
+// matches one label, e.g. *.example.com.
+func validDNSNamePattern(p string) bool {
+	name, _ := strings.CutPrefix(p, "*.")
+	if name == "" || len(name) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(name, ".") {
+		if label == "" || len(label) > 63 || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+			return false
+		}
+		for _, c := range label {
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-') {
+				return false
+			}
+		}
+	}
+	return true
 }
