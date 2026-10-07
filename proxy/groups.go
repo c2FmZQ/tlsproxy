@@ -47,8 +47,17 @@ func (m *aclMatcher) groupsForEmail(email string) []string {
 }
 
 func (m *aclMatcher) emailMatches(acl []string, email string) bool {
+	if email == "" {
+		return false
+	}
 	_, userDomain, ok := strings.Cut(email, "@")
 	if slices.ContainsFunc(acl, func(group string) bool {
+		// Group names are not matched against the email directly.
+		// Otherwise, an identity provider that asserts an email
+		// equal to a group name would match all its members' ACLs.
+		if m.findGroup(group) != nil {
+			return false
+		}
 		return group == email || (ok && group == "@"+userDomain)
 	}) {
 		return true
