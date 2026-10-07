@@ -31,6 +31,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -346,6 +348,47 @@ func TestEnforceSSOPolicy(t *testing.T) {
 	}
 	if got, want := w.Code, 200; got != want {
 		t.Fatalf("response code = %d, want %d", got, want)
+	}
+}
+
+func TestServeLoginRedirectHost(t *testing.T) {
+	proxy := newBackendSSOTestProxy(t)
+	be := proxy.cfg.Backends[0]
+
+	for _, tc := range []struct {
+		url  string
+		want int
+	}{
+		{"https://example.com/foo", http.StatusFound},
+		{"https://evil.example.org/foo", http.StatusBadRequest},
+	} {
+		req := httptest.NewRequest("GET", "https://example.com/", nil)
+		w := httptest.NewRecorder()
+		sid.SetSessionID(w, req, "")
+		req.Header.Set("Cookie", w.Header().Get("Set-Cookie"))
+
+		u, err := url.Parse(tc.url)
+		if err != nil {
+			t.Fatalf("url.Parse: %v", err)
+		}
+		token, _, err := be.tm.URLToken(httptest.NewRecorder(), req, u, nil)
+		if err != nil {
+			t.Fatalf("URLToken: %v", err)
+		}
+
+		for _, path := range []string{"/.sso/login?redirect=", "/.sso/logout?u="} {
+			req := httptest.NewRequest("GET", "https://example.com"+path+url.QueryEscape(token), nil)
+			req.Header.Set("Cookie", w.Header().Get("Set-Cookie"))
+			rec := httptest.NewRecorder()
+			if strings.HasPrefix(path, "/.sso/login") {
+				be.serveLogin(rec, req)
+			} else {
+				be.serveLogout(rec, req)
+			}
+			if got := rec.Code; got != tc.want {
+				t.Errorf("%s%s: code %d, want %d", path, tc.url, got, tc.want)
+			}
+		}
 	}
 }
 

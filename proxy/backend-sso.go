@@ -266,7 +266,7 @@ func (be *Backend) serveLogin(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	url, claims, err := be.tm.ValidateURLToken(req, tok)
-	if err != nil {
+	if err != nil || !slices.Contains(be.ServerNames, url.Hostname()) {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
@@ -292,7 +292,7 @@ func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
 	req.ParseForm()
 	if tokenStr := req.Form.Get("u"); tokenStr != "" {
 		url, _, err := be.tm.ValidateURLToken(req, tokenStr)
-		if err != nil {
+		if err != nil || !slices.Contains(be.ServerNames, url.Hostname()) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}

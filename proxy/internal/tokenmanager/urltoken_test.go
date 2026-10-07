@@ -24,6 +24,7 @@
 package tokenmanager
 
 import (
+	"encoding/base64"
 	"net/http/httptest"
 	"testing"
 
@@ -68,6 +69,18 @@ func TestURLToken(t *testing.T) {
 	}
 	if got, want := u.String(), "https://example.com/foo/bar"; got != want {
 		t.Errorf("url = %q, want %q", got, want)
+	}
+
+	// Token without expiration
+	noExp, err := tm.CreateToken(jwt.MapClaims{
+		"url":  "https://example.com/foo/bar",
+		"hsid": base64.StdEncoding.EncodeToString(tm.HMAC([]byte(sessionID))),
+	}, "")
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+	if _, _, err := tm.ValidateURLToken(req, noExp); err == nil {
+		t.Error("ValidateURLToken(no exp) should fail")
 	}
 
 	// Wrong session id

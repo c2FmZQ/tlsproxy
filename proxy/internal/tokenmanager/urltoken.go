@@ -30,6 +30,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
 	"golang.org/x/net/idna"
@@ -37,6 +38,9 @@ import (
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/sid"
 )
+
+// urlTokenLifetime is how long URL tokens are valid.
+const urlTokenLifetime = 24 * time.Hour
 
 // URLToken returns a signed token for URL u in the context of request req.
 func (tm *TokenManager) URLToken(w http.ResponseWriter, req *http.Request, u *url.URL, extra map[string]any) (string, string, error) {
@@ -56,6 +60,7 @@ func (tm *TokenManager) URLToken(w http.ResponseWriter, req *http.Request, u *ur
 	}
 	claims["url"] = u.String()
 	claims["hsid"] = base64.StdEncoding.EncodeToString(tm.HMAC([]byte(sid)))
+	claims["exp"] = time.Now().Add(urlTokenLifetime).Unix()
 	token, err := tm.CreateToken(claims, "")
 	return token, displayURL, err
 }
@@ -63,7 +68,7 @@ func (tm *TokenManager) URLToken(w http.ResponseWriter, req *http.Request, u *ur
 // ValidateURLToken validates a signed token and returns the URL. The request
 // must on the same host as the one where the token was created.
 func (tm *TokenManager) ValidateURLToken(req *http.Request, token string) (*url.URL, jwt.MapClaims, error) {
-	tok, err := tm.ValidateToken(token)
+	tok, err := tm.ValidateToken(token, jwt.WithExpirationRequired())
 	if err != nil {
 		return nil, nil, err
 	}

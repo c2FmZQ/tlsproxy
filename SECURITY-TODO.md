@@ -109,7 +109,10 @@ deleted when every item is resolved.
 
 ## Low–Medium
 
-- [ ] **10. Open redirect after login via Host header in URL token** (Low–Medium)
+- [x] **10. Open redirect after login via Host header in URL token** (Low–Medium)
+  *Fixed: Host is validated first (#5); `serveLogin`/`serveLogout` require
+  the token URL host to be one of the backend's server names; URL tokens
+  expire after 24h.*
   `proxy/backend-sso.go`: the URL token URL is built from `req.Host` before any
   Host check; `serveLogin`/`serveLogout` don't validate the token URL's host.
   Needs the victim's `__tlsproxySid` (same on every host, not HttpOnly,
