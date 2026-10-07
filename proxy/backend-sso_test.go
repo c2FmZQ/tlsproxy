@@ -114,6 +114,28 @@ func TestAuthenticateUser(t *testing.T) {
 	}
 }
 
+func TestIDTokenRedirect(t *testing.T) {
+	proxy := newBackendSSOTestProxy(t)
+
+	req := httptest.NewRequest("GET", "https://example.com//evil.example.org/foo?a=b", nil)
+	// Server requests don't have a scheme and host in the URL.
+	req.URL.Scheme = ""
+	req.URL.Host = ""
+	if err := setAuthCookie(req, "bob@", "example.com", "https://example.com/", proxy.tokenManager); err != nil {
+		t.Fatalf("setAuthCookie: %v", err)
+	}
+	w := httptest.NewRecorder()
+	if got, want := proxy.cfg.Backends[0].authenticateUser(w, &req), false; got != want {
+		t.Fatalf("authenticateUser() = %v, want %v", got, want)
+	}
+	if got, want := w.Code, 302; got != want {
+		t.Errorf("response code = %d, want %d", got, want)
+	}
+	if got, want := w.Header().Get("Location"), "https://example.com//evil.example.org/foo?a=b"; got != want {
+		t.Errorf("Location = %q, want %q", got, want)
+	}
+}
+
 func TestAuthenticateDevice(t *testing.T) {
 	proxy := newBackendSSOTestProxy(t)
 

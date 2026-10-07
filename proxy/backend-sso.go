@@ -156,7 +156,12 @@ func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.M
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return nil, "", false
 	}
-	http.Redirect(w, req, req.URL.String(), http.StatusFound)
+	// Use an absolute URL. A relative URL like //evil.com/ would redirect
+	// to another host.
+	u := *req.URL
+	u.Scheme = "https"
+	u.Host = req.Host
+	http.Redirect(w, req, u.String(), http.StatusFound)
 	return nil, "", false
 }
 

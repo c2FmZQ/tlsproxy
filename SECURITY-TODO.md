@@ -120,7 +120,10 @@ deleted when every item is resolved.
   Fix: #5, plus require the token URL host to be in `be.ServerNames`; add an
   expiry to URL tokens.
 
-- [ ] **11. Open redirect with `//evil.com` paths** (Low–Medium)
+- [x] **11. Open redirect with `//evil.com` paths** (Low–Medium)
+  *Fixed: redirects use absolute `https://<validated host>` URLs. (The
+  passkeys sites weren't exploitable, since local handlers run after the
+  clean-path redirect, but now use the same pattern.)*
   `proxy/backend-sso.go` (ID token cookie reissue:
   `http.Redirect(w, req, req.URL.String(), 302)`), and the same pattern in
   `proxy/internal/passkeys/manager.go` (2 places). `GET //evil.com/x` redirects

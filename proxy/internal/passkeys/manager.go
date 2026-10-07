@@ -301,6 +301,8 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		args.Del("nonce")
 		args.Set("redirect", token)
 		req.URL.RawQuery = args.Encode()
+		req.URL.Scheme = "https"
+		req.URL.Host = req.Host
 		http.Redirect(w, req, req.URL.String(), http.StatusFound)
 		return
 	}
