@@ -24,15 +24,19 @@
 package proxy
 
 import (
+	"bufio"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
+	"golang.org/x/time/rate"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
@@ -281,4 +285,101 @@ func TestForwardedHeaders(t *testing.T) {
 		t.Errorf("X-Forwarded-For = %q", got)
 	}
 	t.Logf("Headers:\n%s", body)
+}
+
+func TestMaxOpenPerIP(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr:     newPtr("localhost:0"),
+			TLSAddr:      newPtr("localhost:0"),
+			CacheDir:     newPtr(t.TempDir()),
+			MaxOpen:      newPtr(100),
+			MaxOpenPerIP: newPtr(2),
+			Backends: []*Backend{
+				{
+					ServerNames:  Strings{"local.example.com"},
+					Mode:         "LOCAL",
+					DocumentRoot: ".",
+				},
+			},
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	defer proxy.Stop()
+
+	dial := func() (*tls.Conn, error) {
+		conn, err := tls.Dial("tcp", proxy.listener.Addr().String(), &tls.Config{
+			ServerName: "local.example.com",
+			RootCAs:    extCA.RootCACertPool(),
+			NextProtos: []string{"http/1.1"},
+		})
+		if err != nil {
+			return nil, err
+		}
+		// Make sure the proxy accepted the connection.
+		if _, err := conn.Write([]byte("HEAD /proxy.go HTTP/1.1\r\nHost: local.example.com\r\n\r\n")); err != nil {
+			conn.Close()
+			return nil, err
+		}
+		resp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: "HEAD"})
+		if err != nil {
+			conn.Close()
+			return nil, err
+		}
+		resp.Body.Close()
+		return conn, nil
+	}
+
+	c1, err := dial()
+	if err != nil {
+		t.Fatalf("dial 1: %v", err)
+	}
+	c2, err := dial()
+	if err != nil {
+		t.Fatalf("dial 2: %v", err)
+	}
+	defer c2.Close()
+	if c3, err := dial(); err == nil {
+		c3.Close()
+		t.Fatal("dial 3: unexpected success")
+	}
+	c1.Close()
+	// Wait for the proxy to see that c1 is closed.
+	var c4 *tls.Conn
+	for range 50 {
+		if c4, err = dial(); err == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("dial 4: %v", err)
+	}
+	c4.Close()
+}
+
+func TestWaitConnLimit(t *testing.T) {
+	// One token every 100 seconds.
+	be := &Backend{connLimit: rate.NewLimiter(rate.Every(100*time.Second), 1)}
+	if err := be.waitConnLimit(context.Background()); err != nil {
+		t.Fatalf("waitConnLimit: %v", err)
+	}
+	// The next token would take longer than maxConnLimitWait.
+	start := time.Now()
+	if err := be.waitConnLimit(context.Background()); err == nil {
+		t.Fatal("waitConnLimit: unexpected success")
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Errorf("waitConnLimit took %s", d)
+	}
 }

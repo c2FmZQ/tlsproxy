@@ -258,7 +258,7 @@ func (be *Backend) reverseProxy() http.Handler {
 		if conn, ok := ctx.Value(connCtxKey).(annotatedConnection); ok {
 			if !conn.Annotation(requestFlagKey, false).(bool) {
 				conn.SetAnnotation(requestFlagKey, true)
-			} else if err := be.connLimit.Wait(ctx); err != nil {
+			} else if err := be.waitConnLimit(ctx); err != nil {
 				http.Error(w, "ctx", http.StatusInternalServerError)
 				return
 			}

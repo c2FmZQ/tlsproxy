@@ -180,6 +180,10 @@ type Config struct {
 	RevokeUnusedCertificates *bool `yaml:"revokeUnusedCertificates,omitempty"`
 	// MaxOpen is the maximum number of open incoming connections.
 	MaxOpen *int `yaml:"maxOpen,omitempty"`
+	// MaxOpenPerIP is the maximum number of open incoming connections
+	// from a single IP address. The default is no limit. Many clients
+	// can share an IP address, e.g. behind NAT.
+	MaxOpenPerIP *int `yaml:"maxOpenPerIP,omitempty"`
 	// AcceptTOS indicates acceptance of the Let's Encrypt Terms of Service.
 	// See https://letsencrypt.org/repository/
 	AcceptTOS *bool `yaml:"acceptTOS"`

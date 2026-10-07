@@ -144,6 +144,7 @@ type Proxy struct {
 	ocspCache     *ocspcache.OCSPCache
 	bwLimits      map[string]*bwLimit
 	inConns       *connTracker
+	ipConns       ipCounter
 	outConns      *connTracker
 
 	metrics   map[string]*backendMetrics
@@ -1313,8 +1314,10 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		conn.Conn = cc
 	}
 	numOpen := p.inConns.add(conn)
+	ip, numOpenIP := p.ipConns.inc(conn.RemoteAddr())
 	conn.OnClose(func() {
 		p.inConns.remove(conn)
+		p.ipConns.dec(ip)
 		if be := connBackend(conn); be != nil {
 			be.incInFlight(-1)
 			if conn.Annotation(reportEndKey, false).(bool) {
@@ -1329,6 +1332,12 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	if numOpen >= *p.cfg.MaxOpen {
 		p.recordEvent("too many open connections")
 		p.logErrorF("ERR [-] %s: too many open connections: %d >= %d", conn.RemoteAddr(), numOpen, *p.cfg.MaxOpen)
+		sendCloseNotify(conn)
+		return
+	}
+	if max := p.cfg.MaxOpenPerIP; max != nil && *max > 0 && numOpenIP > *max {
+		p.recordEvent("too many open connections from IP")
+		p.logErrorF("ERR [-] %s: too many open connections from IP: %d > %d", conn.RemoteAddr(), numOpenIP, *max)
 		sendCloseNotify(conn)
 		return
 	}
@@ -1418,7 +1427,7 @@ func (p *Proxy) checkIP(conn *netw.Conn) error {
 }
 
 func (p *Proxy) handleACMEConnection(conn *tls.Conn) {
-	ctx, cancel := context.WithTimeout(p.ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(p.ctx, tlsHandshakeTimeout)
 	defer cancel()
 	serverName := idnaToUnicode(connServerName(conn))
 	p.logConnF("INF ACME %s ➔  %s", conn.RemoteAddr(), serverName)
@@ -1432,7 +1441,7 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 	serverName := connServerName(conn)
 	be := connBackend(conn)
 
-	ctx, cancel := context.WithTimeout(p.ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(p.ctx, tlsHandshakeTimeout)
 	defer cancel()
 	if err := conn.HandshakeContext(ctx); err != nil {
 		switch {
@@ -1481,7 +1490,7 @@ func (p *Proxy) handleHTTPConnection(conn *tls.Conn) {
 	}
 	serverName := connServerName(conn)
 	be := connBackend(conn)
-	if err := be.connLimit.Wait(p.ctx); err != nil {
+	if err := be.waitConnLimit(p.ctx); err != nil {
 		p.recordEvent(err.Error())
 		be.logErrorF("ERR [-] %s ➔  %q Wait: %v", conn.RemoteAddr(), idnaToUnicode(serverName), err)
 		conn.Close()
@@ -1510,7 +1519,7 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 	}
 	serverName := connServerName(extConn)
 	be := connBackend(extConn)
-	if err := be.connLimit.Wait(p.ctx); err != nil {
+	if err := be.waitConnLimit(p.ctx); err != nil {
 		p.recordEvent(err.Error())
 		be.logErrorF("ERR [-] %s ➔  %q Wait: %v", extConn.RemoteAddr(), idnaToUnicode(serverName), err)
 		return
@@ -1552,7 +1561,7 @@ func (p *Proxy) handleTLSConnection(extConn *tls.Conn) {
 func (p *Proxy) handleTLSPassthroughConnection(extConn net.Conn) {
 	serverName := connServerName(extConn)
 	be := connBackend(extConn)
-	if err := be.connLimit.Wait(p.ctx); err != nil {
+	if err := be.waitConnLimit(p.ctx); err != nil {
 		p.recordEvent(err.Error())
 		be.logErrorF("ERR [-] %s ➔  %q Wait: %v", extConn.RemoteAddr(), idnaToUnicode(serverName), err)
 		sendInternalError(extConn)

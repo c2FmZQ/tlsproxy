@@ -283,9 +283,13 @@ deleted when every item is resolved.
   injection); use `%q` (`proxy/quic.go`).
   *Fixed: `%q`. Other log lines with SNI already used `%q` or a validated
   name.*
-- [ ] **34.** Connection-level DoS: no per-IP limit, 2-minute handshake
+- [x] **34.** Connection-level DoS: no per-IP limit, 2-minute handshake
   timeout, per-backend `connLimit.Wait` with no deadline before
   authentication, non-h3 QUIC streams skip the first-request rate limit.
+  *Fixed: TLS handshake timeout 2m → 30s; forward rate limit waits fail
+  after 30s instead of queueing forever; every QUIC stream waits for the
+  rate limiter; new optional `maxOpenPerIP` (off by default, by
+  decision).*
 - [ ] **35.** `runtime.MemProfileRate = 1` in `metrics.go` `init()` profiles
   every allocation process-wide.
 - [ ] **36.** Data race: `handleConnection` reads `p.echKeys` without `p.mu`.

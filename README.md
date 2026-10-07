@@ -196,6 +196,8 @@ The main configuration options are:
 *   `hwBacked`: (Optional) Boolean. Enables hardware-backed cryptographic keys (e.g., with a TPM).
 *   `cacheDir`: (Optional) String. Directory for storing TLS certificates, OCSP responses, etc. Defaults to a system cache directory.
 *   `defaultServerName`: (Optional) String. Server name to use when SNI is not provided by the client.
+*   `maxOpen`: (Optional) Integer. Maximum number of open incoming connections. Defaults to half of the open file limit.
+*   `maxOpenPerIP`: (Optional) Integer. Maximum number of open incoming connections from a single client IP address. No limit by default. Keep in mind that many clients can share one IP address, e.g. behind NAT.
 *   `logFilter`: (Optional) Object. Controls what gets logged (connections, requests, errors).
 *   `groups`: (Optional) List of `Group` objects. Defines user groups for access control.
 *   `backends`: (Required) List of `Backend` objects. Defines the services TLSPROXY will forward traffic to.

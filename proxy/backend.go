@@ -42,6 +42,24 @@ import (
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
 
+const (
+	// tlsHandshakeTimeout is the maximum amount of time allowed to
+	// complete a TLS handshake with a client.
+	tlsHandshakeTimeout = 30 * time.Second
+	// maxConnLimitWait is the maximum amount of time that a connection or
+	// request waits for the forward rate limiter.
+	maxConnLimitWait = 30 * time.Second
+)
+
+// waitConnLimit waits until the forward rate limit allows a new connection or
+// request. It returns an error right away if that would take longer than
+// maxConnLimitWait.
+func (be *Backend) waitConnLimit(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, maxConnLimitWait)
+	defer cancel()
+	return be.connLimit.Wait(ctx)
+}
+
 func (be *Backend) incInFlight(delta int) int {
 	be.state.mu.Lock()
 	defer be.state.mu.Unlock()
