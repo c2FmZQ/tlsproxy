@@ -30,7 +30,9 @@ deleted when every item is resolved.
   Fix: bind `kid` to its issuer; local keys only for the local issuer; require
   `exp`; require `https` for `jwksUri` in `validateTrustedIssuers`.
 
-- [ ] **3. SSH CA issues certificates that never expire** (High)
+- [x] **3. SSH CA issues certificates that never expire** (High)
+  *Fixed: `ttl <= 0` or non-numeric returns 400; `ttl` is capped at the
+  maximum lifetime before converting to a duration.*
   `proxy/internal/sshca/sshca.go` `ServeCertificate`: `ttl` form value is not
   checked for `<= 0` or overflow. `min(max, ttl)` doesn't cap negatives, and the
   negative `ValidBefore` wraps to a huge `uint64`. OpenSSH sshd accepts it.

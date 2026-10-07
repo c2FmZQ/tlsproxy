@@ -307,7 +307,11 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	ttl := defaultCertsLifetime
+	maxTTL := defaultMaxCertsLifetime
+	if ca.opts.MaximumCertificateLifetime != 0 {
+		maxTTL = ca.opts.MaximumCertificateLifetime
+	}
+	ttl := min(defaultCertsLifetime, maxTTL)
 	var key []byte
 
 	switch ct := req.Header.Get("content-type"); ct {
@@ -325,25 +329,20 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 		req.ParseForm()
 		key = []byte(req.PostForm.Get("key"))
 		if t := req.PostForm.Get("ttl"); t != "" {
-			tt, err := strconv.Atoi(t)
-			if err != nil {
-				ca.opts.Logger.Errorf("ERR ttl: %v", err)
+			tt, err := strconv.ParseInt(t, 10, 64)
+			if err != nil || tt <= 0 {
+				ca.opts.Logger.Errorf("ERR ttl: %q %v", t, err)
 				http.Error(w, "invalid request", http.StatusBadRequest)
 				return
 			}
-			ttl = time.Second * time.Duration(tt)
+			// Cap before multiplying to avoid overflow.
+			ttl = time.Second * time.Duration(min(tt, int64(maxTTL/time.Second)))
 		}
 
 	default:
 		ca.opts.Logger.Errorf("ERR content-type: %q", ct)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
-	}
-
-	if ca.opts.MaximumCertificateLifetime != 0 {
-		ttl = min(ca.opts.MaximumCertificateLifetime, ttl)
-	} else {
-		ttl = min(defaultMaxCertsLifetime, ttl)
 	}
 
 	pub, _, _, _, err := ssh.ParseAuthorizedKey(key)

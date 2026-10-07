@@ -209,6 +209,45 @@ func TestCertificate(t *testing.T) {
 					t.Fatalf("cert validity = %d, want %d", got, want)
 				}
 			})
+			t.Run("invalid ttl", func(t *testing.T) {
+				for _, ttl := range []string{"0", "-1", "-2000000000", "foo"} {
+					values := url.Values{}
+					values.Set("key", string(ssh.MarshalAuthorizedKey(sshPub)))
+					values.Set("ttl", ttl)
+					resp, err := http.PostForm(server.URL+"/cert", values)
+					if err != nil {
+						t.Fatalf("Post(/cert): %v", err)
+					}
+					resp.Body.Close()
+					if got, want := resp.StatusCode, http.StatusBadRequest; got != want {
+						t.Errorf("ttl=%s: status = %d, want %d", ttl, got, want)
+					}
+				}
+			})
+			t.Run("large ttl", func(t *testing.T) {
+				for _, ttl := range []string{"864000", "9223372037", "9223372036854775807"} {
+					values := url.Values{}
+					values.Set("key", string(ssh.MarshalAuthorizedKey(sshPub)))
+					values.Set("ttl", ttl)
+					resp, err := http.PostForm(server.URL+"/cert", values)
+					if err != nil {
+						t.Fatalf("Post(/cert): %v", err)
+					}
+					certBytes, err := io.ReadAll(resp.Body)
+					resp.Body.Close()
+					if err != nil {
+						t.Fatalf("cert body: %v", err)
+					}
+					c, _, _, _, err := ssh.ParseAuthorizedKey(certBytes)
+					if err != nil {
+						t.Fatalf("ttl=%s: ssh.ParseAuthorizedKey: %v", ttl, err)
+					}
+					cert := c.(*ssh.Certificate)
+					if got, want := cert.ValidBefore-cert.ValidAfter, uint64(300+7*86400); got != want {
+						t.Errorf("ttl=%s: cert validity = %d, want %d", ttl, got, want)
+					}
+				}
+			})
 		})
 	}
 }
