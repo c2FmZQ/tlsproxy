@@ -293,6 +293,33 @@ func TestEnforceSSOPolicy(t *testing.T) {
 		t.Fatalf("response code = %d, want %d", got, want)
 	}
 
+	// Dot-segments can't be used to match an exception or a more
+	// permissive rule.
+	proxy.cfg.Backends[0].SSO.Rules = []*SSORule{
+		{
+			Paths: Strings{"/public/"},
+		},
+		{
+			Exceptions: Strings{"/favicon.ico"},
+			ACL:        &Strings{"alice@example.org"},
+		},
+	}
+	for _, p := range []string{
+		"/public/../foo",
+		"/public/%2e%2e/foo",
+		"/favicon.ico/../foo",
+		"/favicon.ico/%2E%2E/foo",
+	} {
+		dotReq := httptest.NewRequest("GET", "https://example.com"+p, nil).WithContext(req.Context())
+		w = httptest.NewRecorder()
+		if got, want := proxy.cfg.Backends[0].enforceSSOPolicy(w, dotReq, nil), false; got != want {
+			t.Errorf("encorceSSOPolicy(%q) = %v, want %v", p, got, want)
+		}
+		if got, want := w.Code, 403; got != want {
+			t.Errorf("response code for %q = %d, want %d", p, got, want)
+		}
+	}
+
 	// ForceReAuth fail
 	proxy.cfg.Backends[0].SSO.Rules = []*SSORule{{
 		ForceReAuth: 5 * time.Minute,

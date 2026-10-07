@@ -447,9 +447,11 @@ func pathMatches(prefixes []string, path string) bool {
 	if len(prefixes) == 0 {
 		return true
 	}
+	// Only match the clean path. Matching the raw path too would let
+	// requests like /public/../admin match an exception for /public/.
 	cleanPath := pathClean(path)
 	for _, p := range prefixes {
-		if strings.HasPrefix(path, p) || strings.HasPrefix(cleanPath, p) {
+		if strings.HasPrefix(cleanPath, p) {
 			return true
 		}
 	}
