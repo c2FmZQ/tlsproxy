@@ -1,7 +1,7 @@
 // MIT License
 //
-// Copyright (c) 2025 TTBT Enterprises LLC
-// Copyright (c) 2025 Robin Thellend <rthellend@rthellend.com>
+// Copyright (c) 2026 TTBT Enterprises LLC
+// Copyright (c) 2026 Robin Thellend <rthellend@rthellend.com>
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -25,27 +25,35 @@ package csrf
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"testing"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
-	"github.com/c2FmZQ/tlsproxy/proxy/internal/sid"
 )
 
-func Check(w http.ResponseWriter, req *http.Request) bool {
-	if req.Method != http.MethodPost {
-		return true
-	}
-	// Requests authenticated with a bearer token don't use cookies.
-	// Browsers can send other authorization headers automatically, e.g.
-	// cached Basic credentials.
-	if fromctx.BearerAuth(req.Context()) {
-		return true
-	}
-	if id := sid.SessionID(nil, req); id != "" {
-		th := fromctx.TokenHash(req.Context())
-		if req.Header.Get("x-csrf-token") == id && (th == "" || th == id) {
-			return true
+func TestCheck(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		method string
+		auth   string
+		bearer bool
+		want   bool
+	}{
+		{"GET", http.MethodGet, "", false, true},
+		{"POST without token", http.MethodPost, "", false, false},
+		{"POST with Basic auth", http.MethodPost, "Basic Zm9vOmJhcg==", false, false},
+		{"POST with invalid bearer", http.MethodPost, "Bearer foo", false, false},
+		{"POST with valid bearer", http.MethodPost, "Bearer foo", true, true},
+	} {
+		req := httptest.NewRequest(tc.method, "https://example.com/", nil)
+		if tc.auth != "" {
+			req.Header.Set("Authorization", tc.auth)
+		}
+		if tc.bearer {
+			req = req.WithContext(fromctx.WithBearerAuth(req.Context()))
+		}
+		if got := Check(httptest.NewRecorder(), req); got != tc.want {
+			t.Errorf("%s: Check() = %v, want %v", tc.name, got, tc.want)
 		}
 	}
-	http.Error(w, "session expired", http.StatusBadRequest)
-	return false
 }

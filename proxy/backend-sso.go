@@ -82,9 +82,12 @@ func init() {
 func (be *Backend) authenticateUser(w http.ResponseWriter, req **http.Request) bool {
 	delHeaderVariants((*req).Header, xTLSProxyUserIDHeader)
 	if be.SSO != nil {
-		claims, tokenHash, cont := be.checkCookies(w, *req)
+		claims, tokenHash, fromHeader, cont := be.checkCookies(w, *req)
 		if !cont {
 			return false
+		}
+		if fromHeader {
+			*req = (*req).WithContext(fromctx.WithBearerAuth((*req).Context()))
 		}
 		if claims != nil {
 			if email, ok := claims["email"].(string); ok && email != "" {
@@ -112,7 +115,10 @@ func (be *Backend) authenticateUser(w http.ResponseWriter, req **http.Request) b
 	return true
 }
 
-func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.MapClaims, string, bool) {
+// checkCookies returns the user's claims from the authorization header or the
+// auth cookies. fromHeader is true when the claims came from a valid bearer
+// token in the authorization header.
+func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (claims jwt.MapClaims, tokenHash string, fromHeader bool, cont bool) {
 	// If a valid ID Token is in the authorization header, use it and
 	// ignore the cookies.
 	if tok, err := be.SSO.cm.ValidateAuthorizationHeader(req); err == nil {
@@ -121,40 +127,40 @@ func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.M
 		if clientID, ok := c["client_id"].(string); ok {
 			if email, ok := c["email"].(string); !ok || be.SSO.oidcServer == nil || !be.SSO.oidcServer.AuthorizeClient(clientID, email) {
 				w.WriteHeader(http.StatusForbidden)
-				return nil, "", false
+				return nil, "", false, false
 			}
 		}
-		return c, "", true
+		return c, "", true, true
 	}
 
 	authToken, tokenHash, err := be.SSO.cm.ValidateAuthTokenCookie(req)
 	if err != nil {
-		return nil, "", true
+		return nil, "", false, true
 	}
 	authClaims, ok := authToken.Claims.(jwt.MapClaims)
 	if !ok {
-		return nil, "", true
+		return nil, "", false, true
 	}
 	email, ok := authClaims["email"].(string)
 	if !ok || email == "" {
-		return nil, "", true
+		return nil, "", false, true
 	}
 
 	if !be.SSO.GenerateIDTokens {
-		return authClaims, tokenHash, true
+		return authClaims, tokenHash, false, true
 	}
 
 	if !slices.Contains(be.ServerNames, hostFromReq(req)) {
-		return authClaims, tokenHash, true
+		return authClaims, tokenHash, false, true
 	}
 
 	if err := be.SSO.cm.ValidateIDTokenCookie(req, authToken); err == nil {
 		// Token is already set, and is valid.
-		return authClaims, tokenHash, true
+		return authClaims, tokenHash, false, true
 	}
 	if err := be.SSO.cm.SetIDTokenCookie(w, req, authClaims, be.aclMatcher.groupsForEmail(email)); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
-		return nil, "", false
+		return nil, "", false, false
 	}
 	// Use an absolute URL. A relative URL like //evil.com/ would redirect
 	// to another host.
@@ -162,7 +168,7 @@ func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (jwt.M
 	u.Scheme = "https"
 	u.Host = req.Host
 	http.Redirect(w, req, u.String(), http.StatusFound)
-	return nil, "", false
+	return nil, "", false, false
 }
 
 func serveStatic(w http.ResponseWriter, req *http.Request, content []byte, contentType string) {

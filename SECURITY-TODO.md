@@ -239,9 +239,11 @@ deleted when every item is resolved.
 
 ## Hardening / Info
 
-- [ ] **23.** CSRF check is skipped whenever any `Authorization` header is
+- [x] **23.** CSRF check is skipped whenever any `Authorization` header is
   present, even if it isn't a valid Bearer token and auth falls back to
   cookies (`proxy/internal/csrf/csrf.go`).
+  *Fixed: skipped only when the identity came from a validated bearer
+  token (`fromctx.BearerAuth`).*
 - [ ] **24.** OIDC client secret compared with `==` instead of a constant-time
   compare (`proxy/internal/oidc/server.go`).
 - [ ] **25.** OIDC token endpoint doesn't compare `redirect_uri` with the one
