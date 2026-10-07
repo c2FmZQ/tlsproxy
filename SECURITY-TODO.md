@@ -87,7 +87,9 @@ deleted when every item is resolved.
   Fix: restrict DNS SANs (allowlist/suffix per user or admins only), reject
   wildcards, consider CA name constraints.
 
-- [ ] **8. Port 80 (ACME) HTTP server has no timeouts or connection limit** (Medium)
+- [x] **8. Port 80 (ACME) HTTP server has no timeouts or connection limit** (Medium)
+  *Fixed: 10s read/write timeouts and at most min(MaxOpen, 1000)
+  concurrent connections.*
   `proxy/proxy.go` `Start()`: `http.Server{Handler: certManager.HTTPHandler}`
   has no Read/ReadHeader/Write/Idle timeouts and isn't counted in `MaxOpen`.
   Idle connections are held forever and exhaust file descriptors.

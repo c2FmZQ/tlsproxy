@@ -1055,15 +1055,11 @@ func (p *Proxy) Start(ctx context.Context) error {
 	p.connClosed = sync.NewCond(&p.mu)
 	var httpServer *http.Server
 	if p.cfg.HTTPAddr != nil && *p.cfg.HTTPAddr != "" {
-		httpServer = &http.Server{
-			Handler: p.certManager.HTTPHandler(nil),
-		}
 		httpListener, err := net.Listen("tcp", *p.cfg.HTTPAddr)
 		if err != nil {
 			return err
 		}
-		httpServer.SetKeepAlivesEnabled(false)
-		go serveHTTP(httpServer, httpListener)
+		httpServer = startPlainHTTPServer(p.certManager.HTTPHandler(nil), httpListener, *p.cfg.MaxOpen)
 	}
 	p.ctx, p.cancel = context.WithCancel(ctx)
 
