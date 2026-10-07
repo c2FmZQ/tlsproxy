@@ -335,6 +335,8 @@ func (be *Backend) reverseProxy() http.Handler {
 		if sanitizePath {
 			req.URL.Path = cleanPath
 		}
+		delHeaderVariants(req.Header, xForwardedForHeader)
+		delHeaderVariants(req.Header, xFCCHeader)
 		delHeaderVariants(req.Header, forwardedHeader)
 		delHeaderVariants(req.Header, xForwardedHostHeader)
 		delHeaderVariants(req.Header, xForwardedProtoHeader)
@@ -519,8 +521,6 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 }
 
 func (be *Backend) reverseProxyDirector(req *http.Request) {
-	delHeaderVariants(req.Header, xForwardedForHeader)
-	delHeaderVariants(req.Header, xFCCHeader)
 	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 && be.ClientAuth != nil && len(be.ClientAuth.AddClientCertHeader) > 0 {
 		addXFCCHeader(req, be.ClientAuth.AddClientCertHeader)
 	}
