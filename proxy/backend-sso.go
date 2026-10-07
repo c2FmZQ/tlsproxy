@@ -217,6 +217,10 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 		enc.Encode(out)
 		return
 	}
+	if be.SSO == nil {
+		http.Error(w, "sso is not enabled", http.StatusNotFound)
+		return
+	}
 	var keys []string
 	for k := range claims {
 		keys = append(keys, k)

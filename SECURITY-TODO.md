@@ -220,7 +220,8 @@ deleted when every item is resolved.
   Fix: deterministic realistic fake IDs (HMAC of email), or an empty allow
   list.
 
-- [ ] **21. `/.sso/` on a backend without SSO panics** (Low)
+- [x] **21. `/.sso/` on a backend without SSO panics** (Low)
+  *Fixed: GET returns 404 when SSO isn't enabled.*
   `proxy/backend-sso.go` `serveSSOStatus` dereferences `be.SSO` when nil. The
   panic is recovered but logs a full stack trace per request.
   Fix: check `be.SSO == nil`.

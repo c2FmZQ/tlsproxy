@@ -584,3 +584,19 @@ func (testAddr) Network() string {
 func (testAddr) String() string {
 	return "12.34.56.78:90"
 }
+
+func TestSSOStatusWithoutSSO(t *testing.T) {
+	be := &Backend{}
+
+	w := httptest.NewRecorder()
+	be.serveSSOStatus(w, httptest.NewRequest("GET", "https://example.com/.sso/", nil))
+	if got, want := w.Code, http.StatusNotFound; got != want {
+		t.Errorf("GET: code %d, want %d", got, want)
+	}
+
+	w = httptest.NewRecorder()
+	be.serveSSOStatus(w, httptest.NewRequest("POST", "https://example.com/.sso/", nil))
+	if got, want := w.Body.String(), "null\n"; got != want {
+		t.Errorf("POST: body %q, want %q", got, want)
+	}
+}
