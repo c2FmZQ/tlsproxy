@@ -239,14 +239,14 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 	form.Add("grant_type", "authorization_code")
 	form.Add("code_verifier", state.CodeVerifier)
 
-	req, err := http.NewRequest(http.MethodPost, p.cfg.TokenEndpoint, strings.NewReader(form.Encode()))
+	tokenReq, err := http.NewRequest(http.MethodPost, p.cfg.TokenEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	req.Header.Set("content-type", "application/x-www-form-urlencoded")
-	req.Header.Set("accept", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	tokenReq.Header.Set("content-type", "application/x-www-form-urlencoded")
+	tokenReq.Header.Set("accept", "application/json")
+	resp, err := http.DefaultClient.Do(tokenReq)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -283,14 +283,14 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 			return
 		}
 	} else if p.cfg.UserinfoEndpoint != "" && (data.TokenType == "" || strings.ToLower(data.TokenType) == "bearer") {
-		req, err := http.NewRequest(http.MethodGet, p.cfg.UserinfoEndpoint, nil)
+		userinfoReq, err := http.NewRequest(http.MethodGet, p.cfg.UserinfoEndpoint, nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		req.Header.Set("authorization", "Bearer "+data.AccessToken)
-		req.Header.Set("accept", "application/json")
-		resp, err := http.DefaultClient.Do(req)
+		userinfoReq.Header.Set("authorization", "Bearer "+data.AccessToken)
+		userinfoReq.Header.Set("accept", "application/json")
+		resp, err := http.DefaultClient.Do(userinfoReq)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

@@ -296,9 +296,10 @@ deleted when every item is resolved.
   intended.*
 - [x] **36.** Data race: `handleConnection` reads `p.echKeys` without `p.mu`.
   *Fixed: read under `p.mu.RLock`, including in the ACME TLS-ALPN path.*
-- [ ] **37.** `oidc/client.go` `HandleCallback` shadows `req` with the token
+- [x] **37.** `oidc/client.go` `HandleCallback` shadows `req` with the token
   endpoint request, so the `th` session-chain claim is never carried over
   (functional bug).
+  *Fixed: renamed the outbound requests. (Not covered by a new test.)*
 - [ ] **38.** Metrics page config dump doesn't redact `forwardHttpHeaders`
   values or webhook URLs.
 - [ ] **39.** `proxy.mjs` global `fetch` wrapper sends the sid as
