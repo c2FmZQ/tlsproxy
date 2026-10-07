@@ -350,8 +350,6 @@ func (be *Backend) reverseProxy() http.Handler {
 				if strings.ToLower(k) == strings.ToLower(hostHeader) {
 					req.Host = v
 				}
-			} else {
-				req.Header.Del(k)
 			}
 		}
 		// A value of -1 for ContentLength indicates that the size of

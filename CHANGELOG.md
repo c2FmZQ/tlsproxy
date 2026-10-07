@@ -114,7 +114,7 @@ upgrading.
   * Panic on `/.sso/` for backends without SSO.
   * Possible panic when re-authorizing connections after a backend was removed.
   * The session chain claim (`th`) wasn't carried over after an OIDC login.
-  * The ephemeral certificate manager (for testing) no longer generates a new key for every name, and reissues
+  * The ephemeral certificate manager (for testing) keeps a bounded number of certificates in memory, and reissues
     expired certificates.
 * New tests for all the changes above.
 

@@ -50,12 +50,17 @@ func TestPendingLogins(t *testing.T) {
 		t.Error("Get(fresh) after Delete = true")
 	}
 
-	// Expired entries are pruned when the limit is reached.
+	// Expired entries are pruned when the limit is reached, at most once
+	// every fullPruneInterval.
 	for i := range MaxPendingLogins {
 		if !p.Add(fmt.Sprintf("old-%d", i), now.Add(-10*time.Minute)) {
 			t.Fatalf("Add(old-%d) = false", i)
 		}
 	}
+	if p.Add("too-soon", now) {
+		t.Error("Add(too-soon) = true")
+	}
+	p.lastPrune = now.Add(-2 * fullPruneInterval)
 	if !p.Add("new", now) {
 		t.Fatal("Add(new) = false")
 	}

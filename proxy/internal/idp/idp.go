@@ -80,6 +80,10 @@ const (
 	MaxOriginalURLLength = 4096
 	// pruneInterval is how often pending login requests are pruned.
 	pruneInterval = 30 * time.Second
+	// fullPruneInterval is how often pending login requests are pruned
+	// when the limit is reached. It bounds the cost of scanning the whole
+	// map when a flood of requests keeps it full.
+	fullPruneInterval = time.Second
 )
 
 // PendingLogins keeps track of pending login requests, with a limited lifetime
@@ -108,7 +112,8 @@ func (p *PendingLogins[V]) expired(v V) bool {
 // Add adds a new entry. It returns false if there are too many pending
 // requests.
 func (p *PendingLogins[V]) Add(key string, v V) bool {
-	if time.Since(p.lastPrune) > pruneInterval || len(p.m) >= MaxPendingLogins {
+	sincePrune := time.Since(p.lastPrune)
+	if sincePrune > pruneInterval || (len(p.m) >= MaxPendingLogins && sincePrune > fullPruneInterval) {
 		p.lastPrune = time.Now()
 		for k, v := range p.m {
 			if p.expired(v) {
