@@ -304,8 +304,10 @@ deleted when every item is resolved.
   values or webhook URLs.
   *Fixed: static `forwardHttpHeaders` values (no `${...}`) and webhook
   URL paths/queries are redacted.*
-- [ ] **39.** `proxy.mjs` global `fetch` wrapper sends the sid as
+- [x] **39.** `proxy.mjs` global `fetch` wrapper sends the sid as
   `x-csrf-token` to cross-origin URLs.
+  *Fixed: only added for same-origin requests; also handles `Headers`
+  objects. Checked with a node harness (no JS tests in the repo).*
 - [ ] **40.** `emailMatches` treats an ACL entry equal to the email string as a
   match, so a group name could match an IdP-asserted "email" of the same
   value.
