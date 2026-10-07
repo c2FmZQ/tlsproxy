@@ -294,7 +294,8 @@ deleted when every item is resolved.
   every allocation process-wide.
   *Declined (by decision): exact heap profiling on the metrics page is
   intended.*
-- [ ] **36.** Data race: `handleConnection` reads `p.echKeys` without `p.mu`.
+- [x] **36.** Data race: `handleConnection` reads `p.echKeys` without `p.mu`.
+  *Fixed: read under `p.mu.RLock`, including in the ACME TLS-ALPN path.*
 - [ ] **37.** `oidc/client.go` `HandleCallback` shadows `req` with the token
   endpoint request, so the `th` session-chain claim is never carried over
   (functional bug).

@@ -1203,6 +1203,7 @@ func (p *Proxy) Shutdown(ctx context.Context) {
 	p.Stop()
 }
 
+// baseTLSConfig returns a new TLS config. p.mu must be held.
 func (p *Proxy) baseTLSConfig() *tls.Config {
 	tc := p.certManager.TLSConfig()
 	getCert := tc.GetCertificate
@@ -1345,7 +1346,10 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 
 	ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
 	defer cancel()
-	echConn, err := ech.NewConn(ctx, conn.Conn, ech.WithKeys(p.echKeys))
+	p.mu.RLock()
+	echKeys := p.echKeys
+	p.mu.RUnlock()
+	echConn, err := ech.NewConn(ctx, conn.Conn, ech.WithKeys(echKeys))
 	if err != nil {
 		p.recordEvent("invalid ClientHello")
 		p.logErrorF("BAD [-] %s ➔ %q: invalid ClientHello: %v", conn.RemoteAddr(), echConn.ServerName(), err)
@@ -1390,7 +1394,9 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		p.handleTLSPassthroughConnection(conn)
 
 	case len(alpnProtos) == 1 && alpnProtos[0] == acme.ALPNProto && echConn.ServerName() != "":
+		p.mu.RLock()
 		tc := p.baseTLSConfig()
+		p.mu.RUnlock()
 		tc.NextProtos = []string{acme.ALPNProto}
 		p.handleACMEConnection(tls.Server(conn, tc))
 
