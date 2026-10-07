@@ -173,6 +173,13 @@ type Client struct {
 	ACL         *[]string
 }
 
+// setNoFrameHeaders prevents the page from being framed by other pages, e.g. for
+// clickjacking.
+func setNoFrameHeaders(w http.ResponseWriter) {
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+}
+
 func expired(created time.Time) bool {
 	return created.Add(codeExpiration).Before(time.Now().UTC())
 }
@@ -485,6 +492,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		RequestID: requestID,
 		Scopes:    strings.Join(scopes, ","),
 	}
+	setNoFrameHeaders(w)
 	w.Header().Set("content-type", "text/html; charset=utf-8")
 	authorizeTemplate.Execute(w, data)
 	return

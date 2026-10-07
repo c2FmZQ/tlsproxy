@@ -100,3 +100,54 @@ func TestDeviceAuthorizationLimits(t *testing.T) {
 type nopLogger struct{}
 
 func (nopLogger) Errorf(string, ...any) {}
+
+func TestDeviceVerificationPage(t *testing.T) {
+	s := NewServer(ServerOptions{
+		Clients:       []Client{{ID: "my-client"}},
+		Scopes:        []string{"openid", "email"},
+		ACLMatcher:    func([]string, string) bool { return true },
+		EventRecorder: nopRecorder{},
+		Logger:        nopLogger{},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "https://idp.example.com/device/authorization", strings.NewReader("client_id=my-client&scope=openid+email"))
+	req.Header.Set("content-type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	s.ServeDeviceAuthorization(w, req)
+	var resp struct {
+		UserCode string `json:"user_code"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("json.Decode: %v", err)
+	}
+
+	verify := func(userCode string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "https://idp.example.com/device/verify?user_code="+url.QueryEscape(userCode), nil)
+		req = req.WithContext(fromctx.WithClaims(req.Context(), jwt.MapClaims{"email": "bob@example.com"}))
+		w := httptest.NewRecorder()
+		s.ServeDeviceVerification(w, req)
+		return w
+	}
+
+	// A valid code shows the client and scopes, and the approve button.
+	w = verify(strings.ToLower(resp.UserCode))
+	if got, want := w.Header().Get("X-Frame-Options"), "DENY"; got != want {
+		t.Errorf("X-Frame-Options = %q, want %q", got, want)
+	}
+	for _, want := range []string{"<div>my-client</div>", "<div>(openid,email)</div>", "oidc-approve-button"} {
+		if body := w.Body.String(); !strings.Contains(body, want) {
+			t.Errorf("Body doesn't contain %q", want)
+		}
+	}
+
+	// An invalid code doesn't.
+	w = verify("0000-0000-0000")
+	for _, notWant := range []string{"my-client", "oidc-approve-button"} {
+		if body := w.Body.String(); strings.Contains(body, notWant) {
+			t.Errorf("Body contains %q", notWant)
+		}
+	}
+	if body := w.Body.String(); !strings.Contains(body, `class="invalid"`) {
+		t.Error("Body doesn't contain invalid class")
+	}
+}

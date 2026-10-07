@@ -32,6 +32,9 @@ button:hover {
 #usercode {
   text-align: center;
 }
+#usercode.invalid {
+  border: 2px solid red;
+}
 </style>
 <script>
 function respond(answer) {
@@ -66,8 +69,18 @@ function respond(answer) {
 <div id="message">
 <h1 tkey="oidc-device-auth-request">Device Authorization Request</h1>
 <div tkey="oidc-verify-device-auth">Please verify that the device requesting authorization is in your possession and that the User Code matches.</div>
-<div><input id="usercode" type="text" tkey="oidc-user-code" name="user_code" value="{{.UserCode}}" placeholder="User Code" /></div>
+{{- if .ClientID }}
+<div><input id="usercode" type="text" tkey="oidc-user-code" name="user_code" value="{{.UserCode}}" placeholder="User Code" readonly /></div>
+<div>{{.ClientID}}</div>
+<div tkey="oidc-wants-access">This server wants to access your information.</div>
+<div>({{.Scopes}})</div>
 <div><a class="button" tkey="oidc-deny-button" onclick="respond(false);">Deny</a> <a class="button" tkey="oidc-approve-button" onclick="respond(true);">Approve</a></div>
+{{- else }}
+<form method="GET">
+<div><input id="usercode" type="text" tkey="oidc-user-code" name="user_code" value="{{.UserCode}}" placeholder="User Code"{{ if .Invalid }} class="invalid"{{ end }} /></div>
+<div><button type="submit" class="button" tkey="continue-button">Continue</button></div>
+</form>
+{{- end }}
 </div>
 </body>
 </html>

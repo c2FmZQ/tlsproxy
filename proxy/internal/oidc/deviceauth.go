@@ -175,10 +175,27 @@ func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *htt
 		data := struct {
 			Email    string
 			UserCode string
+			Invalid  bool
+			ClientID string
+			Scopes   string
 		}{
 			Email:    email,
 			UserCode: req.Form.Get("user_code"),
 		}
+		// Show which client is requesting access, and to what, before
+		// the user approves the request.
+		if data.UserCode != "" {
+			s.mu.Lock()
+			if dc, ok := s.deviceCodes[strings.ToUpper(data.UserCode)]; ok && !expired(dc.created) {
+				if dt, ok := s.deviceTokens[dc.deviceCode]; ok {
+					data.ClientID = dc.clientID
+					data.Scopes = strings.Join(dt.scope, ",")
+				}
+			}
+			s.mu.Unlock()
+			data.Invalid = data.ClientID == ""
+		}
+		setNoFrameHeaders(w)
 		w.Header().Set("content-type", "text/html; charset=utf-8")
 		verifyTemplate.Execute(w, data)
 		return

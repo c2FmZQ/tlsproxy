@@ -198,7 +198,12 @@ deleted when every item is resolved.
   Fix: store the user in `codeData`, require a match on POST, re-run
   `AuthorizeClient` and scope filtering.
 
-- [ ] **19. Device flow phishing and clickjacking hardening** (Low)
+- [x] **19. Device flow phishing and clickjacking hardening** (Low)
+  *Fixed: the device verification page is now two steps (enter code →
+  page shows client ID and scopes → approve/deny), using existing
+  translation keys. Consent and device pages send `X-Frame-Options: DENY`
+  and `frame-ancestors 'none'`. `verification_uri_complete` is kept
+  (RFC 8628), since the client and scopes are now shown before approval.*
   `oidc/verify-template.html`, `authorize-template.html`, `deviceauth.go`: the
   verify page doesn't show the client or scopes; no `X-Frame-Options` /
   `frame-ancestors` on consent and device pages; `verification_uri_complete`
