@@ -409,6 +409,17 @@ func (cm *CookieManager) ValidateAuthorizationHeader(req *http.Request) (*jwt.To
 	return tok, nil
 }
 
+// IsProxyCookie returns true if name is the name of one of the cookies set by
+// the cookie manager.
+func IsProxyCookie(name string) bool {
+	for _, n := range []string{tlsProxyAuthCookie, tlsProxyIDTokenCookie, tlsProxyNonce, tlsProxySAMLNonce} {
+		if strings.EqualFold(name, n) {
+			return true
+		}
+	}
+	return false
+}
+
 func FilterOutAuthTokenCookie(req *http.Request) {
 	cookies := req.Cookies()
 	req.Header.Del("Cookie")

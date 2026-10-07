@@ -49,6 +49,7 @@ import (
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/csrf"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/sid"
 )
 
 const (
@@ -599,8 +600,28 @@ func (be *Backend) reverseProxyModifyResponse(resp *http.Response) error {
 	if resp.StatusCode != http.StatusMisdirectedRequest && resp.Header.Get(hstsHeader) == "" {
 		resp.Header.Set(hstsHeader, hstsValue)
 	}
+	filterOutProxyCookies(resp.Header)
 	if resp.StatusCode >= 200 && resp.StatusCode < 400 && resp.Header.Get("Alt-Svc") == "" {
 		be.setAltSvc(resp.Header, req)
 	}
 	return nil
+}
+
+// filterOutProxyCookies removes the Set-Cookie headers that would set the
+// proxy's own cookies. Backends must not be able to set them, e.g. to log users
+// into another account.
+func filterOutProxyCookies(h http.Header) {
+	cookies := h.Values("Set-Cookie")
+	if len(cookies) == 0 {
+		return
+	}
+	h.Del("Set-Cookie")
+	for _, c := range cookies {
+		name, _, _ := strings.Cut(c, "=")
+		name = strings.TrimSpace(name)
+		if cookiemanager.IsProxyCookie(name) || sid.IsCookie(name) {
+			continue
+		}
+		h.Add("Set-Cookie", c)
+	}
 }

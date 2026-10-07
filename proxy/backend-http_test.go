@@ -417,3 +417,72 @@ func TestRedactConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestBackendCannotSetProxyCookies(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	l, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	beServer := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			for _, c := range []string{
+				"TLSPROXYNONCE=evil; Domain=example.com; Path=/",
+				"TLSPROXYSAMLNONCE=evil; Domain=example.com; Path=/",
+				"TLSPROXYAUTH=evil; Path=/",
+				"tlsproxyidtoken=evil; Path=/",
+				"__tlsproxySid=evil; Path=/",
+				"app=ok; Path=/",
+			} {
+				w.Header().Add("Set-Cookie", c)
+			}
+			w.Write([]byte("ok"))
+		}),
+	}
+	go beServer.Serve(l)
+	defer beServer.Close()
+
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
+			Backends: []*Backend{
+				{
+					ServerNames: Strings{"http.example.com"},
+					Mode:        "HTTP",
+					Addresses:   Strings{l.Addr().String()},
+				},
+			},
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	defer proxy.Stop()
+
+	msg := "GET / HTTP/1.1\r\nHost: http.example.com\r\nConnection: close\r\n\r\n"
+	got, _, err := tlsGet("http.example.com", proxy.listener.Addr().String(), msg, extCA, nil, []string{"http/1.1"})
+	if err != nil {
+		t.Fatalf("tlsGet: %v", err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(strings.NewReader(got)), nil)
+	if err != nil {
+		t.Fatalf("http.ReadResponse: %v", err)
+	}
+	var names []string
+	for _, c := range resp.Cookies() {
+		names = append(names, c.Name)
+	}
+	if want := []string{"app"}; !slices.Equal(names, want) {
+		t.Errorf("Cookies = %v, want %v", names, want)
+	}
+}

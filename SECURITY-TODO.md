@@ -324,5 +324,8 @@ deleted when every item is resolved.
   name without bound.
   *Fixed: one key is reused for all leaf certs, the cache is capped at
   1000 entries, and expired cached certs are reissued.*
-- [ ] **44.** OIDC RP nonce cookie is scoped to the parent domain, so an
+- [x] **44.** OIDC RP nonce cookie is scoped to the parent domain, so an
   attacker-controlled subdomain can toss it (login CSRF).
+  *Fixed (by decision): `Set-Cookie` headers from backends that would set
+  the proxy's own cookies are dropped. Hosts outside the proxy on the
+  same domain can still set them.*
