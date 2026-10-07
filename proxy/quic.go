@@ -92,15 +92,20 @@ func (p *Proxy) startQUICListener(ctx context.Context) error {
 	tc.MinVersion = tls.VersionTLS13
 	tc.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 		p.mu.RLock()
-		defer p.mu.RUnlock()
+		var be *Backend
 		for _, proto := range hello.SupportedProtos {
-			be, ok := p.backends[beKey{serverName: hello.ServerName, proto: proto}]
-			if ok && be.Mode != ModeTLSPassthrough {
-				return be.tlsConfig(true), nil
+			if b, ok := p.backends[beKey{serverName: hello.ServerName, proto: proto}]; ok && b.Mode != ModeTLSPassthrough {
+				be = b
+				break
 			}
 		}
-		p.logErrorF("ERR QUIC connection %q %q", hello.ServerName, hello.SupportedProtos)
-		return nil, tlsUnrecognizedName
+		p.mu.RUnlock()
+		if be == nil {
+			p.logErrorF("ERR QUIC connection %q %q", hello.ServerName, hello.SupportedProtos)
+			return nil, tlsUnrecognizedName
+		}
+		// be.tlsConfig acquires p.mu.
+		return be.tlsConfig(true), nil
 	}
 	quicListener, err := p.quicTransport.(*netw.QUICTransport).Listen(tc)
 	if err != nil {

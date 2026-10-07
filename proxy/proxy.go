@@ -688,7 +688,9 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			}
 		}
 		be.tlsConfig = func(forQUIC bool) *tls.Config {
+			p.mu.RLock()
 			tc := p.baseTLSConfig()
+			p.mu.RUnlock()
 			if forQUIC {
 				tc.MinVersion = tls.VersionTLS13
 			}

@@ -505,6 +505,8 @@ type Backend struct {
 	quicTransport    io.Closer
 	defaultLogFilter LogFilter
 
+	// tlsConfig returns the backend's TLS config. It acquires p.mu, which
+	// must not be held by the caller.
 	tlsConfig            func(isQUIC bool) *tls.Config
 	clientCAs            *x509.CertPool
 	forwardRootCAs       *x509.CertPool
