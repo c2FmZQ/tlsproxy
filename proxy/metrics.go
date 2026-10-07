@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"runtime"
 	"runtime/debug"
 	"slices"
@@ -598,22 +599,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	cfg := p.cfg.clone()
-	if cfg.ECH != nil {
-		for _, c := range cfg.ECH.Cloudflare {
-			c.Token = "**REDACTED**"
-		}
-	}
-	for _, p := range cfg.OIDCProviders {
-		p.ClientSecret = "**REDACTED**"
-	}
-	for _, be := range cfg.Backends {
-		if be.SSO == nil || be.SSO.LocalOIDCServer == nil {
-			continue
-		}
-		for _, client := range be.SSO.LocalOIDCServer.Clients {
-			client.Secret = "**REDACTED**"
-		}
-	}
+	redactConfig(cfg)
 	var cfgbuf bytes.Buffer
 	enc := yaml.NewEncoder(&cfgbuf)
 	enc.SetIndent(2)
@@ -631,4 +617,51 @@ func (p *Proxy) faviconHandler(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(iconBytes)))
 	w.Header().Set("Cache-Control", "public, max-age=86400, immutable")
 	w.Write(iconBytes)
+}
+
+const redacted = "**REDACTED**"
+
+// redactConfig removes secrets from cfg, so that it can be shown on the
+// metrics page.
+func redactConfig(cfg *Config) {
+	if cfg.ECH != nil {
+		for _, c := range cfg.ECH.Cloudflare {
+			c.Token = redacted
+		}
+		// Webhook URLs often contain secret tokens.
+		for i, wh := range cfg.ECH.WebHooks {
+			u, err := url.Parse(wh)
+			if err != nil {
+				cfg.ECH.WebHooks[i] = redacted
+				continue
+			}
+			cfg.ECH.WebHooks[i] = (&url.URL{Scheme: u.Scheme, Host: u.Host, Path: "/" + redacted}).String()
+		}
+	}
+	for _, p := range cfg.OIDCProviders {
+		p.ClientSecret = redacted
+	}
+	// Static header values can contain secrets, e.g. Authorization headers.
+	// Values with variables are not redacted.
+	redactHeaders := func(h map[string]string) {
+		for k, v := range h {
+			if !strings.Contains(v, "${") {
+				h[k] = redacted
+			}
+		}
+	}
+	for _, be := range cfg.Backends {
+		redactHeaders(be.ForwardHTTPHeaders)
+		for _, po := range be.PathOverrides {
+			if po.ForwardHTTPHeaders != nil {
+				redactHeaders(*po.ForwardHTTPHeaders)
+			}
+		}
+		if be.SSO == nil || be.SSO.LocalOIDCServer == nil {
+			continue
+		}
+		for _, client := range be.SSO.LocalOIDCServer.Clients {
+			client.Secret = redacted
+		}
+	}
 }

@@ -383,3 +383,37 @@ func TestWaitConnLimit(t *testing.T) {
 		t.Errorf("waitConnLimit took %s", d)
 	}
 }
+
+func TestRedactConfig(t *testing.T) {
+	poHeaders := map[string]string{"Authorization": "Bearer S3CR3T3"}
+	cfg := &Config{
+		ECH: &ECH{
+			WebHooks: Strings{"https://hooks.example.com/services/S3CR3T1?token=S3CR3T2"},
+		},
+		OIDCProviders: []*ConfigOIDC{{ClientSecret: "S3CR3T4"}},
+		Backends: []*Backend{
+			{
+				ForwardHTTPHeaders: map[string]string{
+					"X-Api-Key": "S3CR3T5",
+					"X-User":    "${JWT:email}",
+				},
+				PathOverrides: []*PathOverride{{ForwardHTTPHeaders: &poHeaders}},
+				SSO: &BackendSSO{
+					LocalOIDCServer: &LocalOIDCServer{
+						Clients: []*LocalOIDCClient{{ID: "foo", Secret: "S3CR3T6"}},
+					},
+				},
+			},
+		},
+	}
+	redactConfig(cfg)
+	out := string(cfg.serialize())
+	if strings.Contains(out, "S3CR3T") {
+		t.Errorf("redacted config contains secrets:\n%s", out)
+	}
+	for _, want := range []string{"https://hooks.example.com/", "${JWT:email}"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("redacted config doesn't contain %q:\n%s", want, out)
+		}
+	}
+}

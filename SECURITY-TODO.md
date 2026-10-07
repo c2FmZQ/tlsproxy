@@ -300,8 +300,10 @@ deleted when every item is resolved.
   endpoint request, so the `th` session-chain claim is never carried over
   (functional bug).
   *Fixed: renamed the outbound requests. (Not covered by a new test.)*
-- [ ] **38.** Metrics page config dump doesn't redact `forwardHttpHeaders`
+- [x] **38.** Metrics page config dump doesn't redact `forwardHttpHeaders`
   values or webhook URLs.
+  *Fixed: static `forwardHttpHeaders` values (no `${...}`) and webhook
+  URL paths/queries are redacted.*
 - [ ] **39.** `proxy.mjs` global `fetch` wrapper sends the sid as
   `x-csrf-token` to cross-origin URLs.
 - [ ] **40.** `emailMatches` treats an ACL entry equal to the email string as a
