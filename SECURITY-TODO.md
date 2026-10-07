@@ -40,7 +40,8 @@ deleted when every item is resolved.
 
 ## Medium
 
-- [ ] **4. HTTP/3 backend request crashes the process** (Medium)
+- [x] **4. HTTP/3 backend request crashes the process** (Medium)
+  *Fixed: delegate to `c.qc`; added `TestH3Backend`.*
   `proxy/internal/netw/quic.go`: `QUICConn.HandshakeComplete` and
   `NextConnection` call themselves (stack overflow, unrecoverable). Triggered
   by any request forwarded over h3 (`backendProto: h3`, or empty

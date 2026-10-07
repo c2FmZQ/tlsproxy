@@ -832,3 +832,68 @@ func (n *quicNode) run(conn quicapi.Conn) {
 		n.t.Logf("[%s] received: %s", n.name, e)
 	}
 }
+
+func TestH3Backend(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	intCA, err := certmanager.New("internal-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+
+	tc := intCA.TLSConfig()
+	tc.NextProtos = []string{"h3"}
+	ln, err := quicapi.ListenAddr("localhost:0", tc, &quic.Config{})
+	if err != nil {
+		t.Fatalf("ListenAddr: %v", err)
+	}
+	h3srv := &http3.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, "[h3 backend] %s %s\n", r.Proto, r.RequestURI)
+		}),
+	}
+	go h3srv.ServeListener(ln)
+	defer h3srv.Close()
+
+	h3Value := "h3"
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
+			Backends: []*Backend{
+				{
+					ServerNames: Strings{
+						"https.example.com",
+					},
+					Addresses: Strings{
+						ln.Addr().String(),
+					},
+					Mode:              "HTTPS",
+					BackendProto:      &h3Value,
+					ForwardRootCAs:    Strings{intCA.RootCAPEM()},
+					ForwardServerName: "h3-internal.example.com",
+				},
+			},
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	defer proxy.Stop()
+
+	got, _, err := httpOp("https.example.com", proxy.listener.Addr().String(), "/foo", "GET", nil, extCA, nil)
+	if err != nil {
+		t.Fatalf("httpOp: %v", err)
+	}
+	if want := "HTTP/2.0 200 OK\n[h3 backend] HTTP/3.0 /foo\n"; got != want {
+		t.Errorf("Got %q, want %q", got, want)
+	}
+}
