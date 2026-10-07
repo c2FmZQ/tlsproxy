@@ -920,12 +920,14 @@ func (m *Manager) assertionOptions(email string) (*AssertionOptions, error) {
 			}
 		}
 	} else if email != "" {
-		// Add fake credential ID to force the client to return an error
-		// like "No passkey registered for ..."
+		// Add a fake credential ID to force the client to return an
+		// error like "No passkey registered for ...". The ID looks
+		// like a real one, and is always the same for a given email,
+		// so that it doesn't reveal whether the email is registered.
 		opts.AllowCredentials = append(opts.AllowCredentials, CredentialID{
 			Type:       "public-key",
-			ID:         Bytes{0xff},
-			Transports: []string{"internal"},
+			ID:         Bytes(m.cfg.TokenManager.HMAC([]byte("fake passkey id\x00" + email))),
+			Transports: []string{"hybrid", "internal"},
 		})
 	}
 	return opts, nil

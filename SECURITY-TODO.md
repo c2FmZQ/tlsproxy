@@ -211,7 +211,10 @@ deleted when every item is resolved.
   Fix: show client and scopes, add framing protection, consider requiring the
   code to be typed.
 
-- [ ] **20. Passkey account enumeration** (Low)
+- [x] **20. Passkey account enumeration** (Low)
+  *Fixed: unknown emails get a deterministic 32-byte fake credential ID
+  (HMAC of the email). The number of credentials can still differ for
+  registered users with several keys.*
   `proxy/internal/passkeys/manager.go`: `AssertionOptions` returns real
   credential IDs for known emails and a fake 1-byte ID otherwise.
   Fix: deterministic realistic fake IDs (HMAC of email), or an empty allow
