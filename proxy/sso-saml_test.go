@@ -192,24 +192,36 @@ func TestSSOEnforceSAML(t *testing.T) {
 		return resp.StatusCode, string(body), host
 	}
 
-	code, body, _ := get("https://https.example.com/blah", http.Header{"x-skip-login-confirmation": []string{"yes"}}, nil)
-	if got, want := code, 200; got != want {
+	login := func() (string, http.Header, url.Values) {
+		code, body, _ := get("https://https.example.com/blah", http.Header{"x-skip-login-confirmation": []string{"yes"}}, nil)
+		if got, want := code, 200; got != want {
+			t.Errorf("Code = %v, want %v", got, want)
+		}
+		m := regexp.MustCompile(`<form method="POST" action="([^"]*)"><input type="hidden" name="([^"]*)" value="([^"]*)"`).FindStringSubmatch(body)
+		if len(m) != 4 {
+			t.Fatalf("FindStringSubmatch: %v", m)
+		}
+		hdrs := http.Header{}
+		hdrs.Set("content-type", "application/x-www-form-urlencoded")
+		data := url.Values{}
+		data.Set(m[2], html.UnescapeString(m[3]))
+		return m[1], hdrs, data
+	}
+
+	// The SAML response can't be used in a different browser.
+	action, hdrs, data := login()
+	savedJar := jar
+	if jar, err = cookiejar.New(nil); err != nil {
+		t.Fatalf("cookiejar: %v", err)
+	}
+	code, _, _ := get(action, hdrs, []byte(data.Encode()))
+	if got, want := code, http.StatusForbidden; got != want {
 		t.Errorf("Code = %v, want %v", got, want)
 	}
-	m := regexp.MustCompile(`<form method="POST" action="([^"]*)"><input type="hidden" name="([^"]*)" value="([^"]*)"`).FindStringSubmatch(body)
-	if len(m) != 4 {
-		t.Fatalf("FindStringSubmatch: %v", m)
-	}
-	action := m[1]
-	name := m[2]
-	value := html.UnescapeString(m[3])
+	jar = savedJar
 
-	hdrs := http.Header{}
-	hdrs.Set("content-type", "application/x-www-form-urlencoded")
-	data := url.Values{}
-	data.Set(name, value)
-
-	code, body, _ = get(action, hdrs, []byte(data.Encode()))
+	action, hdrs, data = login()
+	code, body, _ := get(action, hdrs, []byte(data.Encode()))
 	if got, want := code, 200; got != want {
 		t.Errorf("Code = %v, want %v", got, want)
 	}

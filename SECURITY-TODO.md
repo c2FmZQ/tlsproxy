@@ -130,7 +130,11 @@ deleted when every item is resolved.
   to `//evil.com/x`.
   Fix: build the redirect from the cleaned path + query.
 
-- [ ] **12. SAML login CSRF / session swapping** (Low–Medium)
+- [x] **12. SAML login CSRF / session swapping** (Low–Medium)
+  *Fixed: `RequestLogin` sets a `TLSPROXYSAMLNONCE` cookie (SameSite=None,
+  Secure, HttpOnly, 10 min) with the request ID; `HandleCallback` requires
+  it to match `InResponseTo`. Scoped to the SSO domain like the OIDC nonce
+  cookie (see #44), since the ACS can be on a different host.*
   `proxy/internal/saml/saml.go`: `InResponseTo` is checked against server state
   only, not bound to the browser (OIDC uses the `TLSPROXYNONCE` cookie). An
   attacker can submit their own signed response in the victim's browser.

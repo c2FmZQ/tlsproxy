@@ -45,6 +45,7 @@ const (
 	tlsProxyAuthCookie    = "TLSPROXYAUTH"
 	tlsProxyIDTokenCookie = "TLSPROXYIDTOKEN"
 	tlsProxyNonce         = "TLSPROXYNONCE"
+	tlsProxySAMLNonce     = "TLSPROXYSAMLNONCE"
 
 	expiredAuthTokenLeeway = 7 * 24 * time.Hour
 	defaultTokenLifetime   = 20 * time.Hour
@@ -225,6 +226,39 @@ func (cm *CookieManager) Nonce(w http.ResponseWriter, req *http.Request) string 
 		HttpOnly: true,
 	})
 	if c, err := req.Cookie(tlsProxyNonce); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
+// SetSAMLNonce sets a cookie that binds a SAML request to the browser. The SAML
+// response is a cross-site POST, so the cookie must be SameSite=None.
+func (cm *CookieManager) SetSAMLNonce(w http.ResponseWriter, nonce string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     tlsProxySAMLNonce,
+		Value:    nonce,
+		Domain:   cm.domain,
+		Path:     "/",
+		MaxAge:   600,
+		SameSite: http.SameSiteNoneMode,
+		Secure:   true,
+		HttpOnly: true,
+	})
+}
+
+// SAMLNonce returns the value of the cookie set by SetSAMLNonce, and deletes
+// the cookie.
+func (cm *CookieManager) SAMLNonce(w http.ResponseWriter, req *http.Request) string {
+	http.SetCookie(w, &http.Cookie{
+		Name:     tlsProxySAMLNonce,
+		Domain:   cm.domain,
+		Path:     "/",
+		MaxAge:   -1,
+		SameSite: http.SameSiteNoneMode,
+		Secure:   true,
+		HttpOnly: true,
+	})
+	if c, err := req.Cookie(tlsProxySAMLNonce); err == nil {
 		return c.Value
 	}
 	return ""

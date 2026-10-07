@@ -27,6 +27,7 @@ import (
 	"bytes"
 	"compress/flate"
 	"crypto/rand"
+	"crypto/subtle"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
@@ -52,6 +53,8 @@ import (
 type CookieManager interface {
 	SetAuthTokenCookie(w http.ResponseWriter, req *http.Request, userID, email, sessionID, host string, extraClaims map[string]any) error
 	ClearCookies(w http.ResponseWriter) error
+	SetSAMLNonce(w http.ResponseWriter, nonce string)
+	SAMLNonce(w http.ResponseWriter, req *http.Request) string
 }
 
 type EventRecorder interface {
@@ -144,6 +147,8 @@ func (p *Provider) RequestLogin(w http.ResponseWriter, req *http.Request, origUR
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Bind the request to this browser.
+	p.cm.SetSAMLNonce(w, idStr)
 	http.Redirect(w, req, url, http.StatusFound)
 	p.er.Record("saml auth request")
 }
@@ -199,7 +204,7 @@ func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	}
 	p.mu.Unlock()
 
-	if !ok {
+	if nonce := p.cm.SAMLNonce(w, req); !ok || nonce == "" || subtle.ConstantTimeCompare([]byte(nonce), []byte(id)) != 1 {
 		p.er.Record("invalid state")
 		http.Error(w, "timeout", http.StatusForbidden)
 		return
