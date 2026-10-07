@@ -24,6 +24,9 @@
 package oidc
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -155,5 +158,108 @@ func TestAuthorizationSameUser(t *testing.T) {
 	// Alice can.
 	if got, want := approve("alice@example.com"), http.StatusOK; got != want {
 		t.Errorf("approve(alice) = %d, want %d", got, want)
+	}
+}
+
+func TestTokenRedirectURIAndPKCE(t *testing.T) {
+	mk, err := crypto.CreateAESMasterKeyForTest()
+	if err != nil {
+		t.Fatalf("crypto.CreateAESMasterKeyForTest: %v", err)
+	}
+	tm, err := tokenmanager.New(storage.New(t.TempDir(), mk), nil, nil)
+	if err != nil {
+		t.Fatalf("tokenmanager.New: %v", err)
+	}
+	redirect1 := "https://app.example.com/callback1"
+	redirect2 := "https://app.example.com/callback2"
+	s := NewServer(ServerOptions{
+		CookieManager:  cookiemanager.New(tm, "idp", "example.com", "https://idp.example.com", 0, nil),
+		Clients:        []Client{{ID: "client", Secret: "secret", RedirectURI: []string{redirect1, redirect2}}},
+		Scopes:         []string{"openid"},
+		ACLMatcher:     func([]string, string) bool { return true },
+		GroupsForEmail: func(string) []string { return nil },
+		EventRecorder:  nopRecorder{},
+		Logger:         nopLogger{},
+	})
+	withUser := func(req *http.Request) *http.Request {
+		return req.WithContext(fromctx.WithClaims(req.Context(), jwt.MapClaims{"email": "alice@example.com", "sub": "alice"}))
+	}
+
+	verifier := "this-is-a-long-enough-code-verifier-0123456789"
+	h := sha256.Sum256([]byte(verifier))
+	challenge := base64.RawURLEncoding.EncodeToString(h[:])
+
+	// getCode does the authorization request and returns the code.
+	getCode := func() string {
+		args := url.Values{
+			"response_type":         {"code"},
+			"client_id":             {"client"},
+			"redirect_uri":          {redirect1},
+			"scope":                 {"openid"},
+			"code_challenge":        {challenge},
+			"code_challenge_method": {"S256"},
+		}
+		w := httptest.NewRecorder()
+		s.ServeAuthorization(w, withUser(httptest.NewRequest(http.MethodGet, "https://idp.example.com/authorization?"+args.Encode(), nil)))
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET: code %d", w.Code)
+		}
+		var requestID string
+		s.mu.Lock()
+		for _, v := range s.codes {
+			if v.accessToken == "" {
+				requestID = v.requestID
+			}
+		}
+		s.mu.Unlock()
+
+		form := url.Values{"request_id": {requestID}, "approve": {"true"}}
+		req := httptest.NewRequest(http.MethodPost, "https://idp.example.com/authorization", strings.NewReader(form.Encode()))
+		req.Header.Set("content-type", "application/x-www-form-urlencoded")
+		w = httptest.NewRecorder()
+		s.ServeAuthorization(w, withUser(req))
+		var resp struct {
+			Redirect string `json:"redirect"`
+		}
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("json.Decode: %v", err)
+		}
+		u, err := url.Parse(resp.Redirect)
+		if err != nil {
+			t.Fatalf("url.Parse: %v", err)
+		}
+		return u.Query().Get("code")
+	}
+
+	token := func(code, redirectURI, verifier string) int {
+		form := url.Values{
+			"grant_type":    {"authorization_code"},
+			"code":          {code},
+			"client_id":     {"client"},
+			"client_secret": {"secret"},
+			"redirect_uri":  {redirectURI},
+		}
+		if verifier != "" {
+			form.Set("code_verifier", verifier)
+		}
+		req := httptest.NewRequest(http.MethodPost, "https://idp.example.com/token", strings.NewReader(form.Encode()))
+		req.Header.Set("content-type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		s.ServeToken(w, req)
+		return w.Code
+	}
+
+	for _, tc := range []struct {
+		name, redirectURI, verifier string
+		want                        int
+	}{
+		{"wrong redirect_uri", redirect2, verifier, http.StatusBadRequest},
+		{"missing verifier", redirect1, "", http.StatusBadRequest},
+		{"wrong verifier", redirect1, "wrong-" + verifier, http.StatusBadRequest},
+		{"ok", redirect1, verifier, http.StatusOK},
+	} {
+		if got := token(getCode(), tc.redirectURI, tc.verifier); got != tc.want {
+			t.Errorf("%s: code %d, want %d", tc.name, got, tc.want)
+		}
 	}
 }

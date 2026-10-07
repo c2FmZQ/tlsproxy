@@ -93,6 +93,7 @@ type openIDConfiguration struct {
 	IDTokenSigningAlgValuesSupported []string `json:"id_token_signing_alg_values_supported"`
 	ScopesSupported                  []string `json:"scopes_supported"`
 	ClaimsSupported                  []string `json:"claims_supported"`
+	CodeChallengeMethodsSupported    []string `json:"code_challenge_methods_supported"`
 }
 
 type codeData struct {
@@ -102,11 +103,16 @@ type codeData struct {
 	email       string
 	sub         string
 	redirectURI *url.URL
-	nonce       string
-	state       string
-	scopes      []string
-	accessToken string
-	idToken     string
+	// origRedirectURI is the redirect_uri of the authorization request.
+	origRedirectURI string
+	// codeChallenge and codeChallengeMethod are used for PKCE (RFC 7636).
+	codeChallenge       string
+	codeChallengeMethod string
+	nonce               string
+	state               string
+	scopes              []string
+	accessToken         string
+	idToken             string
 }
 
 // ServerOptions contains the parameters needed to configure a ProviderServer.
@@ -174,6 +180,20 @@ type Client struct {
 	ACL         *[]string
 }
 
+// verifyCodeChallenge verifies the PKCE code verifier, if a code challenge was
+// sent with the authorization request.
+func (d *codeData) verifyCodeChallenge(verifier string) bool {
+	if d.codeChallenge == "" {
+		return true
+	}
+	want := verifier
+	if d.codeChallengeMethod == "S256" {
+		h := sha256.Sum256([]byte(verifier))
+		want = base64.RawURLEncoding.EncodeToString(h[:])
+	}
+	return verifier != "" && subtle.ConstantTimeCompare([]byte(want), []byte(d.codeChallenge)) == 1
+}
+
 // setNoFrameHeaders prevents the page from being framed by other pages, e.g. for
 // clickjacking.
 func setNoFrameHeaders(w http.ResponseWriter) {
@@ -234,7 +254,8 @@ func (s *ProviderServer) ServeConfig(w http.ResponseWriter, req *http.Request) {
 			"RS256",
 			"ES256",
 		},
-		ScopesSupported: s.opts.Scopes,
+		ScopesSupported:               s.opts.Scopes,
+		CodeChallengeMethodsSupported: []string{"S256", "plain"},
 		ClaimsSupported: []string{
 			"aud",
 			"email",
@@ -421,6 +442,16 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		http.Error(w, "invalid redirect_uri", http.StatusBadRequest)
 		return
 	}
+	codeChallenge := req.Form.Get("code_challenge")
+	codeChallengeMethod := req.Form.Get("code_challenge_method")
+	if codeChallenge != "" && codeChallengeMethod == "" {
+		codeChallengeMethod = "plain"
+	}
+	if codeChallenge != "" && codeChallengeMethod != "S256" && codeChallengeMethod != "plain" {
+		s.opts.Logger.Errorf("ERR ServeAuthorization: invalid code_challenge_method %q", codeChallengeMethod)
+		http.Error(w, "invalid code_challenge_method", http.StatusBadRequest)
+		return
+	}
 
 	b := make([]byte, 12)
 	if _, err := io.ReadFull(rand.Reader, b); err != nil {
@@ -473,6 +504,10 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		state:       req.Form.Get("state"),
 		nonce:       req.Form.Get("nonce"),
 		scopes:      scopes,
+
+		origRedirectURI:     redirectURI,
+		codeChallenge:       codeChallenge,
+		codeChallengeMethod: codeChallengeMethod,
 	}
 	s.mu.Unlock()
 
@@ -530,7 +565,7 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 		delete(s.codes, code)
 		s.mu.Unlock()
 
-		if !ok || expired(data.created) || data.clientID != clientID {
+		if !ok || expired(data.created) || data.clientID != clientID || data.origRedirectURI != redirectURI || !data.verifyCodeChallenge(req.Form.Get("code_verifier")) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}

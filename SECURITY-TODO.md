@@ -247,8 +247,11 @@ deleted when every item is resolved.
 - [x] **24.** OIDC client secret compared with `==` instead of a constant-time
   compare (`proxy/internal/oidc/server.go`).
   *Fixed: `subtle.ConstantTimeCompare`.*
-- [ ] **25.** OIDC token endpoint doesn't compare `redirect_uri` with the one
+- [x] **25.** OIDC token endpoint doesn't compare `redirect_uri` with the one
   used in the authorization request (RFC 6749 §4.1.3) and ignores PKCE.
+  *Fixed: `redirect_uri` must match the authorization request; PKCE
+  (S256/plain) is enforced when the client sent a code challenge, and
+  advertised in the discovery document.*
 - [ ] **26.** OIDC RP accepts a missing `email_verified`
   (`oidc/client.go`); the local OP then asserts `email_verified: true`.
 - [ ] **27.** WebAuthn signature counter is ignored.
