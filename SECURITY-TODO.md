@@ -320,7 +320,9 @@ deleted when every item is resolved.
 - [x] **42.** PKI `?owner=all` lists every user's certs to any user with the
   `pki` scope (may be intended).
   *Declined (by decision): intended.*
-- [ ] **43.** `certmanager` (test-only) generates and caches an RSA key per SNI
+- [x] **43.** `certmanager` (test-only) generates and caches an RSA key per SNI
   name without bound.
+  *Fixed: one key is reused for all leaf certs, the cache is capped at
+  1000 entries, and expired cached certs are reissued.*
 - [ ] **44.** OIDC RP nonce cookie is scoped to the parent domain, so an
   attacker-controlled subdomain can toss it (login CSRF).
