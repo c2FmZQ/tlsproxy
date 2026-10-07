@@ -290,8 +290,10 @@ deleted when every item is resolved.
   after 30s instead of queueing forever; every QUIC stream waits for the
   rate limiter; new optional `maxOpenPerIP` (off by default, by
   decision).*
-- [ ] **35.** `runtime.MemProfileRate = 1` in `metrics.go` `init()` profiles
+- [x] **35.** `runtime.MemProfileRate = 1` in `metrics.go` `init()` profiles
   every allocation process-wide.
+  *Declined (by decision): exact heap profiling on the metrics page is
+  intended.*
 - [ ] **36.** Data race: `handleConnection` reads `p.echKeys` without `p.mu`.
 - [ ] **37.** `oidc/client.go` `HandleCallback` shadows `req` with the token
   endpoint request, so the `th` session-chain claim is never carried over
