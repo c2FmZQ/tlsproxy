@@ -165,7 +165,9 @@ deleted when every item is resolved.
   Fix: drop inbound headers that normalize to a proxy-owned header name;
   strip/set `X-Forwarded-Host`, `X-Forwarded-Proto`, `Forwarded`.
 
-- [ ] **15. Local handler scopes skipped when no SSO rule matches** (Low)
+- [x] **15. Local handler scopes skipped when no SSO rule matches** (Low)
+  *Fixed: when no rule matches, a handler's scopes are still checked for
+  authenticated requests (unauthenticated behavior unchanged).*
   `proxy/backend-sso.go` `enforceSSOPolicy` returns true when `rule == nil`
   before checking `overrideScopes`. PKI/SSH/OIDC endpoints then accept tokens
   without the `pki`/`ssh` scope when rules don't cover their paths.

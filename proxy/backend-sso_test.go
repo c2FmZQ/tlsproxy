@@ -317,6 +317,29 @@ func TestEnforceSSOPolicy(t *testing.T) {
 		t.Fatalf("response code = %d, want %d", got, want)
 	}
 
+	// No rule matches, but the local handler's scopes still apply.
+	proxy.cfg.Backends[0].SSO.Rules = []*SSORule{{
+		Paths: Strings{"/bar"},
+	}}
+	for _, tc := range []struct {
+		scope any
+		want  bool
+	}{
+		{nil, true},
+		{[]any{"pki"}, true},
+		{[]any{"openid"}, false},
+	} {
+		claims := jwt.MapClaims{"email": "bob@example.org"}
+		if tc.scope != nil {
+			claims["scope"] = tc.scope
+		}
+		scopeReq := req.WithContext(fromctx.WithClaims(req.Context(), claims))
+		w = httptest.NewRecorder()
+		if got := proxy.cfg.Backends[0].enforceSSOPolicy(w, scopeReq, Strings{"pki"}); got != tc.want {
+			t.Errorf("enforceSSOPolicy(scope=%v) = %v, want %v", tc.scope, got, tc.want)
+		}
+	}
+
 	// Dot-segments can't be used to match an exception or a more
 	// permissive rule.
 	proxy.cfg.Backends[0].SSO.Rules = []*SSORule{

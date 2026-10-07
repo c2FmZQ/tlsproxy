@@ -364,6 +364,11 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request, ov
 	}
 	rule := be.findSSORule(req)
 	if rule == nil {
+		// No rule applies, but the scopes of local handlers still
+		// apply to authenticated users.
+		if overrideScopes != nil && fromctx.Claims(req.Context()) != nil {
+			return be.checkScopes(overrideScopes, w, req)
+		}
 		return true
 	}
 	claims := fromctx.Claims(req.Context())
