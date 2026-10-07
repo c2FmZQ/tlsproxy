@@ -1,6 +1,6 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.26.0
 
 This release fixes a number of security issues found during a security review. Some of the fixes change the
 behavior of the proxy in ways that may require config changes. Please read the breaking changes below before
@@ -117,6 +117,19 @@ upgrading.
   * The ephemeral certificate manager (for testing) keeps a bounded number of certificates in memory, and reissues
     expired certificates.
 * New tests for all the changes above.
+* Update go dependencies:
+  * upgraded github.com/ProtonMail/go-crypto v1.4.1 => v1.5.2
+  * upgraded github.com/beevik/etree v1.7.1 => v1.8.1
+  * upgraded github.com/c2FmZQ/ech v0.4.2 => v0.4.3
+  * upgraded github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20260902181210-9e31d44e7146 => v0.0.0-20261007172857-b4d54d07896c
+  * upgraded github.com/fxamacker/cbor/v2 v2.9.3 => v2.9.6
+  * upgraded github.com/quic-go/quic-go v0.62.0 => v0.63.0
+  * upgraded golang.org/x/crypto v0.56.0 => v0.57.0
+  * upgraded golang.org/x/net v0.58.0 => v0.59.0
+  * upgraded golang.org/x/sys v0.47.0 => v0.48.0
+  * upgraded golang.org/x/text v0.41.0 => v0.42.0
+  * upgraded golang.org/x/time v0.15.0 => v0.16.0
+
 
 ## v0.25.12
 
