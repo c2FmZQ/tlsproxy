@@ -70,6 +70,11 @@ func main() {
 		log.Fatal("--config must be set")
 	}
 	log.Printf("INF tlsproxy %s %s %s/%s", Version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "passphrase" {
+			log.Print("WRN --passphrase is visible to other users on this host. Use $TLSPROXY_PASSPHRASE instead.")
+		}
+	})
 	cfg, err := proxy.ReadConfig(*configFile)
 	if err != nil {
 		log.Fatalf("ERR %v", err)

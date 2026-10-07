@@ -275,8 +275,10 @@ deleted when every item is resolved.
   instead of `VerifiedChains[0][1]` (`tlsclient/main.go`).
   *Fixed: uses the verified chain, requires an authorized responder, and
   checks `ThisUpdate`. (No tests for tlsclient; build and vet only.)*
-- [ ] **32.** `--passphrase` flag is visible in `/proc/*/cmdline`
+- [x] **32.** `--passphrase` flag is visible in `/proc/*/cmdline`
   (`main.go`); `TLSPROXY_PASSPHRASE` is the safer route.
+  *Fixed (non-breaking): a warning is logged when the flag is used, and
+  the README recommends the environment variable.*
 - [ ] **33.** QUIC `GetConfigForClient` logs SNI and ALPN with `%s` (log
   injection); use `%q` (`proxy/quic.go`).
 - [ ] **34.** Connection-level DoS: no per-IP limit, 2-minute handshake

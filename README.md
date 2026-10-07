@@ -576,7 +576,7 @@ To run TLSPROXY, use the `tlsproxy` executable with the `--config` flag pointing
 
 *   `--config <file>`: Specifies the path to the configuration YAML file.
 *   `--revoke-all-certificates <reason>`: Revokes all cached certificates. `reason` can be `unspecified`, `keyCompromise`, `superseded`, or `cessationOfOperation`.
-*   `--passphrase <passphrase>`: The passphrase to encrypt TLS keys on disk. Can also be set via `TLSPROXY_PASSPHRASE` environment variable.
+*   `--passphrase <passphrase>`: The passphrase to encrypt TLS keys on disk. Prefer the `TLSPROXY_PASSPHRASE` environment variable: command line arguments are visible to other users on the host.
 *   `--shutdown-grace-period <duration>`: Graceful shutdown period (e.g., `1m`, `30s`).
 *   `--use-ephemeral-certificate-manager`: (For testing) Uses an ephemeral certificate manager.
 *   `--stdout`: Logs output to STDOUT.
