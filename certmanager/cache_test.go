@@ -42,14 +42,7 @@ func TestGetCertCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetCert: %v", err)
 	}
-	c2, err := cm.GetCert("bar.example.com")
-	if err != nil {
-		t.Fatalf("GetCert: %v", err)
-	}
-	if c1.PrivateKey != c2.PrivateKey {
-		t.Error("certs don't share the same key")
-	}
-	if c3, err := cm.GetCert("foo.example.com"); err != nil || c3 != c1 {
+	if c2, err := cm.GetCert("foo.example.com"); err != nil || c2 != c1 {
 		t.Errorf("GetCert didn't return cached cert: %v", err)
 	}
 	for i := range maxCachedCerts + 1 {

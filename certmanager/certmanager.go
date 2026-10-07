@@ -57,9 +57,8 @@ type CertManager struct {
 	pool      *x509.CertPool
 	logger    func(string, ...interface{})
 
-	mu      sync.Mutex
-	leafKey *rsa.PrivateKey
-	certs   map[string]*tls.Certificate
+	mu    sync.Mutex
+	certs map[string]*tls.Certificate
 }
 
 // maxCachedCerts is the maximum number of certificates kept in memory.
@@ -248,14 +247,10 @@ func (cm *CertManager) GetCert(name string) (*tls.Certificate, error) {
 	cm.logger("[%s] GetCert(%q)", cm.name, name)
 	// All the certs use the same key. Generating a new key for each
 	// name is expensive.
-	if cm.leafKey == nil {
-		key, err := rsa.GenerateKey(rand.Reader, 2048)
-		if err != nil {
-			return nil, fmt.Errorf("rsa.GenerateKey: %w", err)
-		}
-		cm.leafKey = key
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, fmt.Errorf("rsa.GenerateKey: %w", err)
 	}
-	key := cm.leafKey
 	sn, _ := rand.Int(rand.Reader, big.NewInt(1<<32))
 	now := time.Now()
 	templ := &x509.Certificate{
