@@ -95,7 +95,11 @@ deleted when every item is resolved.
   Idle connections are held forever and exhaust file descriptors.
   Fix: set timeouts and cap concurrent connections.
 
-- [ ] **9. Unauthenticated DoS of the local OIDC provider via device authorization** (Medium)
+- [x] **9. Unauthenticated DoS of the local OIDC provider via device authorization** (Medium)
+  *Fixed: `vacuum()` scans at most every 30s, lookups check expiry
+  themselves, and pending authorization/device requests are capped at
+  10000 (503 beyond). Client secret is not required for device
+  authorization (unchanged).*
   `proxy/internal/oidc/deviceauth.go`, `server.go` `vacuum()`: each POST to
   `/device/authorization` with a (public) `client_id` adds map entries for 10
   minutes; every OIDC request runs `vacuum()` which scans all maps under

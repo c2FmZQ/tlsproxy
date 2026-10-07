@@ -99,6 +99,12 @@ func (s *ProviderServer) ServeDeviceAuthorization(w http.ResponseWriter, req *ht
 
 	now := time.Now().UTC()
 	s.mu.Lock()
+	if len(s.deviceTokens) >= maxPendingRequests || len(s.deviceCodes) >= maxPendingRequests {
+		s.mu.Unlock()
+		s.opts.Logger.Errorf("ERR ServeDeviceAuthorization: too many pending requests")
+		http.Error(w, "too many pending requests", http.StatusServiceUnavailable)
+		return
+	}
 	s.deviceCodes[userCode] = &deviceCodeData{
 		created:    now,
 		clientID:   clientID,
@@ -189,8 +195,10 @@ func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *htt
 	data, ok := s.deviceCodes[userCode]
 	delete(s.deviceCodes, userCode)
 	var devToken *deviceToken
-	if ok {
+	if ok && !expired(data.created) {
 		devToken, ok = s.deviceTokens[data.deviceCode]
+	} else {
+		ok = false
 	}
 	if !ok {
 		http.Error(w, "request expired", http.StatusBadRequest)

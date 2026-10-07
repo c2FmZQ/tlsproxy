@@ -62,6 +62,10 @@ const (
 	defaultTokenLifetime = time.Hour
 	codeExpiration       = 10 * time.Minute
 	pollInterval         = 5 * time.Second
+	vacuumInterval       = 30 * time.Second
+	// maxPendingRequests is the maximum number of pending authorization
+	// requests and device authorization requests.
+	maxPendingRequests = 10000
 )
 
 var (
@@ -154,6 +158,7 @@ type ProviderServer struct {
 	opts ServerOptions
 
 	mu           sync.Mutex
+	lastVacuum   time.Time
 	codes        map[string]*codeData
 	deviceCodes  map[string]*deviceCodeData
 	deviceTokens map[string]*deviceToken
@@ -166,22 +171,32 @@ type Client struct {
 	ACL         *[]string
 }
 
+func expired(created time.Time) bool {
+	return created.Add(codeExpiration).Before(time.Now().UTC())
+}
+
+// vacuum removes expired requests. It scans all the pending requests at most
+// once every vacuumInterval. Lookups must still check expiration.
 func (s *ProviderServer) vacuum() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
+	if now.Sub(s.lastVacuum) < vacuumInterval {
+		return
+	}
+	s.lastVacuum = now
 	for k, v := range s.codes {
-		if v.created.Add(codeExpiration).Before(now) {
+		if expired(v.created) {
 			delete(s.codes, k)
 		}
 	}
 	for k, v := range s.deviceCodes {
-		if v.created.Add(codeExpiration).Before(now) {
+		if expired(v.created) {
 			delete(s.deviceCodes, k)
 		}
 	}
 	for k, v := range s.deviceTokens {
-		if v.created.Add(codeExpiration).Before(now) {
+		if expired(v.created) {
 			delete(s.deviceTokens, k)
 		}
 	}
@@ -268,7 +283,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 		var code string
 		var data *codeData
 		for k, v := range s.codes {
-			if v.requestID == requestID {
+			if v.requestID == requestID && !expired(v.created) {
 				code = k
 				data = v
 				break
@@ -424,6 +439,12 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 	}
 
 	s.mu.Lock()
+	if len(s.codes) >= maxPendingRequests {
+		s.mu.Unlock()
+		s.opts.Logger.Errorf("ERR ServeAuthorization: too many pending requests")
+		http.Error(w, "too many pending requests", http.StatusServiceUnavailable)
+		return
+	}
 	s.codes[code] = &codeData{
 		created:     time.Now().UTC(),
 		clientID:    clientID,
@@ -488,7 +509,7 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 		delete(s.codes, code)
 		s.mu.Unlock()
 
-		if !ok || data.clientID != clientID {
+		if !ok || expired(data.created) || data.clientID != clientID {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
@@ -534,6 +555,10 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 		}
 		s.mu.Lock()
 		data, ok = s.deviceTokens[deviceCode]
+		if ok && expired(data.created) {
+			delete(s.deviceTokens, deviceCode)
+			ok = false
+		}
 		defer s.mu.Unlock()
 
 		var resp struct {
