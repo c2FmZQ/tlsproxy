@@ -25,12 +25,14 @@ package sshca
 
 import (
 	"bytes"
+	"crypto/dsa"
 	"crypto/ed25519"
 	"crypto/rand"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/c2FmZQ/storage"
@@ -249,5 +251,32 @@ func TestCertificate(t *testing.T) {
 				}
 			})
 		})
+	}
+}
+
+func TestCertificateDSAKey(t *testing.T) {
+	m := newCA(t, nil)
+	var params dsa.Parameters
+	if err := dsa.GenerateParameters(&params, rand.Reader, dsa.L1024N160); err != nil {
+		t.Fatalf("dsa.GenerateParameters: %v", err)
+	}
+	priv := &dsa.PrivateKey{PublicKey: dsa.PublicKey{Parameters: params}}
+	if err := dsa.GenerateKey(priv, rand.Reader); err != nil {
+		t.Fatalf("dsa.GenerateKey: %v", err)
+	}
+	sshPub, err := ssh.NewPublicKey(&priv.PublicKey)
+	if err != nil {
+		t.Fatalf("ssh.NewPublicKey: %v", err)
+	}
+	dsaKey := string(ssh.MarshalAuthorizedKey(sshPub))
+	req := httptest.NewRequest("POST", "https://example.com/cert", strings.NewReader(dsaKey))
+	req.Header.Set("content-type", "text/plain")
+	req = req.WithContext(fromctx.WithClaims(req.Context(), jwt.MapClaims{
+		"email": "alice@example.com",
+	}))
+	w := httptest.NewRecorder()
+	m.ServeCertificate(w, req)
+	if got, want := w.Code, http.StatusBadRequest; got != want {
+		t.Errorf("ServeCertificate(dsa) = %d, want %d", got, want)
 	}
 }

@@ -265,7 +265,9 @@ deleted when every item is resolved.
   which now also checks revocation. Also fixed a nil pointer dereference
   in `reAuthorize` when a connection's backend no longer exists.
   Certs from external CAs (OCSP) are still only checked at handshake.*
-- [ ] **29.** SSH CA accepts DSA keys (`sshca.go`).
+- [x] **29.** SSH CA accepts DSA keys (`sshca.go`).
+  *Fixed: DSA keys are rejected with 400 (unsupported key types now get
+  400 instead of 500).*
 - [ ] **30.** SSH CA holds `ca.mu` while reading the request body; a slow
   upload blocks all issuance.
 - [ ] **31.** `tlsclient -ocsp` uses `PeerCertificates[1]` as the issuer
