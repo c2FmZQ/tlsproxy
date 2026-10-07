@@ -154,7 +154,7 @@ func (a *FakeAuthenticator) Get(options *AssertionOptions) (id []byte, clientDat
 	cd := clientData{
 		Type:      "webauthn.get",
 		Challenge: base64.RawURLEncoding.EncodeToString(options.Challenge),
-		Origin:    "https://example.com/",
+		Origin:    a.origin,
 	}
 	if clientDataJSON, err = json.Marshal(cd); err != nil {
 		return

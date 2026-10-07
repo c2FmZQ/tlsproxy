@@ -286,40 +286,47 @@ func TestSSOEnforcePasskey(t *testing.T) {
 			token = m[1]
 			t.Logf("TOKEN: %s", token)
 
-			// Get the assertion options.
-			code, body, _ = get("https://"+host+"/passkey?get=AssertionOptions&redirect="+token, nil, []byte{})
-			if got, want := code, 200; got != want {
-				t.Errorf("Code = %v, want %v", got, want)
+			check := func(origin string) (int, string) {
+				code, body, _ := get("https://"+host+"/passkey?get=AssertionOptions&redirect="+token, nil, []byte{})
+				if got, want := code, 200; got != want {
+					t.Errorf("Code = %v, want %v", got, want)
+				}
+				var aso passkeys.AssertionOptions
+				if err := json.Unmarshal([]byte(body), &aso); err != nil {
+					t.Fatalf("AssertionOptions: %v", err)
+				}
+				auth.SetOrigin(origin)
+				id, clientDataJSON, authData, signature, userHandle, err := auth.Get(&aso)
+				if err != nil {
+					t.Fatalf("auth.Get: %v", err)
+				}
+				data := struct {
+					ID                string         `json:"id"`
+					ClientDataJSON    passkeys.Bytes `json:"clientDataJSON"`
+					AuthenticatorData passkeys.Bytes `json:"authenticatorData"`
+					Signature         passkeys.Bytes `json:"signature"`
+					UserHandle        passkeys.Bytes `json:"userHandle"`
+				}{
+					ID:                base64.RawURLEncoding.EncodeToString(id),
+					ClientDataJSON:    clientDataJSON,
+					AuthenticatorData: authData,
+					Signature:         signature,
+					UserHandle:        userHandle,
+				}
+				dataJSON, _ := json.Marshal(data)
+				hdr := http.Header{}
+				hdr.Set("content-type", "application/x-www-form-urlencoded")
+				code, body, _ = get("https://"+host+"/passkey?get=Check&redirect="+token, hdr, []byte("args="+url.QueryEscape(string(dataJSON))))
+				return code, body
 			}
-			var aso passkeys.AssertionOptions
-			if err := json.Unmarshal([]byte(body), &aso); err != nil {
-				t.Fatalf("AssertionOptions: %v", err)
-			}
-			id, clientDataJSON, authData, signature, userHandle, err := auth.Get(&aso)
-			if err != nil {
-				t.Fatalf("auth.Get: %v", err)
-			}
-			data2 := struct {
-				ID                string         `json:"id"`
-				ClientDataJSON    passkeys.Bytes `json:"clientDataJSON"`
-				AuthenticatorData passkeys.Bytes `json:"authenticatorData"`
-				Signature         passkeys.Bytes `json:"signature"`
-				UserHandle        passkeys.Bytes `json:"userHandle"`
-			}{
-				ID:                base64.RawURLEncoding.EncodeToString(id),
-				ClientDataJSON:    clientDataJSON,
-				AuthenticatorData: authData,
-				Signature:         signature,
-				UserHandle:        userHandle,
-			}
-			dataJSON, _ = json.Marshal(data2)
 
-			hdr = http.Header{}
-			hdr.Set("content-type", "application/x-www-form-urlencoded")
-			postBody = "args=" + url.QueryEscape(string(dataJSON))
+			// An assertion for another origin is rejected.
+			if code, _ := check("https://evil.example.com"); code == 200 {
+				t.Errorf("Check with wrong origin: Code = %v", code)
+			}
 
 			// Send the passkey assertion.
-			code, body, _ = get("https://"+host+"/passkey?get=Check&redirect="+token, hdr, []byte(postBody))
+			code, body = check("https://" + host)
 			if got, want := code, 200; got != want {
 				t.Errorf("Code = %v, want %v", got, want)
 			}

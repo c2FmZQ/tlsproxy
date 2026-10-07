@@ -182,7 +182,9 @@ deleted when every item is resolved.
   attacker-sized `OriginalURL`) is only expired inside `HandleCallback`.
   Fix: periodic expiry and a size cap.
 
-- [ ] **17. Passkey assertion doesn't check `clientData.origin`** (Low)
+- [x] **17. Passkey assertion doesn't check `clientData.origin`** (Low)
+  *Fixed: `processAssertion` requires `https://<endpoint host>`, like
+  registration.*
   `proxy/internal/passkeys/manager.go` `processAssertion` (registration does
   check it). A subdomain page can obtain an assertion for the RP ID.
   Fix: require the expected origin.

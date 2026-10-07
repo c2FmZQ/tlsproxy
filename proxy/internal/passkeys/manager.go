@@ -416,7 +416,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		claims, err := m.processAssertion(req.Form.Get("args"), token)
+		claims, err := m.processAssertion(req.Host, req.Form.Get("args"), token)
 		if err != nil {
 			m.cfg.Logger.Errorf("ERR processAssertion: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -931,7 +931,7 @@ func (m *Manager) assertionOptions(email string) (*AssertionOptions, error) {
 	return opts, nil
 }
 
-func (m *Manager) processAssertion(jsargs string, token *jwt.Token) (claims map[string]any, retErr error) {
+func (m *Manager) processAssertion(host, jsargs string, token *jwt.Token) (claims map[string]any, retErr error) {
 	var args struct {
 		ID                string `json:"id"`
 		ClientDataJSON    Bytes  `json:"clientDataJSON"`
@@ -949,6 +949,10 @@ func (m *Manager) processAssertion(jsargs string, token *jwt.Token) (claims map[
 	}
 	if cd.Type != "webauthn.get" {
 		return nil, errors.New("unexpected clientData.type")
+	}
+	if origin := "https://" + host; cd.Origin != origin {
+		m.cfg.Logger.Errorf("ERR cd.Origin: %q != %q", cd.Origin, origin)
+		return nil, errors.New("unexpected clientData.origin")
 	}
 	var authData authenticatorData
 	if err := parseAuthenticatorData(args.AuthenticatorData, &authData); err != nil {
