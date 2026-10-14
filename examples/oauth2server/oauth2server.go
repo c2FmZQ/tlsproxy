@@ -174,16 +174,17 @@ func (s *Server) Run(ctx context.Context) error {
 		claims := make(jwt.MapClaims)
 		if _, err := jwt.ParseWithClaims(token.AccessToken, &claims, s.getKey); err != nil {
 			log.Printf("INF jwt.Parse: %v", err)
-			fmt.Fprintf(w, "AccessToken: %v", err)
+			http.Error(w, fmt.Sprintf("AccessToken: %v", err), http.StatusForbidden)
+			return
+		}
+		if claims["nonce"] != state {
+			http.Error(w, fmt.Sprintf("nonce value mismatch: %v != %q", claims["nonce"], state), http.StatusForbidden)
+			return
 		}
 		fmt.Fprintf(w, "\nAccessToken claims:\n")
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		enc.Encode(claims)
-
-		if claims["nonce"] != state {
-			fmt.Fprintf(w, "nonce value mismatch: %v != %q\n", claims["nonce"], state)
-		}
 
 		fmt.Fprintf(w, "\nGET %s\n", s.openIDConfig.UserinfoEndpoint)
 		fmt.Fprintf(w, "Authorization: Bearer <AccessToken>\n\n")

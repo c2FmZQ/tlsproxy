@@ -207,7 +207,7 @@ func (s *service) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	fmt.Fprintln(w, "token is valid<br>")
 
-	if pic := claims.Picture; pic != "" {
+	if pic := claims.Picture; strings.HasPrefix(pic, "https://") || strings.HasPrefix(pic, "http://") {
 		fmt.Fprintf(w, "<img src=\"%s\"><br>\n", html.EscapeString(pic))
 	}
 	if name := claims.Name; name != "" {
@@ -269,9 +269,9 @@ func (s *service) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 {
-		fmt.Fprintf(w, "Client Certificate: %s<br>\n", req.TLS.PeerCertificates[0].Subject)
+		fmt.Fprintf(w, "Client Certificate: %s<br>\n", html.EscapeString(req.TLS.PeerCertificates[0].Subject.String()))
 	}
-	fmt.Fprintf(w, "Proto: %s<br>\n", req.Proto)
+	fmt.Fprintf(w, "Proto: %s<br>\n", html.EscapeString(req.Proto))
 	fmt.Fprintf(w, "Via: %s\n", html.EscapeString(req.Header.Get("via")))
 }
 

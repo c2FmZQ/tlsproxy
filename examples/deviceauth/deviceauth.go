@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -94,20 +95,23 @@ func main() {
 	if err != nil {
 		log.Fatalf("DeviceAuth: %v", err)
 	}
-	url := resp.VerificationURIComplete
-	if url == "" {
-		url = resp.VerificationURI
+	verifyURL := resp.VerificationURIComplete
+	if verifyURL == "" {
+		verifyURL = resp.VerificationURI
+	}
+	if u, err := url.Parse(verifyURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || strings.HasPrefix(verifyURL, "-") {
+		log.Fatalf("invalid verification URL: %q", verifyURL)
 	}
 	if *qrCode {
-		qrterminal.GenerateHalfBlock(url, qrterminal.L, os.Stdout)
+		qrterminal.GenerateHalfBlock(verifyURL, qrterminal.L, os.Stdout)
 	}
 	if len(scopeList) > 0 {
 		fmt.Printf("Requesting access to: %s\n", strings.Join(scopeList, ","))
 	}
-	fmt.Printf("Open this URL and enter %s as User Code to authorize access:\n\n  %s\n\n", resp.UserCode, url)
+	fmt.Printf("Open this URL and enter %s as User Code to authorize access:\n\n  %s\n\n", resp.UserCode, verifyURL)
 
 	if *browser != "" {
-		cmd := exec.Command(*browser, url)
+		cmd := exec.Command(*browser, verifyURL)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
