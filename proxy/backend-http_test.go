@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -386,6 +387,9 @@ func TestWaitConnLimit(t *testing.T) {
 }
 
 func TestRedactConfig(t *testing.T) {
+	if runtime.MemProfileRate == 1 {
+		t.Errorf("runtime.MemProfileRate = 1 by default, want default sampling rate")
+	}
 	poHeaders := map[string]string{"Authorization": "Bearer S3CR3T3"}
 	cfg := &Config{
 		ECH: &ECH{
@@ -397,6 +401,7 @@ func TestRedactConfig(t *testing.T) {
 				ForwardHTTPHeaders: map[string]string{
 					"X-Api-Key": "S3CR3T5",
 					"X-User":    "${JWT:email}",
+					"X-Mixed":   "Bearer S3CR3T7-${JWT:email}",
 				},
 				PathOverrides: []*PathOverride{{ForwardHTTPHeaders: &poHeaders}},
 				SSO: &BackendSSO{
