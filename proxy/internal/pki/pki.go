@@ -612,6 +612,11 @@ func (m *PKIManager) IsRevoked(serialNumber *big.Int) bool {
 
 // OCSPResponse creates an OCSP Response from the given request.
 func (m *PKIManager) OCSPResponse(req *ocsp.Request) ([]byte, error) {
+	switch req.HashAlgorithm {
+	case crypto.SHA1, crypto.SHA256, crypto.SHA384, crypto.SHA512:
+	default:
+		return nil, errors.New("invalid hash algorithm")
+	}
 	if !req.HashAlgorithm.Available() {
 		return nil, errors.New("invalid hash algorithm")
 	}
@@ -668,7 +673,7 @@ func (m *PKIManager) OCSPResponse(req *ocsp.Request) ([]byte, error) {
 			SerialNumber: req.SerialNumber,
 			ThisUpdate:   now,
 			NextUpdate:   now.Add(crlRefreshPeriod),
-			IssuerHash:   crypto.SHA256,
+			IssuerHash:   req.HashAlgorithm,
 			Certificate:  delegateCert,
 		}, signer)
 	}
@@ -680,7 +685,7 @@ func (m *PKIManager) OCSPResponse(req *ocsp.Request) ([]byte, error) {
 			NextUpdate:       now.Add(crlRefreshPeriod),
 			RevokedAt:        now,
 			RevocationReason: RevokeReasonCertificateHold,
-			IssuerHash:       crypto.SHA256,
+			IssuerHash:       req.HashAlgorithm,
 			Certificate:      delegateCert,
 		}, signer)
 	}
@@ -692,7 +697,7 @@ func (m *PKIManager) OCSPResponse(req *ocsp.Request) ([]byte, error) {
 			NextUpdate:       now.Add(crlRefreshPeriod),
 			RevokedAt:        rev.Time,
 			RevocationReason: rev.ReasonCode,
-			IssuerHash:       crypto.SHA256,
+			IssuerHash:       req.HashAlgorithm,
 			Certificate:      delegateCert,
 		}, signer)
 	}
@@ -701,7 +706,7 @@ func (m *PKIManager) OCSPResponse(req *ocsp.Request) ([]byte, error) {
 		SerialNumber: req.SerialNumber,
 		ThisUpdate:   now,
 		NextUpdate:   now.Add(crlRefreshPeriod),
-		IssuerHash:   crypto.SHA256,
+		IssuerHash:   req.HashAlgorithm,
 		Certificate:  delegateCert,
 	}, signer)
 }
@@ -729,6 +734,9 @@ func (m *PKIManager) RevokeCertificate(serialNumber *big.Int, reasonCode int) (r
 	snh := bytesToHex(serialNumber.Bytes())
 	for _, c := range m.db.IssuedCerts {
 		if c.SerialNumber == snh {
+			if cert, err := c.parse(); err == nil && (cert.IsCA || slices.Contains(cert.ExtKeyUsage, x509.ExtKeyUsageOCSPSigning)) {
+				return errors.New("cannot revoke CA or OCSP certificate")
+			}
 			c.revoke(reasonCode)
 			if m.db.Revoked == nil {
 				m.db.Revoked = make(map[string]bool)

@@ -30,15 +30,19 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
 
 	jwt "github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/ocsp"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 )
@@ -157,5 +161,61 @@ func TestRequestServerCert(t *testing.T) {
 		if !slices.Equal(cert.ExtKeyUsage, []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}) {
 			t.Errorf("%s %v: ExtKeyUsage = %v", tc.email, tc.dnsNames, cert.ExtKeyUsage)
 		}
+	}
+}
+
+func TestRevokeCAAndOCSPGet(t *testing.T) {
+	m := newPKI(t, nil)
+	m.opts.Admins = []string{"admin@example.com"}
+	m.opts.AdminMatcher = func(acl []string, email string) bool {
+		return slices.Contains(acl, email)
+	}
+	m.opts.OCSPServer = []string{"https://pki.example.com/ocsp"}
+
+	caCert, err := m.CACert()
+	if err != nil {
+		t.Fatalf("CACert: %v", err)
+	}
+	caSN := bytesToHex(caCert.SerialNumber.Bytes())
+
+	// 1. Admin attempting to revoke the Root CA certificate via HTTP must be rejected.
+	req := httptest.NewRequest(http.MethodPost, "https://pki.example.com/?get=revokeCert&sn="+caSN, nil)
+	req = req.WithContext(fromctx.WithClaims(req.Context(), jwt.MapClaims{"email": "admin@example.com"}))
+	w := httptest.NewRecorder()
+	m.ServeCertificateManagement(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("revokeCert(CA) status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	if m.IsRevoked(caCert.SerialNumber) {
+		t.Errorf("Root CA certificate was revoked!")
+	}
+
+	// 2. GET OCSP request whose Base64 encoding contains '/' (both escaped as %2F and raw).
+	fakeLeaf := &x509.Certificate{
+		SerialNumber: new(big.Int).SetBytes([]byte{0x3f, 0xff, 0xff, 0xff, 0xff, 0xff}),
+	}
+	ocspRaw, err := ocsp.CreateRequest(fakeLeaf, caCert, nil)
+	if err != nil {
+		t.Fatalf("ocsp.CreateRequest: %v", err)
+	}
+	b64 := base64.StdEncoding.EncodeToString(ocspRaw)
+	if !strings.Contains(b64, "/") {
+		t.Fatalf("expected base64 OCSP request to contain '/', got %q", b64)
+	}
+
+	// Escaped %2F per RFC 6960 Appendix A.1
+	reqEscaped := httptest.NewRequest(http.MethodGet, "https://pki.example.com/ocsp/"+url.PathEscape(b64), nil)
+	wEscaped := httptest.NewRecorder()
+	m.ServeOCSP(wEscaped, reqEscaped)
+	if wEscaped.Code != http.StatusOK {
+		t.Errorf("ServeOCSP(escaped %%2F) status = %d, want 200", wEscaped.Code)
+	}
+
+	// Unescaped '/' with configured OCSPServer prefix
+	reqRaw := httptest.NewRequest(http.MethodGet, "https://pki.example.com/ocsp/"+b64, nil)
+	wRaw := httptest.NewRecorder()
+	m.ServeOCSP(wRaw, reqRaw)
+	if wRaw.Code != http.StatusOK {
+		t.Errorf("ServeOCSP(raw '/') status = %d, want 200", wRaw.Code)
 	}
 }

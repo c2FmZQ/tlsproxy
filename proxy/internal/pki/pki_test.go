@@ -325,4 +325,17 @@ func TestPKIDelegateAndCRLVerification(t *testing.T) {
 	if err := rl.CheckSignatureFrom(caCert); err != nil {
 		t.Errorf("rl.CheckSignatureFrom(caCert) failed: %v", err)
 	}
+
+	// 4. OCSP response IssuerHash must match ocspReq.HashAlgorithm.
+	if ocspResp.IssuerHash != ocspReq.HashAlgorithm {
+		t.Errorf("ocspResp.IssuerHash = %v, want %v", ocspResp.IssuerHash, ocspReq.HashAlgorithm)
+	}
+
+	// 5. RevokeCertificate must reject revoking the Root CA or OCSP delegate cert.
+	if err := m.RevokeCertificate(caCert.SerialNumber, RevokeReasonKeyCompromise); err == nil {
+		t.Errorf("RevokeCertificate(caCert) succeeded, want error")
+	}
+	if err := m.RevokeCertificate(ocspResp.Certificate.SerialNumber, RevokeReasonKeyCompromise); err == nil {
+		t.Errorf("RevokeCertificate(delegateCert) succeeded, want error")
+	}
 }
