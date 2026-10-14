@@ -504,7 +504,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				backends[beKey{serverName: sn, proto: proto}] = be
 			}
 		}
-		if l, ok := p.bwLimits[be.BWLimit]; ok {
+		if l, ok := p.bwLimits[strings.ToLower(be.BWLimit)]; ok {
 			be.bwLimit = l
 		}
 		be.localHandlers = append(be.localHandlers,

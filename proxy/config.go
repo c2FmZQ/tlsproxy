@@ -1299,10 +1299,11 @@ func (cfg *Config) Check() error {
 
 	bwLimits := make(map[string]bool)
 	for i, l := range cfg.BWLimits {
-		if bwLimits[l.Name] {
+		name := strings.ToLower(l.Name)
+		if bwLimits[name] {
 			return fmt.Errorf("bwLimit[%d].Name: duplicate name %q", i, l.Name)
 		}
-		bwLimits[l.Name] = true
+		bwLimits[name] = true
 	}
 
 	for i, be := range cfg.Backends {
@@ -1318,7 +1319,7 @@ func (cfg *Config) Check() error {
 		if be.DocumentRoot != "" && len(be.Addresses) != 0 {
 			return fmt.Errorf("backend[%d].DocumentRoot: only valid when Addresses is empty", i)
 		}
-		if n := be.BWLimit; n != "" && !bwLimits[n] {
+		if n := be.BWLimit; n != "" && !bwLimits[strings.ToLower(n)] {
 			return fmt.Errorf("backend[%d].BWLimit: undefined name %q", i, n)
 		}
 		if be.UseDoH == "" {

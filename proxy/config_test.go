@@ -503,3 +503,30 @@ func TestValidDNSNamePattern(t *testing.T) {
 		}
 	}
 }
+
+func TestBWLimitCaseInsensitive(t *testing.T) {
+	cfg := &Config{
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(100),
+		BWLimits: []*BWLimit{
+			{
+				Name:    "FastLimit",
+				Ingress: 1e6,
+				Egress:  1e6,
+			},
+		},
+		Backends: []*Backend{
+			{
+				ServerNames: Strings{"example.com"},
+				Mode:        "CONSOLE",
+				BWLimit:     "FastLimit",
+			},
+		},
+	}
+	p := newTestProxy(cfg, nil)
+	if p.cfg.Backends[0].bwLimit == nil {
+		t.Errorf("Backend with mixed-case BWLimit %q has nil bwLimit", cfg.Backends[0].BWLimit)
+	}
+}

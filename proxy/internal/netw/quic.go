@@ -198,14 +198,30 @@ func (c *QUICConn) removeStream(qs *QUICStream) {
 // SetLimiter sets the rate limiters for this connection.
 // It must be called before the first Read() or Write(). Peek() is OK.
 func (c *QUICConn) SetLimiters(ingress, egress *rate.Limiter) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.ingressLimiter = ingress
 	c.egressLimiter = egress
 }
 
 // SetCounters sets the byte counters to use for this connection.
 func (c *QUICConn) SetCounters(sent, received *counter.Counter) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.upBytesSent = sent
 	c.upBytesReceived = received
+}
+
+func (c *QUICConn) getLimiters() (ingress, egress *rate.Limiter) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.ingressLimiter, c.egressLimiter
+}
+
+func (c *QUICConn) getCounters() (sent, received *counter.Counter) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.upBytesSent, c.upBytesReceived
 }
 
 // BytesSent returns the number of bytes sent on this connection so far.
@@ -458,11 +474,33 @@ func (c *QUICConn) Context() context.Context {
 }
 
 func (c *QUICConn) SendDatagram(b []byte) error {
-	return c.qc.SendDatagram(b)
+	if _, l := c.getLimiters(); l != nil && len(b) > 0 {
+		if err := waitTokens(c.Context(), l, len(b)); err != nil {
+			return err
+		}
+	}
+	err := c.qc.SendDatagram(b)
+	if err == nil && len(b) > 0 {
+		c.bytesSent.Incr(int64(len(b)))
+		upSent, _ := c.getCounters()
+		upSent.Incr(int64(len(b)))
+	}
+	return err
 }
 
 func (c *QUICConn) ReceiveDatagram(ctx context.Context) ([]byte, error) {
-	return c.qc.ReceiveDatagram(ctx)
+	b, err := c.qc.ReceiveDatagram(ctx)
+	if len(b) > 0 {
+		c.bytesReceived.Incr(int64(len(b)))
+		_, upRecv := c.getCounters()
+		upRecv.Incr(int64(len(b)))
+		if l, _ := c.getLimiters(); l != nil {
+			if werr := waitTokens(ctx, l, len(b)); werr != nil && err == nil {
+				err = werr
+			}
+		}
+	}
+	return b, err
 }
 
 func (c *QUICConn) QlogTrace() qlogwriter.Trace {
@@ -615,23 +653,26 @@ func (s *QUICStream) markWriteDone() {
 }
 
 func (s *QUICStream) Read(b []byte) (int, error) {
-	if l := s.qc.ingressLimiter; l != nil {
-		if err := l.WaitN(s.Context(), len(b)); err != nil {
-			return 0, err
-		}
-	}
 	n, err := s.Stream.Read(b)
 	if err != nil {
 		s.markReadDone()
 	}
-	s.qc.bytesReceived.Incr(int64(n))
-	s.qc.upBytesReceived.Incr(int64(n))
+	if n > 0 {
+		s.qc.bytesReceived.Incr(int64(n))
+		_, upRecv := s.qc.getCounters()
+		upRecv.Incr(int64(n))
+		if l, _ := s.qc.getLimiters(); l != nil {
+			if werr := waitTokens(s.Context(), l, n); werr != nil && err == nil {
+				err = werr
+			}
+		}
+	}
 	return n, err
 }
 
 func (s *QUICStream) Write(b []byte) (int, error) {
-	if l := s.qc.egressLimiter; l != nil {
-		if err := l.WaitN(s.Context(), len(b)); err != nil {
+	if _, l := s.qc.getLimiters(); l != nil && len(b) > 0 {
+		if err := waitTokens(s.Context(), l, len(b)); err != nil {
 			return 0, err
 		}
 	}
@@ -639,8 +680,11 @@ func (s *QUICStream) Write(b []byte) (int, error) {
 	if err != nil {
 		s.markWriteDone()
 	}
-	s.qc.bytesSent.Incr(int64(n))
-	s.qc.upBytesSent.Incr(int64(n))
+	if n > 0 {
+		s.qc.bytesSent.Incr(int64(n))
+		upSent, _ := s.qc.getCounters()
+		upSent.Incr(int64(n))
+	}
 	return n, err
 }
 
