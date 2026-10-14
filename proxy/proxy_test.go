@@ -27,15 +27,19 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net"
 	"net/http"
 	"net/url"
@@ -49,10 +53,12 @@ import (
 
 	"github.com/c2FmZQ/ech"
 	"github.com/c2FmZQ/storage"
+	"github.com/c2FmZQ/storage/autocertcache"
 	"github.com/c2FmZQ/storage/crypto"
 	"github.com/c2FmZQ/tpm"
 	"github.com/google/go-tpm-tools/simulator"
 	"github.com/pires/go-proxyproto"
+	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
@@ -1820,5 +1826,79 @@ func TestProxyListenerCloseAndDocRootCleanup(t *testing.T) {
 	}
 	if _, err := root2.Stat("."); err == nil {
 		t.Errorf("po.documentRoot was not closed by be.close(nil)")
+	}
+}
+
+func TestRevokeUnusedCertificatesPartialFailure(t *testing.T) {
+	ctx := context.Background()
+	mk, err := crypto.CreateAESMasterKeyForTest()
+	if err != nil {
+		t.Fatalf("CreateAESMasterKeyForTest: %v", err)
+	}
+	store := storage.New(t.TempDir(), mk)
+	cache := autocertcache.New("certs", store)
+
+	acctKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey: %v", err)
+	}
+	acctDER, err := x509.MarshalECPrivateKey(acctKey)
+	if err != nil {
+		t.Fatalf("MarshalECPrivateKey: %v", err)
+	}
+	if err := cache.Put(ctx, acmeAccountKey, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: acctDER})); err != nil {
+		t.Fatalf("cache.Put(account): %v", err)
+	}
+
+	putCert := func(keyName, dnsName string, notBefore, notAfter time.Time) {
+		k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			t.Fatalf("ecdsa.GenerateKey: %v", err)
+		}
+		kDER, err := x509.MarshalECPrivateKey(k)
+		if err != nil {
+			t.Fatalf("MarshalECPrivateKey: %v", err)
+		}
+		templ := &x509.Certificate{
+			SerialNumber: big.NewInt(1),
+			Subject:      pkix.Name{CommonName: dnsName},
+			DNSNames:     []string{dnsName},
+			NotBefore:    notBefore,
+			NotAfter:     notAfter,
+		}
+		cDER, err := x509.CreateCertificate(rand.Reader, templ, templ, &k.PublicKey, k)
+		if err != nil {
+			t.Fatalf("CreateCertificate: %v", err)
+		}
+		var buf bytes.Buffer
+		pem.Encode(&buf, &pem.Block{Type: "EC PRIVATE KEY", Bytes: kDER})
+		pem.Encode(&buf, &pem.Block{Type: "CERTIFICATE", Bytes: cDER})
+		if err := cache.Put(ctx, keyName, buf.Bytes()); err != nil {
+			t.Fatalf("cache.Put(%s): %v", keyName, err)
+		}
+	}
+
+	now := time.Now()
+	// cert1 is already expired; cert2 is unexpired and will fail revocation against ACME.
+	putCert("cert1", "expired.example.com", now.Add(-2*time.Hour), now.Add(-time.Hour))
+	putCert("cert2", "unexpired.example.com", now.Add(-time.Hour), now.Add(time.Hour))
+
+	p := &Proxy{
+		cfg: &Config{
+			RevokeUnusedCertificates: newPtr(true),
+		},
+		certManager: &autocert.Manager{
+			Cache: cache,
+		},
+	}
+	_ = p.revokeUnusedCertificates(ctx)
+
+	// Even when cert2 fails revocation, expired cert1 must already be deleted from the cache.
+	if _, err := cache.Get(ctx, "cert1"); err == nil {
+		t.Errorf("Expired cert1 remained in cache after partial failure in revokeUnusedCertificates")
+	}
+
+	if got := int(capRlimitCur(^uint64(0))); got <= 0 {
+		t.Errorf("capRlimitCur(RLIM_INFINITY) = %d, want > 0", got)
 	}
 }

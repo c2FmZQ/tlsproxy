@@ -88,25 +88,33 @@ func (p *Proxy) RevokeAllCertificates(ctx context.Context, reason string) error 
 	p.logErrorF("!!!")
 	time.Sleep(10 * time.Second)
 
+	cache := p.certManager.(*autocert.Manager).Cache.(*autocertcache.Cache)
 	now := time.Now()
 	for _, key := range toRevoke {
 		if now.After(certs[key].Leaf.NotAfter) {
 			p.logErrorF("!!! Expired: %s", key)
+			_ = cache.DeleteKeys(ctx, []string{key})
 			continue
 		}
-		if err := client.RevokeCert(ctx, certs[key].PrivateKey.(crypto.Signer), certs[key].Certificate[0], reasonCode); err != nil {
+		signer, ok := certs[key].PrivateKey.(crypto.Signer)
+		if !ok {
+			return fmt.Errorf("invalid private key type %T for %s", certs[key].PrivateKey, key)
+		}
+		if err := client.RevokeCert(ctx, signer, certs[key].Certificate[0], reasonCode); err != nil {
 			return err
 		}
 		p.logErrorF("!!! Revoked: %s", key)
+		if err := cache.DeleteKeys(ctx, []string{key}); err != nil {
+			return err
+		}
 	}
-	return p.certManager.(*autocert.Manager).Cache.(*autocertcache.Cache).DeleteKeys(ctx, toRevoke)
+	return nil
 }
 
 func (p *Proxy) revokeUnusedCertificates(ctx context.Context) error {
-	actuallyRevoke := p.cfg.RevokeUnusedCertificates == nil || *p.cfg.RevokeUnusedCertificates
-
 	names := make(map[string]bool)
 	p.mu.Lock()
+	actuallyRevoke := p.cfg.RevokeUnusedCertificates == nil || *p.cfg.RevokeUnusedCertificates
 	for _, be := range p.cfg.Backends {
 		for _, n := range be.ServerNames {
 			names[n] = true
@@ -149,18 +157,27 @@ L:
 		Key:          accountKey,
 		UserAgent:    "tlsproxy",
 	}
+	cache := p.certManager.(*autocert.Manager).Cache.(*autocertcache.Cache)
 	now := time.Now()
 	for _, key := range toRevoke {
 		if now.After(certs[key].Leaf.NotAfter) {
 			p.logErrorF("INF Expired certificate: %s", key)
+			_ = cache.DeleteKeys(ctx, []string{key})
 			continue
 		}
-		if err := client.RevokeCert(ctx, certs[key].PrivateKey.(crypto.Signer), certs[key].Certificate[0], acme.CRLReasonUnspecified); err != nil {
+		signer, ok := certs[key].PrivateKey.(crypto.Signer)
+		if !ok {
+			return fmt.Errorf("invalid private key type %T for %s", certs[key].PrivateKey, key)
+		}
+		if err := client.RevokeCert(ctx, signer, certs[key].Certificate[0], acme.CRLReasonUnspecified); err != nil {
 			return err
 		}
 		p.logErrorF("INF Revoked unused certificate: %s", key)
+		if err := cache.DeleteKeys(ctx, []string{key}); err != nil {
+			return err
+		}
 	}
-	return p.certManager.(*autocert.Manager).Cache.(*autocertcache.Cache).DeleteKeys(ctx, toRevoke)
+	return nil
 }
 
 func (p *Proxy) acmeAccountKey(ctx context.Context) (crypto.Signer, error) {

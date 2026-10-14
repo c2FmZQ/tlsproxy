@@ -28,6 +28,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
@@ -59,6 +60,12 @@ func TestCertsAreValid(t *testing.T) {
 	}
 	if got, want := cert.Leaf.Subject.String(), "CN=hello.example.com"; got != want {
 		t.Errorf("Subject = %q, want %q", got, want)
+	}
+	if cert.Leaf.SerialNumber.BitLen() <= 32 {
+		t.Errorf("Leaf SerialNumber BitLen = %d, want > 32 (128-bit)", cert.Leaf.SerialNumber.BitLen())
+	}
+	if !slices.Contains(cert.Leaf.ExtKeyUsage, x509.ExtKeyUsageServerAuth) {
+		t.Errorf("Leaf ExtKeyUsage = %v, want ExtKeyUsageServerAuth", cert.Leaf.ExtKeyUsage)
 	}
 	if _, err := cert.Leaf.Verify(x509.VerifyOptions{
 		DNSName:   "hello.example.com",

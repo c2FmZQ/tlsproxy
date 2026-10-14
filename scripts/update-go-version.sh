@@ -2,7 +2,7 @@
 #
 # Check the latest GO version and update the github workflows.
 
-latest=$(curl -s 'https://go.dev/dl/?mode=json' | jq -r '.[].stable = true | .[].version' | head -n 1)
+latest=$(curl -s 'https://go.dev/dl/?mode=json' | jq -r '[.[] | select(.stable == true)][0].version')
 version="${latest#go}"
 osversion="alpine3.24"
 if [[ "${latest}" =~ ^go ]]; then
@@ -28,11 +28,11 @@ echo >> CHANGELOG.md-new
 sed -n '3,$p' < CHANGELOG.md >> CHANGELOG.md-new
 mv CHANGELOG.md-new CHANGELOG.md
 
-for dir in $(find examples/ jwks/ go.mod); do
+for dir in $(find examples/ jwks/ -name go.mod); do
   exdep=$((cd "$(dirname "${dir}")" && go get -u ./... 2>&1 && go mod tidy) | grep upgrade | sed -re 's/go: //g')
-  if [[ -n "${exdeps}" ]]; then
+  if [[ -n "${exdep}" ]]; then
     echo "* Update go dependencies in ${dir}:"
-    echo "${exdeps}" | sed -re 's/^/  * /g'
+    echo "${exdep}" | sed -re 's/^/  * /g'
   fi
 done
 exit 0
