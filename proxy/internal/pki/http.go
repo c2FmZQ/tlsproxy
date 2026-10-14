@@ -97,7 +97,7 @@ func (m *PKIManager) ServeCACert(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	w.Header().Set("content-type", "application/x-x509-ca-cert")
-	out := m.db.CACert.Raw
+	out := slices.Clone(m.db.CACert.Raw)
 	for _, c := range m.db.DelegateCerts {
 		out = append(out, c.Raw...)
 	}

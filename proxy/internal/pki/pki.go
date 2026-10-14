@@ -295,7 +295,7 @@ func (m *PKIManager) initCA() (retErr error) {
 		if err != nil {
 			return err
 		}
-		if cert.NotBefore.Add(cert.NotAfter.Sub(cert.NotBefore) / 2).Before(now) {
+		if cert.NotBefore.Add(cert.NotAfter.Sub(cert.NotBefore)/2).Before(now) || cert.KeyUsage&x509.KeyUsageCRLSign == 0 {
 			needCert = true
 		}
 	}
@@ -311,7 +311,7 @@ func (m *PKIManager) initCA() (retErr error) {
 			Subject:               pkix.Name{CommonName: m.opts.Name},
 			NotBefore:             now,
 			NotAfter:              now.Add(caCertLifetime),
-			KeyUsage:              x509.KeyUsageCertSign,
+			KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 			BasicConstraintsValid: true,
 			IsCA:                  true,
 			MaxPathLenZero:        true,
@@ -415,7 +415,7 @@ func (m *PKIManager) needDelegateRotation() bool {
 		return true
 	}
 	c, err := m.db.DelegateCerts[0].parse()
-	return err != nil || c.NotBefore.Add(c.NotAfter.Sub(c.NotBefore)/2).Before(time.Now().UTC()) || c.PublicKeyAlgorithm == x509.Ed25519
+	return err != nil || c.NotBefore.Add(c.NotAfter.Sub(c.NotBefore)/2).Before(time.Now().UTC()) || c.PublicKeyAlgorithm == x509.Ed25519 || c.IsCA
 }
 
 func (m *PKIManager) maybeRotateDelegateCert() error {
@@ -453,17 +453,17 @@ func (m *PKIManager) maybeRotateDelegateCert() error {
 		SerialNumber: sn,
 		PublicKey:    delegateKey.(crypto.Signer).Public(),
 		Issuer:       caCert.Subject,
-		Subject:      pkix.Name{CommonName: m.opts.Name + " CRL OCSP"},
+		Subject:      pkix.Name{CommonName: m.opts.Name + " OCSP"},
 		NotBefore:    now,
 		NotAfter:     now.Add(caDelegateLifetime),
-		KeyUsage:     x509.KeyUsageCRLSign,
+		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtraExtensions: []pkix.Extension{
 			// id-pkix-ocsp-nocheck
-			pkix.Extension{Id: asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 48, 1, 5}},
+			{Id: asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 48, 1, 5}, Value: asn1.NullBytes},
 		},
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageOCSPSigning},
 		BasicConstraintsValid: true,
-		IsCA:                  true,
+		IsCA:                  false,
 		IssuingCertificateURL: m.opts.IssuingCertificateURL,
 		CRLDistributionPoints: m.opts.CRLDistributionPoints,
 		OCSPServer:            m.opts.OCSPServer,
@@ -544,7 +544,7 @@ func (m *PKIManager) RevocationList() (cert, crl []byte, retErr error) {
 		}
 	}
 
-	signCert, err := m.db.DelegateCerts[0].parse()
+	signCert, err := m.db.CACert.parse()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -573,7 +573,7 @@ func (m *PKIManager) RevocationList() (cert, crl []byte, retErr error) {
 		})
 	}
 
-	key, err := m.parseKeyBytes(m.db.DelegateKey)
+	key, err := m.parseKeyBytes(m.db.PrivateKey)
 	if err != nil {
 		return nil, nil, err
 	}

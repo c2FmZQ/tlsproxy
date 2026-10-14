@@ -238,3 +238,91 @@ func TestConcurrentRevocationList(t *testing.T) {
 		t.Errorf("len(DelegateCerts) = %d, want %d", got, want)
 	}
 }
+
+func TestPKIDelegateAndCRLVerification(t *testing.T) {
+	m := newPKI(t, nil)
+	caCert, err := m.CACert()
+	if err != nil {
+		t.Fatalf("CACert: %v", err)
+	}
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey: %v", err)
+	}
+	csrRaw, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: "leaf"},
+	}, key)
+	if err != nil {
+		t.Fatalf("CreateCertificateRequest: %v", err)
+	}
+	cr, err := m.ValidateCertificateRequest(csrRaw)
+	if err != nil {
+		t.Fatalf("ValidateCertificateRequest: %v", err)
+	}
+	certBytes, err := m.IssueCertificate(cr)
+	if err != nil {
+		t.Fatalf("IssueCertificate: %v", err)
+	}
+	leaf, err := x509.ParseCertificate(certBytes)
+	if err != nil {
+		t.Fatalf("ParseCertificate: %v", err)
+	}
+
+	ocspReqRaw, err := ocsp.CreateRequest(leaf, caCert, nil)
+	if err != nil {
+		t.Fatalf("ocsp.CreateRequest: %v", err)
+	}
+	ocspReq, err := ocsp.ParseRequest(ocspReqRaw)
+	if err != nil {
+		t.Fatalf("ocsp.ParseRequest: %v", err)
+	}
+	ocspRespRaw, err := m.OCSPResponse(ocspReq)
+	if err != nil {
+		t.Fatalf("m.OCSPResponse: %v", err)
+	}
+	ocspResp, err := ocsp.ParseResponse(ocspRespRaw, caCert)
+	if err != nil {
+		t.Fatalf("ocsp.ParseResponse: %v", err)
+	}
+
+	// 1. Delegate cert must not be a CA and must pass x509.Verify against caCert.
+	if ocspResp.Certificate.IsCA {
+		t.Errorf("Delegate certificate has IsCA = true, want false")
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(caCert)
+	if _, err := ocspResp.Certificate.Verify(x509.VerifyOptions{
+		Roots:     roots,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageOCSPSigning},
+	}); err != nil {
+		t.Errorf("Delegate certificate failed x509.Verify against CA: %v", err)
+	}
+
+	// 2. id-pkix-ocsp-nocheck extension must have ASN.1 NULL (0x05, 0x00) value.
+	var foundNoCheck bool
+	for _, ext := range ocspResp.Certificate.Extensions {
+		if ext.Id.Equal([]int{1, 3, 6, 1, 5, 5, 7, 48, 1, 5}) {
+			foundNoCheck = true
+			if !bytes.Equal(ext.Value, []byte{0x05, 0x00}) {
+				t.Errorf("id-pkix-ocsp-nocheck Value = %x, want 0500", ext.Value)
+			}
+		}
+	}
+	if !foundNoCheck {
+		t.Errorf("id-pkix-ocsp-nocheck extension not found on delegate cert")
+	}
+
+	// 3. CRL must be directly verifiable against caCert via CheckSignatureFrom.
+	_, crlBytes, err := m.RevocationList()
+	if err != nil {
+		t.Fatalf("m.RevocationList: %v", err)
+	}
+	rl, err := x509.ParseRevocationList(crlBytes)
+	if err != nil {
+		t.Fatalf("x509.ParseRevocationList: %v", err)
+	}
+	if err := rl.CheckSignatureFrom(caCert); err != nil {
+		t.Errorf("rl.CheckSignatureFrom(caCert) failed: %v", err)
+	}
+}
