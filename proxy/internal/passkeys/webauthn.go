@@ -246,7 +246,7 @@ func parseAuthenticatorData(raw []byte, ad *authenticatorData) error {
 
 		sz := binary.BigEndian.Uint16(raw[:2])
 		raw = raw[2:]
-		if sz > 1023 {
+		if sz < 16 || sz > 1023 {
 			return errors.New("invalid credentialId length")
 		}
 		if len(raw) < int(sz) {
@@ -328,7 +328,7 @@ func verifySignature(coseKey, authData, clientDataJSON, signature Bytes) error {
 			KTY int    `cbor:"1,keyasint"`
 			ALG int    `cbor:"3,keyasint"`
 			N   []byte `cbor:"-1,keyasint"`
-			E   int    `cbor:"-2,keyasint"`
+			E   []byte `cbor:"-2,keyasint"`
 		}
 		if err := cbor.Unmarshal(coseKey, &rsaKey); err != nil {
 			return err
@@ -336,9 +336,17 @@ func verifySignature(coseKey, authData, clientDataJSON, signature Bytes) error {
 		if rsaKey.ALG != algRS256 {
 			return errors.New("unexpected RSA key alg")
 		}
+		n := new(big.Int).SetBytes(rsaKey.N)
+		if n.BitLen() < 2048 {
+			return errors.New("RSA key too small")
+		}
+		e := new(big.Int).SetBytes(rsaKey.E)
+		if !e.IsInt64() || e.Int64() < 3 || e.Int64() > 1<<31-1 || e.Bit(0) == 0 {
+			return errors.New("invalid RSA exponent")
+		}
 		publicKey := &rsa.PublicKey{
-			N: new(big.Int).SetBytes(rsaKey.N),
-			E: rsaKey.E,
+			N: n,
+			E: int(e.Int64()),
 		}
 		if err := rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, hashed[:], signature); err != nil {
 			return err

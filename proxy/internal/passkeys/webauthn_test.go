@@ -227,3 +227,15 @@ func TestWithFakeAuthenticator(t *testing.T) {
 		}
 	}
 }
+
+func TestShortCredentialID(t *testing.T) {
+	var raw [37 + 18 + 4 + 1]byte
+	raw[32] = 1 | (1 << 2) | (1 << 6) // UP, UV, AT
+	raw[37+16] = 0
+	raw[37+17] = 4      // credentialId length = 4 (< 16)
+	raw[37+18+4] = 0xa0 // empty CBOR map for COSEKey
+	var ad authenticatorData
+	if err := parseAuthenticatorData(raw[:], &ad); err == nil {
+		t.Errorf("parseAuthenticatorData accepted 4-byte credentialId, want error")
+	}
+}
