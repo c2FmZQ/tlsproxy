@@ -321,6 +321,12 @@ func TestEnforceSSOPolicy(t *testing.T) {
 	proxy.cfg.Backends[0].SSO.Rules = []*SSORule{{
 		Paths: Strings{"/bar"},
 	}}
+	unauthReq := httptest.NewRequest("GET", "https://example.com/foo", nil)
+	unauthReq = unauthReq.WithContext(context.WithValue(context.Background(), connCtxKey, conn))
+	w = httptest.NewRecorder()
+	if got := proxy.cfg.Backends[0].enforceSSOPolicy(w, unauthReq, Strings{"pki"}); got != false {
+		t.Errorf("enforceSSOPolicy(unauthenticated, overrideScopes=pki) = %v, want false", got)
+	}
 	for _, tc := range []struct {
 		scope any
 		want  bool
