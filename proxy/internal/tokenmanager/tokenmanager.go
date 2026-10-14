@@ -158,6 +158,8 @@ func (tm *TokenManager) SetTrustedIssuers(issuers []jwks.Issuer) {
 }
 
 func (tm *TokenManager) HMAC(b []byte) []byte {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
 	mac := hmac.New(sha256.New, tm.keys.HMACKey)
 	mac.Write(b)
 	h := mac.Sum(nil)
@@ -204,7 +206,10 @@ func (tm *TokenManager) rotateKeys() (retErr error) {
 		keys.Keys = keys.Keys[1:]
 		changed = true
 	}
-	if !changed && len(tm.keys.Keys) > 0 {
+	tm.mu.Lock()
+	hasKeys := len(tm.keys.Keys) > 0
+	tm.mu.Unlock()
+	if !changed && hasKeys {
 		return nil
 	}
 
@@ -409,6 +414,9 @@ func (tm *TokenManager) CreateToken(claims jwt.Claims, alg string) (string, erro
 		if tk == nil || k.CreationTime.Add(2*time.Hour).Before(time.Now()) {
 			tk = k
 		}
+	}
+	if tk == nil {
+		return "", errors.New("no matching key found")
 	}
 	tok := jwt.NewWithClaims(&tpmSigningMethod{method}, claims)
 	tok.Header["kid"] = tk.ID

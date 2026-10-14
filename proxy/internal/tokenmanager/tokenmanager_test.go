@@ -124,3 +124,54 @@ func TestTokenManager(t *testing.T) {
 		})
 	}
 }
+
+func TestTokenManagerHMACRaceAndMissingKey(t *testing.T) {
+	rwc, err := simulator.Get()
+	if err != nil {
+		t.Fatalf("simulator.Get: %v", err)
+	}
+	tpmSim, err := tpm.New(tpm.WithTPM(rwc))
+	if err != nil {
+		t.Fatalf("tpm.New: %v", err)
+	}
+	defer tpmSim.Close()
+
+	dir := t.TempDir()
+	mk, err := crypto.CreateAESMasterKeyForTest()
+	if err != nil {
+		t.Fatalf("crypto.CreateMasterKey: %v", err)
+	}
+	store := storage.New(dir, mk)
+	tm, err := New(store, tpmSim, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// 1. Calling CreateToken with an unsupported key type (EdDSA on TPM) must return an error, not panic.
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("CreateToken panicked on missing key: %v", r)
+			}
+		}()
+		if _, err := tm.CreateToken(jwt.MapClaims{"sub": "test"}, "EdDSA"); err == nil {
+			t.Errorf("CreateToken(EdDSA) on TPM succeeded, want error")
+		}
+	}()
+
+	// 2. Concurrent HMAC() and rotateKeys() must not race on tm.keys.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 20; i++ {
+			tm.mu.Lock()
+			tm.keys.Keys = nil
+			tm.mu.Unlock()
+			_ = tm.rotateKeys()
+		}
+	}()
+	for i := 0; i < 100; i++ {
+		_ = tm.HMAC([]byte("test"))
+	}
+	<-done
+}
