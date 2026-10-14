@@ -34,7 +34,9 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"math"
 	"math/big"
 )
 
@@ -60,6 +62,9 @@ type JWK struct {
 
 // PublicKey returns the crypto.PublicKey from the JWK.
 func (k JWK) PublicKey() (crypto.PublicKey, error) {
+	if k.Use != "" && k.Use != "sig" {
+		return nil, fmt.Errorf("unsupported key use %q", k.Use)
+	}
 	switch k.Type {
 	case "EC":
 		var curve elliptic.Curve
@@ -81,7 +86,12 @@ func (k JWK) PublicKey() (crypto.PublicKey, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &ecdsa.PublicKey{Curve: curve, X: new(big.Int).SetBytes(x), Y: new(big.Int).SetBytes(y)}, nil
+		xBig := new(big.Int).SetBytes(x)
+		yBig := new(big.Int).SetBytes(y)
+		if xBig.Sign() <= 0 || yBig.Sign() <= 0 || !curve.IsOnCurve(xBig, yBig) {
+			return nil, errors.New("invalid EC public key point")
+		}
+		return &ecdsa.PublicKey{Curve: curve, X: xBig, Y: yBig}, nil
 	case "RSA":
 		n, err := base64.RawURLEncoding.DecodeString(k.N)
 		if err != nil {
@@ -91,11 +101,25 @@ func (k JWK) PublicKey() (crypto.PublicKey, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &rsa.PublicKey{N: new(big.Int).SetBytes(n), E: int(new(big.Int).SetBytes(eBytes).Int64())}, nil
+		nBig := new(big.Int).SetBytes(n)
+		eBig := new(big.Int).SetBytes(eBytes)
+		if nBig.BitLen() < 2048 {
+			return nil, errors.New("RSA modulus too small")
+		}
+		if !eBig.IsInt64() || eBig.Int64() < 3 || eBig.Int64() > math.MaxInt32 || eBig.Bit(0) == 0 {
+			return nil, errors.New("invalid RSA public exponent")
+		}
+		return &rsa.PublicKey{N: nBig, E: int(eBig.Int64())}, nil
 	case "OKP": // EdDSA
+		if k.Curve != "Ed25519" {
+			return nil, fmt.Errorf("unsupported OKP curve %q", k.Curve)
+		}
 		x, err := base64.RawURLEncoding.DecodeString(k.X)
 		if err != nil {
 			return nil, err
+		}
+		if len(x) != ed25519.PublicKeySize {
+			return nil, errors.New("invalid Ed25519 public key size")
 		}
 		return ed25519.PublicKey(x), nil
 	default:
@@ -123,10 +147,14 @@ func PublicKeyToJWK(pub crypto.PublicKey) *JWK {
 			return nil
 		}
 		size := (pub.Curve.Params().BitSize + 7) / 8
+		if pub.X == nil || pub.Y == nil || pub.X.Sign() < 0 || pub.Y.Sign() < 0 || len(pub.X.Bytes()) > size || len(pub.Y.Bytes()) > size {
+			return nil
+		}
 		xBytes := make([]byte, size)
 		yBytes := make([]byte, size)
 		pub.X.FillBytes(xBytes)
 		pub.Y.FillBytes(yBytes)
+
 		jwk = JWK{
 			Type:  "EC",
 			Use:   "sig",

@@ -474,6 +474,28 @@ func (tm *TokenManager) getKey(tok *jwt.Token) (interface{}, error) {
 	return nil, errors.New("not found")
 }
 
+func validateRemotePublicKey(pub crypto.PublicKey) error {
+	switch k := pub.(type) {
+	case *ecdsa.PublicKey:
+		if k.Curve == nil || k.X == nil || k.Y == nil || k.X.Sign() <= 0 || k.Y.Sign() <= 0 || !k.Curve.IsOnCurve(k.X, k.Y) {
+			return errors.New("invalid EC public key")
+		}
+		return nil
+	case *rsa.PublicKey:
+		if k.N == nil || k.N.BitLen() < 2048 || k.E < 3 || k.E%2 == 0 {
+			return errors.New("invalid RSA public key")
+		}
+		return nil
+	case ed25519.PublicKey:
+		if len(k) != ed25519.PublicKeySize {
+			return errors.New("invalid Ed25519 public key")
+		}
+		return nil
+	default:
+		return errors.New("unsupported public key type")
+	}
+}
+
 func (tm *TokenManager) getRemoteKey(issuer string) jwt.Keyfunc {
 	return func(tok *jwt.Token) (interface{}, error) {
 		kid, ok := tok.Header["kid"].(string)
@@ -486,7 +508,14 @@ func (tm *TokenManager) getRemoteKey(issuer string) jwt.Keyfunc {
 		if r == nil {
 			return nil, errors.New("not found")
 		}
-		return r.GetKey(kid)
+		pk, err := r.GetKey(kid)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateRemotePublicKey(pk); err != nil {
+			return nil, err
+		}
+		return pk, nil
 	}
 }
 

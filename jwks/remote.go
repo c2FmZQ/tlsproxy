@@ -218,6 +218,9 @@ func (r *Remote) backgroundJWKSRefresh(ctx context.Context, ti *trustedIssuer) {
 }
 
 func (r *Remote) fetchJWKS(ctx context.Context, ti *trustedIssuer) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
 	r.mu.Lock()
 	uri := ti.jwksURI
 	r.mu.Unlock()
@@ -250,19 +253,23 @@ func (r *Remote) fetchJWKS(ctx context.Context, ti *trustedIssuer) error {
 	}
 
 	// Parse Cache-Control
+	const maxTTLSeconds = 24 * 3600
 	ttl := time.Hour
 	if cc := resp.Header.Get("cache-control"); cc != "" {
 		for _, part := range strings.Split(cc, ",") {
 			part = strings.TrimSpace(part)
 			if strings.HasPrefix(part, "max-age=") {
 				if v, err := strconv.Atoi(part[8:]); err == nil && v > 0 {
+					if v > maxTTLSeconds {
+						v = maxTTLSeconds
+					}
 					ttl = time.Duration(v) * time.Second
 				}
 			}
 		}
 	}
 	if age := resp.Header.Get("age"); age != "" {
-		if v, err := strconv.Atoi(age); err == nil && v > 0 {
+		if v, err := strconv.Atoi(age); err == nil && v > 0 && v <= maxTTLSeconds {
 			ttl -= time.Duration(v) * time.Second
 		}
 	}

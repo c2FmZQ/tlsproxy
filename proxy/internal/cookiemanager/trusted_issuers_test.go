@@ -4,7 +4,9 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/base64"
+
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -314,5 +316,64 @@ func TestTrustedIssuersKidCollision(t *testing.T) {
 	}
 	if _, _, err := cmA.ValidateAuthTokenCookie(reqCrossLocal); err != nil {
 		t.Fatalf("ValidateAuthTokenCookie(same-instance trusted issuer): %v", err)
+	}
+}
+
+func TestTrustedIssuersInvalidJWK(t *testing.T) {
+	weakRSA, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey: %v", err)
+	}
+	weakJWK := jwks.PublicKeyToJWK(&weakRSA.PublicKey)
+	weakJWK.ID = "weak-rsa"
+
+	badJWKS := jwks.JWKS{
+		Keys: []jwks.JWK{*weakJWK},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "max-age=3600")
+		json.NewEncoder(w).Encode(badJWKS)
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	mk, err := crypto.CreateAESMasterKeyForTest()
+	if err != nil {
+		t.Fatalf("crypto.CreateMasterKey: %v", err)
+	}
+	store := storage.New(dir, mk)
+	tm, err := tokenmanager.New(store, nil, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	trustedIssuer := "https://bad-jwks.example.com/"
+	tm.SetTrustedIssuers([]jwks.Issuer{{
+		Issuer:  trustedIssuer,
+		JWKSURI: server.URL,
+	}})
+	time.Sleep(100 * time.Millisecond)
+
+	cm := New(tm, "idp", "example.com", "https://idp.example.com/", 0, []string{trustedIssuer})
+
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"iss":       trustedIssuer,
+		"aud":       trustedIssuer,
+		"sub":       "user1",
+		"email":     "user1@example.com",
+		"exp":       time.Now().Add(time.Hour).Unix(),
+		"proxyauth": trustedIssuer,
+	})
+	tok.Header["kid"] = "weak-rsa"
+	rawToken, err := tok.SignedString(weakRSA)
+	if err != nil {
+		t.Fatalf("SignedString: %v", err)
+	}
+
+	req, _ := http.NewRequest("GET", "https://example.com/", nil)
+	req.AddCookie(&http.Cookie{Name: tlsProxyAuthCookie, Value: rawToken})
+
+	if _, _, err := cm.ValidateAuthTokenCookie(req); err == nil {
+		t.Fatal("ValidateAuthTokenCookie succeeded with weak 1024-bit RSA key, want error")
 	}
 }
