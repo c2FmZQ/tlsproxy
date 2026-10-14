@@ -338,6 +338,7 @@ func (be *Backend) reverseProxy() http.Handler {
 
 		if sanitizePath {
 			req.URL.Path = cleanPath
+			req.URL.RawPath = ""
 		}
 		delHeaderVariants(req.Header, xForwardedForHeader)
 		delHeaderVariants(req.Header, xFCCHeader)
