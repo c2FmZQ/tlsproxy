@@ -391,6 +391,19 @@ func (cm *CookieManager) ValidateIDTokenCookie(req *http.Request, authToken *jwt
 	if c2, ok := tok.Claims.(jwt.MapClaims); !ok || c2["sub"] != c["sub"] || c2["sid"] != c["sid"] {
 		return errors.New("sid mismatch")
 	}
+	cookies := req.Cookies()
+	req.Header.Del("Cookie")
+	kept := false
+	for _, c := range cookies {
+		if strings.EqualFold(c.Name, tlsProxyIDTokenCookie) {
+			if !kept && c.Name == tlsProxyIDTokenCookie && c.Value == cookie.Value {
+				req.AddCookie(c)
+				kept = true
+			}
+			continue
+		}
+		req.AddCookie(c)
+	}
 	// Token is already set, and is valid.
 	return nil
 }
@@ -425,7 +438,19 @@ func FilterOutAuthTokenCookie(req *http.Request) {
 	cookies := req.Cookies()
 	req.Header.Del("Cookie")
 	for _, c := range cookies {
-		if c.Name != tlsProxyAuthCookie {
+		if !strings.EqualFold(c.Name, tlsProxyAuthCookie) &&
+			!strings.EqualFold(c.Name, tlsProxyNonce) &&
+			!strings.EqualFold(c.Name, tlsProxySAMLNonce) {
+			req.AddCookie(c)
+		}
+	}
+}
+
+func FilterOutIDTokenCookie(req *http.Request) {
+	cookies := req.Cookies()
+	req.Header.Del("Cookie")
+	for _, c := range cookies {
+		if !strings.EqualFold(c.Name, tlsProxyIDTokenCookie) {
 			req.AddCookie(c)
 		}
 	}

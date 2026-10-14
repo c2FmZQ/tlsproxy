@@ -38,6 +38,7 @@ import (
 
 	jwt "github.com/golang-jwt/jwt/v5"
 
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/idp"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/passkeys"
@@ -111,6 +112,8 @@ func (be *Backend) authenticateUser(w http.ResponseWriter, req **http.Request) b
 				sid.SetSessionID(w, *req, tokenHash)
 			}
 		}
+	} else {
+		cookiemanager.FilterOutIDTokenCookie(*req)
 	}
 	return true
 }
@@ -130,27 +133,33 @@ func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (claim
 				return nil, "", false, false
 			}
 		}
+		cookiemanager.FilterOutIDTokenCookie(req)
 		return c, "", true, true
 	}
 
 	authToken, tokenHash, err := be.SSO.cm.ValidateAuthTokenCookie(req)
 	if err != nil {
+		cookiemanager.FilterOutIDTokenCookie(req)
 		return nil, "", false, true
 	}
 	authClaims, ok := authToken.Claims.(jwt.MapClaims)
 	if !ok {
+		cookiemanager.FilterOutIDTokenCookie(req)
 		return nil, "", false, true
 	}
 	email, ok := authClaims["email"].(string)
 	if !ok || email == "" {
+		cookiemanager.FilterOutIDTokenCookie(req)
 		return nil, "", false, true
 	}
 
 	if !be.SSO.GenerateIDTokens {
+		cookiemanager.FilterOutIDTokenCookie(req)
 		return authClaims, tokenHash, false, true
 	}
 
 	if !slices.Contains(be.ServerNames, hostFromReq(req)) {
+		cookiemanager.FilterOutIDTokenCookie(req)
 		return authClaims, tokenHash, false, true
 	}
 

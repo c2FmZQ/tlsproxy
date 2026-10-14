@@ -600,3 +600,51 @@ func TestSSOStatusWithoutSSO(t *testing.T) {
 		t.Errorf("POST: body %q, want %q", got, want)
 	}
 }
+
+func TestStripUnvalidatedIDTokenAndInternalCookies(t *testing.T) {
+	proxy := newBackendSSOTestProxy(t)
+	be := proxy.cfg.Backends[0]
+	conn := netw.NewConnForTest(testConn{})
+	conn.SetAnnotation(serverNameKey, "example.com")
+
+	// 1. Unauthenticated request with forged/stale TLSPROXYIDTOKEN and internal cookies.
+	req := httptest.NewRequest("GET", "https://example.com/public", nil)
+	req = req.WithContext(context.WithValue(req.Context(), connCtxKey, conn))
+	req.AddCookie(&http.Cookie{Name: "TLSPROXYIDTOKEN", Value: "forged-id-token"})
+	req.AddCookie(&http.Cookie{Name: "TLSPROXYNONCE", Value: "nonce1"})
+	req.AddCookie(&http.Cookie{Name: "TLSPROXYSAMLNONCE", Value: "nonce2"})
+	req.AddCookie(&http.Cookie{Name: "__tlsproxySid", Value: "sid1"})
+	req.AddCookie(&http.Cookie{Name: "app_cookie", Value: "keep-me"})
+
+	be.SSO.Rules = []*SSORule{{Paths: Strings{"/private"}}}
+	w := httptest.NewRecorder()
+	if !be.authenticateUser(w, &req) {
+		t.Fatalf("authenticateUser() = false")
+	}
+	if !be.handleLocalEndpointsAndAuthorize(w, req) {
+		t.Fatalf("handleLocalEndpointsAndAuthorize() = false")
+	}
+	for _, stripped := range []string{"TLSPROXYIDTOKEN", "TLSPROXYAUTH", "TLSPROXYNONCE", "TLSPROXYSAMLNONCE", "__tlsproxySid"} {
+		if c, err := req.Cookie(stripped); err == nil {
+			t.Errorf("Unvalidated/internal cookie %s=%q was not stripped", stripped, c.Value)
+		}
+	}
+	if c, err := req.Cookie("app_cookie"); err != nil || c.Value != "keep-me" {
+		t.Errorf("app_cookie = %v, %v; want keep-me", c, err)
+	}
+
+	// 2. Bearer token authentication must also strip any accompanying TLSPROXYIDTOKEN cookie.
+	req2 := httptest.NewRequest("GET", "https://example.com/public", nil)
+	req2 = req2.WithContext(context.WithValue(req2.Context(), connCtxKey, conn))
+	if err := setAuthHeader(req2, "foo", "bob@", "example.com", "https://example.com/", proxy.tokenManager); err != nil {
+		t.Fatalf("setAuthHeader: %v", err)
+	}
+	req2.AddCookie(&http.Cookie{Name: "TLSPROXYIDTOKEN", Value: "stale-id-token"})
+	w = httptest.NewRecorder()
+	if !be.authenticateUser(w, &req2) {
+		t.Fatalf("authenticateUser(bearer) = false")
+	}
+	if c, err := req2.Cookie("TLSPROXYIDTOKEN"); err == nil {
+		t.Errorf("TLSPROXYIDTOKEN=%q was not stripped on Bearer auth request", c.Value)
+	}
+}

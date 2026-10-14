@@ -480,8 +480,9 @@ func (be *Backend) checkScopes(want []string, w http.ResponseWriter, req *http.R
 // continue.
 func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *http.Request) bool {
 	defer func() {
-		// Filter out the tlsproxy auth cookie.
+		// Filter out the tlsproxy auth and session cookies.
 		cookiemanager.FilterOutAuthTokenCookie(req)
+		sid.FilterOutSessionCookie(req)
 	}()
 
 	reqHost := hostFromReq(req)

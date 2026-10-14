@@ -90,3 +90,13 @@ func SessionID(w http.ResponseWriter, req *http.Request) string {
 	}
 	return ""
 }
+
+func FilterOutSessionCookie(req *http.Request) {
+	cookies := req.Cookies()
+	req.Header.Del("Cookie")
+	for _, c := range cookies {
+		if !IsCookie(c.Name) {
+			req.AddCookie(c)
+		}
+	}
+}
