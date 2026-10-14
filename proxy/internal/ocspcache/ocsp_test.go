@@ -218,6 +218,33 @@ func TestVerifyChains(t *testing.T) {
 			},
 			wantErr: errOCSPRevoked,
 		},
+		{
+			name: "Fetched good from expired delegated responder",
+			fetched: func(leaf *testCert) []byte {
+				expResponder := newTestCert(t, &x509.Certificate{
+					Subject:     pkix.Name{CommonName: "Expired OCSP responder"},
+					ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageOCSPSigning},
+				}, ca)
+				// Re-sign responder cert with past NotBefore/NotAfter.
+				tmpl := *expResponder.cert
+				tmpl.NotBefore = now.Add(-2 * time.Hour)
+				tmpl.NotAfter = now.Add(-time.Hour)
+				der, err := x509.CreateCertificate(rand.Reader, &tmpl, ca.cert, expResponder.key.Public(), ca.key)
+				if err != nil {
+					t.Fatalf("CreateCertificate: %v", err)
+				}
+				expResponder.cert, _ = x509.ParseCertificate(der)
+				return newOCSPResponse(t, leaf, ca, expResponder, ocsp.Good, now, now.Add(time.Hour))
+			},
+			wantErr: errOCSPProtocol,
+		},
+		{
+			name: "Fetched old good without NextUpdate",
+			fetched: func(leaf *testCert) []byte {
+				return newOCSPResponse(t, leaf, ca, ca, ocsp.Good, now.Add(-48*time.Hour), time.Time{})
+			},
+			wantErr: errOCSPProtocol,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mk, err := storagecrypto.CreateAESMasterKeyForTest()
@@ -238,4 +265,49 @@ func TestVerifyChains(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("Invalid OCSPServer URL fails closed", func(t *testing.T) {
+		mk, err := storagecrypto.CreateAESMasterKeyForTest()
+		if err != nil {
+			t.Fatalf("CreateAESMasterKeyForTest: %v", err)
+		}
+		c := New(storage.New(t.TempDir(), mk), testLogger{t})
+		badLeaf := newTestCert(t, &x509.Certificate{
+			Subject:     pkix.Name{CommonName: "bad-leaf"},
+			OCSPServer:  []string{"://invalid-url"},
+			ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		}, ca)
+		chains := [][]*x509.Certificate{{badLeaf.cert, ca.cert}}
+		if err := c.VerifyChains(context.Background(), chains, nil); err != errOCSPInternal {
+			t.Errorf("VerifyChains(invalid URL) = %v, want %v", err, errOCSPInternal)
+		}
+	})
+
+	t.Run("Unknown not cached and margin refresh fallback", func(t *testing.T) {
+		mk, err := storagecrypto.CreateAESMasterKeyForTest()
+		if err != nil {
+			t.Fatalf("CreateAESMasterKeyForTest: %v", err)
+		}
+		c := New(storage.New(t.TempDir(), mk), testLogger{t})
+		leaf := newLeaf()
+		chains := [][]*x509.Certificate{{leaf.cert, ca.cert}}
+
+		// 1. Responder returns Unknown with NextUpdate in the future; it must not be cached.
+		serverResponse = newOCSPResponse(t, leaf, ca, ca, ocsp.Unknown, now, now.Add(time.Hour))
+		if err := c.VerifyChains(context.Background(), chains, nil); err != errOCSPUnknown {
+			t.Fatalf("VerifyChains(Unknown) = %v, want %v", err, errOCSPUnknown)
+		}
+		// Subsequent call when responder has the cert (Good) must succeed rather than serving cached Unknown.
+		serverResponse = newOCSPResponse(t, leaf, ca, ca, ocsp.Good, now, now.Add(30*time.Minute))
+		if err := c.VerifyChains(context.Background(), chains, nil); err != nil {
+			t.Errorf("VerifyChains(Good after Unknown) = %v, want nil (Unknown was cached)", err)
+		}
+
+		// 2. When refreshing within margin (1h > 30m remaining) fails, Response must return the unexpired cached staple.
+		serverResponse = []byte("invalid-ocsp-response")
+		resp, err := c.Response(context.Background(), leaf.cert, ca.cert, time.Hour)
+		if err != nil || resp == nil || resp.Status != ocsp.Good {
+			t.Errorf("Response(margin=1h) on refresh failure = (%v, %v), want cached Good response", resp, err)
+		}
+	})
 }
