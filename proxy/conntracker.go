@@ -32,22 +32,17 @@ func newConnTracker() *connTracker {
 	return &connTracker{}
 }
 
-type connKey struct {
-	dst string
-	src string
-}
-
 type connTracker struct {
 	mu    sync.Mutex
-	conns map[connKey]annotatedConnection
+	conns map[annotatedConnection]struct{}
 }
 
 func (t *connTracker) slice() []annotatedConnection {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	out := make([]annotatedConnection, 0, len(t.conns))
-	for _, v := range t.conns {
-		out = append(out, v)
+	for c := range t.conns {
+		out = append(out, c)
 	}
 	return out
 }
@@ -56,18 +51,16 @@ func (t *connTracker) add(c annotatedConnection) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.conns == nil {
-		t.conns = make(map[connKey]annotatedConnection)
+		t.conns = make(map[annotatedConnection]struct{})
 	}
-	cc := localNetConn(c)
-	t.conns[connKey{src: cc.LocalAddr().String(), dst: cc.RemoteAddr().String()}] = c
+	t.conns[c] = struct{}{}
 	return len(t.conns)
 }
 
 func (t *connTracker) remove(c annotatedConnection) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	cc := localNetConn(c)
-	delete(t.conns, connKey{src: cc.LocalAddr().String(), dst: cc.RemoteAddr().String()})
+	delete(t.conns, c)
 	return len(t.conns)
 }
 

@@ -946,3 +946,46 @@ func TestQUICStreamRateLimit(t *testing.T) {
 		t.Fatalf("quicGet #2 = %q, %v, want rate limit error", got, err)
 	}
 }
+
+type migratableTestConn struct {
+	net.Conn
+	local      net.Addr
+	remote     net.Addr
+	annotation map[string]any
+}
+
+func (c *migratableTestConn) LocalAddr() net.Addr            { return c.local }
+func (c *migratableTestConn) RemoteAddr() net.Addr           { return c.remote }
+func (c *migratableTestConn) Annotation(k string, d any) any { return d }
+func (c *migratableTestConn) SetAnnotation(k string, v any)  {}
+func (c *migratableTestConn) BytesSent() int64               { return 0 }
+func (c *migratableTestConn) BytesReceived() int64           { return 0 }
+func (c *migratableTestConn) ByteRateSent() float64          { return 0 }
+func (c *migratableTestConn) ByteRateReceived() float64      { return 0 }
+
+func TestConnTrackerQUICCollisionAndMigration(t *testing.T) {
+	tr := newConnTracker()
+	local := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 443}
+	remote1 := &net.UDPAddr{IP: net.ParseIP("192.0.2.1"), Port: 50000}
+	remote2 := &net.UDPAddr{IP: net.ParseIP("198.51.100.2"), Port: 60000}
+
+	// Two distinct QUIC connections from the same UDP 4-tuple.
+	c1 := &migratableTestConn{local: local, remote: remote1}
+	c2 := &migratableTestConn{local: local, remote: remote1}
+
+	if n := tr.add(c1); n != 1 {
+		t.Fatalf("tr.add(c1) = %d, want 1", n)
+	}
+	if n := tr.add(c2); n != 2 {
+		t.Fatalf("tr.add(c2) with same 4-tuple = %d, want 2", n)
+	}
+	if n := tr.remove(c2); n != 1 {
+		t.Fatalf("tr.remove(c2) = %d, want 1 (c1 should still be tracked)", n)
+	}
+
+	// Simulate QUIC connection migration on c1 before removal.
+	c1.remote = remote2
+	if n := tr.remove(c1); n != 0 {
+		t.Fatalf("tr.remove(c1) after address migration = %d, want 0", n)
+	}
+}
