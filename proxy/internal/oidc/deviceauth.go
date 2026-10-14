@@ -238,15 +238,28 @@ func (s *ProviderServer) ServeDeviceVerification(w http.ResponseWriter, req *htt
 	}
 
 	claims := jwt.MapClaims{}
-	for k, v := range userClaims {
-		if slices.Contains([]string{
-			"proxyauth",
-			"source",
-			"hhash",
-		}, k) {
-			continue
+	for _, k := range []string{
+		"sub",
+		"email",
+		"email_verified",
+		"name",
+		"family_name",
+		"given_name",
+		"middle_name",
+		"nickname",
+		"preferred_username",
+		"profile",
+		"picture",
+		"website",
+		"gender",
+		"birthdate",
+		"zoneinfo",
+		"locale",
+		"sid",
+	} {
+		if v := userClaims[k]; v != nil {
+			claims[k] = v
 		}
-		claims[k] = v
 	}
 	ttl := defaultTokenLifetime
 	if s.opts.TokenLifetime > 0 {

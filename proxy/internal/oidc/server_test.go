@@ -99,6 +99,34 @@ func TestRewriteRules(t *testing.T) {
 	if want, got := "jdoe", out["username2"]; want != got {
 		t.Errorf("username2 = %q, want %q", got, want)
 	}
+
+	outReserved := jwt.MapClaims{
+		"sub":   "original-sub",
+		"scope": []string{"openid"},
+	}
+	rrReserved := []RewriteRule{
+		{InputClaim: "email", OutputClaim: "sub", Regex: "^(.*)$", Value: "admin"},
+		{InputClaim: "email", OutputClaim: "proxyauth", Regex: "^(.*)$", Value: "https://idp.example.com"},
+		{InputClaim: "email", OutputClaim: "scope", Regex: "^(.*)$", Value: "admin"},
+		{InputClaim: "email", OutputClaim: "client_id", Regex: "^(.*)$", Value: "other-client"},
+		{InputClaim: "email", OutputClaim: "groups", Regex: "^(.*)$", Value: "admins"},
+	}
+	s.applyRewriteRules(rrReserved, in, outReserved)
+	if got := outReserved["sub"]; got != "original-sub" {
+		t.Errorf("RewriteRule overwrote reserved claim sub = %v", got)
+	}
+	if got := outReserved["proxyauth"]; got != nil {
+		t.Errorf("RewriteRule set reserved claim proxyauth = %v", got)
+	}
+	if _, ok := outReserved["scope"].([]string); !ok {
+		t.Errorf("RewriteRule overwrote reserved claim scope = %v", outReserved["scope"])
+	}
+	if got := outReserved["client_id"]; got != nil {
+		t.Errorf("RewriteRule set reserved claim client_id = %v", got)
+	}
+	if got := outReserved["groups"]; got != nil {
+		t.Errorf("RewriteRule set reserved claim groups = %v", got)
+	}
 }
 
 func TestAuthorizationSameUser(t *testing.T) {

@@ -706,7 +706,16 @@ func (s *ProviderServer) applyRewriteRules(rules []RewriteRule, in, out jwt.MapC
 		}
 		return ""
 	}
+	reserved := []string{
+		"sub", "iss", "aud", "exp", "iat", "nbf", "jti",
+		"proxyauth", "provider", "hhash", "sid", "th", "depth",
+		"client_id", "scope", "groups", "nonce",
+	}
 	for _, rr := range rules {
+		if slices.Contains(reserved, rr.OutputClaim) {
+			s.opts.Logger.Errorf("ERR REGEX %q: output claim %q is reserved", rr.Regex, rr.OutputClaim)
+			continue
+		}
 		var input string
 		if strings.Contains(rr.InputClaim, "$") {
 			input = os.Expand(rr.InputClaim, getClaim)

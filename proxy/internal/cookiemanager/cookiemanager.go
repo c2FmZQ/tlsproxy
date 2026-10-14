@@ -93,8 +93,12 @@ func (cm *CookieManager) SetAuthTokenCookie(w http.ResponseWriter, req *http.Req
 		"sid":       sessionID,
 	}
 	if extraClaims != nil {
+		reserved := []string{
+			"scope", "client_id", "th", "depth", "groups",
+			"iss", "aud", "exp", "iat", "nbf", "jti",
+		}
 		for k, v := range extraClaims {
-			if _, exists := claims[k]; exists {
+			if _, exists := claims[k]; exists || slices.Contains(reserved, k) {
 				continue
 			}
 			claims[k] = v
