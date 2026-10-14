@@ -57,6 +57,7 @@ import (
 	"golang.org/x/net/http2/h2c"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
@@ -1685,4 +1686,68 @@ func (c *pkiCert) TLSConfig() *tls.Config {
 
 func newPtr[T any](v T) *T {
 	return &v
+}
+
+type closeTrackingConn struct {
+	testConn
+	closed bool
+}
+
+func (c *closeTrackingConn) Close() error {
+	c.closed = true
+	return nil
+}
+
+func (c *closeTrackingConn) RemoteAddr() net.Addr {
+	return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12345}
+}
+
+func TestReAuthorizeNilBackendAndClientAuth(t *testing.T) {
+	intCA, err := certmanager.New("internal-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
+			Backends: []*Backend{
+				{
+					ServerNames:  Strings{"example.com"},
+					Mode:         "LOCAL",
+					DocumentRoot: ".",
+					ClientAuth: &ClientAuth{
+						RootCAs: Strings{intCA.RootCAPEM()},
+					},
+				},
+			},
+		},
+		extCA,
+	)
+
+	// 1. Connection with serverNameKey set but backendKey still nil must not panic in reAuthorize().
+	tc1 := &closeTrackingConn{}
+	c1 := netw.NewConnForTest(tc1)
+	c1.SetAnnotation(serverNameKey, "example.com")
+	proxy.inConns.add(c1)
+
+	// 2. Connection established without clientCert when ClientAuth (ACL==nil) is enabled must be closed.
+	tc2 := &closeTrackingConn{}
+	c2 := netw.NewConnForTest(tc2)
+	c2.SetAnnotation(serverNameKey, "example.com")
+	c2.SetAnnotation(backendKey, proxy.cfg.Backends[0])
+	c2.SetAnnotation(handshakeDoneKey, time.Now())
+	proxy.inConns.add(c2)
+
+	proxy.reAuthorize()
+
+	if !tc2.closed {
+		t.Errorf("reAuthorize() did not close connection without clientCert when ClientAuth is enabled")
+	}
 }

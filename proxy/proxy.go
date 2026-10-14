@@ -999,7 +999,11 @@ func (p *Proxy) reAuthorize() {
 			conn.Close()
 			continue
 		}
-		if oldBE := connBackend(conn); be.Mode != oldBE.Mode {
+		oldBE := connBackend(conn)
+		if oldBE == nil {
+			continue
+		}
+		if be.Mode != oldBE.Mode {
 			be.logErrorF("INF [-] ReAuth %s ➔  %q backend mode changed %s->%s", conn.RemoteAddr(), idnaToUnicode(serverName), oldBE.Mode, be.Mode)
 			conn.Close()
 			continue
@@ -1014,13 +1018,19 @@ func (p *Proxy) reAuthorize() {
 			continue
 		}
 		clientCert := connClientCert(conn)
+		if clientCert == nil {
+			if _, isTCP := conn.(*netw.Conn); isTCP && oldBE.ClientAuth != nil && conn.Annotation(handshakeDoneKey, nil) == nil {
+				continue
+			}
+			p.recordEvent(fmt.Sprintf("deny no cert to %s", idnaToUnicode(serverName)))
+			be.logErrorF("BAD [-] ReAuth %s ➔ %q no client cert", conn.RemoteAddr(), idnaToUnicode(serverName))
+			conn.Close()
+			continue
+		}
 		if err := be.authorize(clientCert); err != nil {
 			p.recordEvent(err.Error())
 			be.logErrorF("BAD [-] ReAuth %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), idnaToUnicode(serverName), certSummary(clientCert), err)
 			conn.Close()
-			continue
-		}
-		if clientCert == nil {
 			continue
 		}
 		if m, ok := be.pkiMap[hex.EncodeToString(clientCert.AuthorityKeyId)]; ok && m.IsRevoked(clientCert.SerialNumber) {
@@ -1479,7 +1489,6 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 		be.logErrorF("BAD [-] %s ➔ %q Handshake: %v", conn.RemoteAddr(), idnaToUnicode(serverName), unwrapErr(err))
 		return false
 	}
-	annotatedConn(conn).SetAnnotation(handshakeDoneKey, time.Now())
 	cs := conn.ConnectionState()
 	if (cs.ServerName == "" && serverName != p.defaultServerName()) || (cs.ServerName != "" && cs.ServerName != serverName) {
 		p.recordEvent("mismatched server name")
@@ -1493,6 +1502,7 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 	}
 	annotatedConn(conn).SetAnnotation(protoKey, proto)
 	annotatedConn(conn).SetAnnotation(clientCertKey, clientCert)
+	annotatedConn(conn).SetAnnotation(handshakeDoneKey, time.Now())
 
 	// The check below is also done in VerifyConnection.
 	if be.ClientAuth != nil && be.ClientAuth.ACL != nil {

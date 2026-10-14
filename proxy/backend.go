@@ -269,7 +269,13 @@ func writeProxyHeader(v byte, out io.Writer, in anyConn) error {
 }
 
 func (be *Backend) authorize(cert *x509.Certificate) error {
-	if be.ClientAuth == nil || be.ClientAuth.ACL == nil {
+	if be.ClientAuth == nil {
+		return nil
+	}
+	if cert == nil {
+		return tlsCertificateRequired
+	}
+	if be.ClientAuth.ACL == nil {
 		return nil
 	}
 	if be.aclMatcher.certMatches(*be.ClientAuth.ACL, cert) {
