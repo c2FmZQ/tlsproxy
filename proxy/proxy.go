@@ -568,6 +568,9 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				},
 			)
 			if m, ok := be.SSO.p.(*passkeys.Manager); ok {
+				for _, r := range be.SSO.Rules {
+					m.SetACL((*[]string)(r.ACL))
+				}
 				be.localHandlers = append(be.localHandlers,
 					localHandler{
 						desc:    "Manage Passkeys",
@@ -827,14 +830,6 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			h.host = host
 			h.path = path
 			be.localHandlers = append(be.localHandlers, h)
-
-			if h.isCallback && be.SSO != nil {
-				if m, ok := be.SSO.p.(*passkeys.Manager); ok {
-					for _, r := range be.SSO.Rules {
-						m.SetACL((*[]string)(r.ACL))
-					}
-				}
-			}
 		}
 	}
 	if cfg.ECH != nil {
@@ -870,6 +865,22 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			csrfBypass: true,
 			isCallback: true,
 		}, p.callback)
+		if m, ok := p.identityProvider.(*passkeys.Manager); ok {
+			if host, _, _, err := hostAndPath(p.callback); err == nil {
+				if be, exists := backends[beKey{serverName: host}]; exists && (be.SSO == nil || be.SSO.p != m) {
+					addLocalHandler(localHandler{
+						desc:    "Manage Passkeys",
+						handler: logHandler(http.HandlerFunc(m.ManageKeys)),
+						scopes:  Strings{scopePasskeys},
+					}, "https://"+host+"/.sso/passkeys")
+					addLocalHandler(localHandler{
+						desc:      "List of Passkey Endpoints",
+						handler:   logHandler(http.HandlerFunc(m.ServeWellKnown)),
+						ssoBypass: true,
+					}, "https://"+host+"/.well-known/passkey-endpoints")
+				}
+			}
+		}
 	}
 	for _, pp := range cfg.PKI {
 		addLocalHandler(localHandler{

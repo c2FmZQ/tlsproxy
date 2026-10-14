@@ -143,7 +143,8 @@ type Manager struct {
 		Handles  map[string]*user
 		Subjects map[string]string
 	}
-	acl *[]string
+	acl      *[]string
+	allowAll bool
 
 	mu         sync.Mutex
 	challenges *idp.PendingLogins[*challenge]
@@ -166,6 +167,11 @@ type nonceData struct {
 
 func (m *Manager) SetACL(acl *[]string) {
 	if acl == nil {
+		m.allowAll = true
+		m.acl = nil
+		return
+	}
+	if m.allowAll {
 		return
 	}
 	if m.acl == nil {
@@ -535,6 +541,11 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 	here := req.URL.String()
 
 	claims := fromctx.Claims(req.Context())
+	if claims == nil || claims["passkey_hash"] == nil {
+		if tok, _, err := m.cfg.CookieManager.ValidateAuthTokenCookie(req); err == nil {
+			claims, _ = tok.Claims.(jwt.MapClaims)
+		}
+	}
 	var iat time.Time
 	if claims != nil {
 		if p, _ := claims.GetIssuedAt(); p != nil {
