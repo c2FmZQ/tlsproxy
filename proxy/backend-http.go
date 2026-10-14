@@ -256,7 +256,8 @@ func (be *Backend) reverseProxy() http.Handler {
 
 		// Apply the forward rate limit. The first request was already
 		// counted when the connection was established.
-		if conn, ok := ctx.Value(connCtxKey).(annotatedConnection); ok {
+		if ac, ok := ctx.Value(connCtxKey).(anyConn); ok {
+			conn := annotatedConn(ac)
 			if !conn.Annotation(requestFlagKey, false).(bool) {
 				conn.SetAnnotation(requestFlagKey, true)
 			} else if err := be.waitConnLimit(ctx); err != nil {

@@ -591,3 +591,89 @@ func TestConnectionHeaderStripping(t *testing.T) {
 		t.Errorf("Loop StatusCode = %d, want %d", respLoop.StatusCode, http.StatusLoopDetected)
 	}
 }
+
+func TestForwardRateLimitKeepAlive(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	l, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	s := http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	}
+	go s.Serve(l)
+	defer s.Close()
+
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
+			Backends: []*Backend{
+				{
+					ServerNames: Strings{"http.example.com"},
+					Mode:        "HTTP",
+					Addresses:   Strings{l.Addr().String()},
+				},
+			},
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	defer proxy.Stop()
+
+	// Allow 1 token every 100s (taken by initial TLS connection establishment).
+	proxy.mu.Lock()
+	for _, b := range proxy.backends {
+		b.connLimit = rate.NewLimiter(rate.Every(100*time.Second), 1)
+	}
+	proxy.mu.Unlock()
+
+	conn, err := tls.Dial("tcp", proxy.listener.Addr().String(), &tls.Config{
+		ServerName: "http.example.com",
+		RootCAs:    extCA.RootCACertPool(),
+		NextProtos: []string{"http/1.1"},
+	})
+	if err != nil {
+		t.Fatalf("tls.Dial: %v", err)
+	}
+	defer conn.Close()
+
+	br := bufio.NewReader(conn)
+	// First request on the connection uses the token already consumed at connection time.
+	if _, err := conn.Write([]byte("HEAD / HTTP/1.1\r\nHost: http.example.com\r\n\r\n")); err != nil {
+		t.Fatalf("Write #1: %v", err)
+	}
+	resp1, err := http.ReadResponse(br, &http.Request{Method: "HEAD"})
+	if err != nil {
+		t.Fatalf("ReadResponse #1: %v", err)
+	}
+	resp1.Body.Close()
+	if resp1.StatusCode != http.StatusOK {
+		t.Fatalf("resp1.StatusCode = %d, want 200", resp1.StatusCode)
+	}
+
+	// Second request on the same keep-alive TLS connection must be rate-limited.
+	if _, err := conn.Write([]byte("HEAD / HTTP/1.1\r\nHost: http.example.com\r\n\r\n")); err != nil {
+		t.Fatalf("Write #2: %v", err)
+	}
+	resp2, err := http.ReadResponse(br, &http.Request{Method: "HEAD"})
+	if err != nil {
+		t.Fatalf("ReadResponse #2: %v", err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode == http.StatusOK {
+		t.Fatalf("resp2.StatusCode = %d, want rate limit failure (500)", resp2.StatusCode)
+	}
+}
