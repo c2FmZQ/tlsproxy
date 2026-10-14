@@ -317,18 +317,21 @@ func (be *Backend) reverseProxy() http.Handler {
 		// Detect forwarding loops using the via headers.
 		me := localNetConn(req.Context().Value(connCtxKey).(anyConn)).LocalAddr().String()
 		var hops []string
-		if h := req.Header.Get(viaHeader); h != "" {
-			hops = commaRE.Split(h, -1)
+		for _, h := range req.Header.Values(viaHeader) {
+			if h != "" {
+				hops = append(hops, commaRE.Split(h, -1)...)
+			}
 		}
 		for _, via := range hops {
 			if _, via, _ = strings.Cut(via, " "); via == me {
 				if req.Body != nil {
 					req.Body.Close()
 				}
-				http.Error(w, req.Header.Get(viaHeader), http.StatusLoopDetected)
+				http.Error(w, strings.Join(req.Header.Values(viaHeader), ", "), http.StatusLoopDetected)
 				return
 			}
 		}
+		cleanConnectionHeaders(req.Header)
 		hops = append(hops, req.Proto+" "+me)
 		req.Header.Set(viaHeader, strings.Join(hops, ", "))
 
@@ -352,6 +355,14 @@ func (be *Backend) reverseProxy() http.Handler {
 				}
 			}
 		}
+		if be.SSO != nil && be.SSO.SetUserIDHeader {
+			if claims := fromctx.Claims(req.Context()); claims != nil {
+				if email, ok := claims["email"].(string); ok && email != "" {
+					req.Header.Set(xTLSProxyUserIDHeader, email)
+				}
+			}
+		}
+
 		// A value of -1 for ContentLength indicates that the size of
 		// request's body is unknown or that the client did not specify
 		// it.
@@ -621,5 +632,33 @@ func filterOutProxyCookies(h http.Header) {
 			continue
 		}
 		h.Add("Set-Cookie", c)
+	}
+}
+
+// cleanConnectionHeaders removes client-specified hop-by-hop headers before the
+// proxy adds its own headers, preventing a client Connection header from
+// instructing httputil.ReverseProxy to strip proxy-injected headers.
+func cleanConnectionHeaders(h http.Header) {
+	connHeaders := h.Values("Connection")
+	if len(connHeaders) == 0 {
+		return
+	}
+	hasUpgrade := false
+	for _, v := range connHeaders {
+		for _, f := range commaRE.Split(v, -1) {
+			f = strings.TrimSpace(f)
+			if f == "" {
+				continue
+			}
+			if strings.EqualFold(f, "upgrade") && h.Get("Upgrade") != "" {
+				hasUpgrade = true
+				continue
+			}
+			delHeaderVariants(h, f)
+		}
+	}
+	delHeaderVariants(h, "Connection")
+	if hasUpgrade {
+		h.Set("Connection", "upgrade")
 	}
 }

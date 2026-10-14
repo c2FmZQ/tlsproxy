@@ -486,3 +486,108 @@ func TestBackendCannotSetProxyCookies(t *testing.T) {
 		t.Errorf("Cookies = %v, want %v", names, want)
 	}
 }
+
+func TestConnectionHeaderStripping(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	clientCA, err := certmanager.New("client-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+
+	var gotHeaders http.Header
+	l, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	s := http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			gotHeaders = req.Header.Clone()
+			w.WriteHeader(http.StatusOK)
+		}),
+	}
+	go s.Serve(l)
+	defer s.Close()
+
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
+			Backends: []*Backend{
+				{
+					ServerNames: Strings{"http.example.com"},
+					Mode:        "HTTP",
+					Addresses:   Strings{l.Addr().String()},
+					ForwardHTTPHeaders: map[string]string{
+						"X-Custom-Header": "custom-value",
+					},
+					ClientAuth: &ClientAuth{
+						RootCAs:             Strings{clientCA.RootCAPEM()},
+						AddClientCertHeader: Strings{"subject"},
+					},
+				},
+			},
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	defer proxy.Stop()
+
+	clientCert, err := clientCA.GetCert("client.example.com")
+	if err != nil {
+		t.Fatalf("clientCA.GetCert: %v", err)
+	}
+
+	msg := "GET / HTTP/1.1\r\n" +
+		"Host: http.example.com\r\n" +
+		"Connection: Via, X-Forwarded-Client-Cert, X-Forwarded-Host, X-Forwarded-Proto, X-Custom-Header, close\r\n\r\n"
+	got, _, err := tlsGet("http.example.com", proxy.listener.Addr().String(), msg, extCA, []tls.Certificate{*clientCert}, []string{"http/1.1"})
+	if err != nil {
+		t.Fatalf("tlsGet: %v", err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(strings.NewReader(got)), nil)
+	if err != nil {
+		t.Fatalf("http.ReadResponse: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("StatusCode = %d, want 200", resp.StatusCode)
+	}
+	for _, h := range []string{"Via", "X-Forwarded-Client-Cert", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Custom-Header"} {
+		if gotHeaders.Get(h) == "" {
+			t.Errorf("Backend did not receive %s header (stripped via Connection header)", h)
+		}
+	}
+
+	// Also verify that multi-line Via header loop detection inspects all Via headers.
+	msg2 := "GET / HTTP/1.1\r\nHost: http.example.com\r\nConnection: close\r\n\r\n"
+	if _, _, err := tlsGet("http.example.com", proxy.listener.Addr().String(), msg2, extCA, []tls.Certificate{*clientCert}, []string{"http/1.1"}); err != nil {
+		t.Fatalf("tlsGet(2): %v", err)
+	}
+	viaLine := gotHeaders.Get("Via")
+	_, me, _ := strings.Cut(viaLine, " ")
+	loopMsg := "GET / HTTP/1.1\r\n" +
+		"Host: http.example.com\r\n" +
+		"Via: HTTP/1.1 other-proxy\r\n" +
+		"Via: HTTP/1.1 " + me + "\r\n" +
+		"Connection: close\r\n\r\n"
+	gotLoop, _, err := tlsGet("http.example.com", proxy.listener.Addr().String(), loopMsg, extCA, []tls.Certificate{*clientCert}, []string{"http/1.1"})
+	if err != nil {
+		t.Fatalf("tlsGet(loop): %v", err)
+	}
+	respLoop, err := http.ReadResponse(bufio.NewReader(strings.NewReader(gotLoop)), nil)
+	if err != nil {
+		t.Fatalf("http.ReadResponse(loop): %v", err)
+	}
+	if respLoop.StatusCode != http.StatusLoopDetected {
+		t.Errorf("Loop StatusCode = %d, want %d", respLoop.StatusCode, http.StatusLoopDetected)
+	}
+}
