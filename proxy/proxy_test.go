@@ -1751,3 +1751,74 @@ func TestReAuthorizeNilBackendAndClientAuth(t *testing.T) {
 		t.Errorf("reAuthorize() did not close connection without clientCert when ClientAuth is enabled")
 	}
 }
+
+func TestProxyListenerCloseAndDocRootCleanup(t *testing.T) {
+	ch := make(chan net.Conn, 1)
+	l := &proxyListener{
+		ch:       ch,
+		closedCh: make(chan struct{}),
+	}
+	if err := l.Close(); err != nil {
+		t.Fatalf("l.Close: %v", err)
+	}
+	tc := &closeTrackingConn{}
+	ch <- tc
+	close(ch)
+
+	deadline := time.Now().Add(time.Second)
+	for !tc.closed && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !tc.closed {
+		t.Errorf("proxyListener.Close() drained connection without closing it")
+	}
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	docDir1 := t.TempDir()
+	docDir2 := t.TempDir()
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
+			Backends: []*Backend{
+				{
+					ServerNames:  Strings{"local.example.com"},
+					Mode:         "LOCAL",
+					DocumentRoot: docDir1,
+				},
+				{
+					ServerNames: Strings{"http.example.com"},
+					Mode:        "HTTP",
+					Addresses:   Strings{"127.0.0.1:8080"},
+					PathOverrides: []*PathOverride{
+						{
+							Paths:        Strings{"/sub/"},
+							DocumentRoot: docDir2,
+						},
+					},
+				},
+			},
+		},
+		extCA,
+	)
+	be1 := proxy.cfg.Backends[0]
+	be2 := proxy.cfg.Backends[1]
+	root1 := be1.documentRoot
+	root2 := be2.PathOverrides[0].documentRoot
+	if root1 == nil || root2 == nil {
+		t.Fatalf("documentRoot not initialized")
+	}
+	be1.close(nil)
+	be2.close(nil)
+	if _, err := root1.Stat("."); err == nil {
+		t.Errorf("be.documentRoot was not closed by be.close(nil)")
+	}
+	if _, err := root2.Stat("."); err == nil {
+		t.Errorf("po.documentRoot was not closed by be.close(nil)")
+	}
+}

@@ -535,11 +535,12 @@ type Backend struct {
 }
 
 type backendState struct {
-	mu       sync.Mutex
-	inFlight int
-	shutdown bool
-	next     int
-	oNext    []int
+	mu            sync.Mutex
+	inFlight      int
+	shutdown      bool
+	docRootClosed bool
+	next          int
+	oNext         []int
 }
 
 type localHandler struct {

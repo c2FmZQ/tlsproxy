@@ -96,7 +96,12 @@ func (m *aclMatcher) certMatches(acl []string, cert *x509.Certificate) bool {
 		}
 		return false
 	}
-	if slices.ContainsFunc(acl, func(group string) bool { return match(group) }) {
+	if slices.ContainsFunc(acl, func(group string) bool {
+		if m.findGroup(group) != nil {
+			return false
+		}
+		return match(group)
+	}) {
 		return true
 	}
 	for member := range m.walkGroups(acl) {

@@ -115,7 +115,10 @@ func (l *proxyListener) Close() error {
 		l.closed = true
 		close(l.closedCh)
 		go func() {
-			for range l.ch {
+			for c := range l.ch {
+				if c != nil {
+					c.Close()
+				}
 			}
 		}()
 	}

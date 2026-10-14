@@ -634,6 +634,10 @@ func (s *QUICStream) RemoteAddr() net.Addr {
 	return s.qc.RemoteAddr()
 }
 
+func (s *QUICStream) TLSConnectionState() tls.ConnectionState {
+	return s.qc.TLSConnectionState()
+}
+
 func (s *QUICStream) markReadDone() {
 	s.mu.Lock()
 	defer s.mu.Unlock()

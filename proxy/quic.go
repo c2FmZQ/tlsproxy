@@ -104,6 +104,14 @@ func (p *Proxy) startQUICListener(ctx context.Context) error {
 			p.logErrorF("ERR QUIC connection %q %q", hello.ServerName, hello.SupportedProtos)
 			return nil, tlsUnrecognizedName
 		}
+		if hello.Conn != nil {
+			if err := be.checkIP(hello.Conn.RemoteAddr()); err != nil {
+				serverName := idnaToUnicode(hello.ServerName)
+				p.recordEvent(serverName + " CheckIP " + err.Error())
+				be.logConnF("BAD [-] %s:%s ➔ %q CheckIP: %v", hello.Conn.RemoteAddr().Network(), hello.Conn.RemoteAddr(), serverName, err)
+				return nil, tlsUnrecognizedName
+			}
+		}
 		// be.tlsConfig acquires p.mu.
 		return be.tlsConfig(true), nil
 	}

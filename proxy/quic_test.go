@@ -1156,3 +1156,57 @@ func TestQUICUniStreamCleanupAndDialQUICStreamClose(t *testing.T) {
 		t.Errorf("dialQUICStream connection was not closed when streamConn.Close() was called")
 	}
 }
+
+func TestQUICPreHandshakeCheckIPAndALPN(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	be := newHTTPServer(t, ctx, "HTTP Backend", nil)
+	cfg := &Config{
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(100),
+		Backends: []*Backend{
+			{
+				ServerNames: Strings{"denied.example.com"},
+				Mode:        "HTTP",
+				Addresses:   Strings{be.String()},
+				DenyIPs:     &Strings{"127.0.0.1/32", "::1/128"},
+			},
+			{
+				ServerNames: Strings{"http.example.com"},
+				Mode:        "HTTP",
+				Addresses:   Strings{be.String()},
+			},
+		},
+	}
+	p := newTestProxy(cfg, extCA)
+	if err := p.Start(ctx); err != nil {
+		t.Fatalf("p.Start: %v", err)
+	}
+	defer p.Stop()
+
+	// 1. QUIC connection from denied IP should fail during TLS handshake (before handleQUICConnection).
+	addr := p.quicTransport.(*netw.QUICTransport).Addr().String()
+	_, err = quicapi.DialAddr(ctx, addr, &tls.Config{
+		ServerName: "denied.example.com",
+		RootCAs:    extCA.RootCACertPool(),
+		NextProtos: []string{"h3"},
+	}, &quic.Config{})
+	if err == nil {
+		t.Errorf("quicapi.DialAddr to denied IP succeeded, want TLS handshake failure")
+	}
+
+	// 2. For ModeHTTP on QUIC, be.tlsConfig(true) should not offer "h2".
+	tc := p.cfg.Backends[1].tlsConfig(true)
+	for _, proto := range tc.NextProtos {
+		if proto == "h2" {
+			t.Errorf("be.tlsConfig(true) for ModeHTTP offered ALPN %q, want it excluded", proto)
+		}
+	}
+}

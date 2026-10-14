@@ -74,26 +74,48 @@ func (be *Backend) incInFlight(delta int) int {
 	return be.state.inFlight
 }
 
+func (be *Backend) closeDocumentRoots() {
+	if be.state.docRootClosed {
+		return
+	}
+	be.state.docRootClosed = true
+	if be.documentRoot != nil {
+		be.documentRoot.Close()
+	}
+	for _, po := range be.PathOverrides {
+		if po.documentRoot != nil {
+			po.documentRoot.Close()
+		}
+	}
+}
+
 func (be *Backend) close(ctx context.Context) {
 	be.state.mu.Lock()
 	defer be.state.mu.Unlock()
-	if be.httpServer == nil {
-		return
-	}
 	be.state.shutdown = true
-	if ctx == nil {
-		go be.httpServer.Close()
-	} else {
-		go be.httpServer.Shutdown(ctx)
-	}
 	if h3 := be.http3Server; h3 != nil {
 		be.http3Server = nil
 		go h3.Close()
 	}
-	if be.state.inFlight == 0 {
-		close(be.httpConnChan)
-		be.httpServer = nil
+	if hs := be.httpServer; hs != nil {
+		if be.state.inFlight == 0 {
+			close(be.httpConnChan)
+			be.httpServer = nil
+		}
+		if ctx == nil {
+			be.closeDocumentRoots()
+			go hs.Close()
+		} else {
+			go func() {
+				hs.Shutdown(ctx)
+				be.state.mu.Lock()
+				be.closeDocumentRoots()
+				be.state.mu.Unlock()
+			}()
+		}
+		return
 	}
+	be.closeDocumentRoots()
 }
 
 func setIfNotNil[T any](a, b *T) {

@@ -82,6 +82,7 @@ type samlState struct {
 	Created     time.Time
 	OriginalURL string
 	Host        string
+	Depth       int
 }
 
 func New(cfg Config, er EventRecorder, cm CookieManager) (*Provider, error) {
@@ -129,6 +130,7 @@ func (p *Provider) RequestLogin(w http.ResponseWriter, req *http.Request, origUR
 		Created:     time.Now(),
 		OriginalURL: origURL,
 		Host:        ou.Host,
+		Depth:       idp.ApplyOptions(opts).Depth(),
 	})
 	p.mu.Unlock()
 	if !added {
@@ -253,11 +255,17 @@ func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			continue
 		}
 		key := attr.Value
+		if key == "depth" {
+			continue
+		}
 		value := findElementText(a, "./AttributeValue")
 		// Example:
 		// Key: firstname
 		// Value: Bob
 		extraClaims[key] = value
+	}
+	if state.Depth > 0 {
+		extraClaims["depth"] = state.Depth
 	}
 	if err := p.cm.SetAuthTokenCookie(w, req, sub, sub, id, state.Host, extraClaims); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

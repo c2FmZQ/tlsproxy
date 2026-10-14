@@ -481,6 +481,14 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	}
 
 	backends := make(map[beKey]*Backend, len(cfg.Backends))
+	var reconfigSuccess bool
+	defer func() {
+		if !reconfigSuccess {
+			for _, be := range cfg.Backends {
+				be.close(nil)
+			}
+		}
+	}()
 	for _, be := range cfg.Backends {
 		be.aclMatcher = aclMatcher
 		be.recordEvent = p.recordEvent
@@ -708,6 +716,12 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				// lead to confusion.
 				tc.NextProtos = slices.DeleteFunc(tc.NextProtos, func(p string) bool {
 					return quicOnlyProtocols[p]
+				})
+			} else if be.Mode == ModeConsole || be.Mode == ModeLocal || be.Mode == ModeHTTP || be.Mode == ModeHTTPS {
+				// http/2 over a raw QUIC stream is not supported by the internal
+				// http.Server.
+				tc.NextProtos = slices.DeleteFunc(tc.NextProtos, func(p string) bool {
+					return p == "h2"
 				})
 			}
 			return tc
@@ -975,6 +989,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	p.backends = backends
 	p.pkis = pkis
 	p.cfg = cfg
+	reconfigSuccess = true
 	if err := p.rotateECH(true); err != nil && err != storage.ErrRolledBack {
 		return err
 	}

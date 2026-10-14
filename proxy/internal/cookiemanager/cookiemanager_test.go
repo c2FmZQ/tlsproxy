@@ -110,7 +110,7 @@ func TestSetAuthTokenCookieReservedClaims(t *testing.T) {
 	extra := map[string]any{
 		"scope":     []string{"admin"},
 		"client_id": "evil-client",
-		"depth":     2,
+		"depth":     "2",
 		"th":        []string{"fake-th"},
 		"groups":    []string{"admins"},
 		"nbf":       9999999999,

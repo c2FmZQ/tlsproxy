@@ -65,6 +65,10 @@ func TestGroups(t *testing.T) {
 					{Email: "@example.com"},
 				},
 			},
+			{
+				Name:    "CN=evilgroup",
+				Members: []*Member{},
+			},
 		},
 	}
 
@@ -138,6 +142,7 @@ func TestGroups(t *testing.T) {
 		{name: "certMike not in group2", group: "group2", cert: certMike, expected: false},
 		{name: "certMike not in group3", group: "group3", cert: certMike, expected: false},
 		{name: "certMike not in group4", group: "group4", cert: certMike, expected: false},
+		{name: "cert with Subject equal to group name not in CN=evilgroup", group: "CN=evilgroup", cert: &x509.Certificate{Subject: pkix.Name{CommonName: "evilgroup"}}, expected: false},
 	} {
 		if tc.email != "" {
 			if got, want := matcher.emailMatches([]string{tc.group}, tc.email), tc.expected; got != want {
