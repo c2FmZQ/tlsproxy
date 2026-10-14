@@ -650,10 +650,11 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						csrfBypass: true,
 					},
 					localHandler{
-						desc:    "OIDC Server Userinfo Endpoint",
-						path:    ls.PathPrefix + "/userinfo",
-						handler: logHandler(http.HandlerFunc(be.SSO.oidcServer.ServeUserInfo)),
-						scopes:  Strings{scopeOpenID},
+						desc:       "OIDC Server Userinfo Endpoint",
+						path:       ls.PathPrefix + "/userinfo",
+						handler:    logHandler(http.HandlerFunc(be.SSO.oidcServer.ServeUserInfo)),
+						scopes:     Strings{scopeOpenID},
+						csrfBypass: true,
 					},
 					localHandler{
 						desc:      "OIDC Server JWKS Endpoint",
@@ -911,6 +912,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			desc:        fmt.Sprintf("PKI OCSP (%s)", pp.Name),
 			handler:     logHandler(http.HandlerFunc(pkis[pp.Name].ServeOCSP)),
 			ssoBypass:   true,
+			csrfBypass:  true,
 			matchPrefix: true,
 		}, pp.OCSPServer...)
 		if pp.Endpoint != "" {

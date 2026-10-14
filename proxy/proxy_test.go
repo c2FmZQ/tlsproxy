@@ -59,6 +59,7 @@ import (
 	"github.com/google/go-tpm-tools/simulator"
 	"github.com/pires/go-proxyproto"
 	"golang.org/x/crypto/acme/autocert"
+	"golang.org/x/crypto/ocsp"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
@@ -1900,5 +1901,100 @@ func TestRevokeUnusedCertificatesPartialFailure(t *testing.T) {
 
 	if got := int(capRlimitCur(^uint64(0))); got <= 0 {
 		t.Errorf("capRlimitCur(RLIM_INFINITY) = %d, want > 0", got)
+	}
+}
+
+func TestPKIOCSPPost(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	cfg := &Config{
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(100),
+		PKI: []*ConfigPKI{
+			{
+				Name:       "TEST CA",
+				OCSPServer: Strings{"https://pki.example.com/pki/ocsp"},
+			},
+		},
+		Backends: []*Backend{
+			{
+				ServerNames: Strings{"pki.example.com"},
+				Mode:        "CONSOLE",
+			},
+		},
+	}
+	proxy := newTestProxy(cfg, extCA)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+
+	caCert, err := proxy.pkis["TEST CA"].CACert()
+	if err != nil {
+		t.Fatalf("CACert: %v", err)
+	}
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey: %v", err)
+	}
+	rawCert, err := proxy.pkis["TEST CA"].IssueCertificate(&x509.CertificateRequest{
+		PublicKey:      &privKey.PublicKey,
+		EmailAddresses: []string{"bob@example.com"},
+	})
+	if err != nil {
+		t.Fatalf("IssueCertificate: %v", err)
+	}
+	leafCert, err := x509.ParseCertificate(rawCert)
+	if err != nil {
+		t.Fatalf("x509.ParseCertificate: %v", err)
+	}
+
+	ocspReq, err := ocsp.CreateRequest(leafCert, caCert, nil)
+	if err != nil {
+		t.Fatalf("ocsp.CreateRequest: %v", err)
+	}
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialTLSContext: func(context.Context, string, string) (net.Conn, error) {
+				return tls.Dial("tcp", proxy.listener.Addr().String(), &tls.Config{
+					ServerName: "pki.example.com",
+					RootCAs:    extCA.RootCACertPool(),
+					NextProtos: []string{"h2", "http/1.1"},
+				})
+			},
+			ForceAttemptHTTP2: true,
+		},
+		Timeout: 5 * time.Second,
+	}
+	req, err := http.NewRequest(http.MethodPost, "https://pki.example.com/pki/ocsp", bytes.NewReader(ocspReq))
+	if err != nil {
+		t.Fatalf("http.NewRequest: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/ocsp-request")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do(POST /pki/ocsp): %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("io.ReadAll: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /pki/ocsp status = %d, body = %q", resp.StatusCode, body)
+	}
+	ocspResp, err := ocsp.ParseResponseForCert(body, leafCert, caCert)
+	if err != nil {
+		t.Fatalf("ocsp.ParseResponseForCert: %v", err)
+	}
+	if ocspResp.Status != ocsp.Good {
+		t.Errorf("ocspResp.Status = %v, want %v", ocspResp.Status, ocsp.Good)
 	}
 }

@@ -253,6 +253,10 @@ func (c *OCSPCache) fetchOneOCSP(ctx context.Context, cert, issuer *x509.Certifi
 		return nil, errOCSPProtocol
 	}
 	defer httpResp.Body.Close()
+	if httpResp.StatusCode != http.StatusOK {
+		c.logger.Errorf("ERR OCSP response for %s from %s: status %d", cert.Subject, server, httpResp.StatusCode)
+		return nil, errOCSPProtocol
+	}
 	body, err := io.ReadAll(&io.LimitedReader{R: httpResp.Body, N: 4096})
 	if err != nil {
 		c.logger.Errorf("ERR body: %v", err)

@@ -310,4 +310,43 @@ func TestVerifyChains(t *testing.T) {
 			t.Errorf("Response(margin=1h) on refresh failure = (%v, %v), want cached Good response", resp, err)
 		}
 	})
+
+	t.Run("Non-200 HTTP status rejected before ASN.1 parsing", func(t *testing.T) {
+		var bodyRead bool
+		errServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			io.Copy(io.Discard, req.Body)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("session expired\n"))
+		}))
+		defer errServer.Close()
+
+		var logged string
+		mk, err := storagecrypto.CreateAESMasterKeyForTest()
+		if err != nil {
+			t.Fatalf("CreateAESMasterKeyForTest: %v", err)
+		}
+		c := New(storage.New(t.TempDir(), mk), captureLogger{fn: func(f string, args ...any) {
+			logged = f
+			_ = bodyRead
+		}})
+		badLeaf := newTestCert(t, &x509.Certificate{
+			Subject:     pkix.Name{CommonName: "status-leaf"},
+			OCSPServer:  []string{errServer.URL},
+			ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		}, ca)
+		chains := [][]*x509.Certificate{{badLeaf.cert, ca.cert}}
+		if err := c.VerifyChains(context.Background(), chains, nil); err != errOCSPProtocol {
+			t.Errorf("VerifyChains(400 status) = %v, want %v", err, errOCSPProtocol)
+		}
+		if logged != "ERR OCSP response for %s from %s: status %d" {
+			t.Errorf("logged format = %q, want HTTP status log format", logged)
+		}
+	})
 }
+
+type captureLogger struct {
+	fn func(string, ...any)
+}
+
+func (l captureLogger) Errorf(f string, args ...any) { l.fn(f, args...) }
+func (l captureLogger) Fatalf(f string, args ...any) { l.fn(f, args...) }
