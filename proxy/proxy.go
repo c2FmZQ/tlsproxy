@@ -1322,7 +1322,6 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		p.inConns.remove(conn)
 		p.ipConns.dec(ip)
 		if be := connBackend(conn); be != nil {
-			be.incInFlight(-1)
 			if conn.Annotation(reportEndKey, false).(bool) {
 				startTime := conn.Annotation(startTimeKey, time.Time{}).(time.Time)
 				be.logConnF("END %s; Dur:%s Recv:%d Sent:%d",
@@ -1382,8 +1381,12 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	} else if echConn.ECHPresented() {
 		p.recordEvent("encrypted client hello rejected " + idnaToUnicode(serverName))
 	}
+	if be.incInFlight(1) <= 0 {
+		sendCloseNotify(conn)
+		return
+	}
+	defer be.incInFlight(-1)
 	conn.SetAnnotation(backendKey, be)
-	be.incInFlight(1)
 	p.setCounters(conn, serverName)
 	if l := be.bwLimit; l != nil {
 		conn.SetLimiters(l.ingress, l.egress)

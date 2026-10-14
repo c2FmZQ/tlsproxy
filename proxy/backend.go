@@ -63,6 +63,9 @@ func (be *Backend) waitConnLimit(ctx context.Context) error {
 func (be *Backend) incInFlight(delta int) int {
 	be.state.mu.Lock()
 	defer be.state.mu.Unlock()
+	if delta > 0 && be.state.shutdown {
+		return 0
+	}
 	be.state.inFlight += delta
 	if be.state.inFlight == 0 && be.state.shutdown && be.httpServer != nil {
 		close(be.httpConnChan)
@@ -77,25 +80,19 @@ func (be *Backend) close(ctx context.Context) {
 	if be.httpServer == nil {
 		return
 	}
-	if ctx == nil {
-		close(be.httpConnChan)
-		go be.httpServer.Close()
-		be.httpServer = nil
-		if h3 := be.http3Server; h3 != nil {
-			be.http3Server = nil
-			go h3.Close()
-		}
-		return
-	}
-	go be.httpServer.Shutdown(ctx)
 	be.state.shutdown = true
+	if ctx == nil {
+		go be.httpServer.Close()
+	} else {
+		go be.httpServer.Shutdown(ctx)
+	}
+	if h3 := be.http3Server; h3 != nil {
+		be.http3Server = nil
+		go h3.Close()
+	}
 	if be.state.inFlight == 0 {
 		close(be.httpConnChan)
 		be.httpServer = nil
-		if h3 := be.http3Server; h3 != nil {
-			be.http3Server = nil
-			go h3.Close()
-		}
 	}
 }
 

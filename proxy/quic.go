@@ -150,7 +150,6 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		p.inConns.remove(qc)
 		p.ipConns.dec(ip)
 		if be := connBackend(qc); be != nil {
-			be.incInFlight(-1)
 			startTime := qc.Annotation(startTimeKey, time.Time{}).(time.Time)
 			be.logConnF("END %s; Dur:%s Recv:%d Sent:%d",
 				formatConnDesc(qc), time.Since(startTime).Truncate(time.Millisecond),
@@ -188,7 +187,11 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 		qc.CloseWithError(quicUnrecognizedName, "unrecognized name")
 		return
 	}
-	be.incInFlight(1)
+	if be.incInFlight(1) <= 0 {
+		qc.CloseWithError(quicTooBusy, "shutting down")
+		return
+	}
+	defer be.incInFlight(-1)
 	qc.SetAnnotation(backendKey, be)
 	p.setCounters(qc, cs.ServerName)
 
@@ -274,7 +277,11 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 					reportErr(err, "AcceptUniStream")
 					return
 				}
-				go be.handleQUICQUICStream(ctx, qc, qc.WrapConn(recvStream))
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					be.handleQUICQUICStream(ctx, qc, qc.WrapConn(recvStream))
+				}()
 			}
 		}()
 		wg.Add(1)
@@ -398,13 +405,25 @@ func (p *Proxy) handleQUICConnection(qc *netw.QUICConn) {
 }
 
 func (p *Proxy) handleQUICTCPStream(ctx context.Context, be *Backend, conn *netw.Conn) {
-	serverName := idnaToUnicode(connServerName(conn))
 	closeConnNeeded := true
 	defer func() {
-		if closeConnNeeded {
+		if r := recover(); r != nil {
+			p.recordEvent("panic")
+			var remote net.Addr
+			var cert *x509.Certificate
+			if conn != nil {
+				cert = connClientCert(conn)
+				if conn.Conn != nil {
+					remote = conn.RemoteAddr()
+				}
+			}
+			p.logErrorF("ERR [%s] %v: PANIC: %v", certSummary(cert), remote, r)
+		}
+		if closeConnNeeded && conn != nil && conn.Conn != nil {
 			conn.Close()
 		}
 	}()
+	serverName := idnaToUnicode(connServerName(conn))
 
 	conn.SetAnnotation(startTimeKey, time.Now())
 
@@ -459,6 +478,19 @@ func (p *Proxy) handleQUICTCPStream(ctx context.Context, be *Backend, conn *netw
 }
 
 func (be *Backend) handleQUICQUICStream(ctx context.Context, dest *netw.QUICConn, conn *netw.Conn) {
+	defer func() {
+		if r := recover(); r != nil {
+			be.recordEvent("panic")
+			var remote net.Addr
+			if conn != nil && conn.Conn != nil {
+				remote = conn.RemoteAddr()
+			}
+			be.logErrorF("ERR [%s] %v: PANIC: %v", certSummary(connClientCert(conn)), remote, r)
+			if conn != nil && conn.Conn != nil {
+				conn.Close()
+			}
+		}
+	}()
 	serverName := idnaToUnicode(connServerName(conn))
 	qs, ok := conn.Conn.(*netw.QUICStream)
 	if !ok {

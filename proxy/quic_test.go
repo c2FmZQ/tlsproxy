@@ -989,3 +989,68 @@ func TestConnTrackerQUICCollisionAndMigration(t *testing.T) {
 		t.Fatalf("tr.remove(c1) after address migration = %d, want 0", n)
 	}
 }
+
+func TestQUICStreamPanicAndShutdownRace(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	cfg := &Config{
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(1000),
+		Backends: []*Backend{
+			{
+				ServerNames: Strings{"local.example.com"},
+				Mode:        "LOCAL",
+			},
+		},
+	}
+	p := newTestProxy(cfg, extCA)
+	if err := p.Start(ctx); err != nil {
+		t.Fatalf("p.Start: %v", err)
+	}
+	defer p.Stop()
+
+	be := p.cfg.Backends[0]
+
+	// 1. A panic inside handleQUICTCPStream must be recovered instead of crashing.
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("handleQUICTCPStream did not recover panic: %v", r)
+			}
+		}()
+		p.handleQUICTCPStream(ctx, be, &netw.Conn{})
+	}()
+
+	// 2. While a connection/stream is in-flight (incInFlight(1)), calling be.close(nil)
+	// must not close be.httpConnChan until incInFlight(-1) drops inFlight to 0.
+	if be.incInFlight(1) <= 0 {
+		t.Fatalf("be.incInFlight(1) failed before shutdown")
+	}
+	be.close(nil)
+
+	// New connections must be rejected once shutdown has started.
+	if be.incInFlight(1) > 0 {
+		t.Fatalf("be.incInFlight(1) succeeded after be.close")
+	}
+
+	// The in-flight stream sending to be.httpConnChan before incInFlight(-1) must not panic.
+	c1, c2 := net.Pipe()
+	defer c1.Close()
+	defer c2.Close()
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("sending to httpConnChan while inFlight > 0 panicked: %v", r)
+			}
+		}()
+		be.httpConnChan <- c1
+	}()
+	be.incInFlight(-1)
+}
