@@ -296,17 +296,18 @@ func (cm *CookieManager) validateAuthToken(req *http.Request, leeway time.Durati
 	if err != nil {
 		return nil, "", err
 	}
-	kid, ok := token.Header["kid"].(string)
-	if !ok {
+	if _, ok := token.Header["kid"].(string); !ok {
 		return nil, "", errors.New("token missing kid")
 	}
-	issuer, found := cm.tm.IssuerForKey(kid)
-	if !found {
-		return nil, "", errors.New("unknown key")
+	unverifiedClaims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, "", errors.New("invalid claims")
 	}
+	issuer, _ := unverifiedClaims.GetIssuer()
+	isLocal := issuer == cm.issuer && (unverifiedClaims["provider"] == cm.provider || !slices.Contains(cm.trustedIssuers, issuer))
 
 	var tok *jwt.Token
-	if issuer == "" {
+	if isLocal {
 		// Local
 		tok, err = cm.tm.ValidateToken(cookie.Value,
 			jwt.WithIssuer(cm.issuer),
@@ -316,7 +317,7 @@ func (cm *CookieManager) validateAuthToken(req *http.Request, leeway time.Durati
 		)
 	} else {
 		// Trusted
-		if !slices.Contains(cm.trustedIssuers, issuer) {
+		if issuer == "" || !slices.Contains(cm.trustedIssuers, issuer) {
 			return nil, "", fmt.Errorf("issuer %q is not trusted", issuer)
 		}
 		tok, err = cm.tm.ValidateRemoteToken(cookie.Value, issuer,
@@ -333,7 +334,7 @@ func (cm *CookieManager) validateAuthToken(req *http.Request, leeway time.Durati
 		return nil, "", errors.New("invalid claims")
 	}
 
-	if issuer == "" {
+	if isLocal {
 		if c["proxyauth"] != cm.issuer || c["provider"] != cm.provider {
 			return nil, "", errors.New("invalid proxyauth or provider")
 		}

@@ -167,6 +167,21 @@ func (r *Remote) GetKey(kid string) (crypto.PublicKey, error) {
 	return nil, errors.New("not found")
 }
 
+// GetKeyForIssuer returns the public key for the given issuer and key ID (kid).
+func (r *Remote) GetKeyForIssuer(issuer, kid string) (crypto.PublicKey, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	ti, ok := r.trustedIssuers[issuer]
+	if !ok {
+		return nil, errors.New("not found")
+	}
+	if pk, ok := ti.publicKeys[kid]; ok {
+		return pk, nil
+	}
+	return nil, errors.New("not found")
+}
+
 // IssuerForKey returns the issuer URL for the given key ID (kid) if found.
 func (r *Remote) IssuerForKey(kid string) (string, bool) {
 	r.mu.Lock()

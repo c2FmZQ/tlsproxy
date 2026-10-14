@@ -70,3 +70,57 @@ func TestRemote(t *testing.T) {
 		t.Errorf("IssuerForKey = %q, want https://example.com", issuer)
 	}
 }
+
+func TestRemoteKidCollision(t *testing.T) {
+	ecKeyA, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey: %v", err)
+	}
+	ecKeyB, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey: %v", err)
+	}
+	ksA := New([]crypto.PublicKey{&ecKeyA.PublicKey})
+	ksA.Keys[0].ID = "shared-kid"
+	bA, _ := json.Marshal(ksA)
+
+	ksB := New([]crypto.PublicKey{&ecKeyB.PublicKey})
+	ksB.Keys[0].ID = "shared-kid"
+	bB, _ := json.Marshal(ksB)
+
+	tsA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(bA)
+	}))
+	defer tsA.Close()
+
+	tsB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(bB)
+	}))
+	defer tsB.Close()
+
+	r := NewRemote(nil, nil)
+	r.SetIssuers([]Issuer{
+		{Issuer: "https://issuer-a.example.com", JWKSURI: tsA.URL},
+		{Issuer: "https://issuer-b.example.com", JWKSURI: tsB.URL},
+	})
+	r.Ready(t.Context())
+
+	for i := range 50 {
+		pkA, err := r.GetKeyForIssuer("https://issuer-a.example.com", "shared-kid")
+		if err != nil {
+			t.Fatalf("iteration %d: GetKeyForIssuer(A): %v", i, err)
+		}
+		if pkA.(*ecdsa.PublicKey).X.Cmp(ecKeyA.X) != 0 {
+			t.Fatalf("iteration %d: GetKeyForIssuer(A) returned wrong key", i)
+		}
+		pkB, err := r.GetKeyForIssuer("https://issuer-b.example.com", "shared-kid")
+		if err != nil {
+			t.Fatalf("iteration %d: GetKeyForIssuer(B): %v", i, err)
+		}
+		if pkB.(*ecdsa.PublicKey).X.Cmp(ecKeyB.X) != 0 {
+			t.Fatalf("iteration %d: GetKeyForIssuer(B) returned wrong key", i)
+		}
+	}
+}

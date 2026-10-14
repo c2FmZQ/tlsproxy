@@ -96,9 +96,9 @@ type TokenManager struct {
 	logger logger
 	client *retryablehttp.Client
 
-	mu     sync.Mutex
-	keys   tokenKeys
-	remote *jwks.Remote
+	mu      sync.Mutex
+	keys    tokenKeys
+	remotes map[string]*jwks.Remote
 }
 
 // New returns a new TokenManager.
@@ -107,13 +107,13 @@ func New(store *storage.Storage, tpm *tpm.TPM, logger logger) (*TokenManager, er
 		logger = defaultLogger{}
 	}
 	tm := TokenManager{
-		store:  store,
-		tpm:    tpm,
-		logger: logger,
-		client: retryablehttp.NewClient(),
+		store:   store,
+		tpm:     tpm,
+		logger:  logger,
+		client:  retryablehttp.NewClient(),
+		remotes: make(map[string]*jwks.Remote),
 	}
 	tm.client.Logger = nil
-	tm.remote = jwks.NewRemote(tm.client, logger)
 	store.CreateEmptyFile(tokenKeyFile, &tm.keys)
 	if err := tm.rotateKeys(); err != nil {
 		return nil, err
@@ -136,7 +136,25 @@ func (tm *TokenManager) KeyRotationLoop(ctx context.Context) {
 }
 
 func (tm *TokenManager) SetTrustedIssuers(issuers []jwks.Issuer) {
-	tm.remote.SetIssuers(slices.Clone(issuers))
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+
+	inUse := make(map[string]bool, len(issuers))
+	for _, iss := range issuers {
+		inUse[iss.Issuer] = true
+		r, ok := tm.remotes[iss.Issuer]
+		if !ok {
+			r = jwks.NewRemote(tm.client, tm.logger)
+			tm.remotes[iss.Issuer] = r
+		}
+		r.SetIssuers([]jwks.Issuer{iss})
+	}
+	for k, r := range tm.remotes {
+		if !inUse[k] {
+			r.Stop()
+			delete(tm.remotes, k)
+		}
+	}
 }
 
 func (tm *TokenManager) HMAC(b []byte) []byte {
@@ -462,10 +480,13 @@ func (tm *TokenManager) getRemoteKey(issuer string) jwt.Keyfunc {
 		if !ok {
 			return nil, errors.New("kid header missing")
 		}
-		if iss, ok := tm.remote.IssuerForKey(kid); !ok || iss != issuer {
+		tm.mu.Lock()
+		r := tm.remotes[issuer]
+		tm.mu.Unlock()
+		if r == nil {
 			return nil, errors.New("not found")
 		}
-		return tm.remote.GetKey(kid)
+		return r.GetKey(kid)
 	}
 }
 
@@ -478,7 +499,12 @@ func (tm *TokenManager) IssuerForKey(kid string) (string, bool) {
 			return "", true
 		}
 	}
-	return tm.remote.IssuerForKey(kid)
+	for _, r := range tm.remotes {
+		if iss, ok := r.IssuerForKey(kid); ok {
+			return iss, true
+		}
+	}
+	return "", false
 }
 
 // ValidateToken validates a JSON Web Token (JWT) signed by one of the local
