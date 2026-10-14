@@ -27,12 +27,15 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
+
+var wsPingInterval = 10 * time.Second
 
 func newWebSocketUpgrader() *websocket.Upgrader {
 	return &websocket.Upgrader{
@@ -77,14 +80,15 @@ func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 
 		done := make(chan bool, 1)
 
-		lastActive := time.Now()
+		var lastActive atomic.Int64
+		lastActive.Store(time.Now().UnixNano())
 		in.SetPongHandler(func(string) error {
-			lastActive = time.Now()
+			lastActive.Store(time.Now().UnixNano())
 			return nil
 		})
 		go func() {
 			ctx := req.Context()
-			ticker := time.NewTicker(10 * time.Second)
+			ticker := time.NewTicker(wsPingInterval)
 			defer ticker.Stop()
 			for {
 				select {
@@ -92,7 +96,7 @@ func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 					out.SetDeadline(time.Now())
 					return
 				case <-ticker.C:
-					if time.Since(lastActive) > 30*time.Second {
+					if time.Since(time.Unix(0, lastActive.Load())) > 30*time.Second {
 						select {
 						case done <- true:
 						default:
@@ -120,8 +124,10 @@ func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 				if err != nil {
 					return
 				}
+				lastActive.Store(time.Now().UnixNano())
 				if messageType != websocket.BinaryMessage {
-					continue
+					_ = in.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseUnsupportedData, "binary messages only"), time.Now().Add(5*time.Second))
+					return
 				}
 				if _, err := io.Copy(out, r); err != nil {
 					return

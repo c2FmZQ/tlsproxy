@@ -572,7 +572,7 @@ func (be *Backend) reverseProxyTransport() http.RoundTripper {
 
 	return funcRoundTripper(func(req *http.Request) (*http.Response, error) {
 		// Connection upgrades, e.g. websocket, must use http/1.
-		if req.ProtoMajor == 1 && strings.ToLower(req.Header.Get("connection")) == "upgrade" {
+		if req.ProtoMajor == 1 && isConnectionUpgrade(req.Header) {
 			return h1.RoundTrip(req)
 		}
 
@@ -593,6 +593,17 @@ func (be *Backend) reverseProxyTransport() http.RoundTripper {
 		}
 		return h1.RoundTrip(req)
 	})
+}
+
+func isConnectionUpgrade(h http.Header) bool {
+	for _, v := range h.Values("Connection") {
+		for _, tok := range strings.Split(v, ",") {
+			if strings.EqualFold(strings.TrimSpace(tok), "upgrade") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (be *Backend) reverseProxyModifyResponse(resp *http.Response) error {

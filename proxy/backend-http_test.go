@@ -36,6 +36,7 @@ import (
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
+	"github.com/gorilla/websocket"
 	"golang.org/x/time/rate"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
@@ -736,5 +737,153 @@ func TestSanitizePathEncodedSlash(t *testing.T) {
 	}
 	if want := "/api/v1/public"; gotRequestURI != want {
 		t.Errorf("Backend received RequestURI = %q, want %q", gotRequestURI, want)
+	}
+}
+
+func TestWebSocketAndConnectionUpgrade(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+
+	// Backend HTTP/1.1 server that handles Upgrade requests.
+	l, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	s := http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if strings.EqualFold(req.Header.Get("Upgrade"), "websocket") {
+				hj, ok := w.(http.Hijacker)
+				if !ok {
+					http.Error(w, "no hijacker", http.StatusInternalServerError)
+					return
+				}
+				conn, rw, err := hj.Hijack()
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\nupgraded")
+				rw.Flush()
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}),
+	}
+	go s.Serve(l)
+	defer s.Close()
+
+	// TCP echo server for WebSocket bridge.
+	tcpListener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("net.Listen(tcp): %v", err)
+	}
+	defer tcpListener.Close()
+	go func() {
+		for {
+			c, err := tcpListener.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				buf := make([]byte, 1024)
+				for {
+					n, err := c.Read(buf)
+					if n > 0 {
+						c.Write(buf[:n])
+					}
+					if err != nil {
+						return
+					}
+				}
+			}(c)
+		}
+	}()
+
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
+			WebSockets: []*WebSocketConfig{
+				{
+					Endpoint: "https://http.example.com/ws",
+					Address:  tcpListener.Addr().String(),
+				},
+			},
+			Backends: []*Backend{
+				{
+					ServerNames:  Strings{"http.example.com"},
+					Mode:         "HTTP",
+					BackendProto: newPtr("h2"),
+					Addresses:    Strings{l.Addr().String()},
+				},
+			},
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	defer proxy.Stop()
+
+	// 1. Multi-token Connection: keep-alive, Upgrade must use HTTP/1.1 transport even when BackendProto is "h2".
+	rt := proxy.cfg.Backends[0].reverseProxyTransport()
+	reqCtx := context.WithValue(ctx, connCtxKey, mockConn{annotations: map[string]any{}})
+	upReq, err := http.NewRequestWithContext(reqCtx, "GET", "http://http.example.com/chat", nil)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext: %v", err)
+	}
+	upReq.Header.Set("Connection", "keep-alive, Upgrade")
+	upReq.Header.Set("Upgrade", "websocket")
+	upResp, err := rt.RoundTrip(upReq)
+	if err != nil {
+		t.Fatalf("rt.RoundTrip(upgrade): %v", err)
+	}
+	upResp.Body.Close()
+	if upResp.StatusCode != http.StatusSwitchingProtocols {
+		t.Errorf("Multi-token Connection upgrade StatusCode = %d, want 101 Switching Protocols", upResp.StatusCode)
+	}
+
+	// 2. WebSocket endpoint should handle concurrent ping/pong without data race and reject non-binary frames.
+	origPing := wsPingInterval
+	wsPingInterval = 5 * time.Millisecond
+	defer func() { wsPingInterval = origPing }()
+
+	dialer := websocket.Dialer{
+		NetDialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return tls.Dial(network, proxy.listener.Addr().String(), &tls.Config{
+				ServerName: "http.example.com",
+				RootCAs:    extCA.RootCACertPool(),
+				NextProtos: []string{"http/1.1"},
+			})
+		},
+	}
+	wsConn, resp, err := dialer.DialContext(ctx, "wss://http.example.com/ws", nil)
+	if err != nil {
+		t.Fatalf("dialer.DialContext: %v", err)
+	}
+	resp.Body.Close()
+	defer wsConn.Close()
+
+	for range 5 {
+		if err := wsConn.WriteControl(websocket.PongMessage, []byte("pong"), time.Now().Add(time.Second)); err != nil {
+			t.Fatalf("WriteControl(Pong): %v", err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if err := wsConn.WriteMessage(websocket.TextMessage, []byte("not binary")); err != nil {
+		t.Fatalf("WriteMessage(TextMessage): %v", err)
+	}
+	wsConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, _, err = wsConn.ReadMessage()
+	if !websocket.IsCloseError(err, websocket.CloseUnsupportedData) {
+		t.Errorf("ReadMessage after TextMessage: err = %v, want CloseUnsupportedData (1003)", err)
 	}
 }
