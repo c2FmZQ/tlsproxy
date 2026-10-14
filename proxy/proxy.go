@@ -883,9 +883,9 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			if host, _, _, err := hostAndPath(p.callback); err == nil {
 				if be, exists := backends[beKey{serverName: host}]; exists && (be.SSO == nil || be.SSO.p != m) {
 					addLocalHandler(localHandler{
-						desc:    "Manage Passkeys",
-						handler: logHandler(http.HandlerFunc(m.ManageKeys)),
-						scopes:  Strings{scopePasskeys},
+						desc:      "Manage Passkeys",
+						handler:   logHandler(http.HandlerFunc(m.ManageKeys)),
+						ssoBypass: true,
 					}, "https://"+host+"/.sso/passkeys")
 					addLocalHandler(localHandler{
 						desc:      "List of Passkey Endpoints",

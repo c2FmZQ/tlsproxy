@@ -533,7 +533,7 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 }
 
 func (be *Backend) reverseProxyDirector(req *http.Request) {
-	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 && be.ClientAuth != nil && len(be.ClientAuth.AddClientCertHeader) > 0 {
+	if be.ClientAuth != nil && len(be.ClientAuth.AddClientCertHeader) > 0 {
 		addXFCCHeader(req, be.ClientAuth.AddClientCertHeader)
 	}
 }

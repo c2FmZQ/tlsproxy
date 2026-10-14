@@ -312,10 +312,6 @@ func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
 	if claims := fromctx.Claims(req.Context()); claims != nil {
 		email, _ = claims["email"].(string)
 	}
-	if req.Method == http.MethodPost {
-		be.SSO.cm.ClearCookies(w)
-		sid.SetSessionID(w, req, "")
-	}
 	req.ParseForm()
 	if tokenStr := req.Form.Get("u"); tokenStr != "" {
 		url, _, err := be.tm.ValidateURLToken(req, tokenStr)
@@ -327,6 +323,10 @@ func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
 		sid.SetSessionID(w, req, "")
 		be.SSO.p.RequestLogin(w, req, url.String(), idp.WithSelectAccount(true))
 		return
+	}
+	if req.Method == http.MethodPost {
+		be.SSO.cm.ClearCookies(w)
+		sid.SetSessionID(w, req, "")
 	}
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
