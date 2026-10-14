@@ -1054,3 +1054,105 @@ func TestQUICStreamPanicAndShutdownRace(t *testing.T) {
 	}()
 	be.incInFlight(-1)
 }
+
+func TestQUICUniStreamCleanupAndDialQUICStreamClose(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ca, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	var key quic.StatelessResetKey
+	qt, err := netw.NewQUIC("localhost:0", key)
+	if err != nil {
+		t.Fatalf("netw.NewQUIC: %v", err)
+	}
+	defer qt.Close()
+
+	tc := ca.TLSConfig()
+	tc.NextProtos = []string{"h3"}
+	ln, err := qt.Listen(tc)
+	if err != nil {
+		t.Fatalf("qt.Listen: %v", err)
+	}
+	defer ln.Close()
+
+	serverConnCh := make(chan *netw.QUICConn, 2)
+	go func() {
+		for {
+			sConn, err := ln.Accept(ctx)
+			if err != nil {
+				return
+			}
+			serverConnCh <- sConn
+		}
+	}()
+
+	clientTC := &tls.Config{
+		ServerName: "quic.example.com",
+		RootCAs:    ca.RootCACertPool(),
+		NextProtos: []string{"h3"},
+	}
+	cConn, err := qt.Dial(ctx, ln.Addr(), clientTC)
+	if err != nil {
+		t.Fatalf("qt.Dial: %v", err)
+	}
+	defer cConn.Close()
+	sConn := <-serverConnCh
+	defer sConn.Close()
+
+	// 1. Open and close a unidirectional stream; verify both client and server remove it from Streams().
+	sendStream, err := cConn.OpenUniStreamSync(ctx)
+	if err != nil {
+		t.Fatalf("OpenUniStreamSync: %v", err)
+	}
+	wrappedSend := cConn.WrapConn(sendStream)
+	if _, err := wrappedSend.Write([]byte("hello uni")); err != nil {
+		t.Fatalf("wrappedSend.Write: %v", err)
+	}
+	if err := wrappedSend.Close(); err != nil {
+		t.Fatalf("wrappedSend.Close: %v", err)
+	}
+	if got := wrappedSend.BytesSent(); got != 9 {
+		t.Errorf("wrappedSend.BytesSent() = %d, want 9", got)
+	}
+
+	recvStream, err := sConn.AcceptUniStream(ctx)
+	if err != nil {
+		t.Fatalf("AcceptUniStream: %v", err)
+	}
+	b, err := io.ReadAll(recvStream)
+	if err != nil || string(b) != "hello uni" {
+		t.Fatalf("io.ReadAll(recvStream) = %q, %v", string(b), err)
+	}
+
+	if got := len(cConn.Streams()); got != 0 {
+		t.Errorf("len(cConn.Streams()) = %d after uni stream closed, want 0", got)
+	}
+	if got := len(sConn.Streams()); got != 0 {
+		t.Errorf("len(sConn.Streams()) = %d after uni stream EOF, want 0", got)
+	}
+
+	// 2. Verify dialQUICStream closes the underlying QUIC connection when the returned net.Conn is closed.
+	be := &Backend{
+		quicTransport: qt,
+	}
+	streamConn, err := be.dialQUICStream(ctx, ln.Addr().String(), clientTC)
+	if err != nil {
+		t.Fatalf("dialQUICStream: %v", err)
+	}
+	if _, err := streamConn.Write([]byte("hi")); err != nil {
+		t.Fatalf("streamConn.Write: %v", err)
+	}
+	sc2 := <-serverConnCh
+	defer sc2.Close()
+	if err := streamConn.Close(); err != nil {
+		t.Fatalf("streamConn.Close: %v", err)
+	}
+	select {
+	case <-sc2.Context().Done():
+	case <-time.After(500 * time.Millisecond):
+		t.Errorf("dialQUICStream connection was not closed when streamConn.Close() was called")
+	}
+}

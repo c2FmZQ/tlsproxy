@@ -294,10 +294,12 @@ func (c *QUICConn) WrapConn(s any) *Conn {
 	case *QUICStream:
 		ctx, cancel := context.WithCancel(c.Context())
 		cc := &Conn{
-			Conn:        v,
-			ctx:         ctx,
-			cancel:      cancel,
-			annotations: make(map[string]any),
+			Conn:          v,
+			ctx:           ctx,
+			cancel:        cancel,
+			bytesSent:     newCounter(),
+			bytesReceived: newCounter(),
+			annotations:   make(map[string]any),
 		}
 		c.mu.Lock()
 		maps.Copy(cc.annotations, c.annotations)
@@ -322,9 +324,11 @@ func (c *QUICConn) WrapConn(s any) *Conn {
 			readDone:  readDone,
 			writeDone: writeDone,
 		},
-		ctx:         ctx,
-		cancel:      cancel,
-		annotations: make(map[string]any),
+		ctx:           ctx,
+		cancel:        cancel,
+		bytesSent:     newCounter(),
+		bytesReceived: newCounter(),
+		annotations:   make(map[string]any),
 	}
 	c.mu.Lock()
 	maps.Copy(cc.annotations, c.annotations)
@@ -373,8 +377,9 @@ func (c *QUICConn) AcceptUniStream(ctx context.Context) (quicapi.ReceiveStream, 
 		return nil, err
 	}
 	qs := &QUICStream{
-		Stream: &ReceiveOnlyStream{s, c.Context()},
-		qc:     c,
+		Stream:    &ReceiveOnlyStream{s, c.Context()},
+		qc:        c,
+		writeDone: true,
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -418,8 +423,9 @@ func (c *QUICConn) OpenUniStream() (quicapi.SendStream, error) {
 		return nil, err
 	}
 	qs := &QUICStream{
-		Stream: &SendOnlyStream{s, c.Context()},
-		qc:     c,
+		Stream:   &SendOnlyStream{s, c.Context()},
+		qc:       c,
+		readDone: true,
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -433,8 +439,9 @@ func (c *QUICConn) OpenUniStreamSync(ctx context.Context) (quicapi.SendStream, e
 		return nil, err
 	}
 	qs := &QUICStream{
-		Stream: &SendOnlyStream{s, c.Context()},
-		qc:     c,
+		Stream:   &SendOnlyStream{s, c.Context()},
+		qc:       c,
+		readDone: true,
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()

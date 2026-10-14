@@ -571,9 +571,14 @@ func (be *Backend) dialQUICStream(ctx context.Context, addr string, tc *tls.Conf
 	}
 	s, err := conn.OpenStreamSync(ctx)
 	if err != nil {
+		conn.Close()
 		return nil, err
 	}
-	return conn.WrapConn(s), nil
+	wc := conn.WrapConn(s)
+	wc.OnClose(func() {
+		conn.Close()
+	})
+	return wc, nil
 }
 
 func (be *Backend) dialQUICBackend(ctx context.Context, proto string) (*netw.QUICConn, error) {
