@@ -70,7 +70,7 @@ func getCertificate(this js.Value, args []js.Value) (result any) {
 	url := js.Global().Get("location").Get("pathname").String() + "?get=requestCert"
 
 	var sid string
-	if m := regexp.MustCompile(`__tlsproxySid=([^;]*)(;|$)`).FindStringSubmatch(js.Global().Get("document").Get("cookie").String()); len(m) > 1 {
+	if m := regexp.MustCompile(`(?:^|;\s*)__tlsproxySid=([^;]*)`).FindStringSubmatch(js.Global().Get("document").Get("cookie").String()); len(m) > 1 {
 		sid = m[1]
 	}
 

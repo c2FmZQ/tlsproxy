@@ -275,6 +275,8 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 	}
 	data.Token = token
 	_, data.Passkeys = be.SSO.p.(*passkeys.Manager)
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
 	ssoStatusTemplate.Execute(w, data)
 }
 
@@ -312,6 +314,7 @@ func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
 	}
 	if req.Method == http.MethodPost {
 		be.SSO.cm.ClearCookies(w)
+		sid.SetSessionID(w, req, "")
 	}
 	req.ParseForm()
 	if tokenStr := req.Form.Get("u"); tokenStr != "" {
@@ -321,9 +324,12 @@ func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		be.SSO.cm.ClearCookies(w)
+		sid.SetSessionID(w, req, "")
 		be.SSO.p.RequestLogin(w, req, url.String(), idp.WithSelectAccount(true))
 		return
 	}
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
 	logoutTemplate.Execute(w, struct {
 		Email  string
 		Method string
@@ -362,6 +368,8 @@ func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Reques
 	if len(data.DisplayURL) > 100 {
 		data.DisplayURL = data.DisplayURL[:97] + "..."
 	}
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
 	w.WriteHeader(http.StatusForbidden)
 	if err := permissionDeniedTemplate.Execute(w, data); err != nil {
 		be.logErrorF("ERR permission-denied-template: %v", err)
@@ -444,6 +452,8 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request, ov
 		if len(data.DisplayURL) > 100 {
 			data.DisplayURL = data.DisplayURL[:97] + "..."
 		}
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
 		w.WriteHeader(http.StatusForbidden)
 		if err := loginTemplate.Execute(w, data); err != nil {
 			be.logErrorF("ERR login-template: %v", err)

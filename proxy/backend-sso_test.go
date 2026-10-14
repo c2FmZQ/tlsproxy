@@ -654,3 +654,43 @@ func TestStripUnvalidatedIDTokenAndInternalCookies(t *testing.T) {
 		t.Errorf("TLSPROXYIDTOKEN=%q was not stripped on Bearer auth request", c.Value)
 	}
 }
+
+func TestLogoutSessionCookieAndFrameHeaders(t *testing.T) {
+	proxy := newBackendSSOTestProxy(t)
+	be := proxy.cfg.Backends[0]
+
+	// 1. POST /.sso/logout must rotate __tlsproxySid and set clickjacking headers.
+	req := httptest.NewRequest(http.MethodPost, "https://example.com/.sso/logout", nil)
+	req.AddCookie(&http.Cookie{Name: "__tlsproxySid", Value: "old-session-id"})
+	w := httptest.NewRecorder()
+	be.serveLogout(w, req)
+
+	var foundSidCookie bool
+	for _, c := range w.Result().Cookies() {
+		if c.Name == "__tlsproxySid" {
+			foundSidCookie = true
+			if c.Value == "old-session-id" || c.Value == "" {
+				t.Errorf("__tlsproxySid cookie after logout = %q, want new session ID", c.Value)
+			}
+		}
+	}
+	if !foundSidCookie {
+		t.Errorf("POST /.sso/logout did not rotate __tlsproxySid cookie")
+	}
+	if got := w.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("serveLogout X-Frame-Options = %q, want DENY", got)
+	}
+
+	// 2. serveSSOStatus and servePermissionDenied must set X-Frame-Options: DENY.
+	wStatus := httptest.NewRecorder()
+	be.serveSSOStatus(wStatus, httptest.NewRequest(http.MethodGet, "https://example.com/.sso/", nil))
+	if got := wStatus.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("serveSSOStatus X-Frame-Options = %q, want DENY", got)
+	}
+
+	wDenied := httptest.NewRecorder()
+	be.servePermissionDenied(wDenied, httptest.NewRequest(http.MethodGet, "https://example.com/secret", nil))
+	if got := wDenied.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("servePermissionDenied X-Frame-Options = %q, want DENY", got)
+	}
+}
