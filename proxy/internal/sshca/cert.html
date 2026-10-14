@@ -114,7 +114,7 @@ function getCert() {
     closeErr();
     document.getElementById('cert').textContent = cert;
     const download = document.getElementById('download');
-    download.href = 'data:text/plain;base64,' + window.btoa(cert);
+    download.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(cert);
     download.setAttribute('download', filename + '-cert.pub');
     show('certdiv');
   })
@@ -173,7 +173,7 @@ addEventListener('keydown', onKeydown);
 </div>
 <div id="message" style="text-align: left;">
   <p tkey="ssh-enter-public-key">Enter your SSH <em>Public</em> Key to receive a Certificate.</p>
-  <p><span tkey="ssh-principal">Principal:</span> [<b>{{.Email}}</b>] <span tkey="ssh-authority">Authority:</span> <b>{{.Name}}</b>.<a onclick="show('cadiv');")>&#9432;</a></p>
+  <p><span tkey="ssh-principal">Principal:</span> [<b>{{.Email}}</b>] <span tkey="ssh-authority">Authority:</span> <b>{{.Name}}</b>.<a onclick="show('cadiv');">&#9432;</a></p>
   <input id="filepicker" type="file" accept=".pub" style="opacity: 0;" onchange="receiveFile(this);"><br />
   <label for="ttl" tkey="ssh-expiration">Expiration:</label><select id="ttl">
     <option value="300" tkey="ssh-5-min">5 min</option>

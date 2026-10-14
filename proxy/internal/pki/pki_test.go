@@ -28,6 +28,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"sync"
@@ -337,5 +338,37 @@ func TestPKIDelegateAndCRLVerification(t *testing.T) {
 	}
 	if err := m.RevokeCertificate(ocspResp.Certificate.SerialNumber, RevokeReasonKeyCompromise); err == nil {
 		t.Errorf("RevokeCertificate(delegateCert) succeeded, want error")
+	}
+}
+
+func TestValidateCertificateRequestWeakKey(t *testing.T) {
+	m := newPKI(t, nil)
+
+	weakRSA, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey(1024): %v", err)
+	}
+	csrRaw, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: "weak-rsa"},
+	}, weakRSA)
+	if err != nil {
+		t.Fatalf("CreateCertificateRequest(weakRSA): %v", err)
+	}
+	if _, err := m.ValidateCertificateRequest(csrRaw); err == nil {
+		t.Errorf("ValidateCertificateRequest(1024-bit RSA) succeeded, want error")
+	}
+
+	weakECDSA, err := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey(P224): %v", err)
+	}
+	csrECDSA, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: "weak-ecdsa"},
+	}, weakECDSA)
+	if err != nil {
+		t.Fatalf("CreateCertificateRequest(weakECDSA): %v", err)
+	}
+	if _, err := m.ValidateCertificateRequest(csrECDSA); err == nil {
+		t.Errorf("ValidateCertificateRequest(P-224 ECDSA) succeeded, want error")
 	}
 }

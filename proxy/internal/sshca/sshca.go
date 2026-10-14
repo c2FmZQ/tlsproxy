@@ -25,8 +25,10 @@
 package sshca
 
 import (
+	"bytes"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	_ "embed"
 	"encoding/binary"
@@ -135,7 +137,13 @@ func (ca *SSHCA) open() (func(commit bool, errp *error) error, error) {
 	if err != nil {
 		return nil, err
 	}
-	return commit, nil
+	return func(doCommit bool, errp *error) error {
+		err := commit(doCommit, errp)
+		for i := range ca.db.PrivateKey {
+			ca.db.PrivateKey[i] = 0
+		}
+		return err
+	}, nil
 }
 
 func (ca *SSHCA) initCA() (retErr error) {
@@ -319,7 +327,7 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 	switch ct := req.Header.Get("content-type"); ct {
 	case "text/plain":
 		defer req.Body.Close()
-		body, err := io.ReadAll(req.Body)
+		body, err := io.ReadAll(io.LimitReader(req.Body, 16384))
 		if err != nil {
 			ca.opts.Logger.Errorf("ERR body: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -350,14 +358,26 @@ func (ca *SSHCA) ServeCertificate(w http.ResponseWriter, req *http.Request) {
 	pub, _, _, _, err := ssh.ParseAuthorizedKey(key)
 	if err != nil {
 		ca.opts.Logger.Errorf("ERR key: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "invalid key", http.StatusBadRequest)
 		return
 	}
 	if c, ok := pub.(*ssh.Certificate); ok {
 		pub = c.Key
 	}
+	if bytes.Equal(pub.Marshal(), signer.PublicKey().Marshal()) {
+		ca.opts.Logger.Errorf("ERR cannot sign CA public key")
+		http.Error(w, "invalid key", http.StatusBadRequest)
+		return
+	}
 	switch kt := pub.Type(); kt {
 	case ssh.KeyAlgoRSA:
+		if cryptoPub, ok := pub.(ssh.CryptoPublicKey); ok {
+			if rsaPub, ok := cryptoPub.CryptoPublicKey().(*rsa.PublicKey); ok && rsaPub.N.BitLen() < 2048 {
+				ca.opts.Logger.Errorf("ERR rsa key too small: %d", rsaPub.N.BitLen())
+				http.Error(w, "rsa key too small", http.StatusBadRequest)
+				return
+			}
+		}
 	case ssh.KeyAlgoECDSA256:
 	case ssh.KeyAlgoSKECDSA256:
 	case ssh.KeyAlgoECDSA384:

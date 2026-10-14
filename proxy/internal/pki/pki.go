@@ -28,8 +28,11 @@ package pki
 import (
 	"bytes"
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	_ "crypto/sha512"
 	"crypto/x509"
@@ -775,6 +778,25 @@ func (m *PKIManager) ValidateCertificateRequest(csr []byte) (*x509.CertificateRe
 	}
 	if err := cr.CheckSignature(); err != nil {
 		return nil, err
+	}
+	switch pub := cr.PublicKey.(type) {
+	case *rsa.PublicKey:
+		if pub.N.BitLen() < 2048 {
+			return nil, errors.New("rsa key too small")
+		}
+		if pub.E < 65537 || pub.E%2 == 0 {
+			return nil, errors.New("invalid rsa public exponent")
+		}
+	case *ecdsa.PublicKey:
+		if pub.Curve.Params().BitSize < 256 {
+			return nil, errors.New("ecdsa curve too small")
+		}
+	case ed25519.PublicKey:
+	default:
+		return nil, errors.New("unsupported public key type")
+	}
+	if caCert, err := m.CACert(); err == nil && bytes.Equal(cr.RawSubjectPublicKeyInfo, caCert.RawSubjectPublicKeyInfo) {
+		return nil, errors.New("cannot sign CA public key")
 	}
 	return cr, nil
 }
