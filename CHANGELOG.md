@@ -7,46 +7,50 @@ This release fixes additional security and reliability issues found during a fol
 ### :warning: Breaking changes
 
 * **Minimum key sizes and supported algorithms:**
-  * The built-in PKI rejects CSRs with RSA keys smaller than 2048 bits, `P-224` ECDSA keys, or unsupported key
-    types.
-  * The SSH certificate authority rejects RSA keys smaller than 2048 bits and `ecdsa-sha2-nistp224` keys.
-  * Remote JWKS endpoints (`trustedIssuers`) ignore RSA keys smaller than 2048 bits, keys on unsupported curves,
-    and keys whose `use` is not `sig`.
+  * The built-in PKI rejects CSRs with RSA keys smaller than 2048 bits, RSA keys with an even public exponent or an
+    exponent smaller than 65537, `P-224` ECDSA keys, the CA's own public key, or unsupported key types.
+  * The SSH certificate authority rejects RSA keys smaller than 2048 bits and refuses to sign the CA's own public key.
+  * Remote JWKS endpoints (`trustedIssuers`) ignore RSA keys smaller than 2048 bits, RSA keys with an even public
+    exponent or an exponent smaller than 65537, keys on unsupported curves, and keys whose `use` is not `sig`.
 * **Built-in PKI:**
   * The Root CA certificate and delegated OCSP/CRL signing certificates can no longer be revoked through the
     certificate management endpoint (`?get=revokeCert`).
   * Delegated OCSP/CRL responder certificates are now issued with `IsCA: false` (instead of `IsCA: true`), and CRLs
     are signed directly with the Root CA key.
-  * The OCSP responder (`ServeOCSP`) verifies that the `IssuerNameHash` and `IssuerKeyHash` in OCSP requests match
-    the CA, and returns `Unauthorized` otherwise.
+  * The OCSP responder (`ServeOCSP`) rejects OCSP requests that use hash algorithms other than SHA-1, SHA-256,
+    SHA-384, or SHA-512, and uses the request's hash algorithm for `IssuerHash` in responses.
   * Browser-generated OpenPGP keys in the PKI WASM client now use iterated and salted S2K (`S2KMode: 3`) with
     AES-256.
 * **OCSP verification (`ocspcache` and `tlsclient --ocsp`):**
   * Delegated OCSP responder certificates must be within their `NotBefore`/`NotAfter` validity window.
   * OCSP responses without `NextUpdate` are rejected if `ThisUpdate` is more than 24 hours old, and `ThisUpdate`
     cannot be more than 5 minutes in the future.
-  * `tlsclient --ocsp` verifies that the stapled OCSP response serial number matches the server certificate.
+  * `ocspcache` verifies that stapled OCSP response serial numbers match the certificate.
 * **Cookies and headers:**
   * TLSPROXY's internal cookies (`TLSPROXYAUTH`, `TLSPROXYIDTOKEN`, `TLSPROXYNONCE`, `TLSPROXYSAMLNONCE`, and
     `__tlsproxySid`) are stripped from the `Cookie` header before forwarding requests to backends. `TLSPROXYIDTOKEN`
     is only forwarded when `forwardJwt` is set on the matching SSO rule and the token is valid.
   * Client `Connection` headers can no longer cause the proxy to strip headers it sets (`X-Forwarded-*`,
     `X-tlsproxy-user-id`, or `forwardHttpHeaders`).
-  * `/` characters in the `Subject` and `URI` fields of `X-Forwarded-Client-Cert` are now percent-encoded (`%2F`).
+  * `/` characters in the RDN values of the `Subject` field of `X-Forwarded-Client-Cert` are now escaped as `\/`, and
+    `X-Forwarded-Client-Cert` is now populated on HTTP/3 requests.
   * Logging out (`/.sso/logout`) rotates the `__tlsproxySid` session ID cookie.
   * Built-in HTML pages now include `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`.
 * **Local OIDC server and identity providers:**
-  * `rewriteRules` on the local OIDC server and extra claims from identity providers can no longer overwrite
-    reserved JWT/OIDC claims (`sub`, `iss`, `aud`, `exp`, `iat`, `nbf`, `jti`, `proxyauth`, `provider`, `hhash`,
-    `sid`, `th`, `depth`, `client_id`, `scope`, `groups`, `nonce`, `email`, `name`, `picture`).
-  * The device verification endpoint enforces the OIDC client's ACL before issuing a device token.
+  * `rewriteRules` on the local OIDC server can no longer overwrite reserved JWT/OIDC claims (`sub`, `iss`, `aud`,
+    `exp`, `iat`, `nbf`, `jti`, `client_id`, `scope`, `groups`, `nonce`, `proxyauth`, `provider`, `hhash`, `sid`,
+    `th`, `depth`), and extra claims from identity providers can no longer overwrite `sub`, `iss`, `aud`, `exp`,
+    `iat`, `nbf`, `jti`, `email`, `proxyauth`, `provider`, `hhash`, `sid`, or `th`.
+  * The device verification endpoint only copies standard OIDC profile/group claims (`email`, `name`, `given_name`,
+    `middle_name`, `family_name`, `picture`, `hd`, `groups`) into device tokens instead of internal session claims.
 * **Passkeys:**
-  * When a passkey provider is shared across multiple backends or SSO rules, an open rule (`acl: null`) no longer
-    overrides restrictive ACLs on other backends.
-  * The `/.sso/passkeys` endpoint registered on a passkey provider's callback host now requires authentication with
-    the `passkeys` scope.
-  * Passkey registration rejects RSA keys with a public exponent smaller than 65537 or an even exponent, and
-    credential IDs that are empty or longer than 1023 bytes.
+  * When a passkey provider is shared across multiple backends or SSO rules, ACLs from all rules are merged and any
+    open rule (`acl: null`) allows all authenticated users to register passkeys.
+  * `/.sso/passkeys` and `/.well-known/passkey-endpoints` are now registered on a passkey provider's callback host
+    even when that backend uses a different identity provider.
+  * Passkey registration and assertion verification require RSA keys of at least 2048 bits with an odd public
+    exponent `>= 3`, credential IDs between 16 and 1023 bytes that are unique across users, and a matching
+    `rpIdHash` on assertions.
 * **Rate and bandwidth limits:**
   * `forwardRateLimit` is now enforced on every HTTP request over keep-alive HTTP/1.1, HTTP/2, and HTTP/3
     connections, not only when establishing a new connection.
@@ -63,9 +67,10 @@ This release fixes additional security and reliability issues found during a fol
 * A client could list `X-Forwarded-For`, `X-tlsproxy-user-id`, or custom `forwardHttpHeaders` in the `Connection`
   header to have the proxy strip them before forwarding the request.
 * Reserved JWT claims could be overwritten via OIDC `rewriteRules` or identity provider extra claims.
-* The local OIDC server's device verification endpoint did not check the client's ACL when approving a device code.
-* The `/.sso/passkeys` endpoint on a passkey callback host was registered with `ssoBypass: true`, and sharing a
-  passkey provider with an open backend disabled the passkey manager's ACL check for other backends.
+* The local OIDC server's device verification endpoint copied internal session claims (`provider`, `th`, `depth`)
+  into device authorization sessions.
+* Passkey assertions did not verify `rpIdHash`, passkey registration did not check for duplicate credential IDs
+  across users, and `RefreshID` did not verify the user's email or `RefreshInterval`.
 * Re-authorizing connections after a config reload did not close connections without a client certificate when
   `clientAuth` had no `acl`.
 * `checkIP` was not enforced before the TLS handshake on QUIC connections.
@@ -87,10 +92,12 @@ This release fixes additional security and reliability issues found during a fol
   * Close queued connections when `proxyListener` closes, and close `os.Root` handles (`documentRoot`) on backend
     shutdown or reload.
   * Fix a data race in `TokenManager.HMAC()`, a data race on WebSocket `lastActive` timestamps, and a lock held
-    during `runtime.GC()` in `/debug/pprof/allocs`.
+    while collecting runtime memory/goroutine/mutex profiles on the metrics page; gate `/debug/pprof` handlers
+    behind the `pprof` build tag.
   * Handle multi-token `Connection` headers and non-binary frames in the WebSocket handler.
-  * Enforce HTTPS on the OIDC client `token_endpoint`, bound token response reads, parse all PEM blocks in SAML IdP
-    certificates, and periodically clean up expired OIDC authorization and device requests.
+  * Add timeouts, status code checks, and 1 MiB response limits on OIDC discovery, token, and userinfo requests,
+    parse all PEM blocks in SAML IdP certificates, and delete denied or already-approved OIDC authorization
+    requests immediately.
   * Wipe the temporary SSH CA private key buffer after loading, and cap `RLIM_INFINITY` in `openFileLimit()`.
   * Harden the example servers (`examples/backend`, `examples/oauth2server`, `examples/deviceauth`) and build
     scripts.
