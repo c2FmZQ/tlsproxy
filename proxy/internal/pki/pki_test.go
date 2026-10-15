@@ -425,7 +425,7 @@ func newRSAKeyWithExponent3(t *testing.T) *rsa.PrivateKey {
 
 // newCACertForTest creates a self-signed CA certificate for m's key with
 // the given key usage and SubjectKeyId, and installs it as m's CA cert.
-func newCACertForTest(t *testing.T, m *PKIManager, ku x509.KeyUsage, skid []byte, serial int64) *x509.Certificate {
+func newCACertForTest(t *testing.T, m *PKIManager, ku x509.KeyUsage, skid []byte, serial int64, notBefore time.Time) *x509.Certificate {
 	t.Helper()
 	var err error
 	commit, err := m.open()
@@ -437,12 +437,11 @@ func newCACertForTest(t *testing.T, m *PKIManager, ku x509.KeyUsage, skid []byte
 		t.Fatalf("parseKeyBytes: %v", err)
 	}
 	signer := pk.(stdcrypto.Signer)
-	now := time.Now()
 	templ := &x509.Certificate{
 		SerialNumber:          big.NewInt(serial),
 		Subject:               pkix.Name{CommonName: m.opts.Name},
-		NotBefore:             now,
-		NotAfter:              now.Add(caCertLifetime),
+		NotBefore:             notBefore,
+		NotAfter:              notBefore.Add(caCertLifetime),
 		KeyUsage:              ku,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
@@ -493,7 +492,7 @@ func TestCAReissuePreservesSubjectKeyId(t *testing.T) {
 	if err := commit(true, &err); err != nil {
 		t.Fatalf("commit: %v", err)
 	}
-	oldCA := newCACertForTest(t, m, x509.KeyUsageCertSign, sha1SKID[:], 1234)
+	oldCA := newCACertForTest(t, m, x509.KeyUsageCertSign, sha1SKID[:], 1234, time.Now())
 
 	// Issue a leaf certificate with the old CA.
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -563,7 +562,7 @@ func TestCAReissuePreservesSubjectKeyId(t *testing.T) {
 	// Simulate a CA certificate that was already re-issued with a
 	// different (go default) SubjectKeyId. KeyIDs must still return the
 	// AuthorityKeyId used by the issued certificates.
-	otherCA := newCACertForTest(t, m, x509.KeyUsageCertSign|x509.KeyUsageCRLSign, nil, 5678)
+	otherCA := newCACertForTest(t, m, x509.KeyUsageCertSign|x509.KeyUsageCRLSign, nil, 5678, time.Now())
 	if bytes.Equal(otherCA.SubjectKeyId, leaf.AuthorityKeyId) {
 		t.Fatalf("test setup: expected a different SubjectKeyId")
 	}
@@ -575,5 +574,73 @@ func TestCAReissuePreservesSubjectKeyId(t *testing.T) {
 		if !slices.Contains(ids, want) {
 			t.Errorf("KeyIDs() = %v, missing %s", ids, want)
 		}
+	}
+}
+
+func TestCARotationPreservesSubjectKeyId(t *testing.T) {
+	m := newPKI(t, nil)
+
+	// Install a CA certificate that is past half of its lifetime, with a
+	// SubjectKeyId that differs from the go default.
+	skid := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
+	commit, err := m.open()
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	m.db.IssuedCerts = nil
+	if err := commit(true, &err); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	oldCA := newCACertForTest(t, m, x509.KeyUsageCertSign|x509.KeyUsageCRLSign, skid, 1234, time.Now().Add(-3*caCertLifetime/4))
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey: %v", err)
+	}
+	csrRaw, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: "leaf"},
+	}, key)
+	if err != nil {
+		t.Fatalf("CreateCertificateRequest: %v", err)
+	}
+	cr, err := m.ValidateCertificateRequest(csrRaw)
+	if err != nil {
+		t.Fatalf("ValidateCertificateRequest: %v", err)
+	}
+	certBytes, err := m.IssueCertificate(cr)
+	if err != nil {
+		t.Fatalf("IssueCertificate: %v", err)
+	}
+	leaf, err := x509.ParseCertificate(certBytes)
+	if err != nil {
+		t.Fatalf("ParseCertificate: %v", err)
+	}
+
+	// Rotate the CA certificate.
+	if err := m.initCA(); err != nil {
+		t.Fatalf("initCA: %v", err)
+	}
+	newCA, err := m.CACert()
+	if err != nil {
+		t.Fatalf("CACert: %v", err)
+	}
+	if newCA.SerialNumber.Cmp(oldCA.SerialNumber) == 0 {
+		t.Fatalf("CA certificate was not rotated")
+	}
+	if !bytes.Equal(newCA.SubjectKeyId, skid) {
+		t.Errorf("rotated CA SubjectKeyId = %x, want %x", newCA.SubjectKeyId, skid)
+	}
+	if !bytes.Equal(leaf.AuthorityKeyId, newCA.SubjectKeyId) {
+		t.Errorf("leaf.AuthorityKeyId = %x, rotated CA SubjectKeyId = %x", leaf.AuthorityKeyId, newCA.SubjectKeyId)
+	}
+	// On rotation, the old CA certificate is kept in the issued list.
+	var caCount int
+	for _, c := range m.db.IssuedCerts {
+		if cert, _ := c.parse(); cert != nil && cert.IsCA && cert.Subject.CommonName == m.opts.Name {
+			caCount++
+		}
+	}
+	if caCount != 2 {
+		t.Errorf("found %d CA certificates in IssuedCerts, want 2", caCount)
 	}
 }
