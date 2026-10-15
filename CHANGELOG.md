@@ -18,10 +18,10 @@ This release fixes additional security and reliability issues found during a fol
     certificate management endpoint (`?get=revokeCert`).
   * Delegated OCSP/CRL responder certificates are now issued with `IsCA: false` (instead of `IsCA: true`), and CRLs
     are signed directly with the Root CA key.
-  * If the Root CA certificate doesn't have the `CRLSign` key usage, it is re-issued at startup with the same key
-    and subject, but a new serial number and fingerprint. The old certificate is replaced in the list of issued
-    certificates, and a warning with the old and new fingerprints is logged. Clients that pin the CA certificate's
-    fingerprint must be updated.
+  * If the Root CA certificate doesn't have the `CRLSign` key usage, it is re-issued at startup with the same key,
+    subject, and `SubjectKeyId`, but a new serial number and fingerprint. The old certificate is replaced in the
+    list of issued certificates, and a warning with the old and new fingerprints is logged. Clients that pin the CA
+    certificate's fingerprint must be updated.
   * The OCSP responder (`ServeOCSP`) rejects OCSP requests that use hash algorithms other than SHA-1, SHA-256,
     SHA-384, or SHA-512, and uses the request's hash algorithm for `IssuerHash` in responses.
   * Browser-generated OpenPGP keys in the PKI WASM client now use AES-256 and a higher S2K iteration count.
@@ -91,6 +91,9 @@ This release fixes additional security and reliability issues found during a fol
   * Fix `GET` OCSP requests when the base64-encoded request contains `/` or `%2F`, and stop caching `ocsp.Unknown`
     responses.
   * Enforce `localHandler` scopes in `enforceSSOPolicy` even when no SSO rule matches.
+  * Recognize certificates issued by a local PKI by the `AuthorityKeyId` of all its issued certificates, not only
+    the current CA certificate's `SubjectKeyId`, so that a CA certificate re-issued with a different `SubjectKeyId`
+    (go 1.25 changed the default derivation from SHA-1 to SHA-256) doesn't send client certificates through OCSP.
   * Key the connection tracker by connection pointer to avoid 4-tuple collisions and leaks on QUIC connection
     migration.
   * Track QUIC stream goroutines during backend shutdown, recover from panics in QUIC stream handlers, close the

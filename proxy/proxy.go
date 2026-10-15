@@ -690,7 +690,13 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 					if err != nil {
 						return err
 					}
-					be.pkiMap[hex.EncodeToString(ca.SubjectKeyId)] = m
+					ids, err := m.KeyIDs()
+					if err != nil {
+						return err
+					}
+					for _, id := range ids {
+						be.pkiMap[id] = m
+					}
 					be.clientCAs.AddCert(ca)
 					continue
 				}
@@ -757,7 +763,13 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				if err != nil {
 					return err
 				}
-				be.pkiMap[hex.EncodeToString(ca.SubjectKeyId)] = m
+				ids, err := m.KeyIDs()
+				if err != nil {
+					return err
+				}
+				for _, id := range ids {
+					be.pkiMap[id] = m
+				}
 				be.forwardRootCAs.AddCert(ca)
 				continue
 			}
@@ -782,7 +794,13 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 					if err != nil {
 						return err
 					}
-					be.pkiMap[hex.EncodeToString(ca.SubjectKeyId)] = m
+					ids, err := m.KeyIDs()
+					if err != nil {
+						return err
+					}
+					for _, id := range ids {
+						be.pkiMap[id] = m
+					}
 					po.forwardRootCAs.AddCert(ca)
 					continue
 				}

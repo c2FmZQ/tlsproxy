@@ -38,6 +38,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -291,6 +292,7 @@ func (m *PKIManager) initCA() (retErr error) {
 
 	now := time.Now().UTC()
 	var needCert, replaceCert bool
+	var oldCert *x509.Certificate
 	if m.db.CACert == nil {
 		needCert = true
 	} else {
@@ -298,6 +300,7 @@ func (m *PKIManager) initCA() (retErr error) {
 		if err != nil {
 			return err
 		}
+		oldCert = cert
 		if cert.NotBefore.Add(cert.NotAfter.Sub(cert.NotBefore) / 2).Before(now) {
 			needCert = true
 		}
@@ -327,6 +330,13 @@ func (m *PKIManager) initCA() (retErr error) {
 			IssuingCertificateURL: m.opts.IssuingCertificateURL,
 			CRLDistributionPoints: m.opts.CRLDistributionPoints,
 			OCSPServer:            m.opts.OCSPServer,
+		}
+		if oldCert != nil {
+			// The key doesn't change. Keep the same SubjectKeyId so
+			// that the AuthorityKeyId of previously issued
+			// certificates still refers to this CA. (The default
+			// derivation changed from SHA-1 to SHA-256 in go 1.25.)
+			templ.SubjectKeyId = oldCert.SubjectKeyId
 		}
 		raw, err := x509.CreateCertificate(rand.Reader, templ, templ, privKey.Public(), privKey)
 		if err != nil {
@@ -779,6 +789,37 @@ func (m *PKIManager) CACert() (*x509.Certificate, error) {
 		return nil, errNotFound
 	}
 	return m.db.CACert.parse()
+}
+
+// KeyIDs returns the hex-encoded key identifiers that refer to this CA: the
+// SubjectKeyId of the CA certificate, and the AuthorityKeyId of all the
+// certificates it issued. They can differ if the CA certificate was re-issued
+// with a different SubjectKeyId.
+func (m *PKIManager) KeyIDs() ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.db == nil {
+		return nil, errNotFound
+	}
+	ca, err := m.db.CACert.parse()
+	if err != nil {
+		return nil, err
+	}
+	ids := []string{hex.EncodeToString(ca.SubjectKeyId)}
+	for _, c := range m.db.IssuedCerts {
+		cert, err := c.parse()
+		if err != nil {
+			return nil, err
+		}
+		if len(cert.AuthorityKeyId) == 0 {
+			continue
+		}
+		if id := hex.EncodeToString(cert.AuthorityKeyId); !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
 }
 
 // ValidateCertificateRequest parses and validates a certificate signing
