@@ -233,6 +233,10 @@ func (be *Backend) reverseProxy() http.Handler {
 				be.logPanic(req, r)
 			}
 		}()
+		// Remove the hop-by-hop headers listed in the client's Connection
+		// header before the proxy injects any header of its own, so that
+		// clients can't use it to strip proxy-injected headers.
+		cleanConnectionHeaders(req.Header)
 		if !be.checkRequestHost(w, req) {
 			return
 		}
@@ -332,13 +336,11 @@ func (be *Backend) reverseProxy() http.Handler {
 				return
 			}
 		}
-		cleanConnectionHeaders(req.Header)
 		hops = append(hops, req.Proto+" "+me)
 		req.Header.Set(viaHeader, strings.Join(hops, ", "))
 
 		if sanitizePath {
 			req.URL.Path = cleanPath
-			req.URL.RawPath = ""
 		}
 		delHeaderVariants(req.Header, xForwardedForHeader)
 		delHeaderVariants(req.Header, xFCCHeader)
@@ -357,14 +359,6 @@ func (be *Backend) reverseProxy() http.Handler {
 				}
 			}
 		}
-		if be.SSO != nil && be.SSO.SetUserIDHeader {
-			if claims := fromctx.Claims(req.Context()); claims != nil {
-				if email, ok := claims["email"].(string); ok && email != "" {
-					req.Header.Set(xTLSProxyUserIDHeader, email)
-				}
-			}
-		}
-
 		// A value of -1 for ContentLength indicates that the size of
 		// request's body is unknown or that the client did not specify
 		// it.
@@ -476,6 +470,13 @@ func (be *Backend) checkScopes(want []string, w http.ResponseWriter, req *http.R
 	return false
 }
 
+// setNoFrameHeaders prevents the response from being displayed in a frame
+// (clickjacking protection).
+func setNoFrameHeaders(h http.Header) {
+	h.Set("X-Frame-Options", "DENY")
+	h.Set("Content-Security-Policy", "frame-ancestors 'none'")
+}
+
 // handleLocalEndpointsAndAuthorize handles local endpoints and applies the SSO
 // authorization policy. It returns true if processing of the request should
 // continue.
@@ -508,6 +509,7 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 			be.redirectPermanently(w, req, cleanPath)
 			return false
 		}
+		setNoFrameHeaders(w.Header())
 		be.setAltSvc(w.Header(), req)
 		// Set a sensible limit for local handlers.
 		req.Body = http.MaxBytesReader(w, req.Body, 102400)

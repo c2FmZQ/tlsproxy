@@ -699,6 +699,13 @@ func (s *ProviderServer) ServeUserInfo(w http.ResponseWriter, req *http.Request)
 	w.Write(content)
 }
 
+// ReservedClaims are the claims that rewrite rules are not allowed to set.
+var ReservedClaims = []string{
+	"sub", "iss", "aud", "exp", "iat", "nbf", "jti",
+	"proxyauth", "provider", "hhash", "sid", "th", "depth",
+	"client_id", "scope", "groups", "nonce",
+}
+
 func (s *ProviderServer) applyRewriteRules(rules []RewriteRule, in, out jwt.MapClaims) {
 	buf := maps.Clone(in)
 	getClaim := func(n string) string {
@@ -713,13 +720,8 @@ func (s *ProviderServer) applyRewriteRules(rules []RewriteRule, in, out jwt.MapC
 		}
 		return ""
 	}
-	reserved := []string{
-		"sub", "iss", "aud", "exp", "iat", "nbf", "jti",
-		"proxyauth", "provider", "hhash", "sid", "th", "depth",
-		"client_id", "scope", "groups", "nonce",
-	}
 	for _, rr := range rules {
-		if slices.Contains(reserved, rr.OutputClaim) {
+		if slices.Contains(ReservedClaims, rr.OutputClaim) {
 			s.opts.Logger.Errorf("ERR REGEX %q: output claim %q is reserved", rr.Regex, rr.OutputClaim)
 			continue
 		}

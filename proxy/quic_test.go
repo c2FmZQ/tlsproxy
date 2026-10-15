@@ -523,11 +523,16 @@ func isCancel999(err error) bool {
 }
 
 func quicGet(name, addr, msg string, rootCA *certmanager.CertManager, protos []string) (string, error) {
+	return quicGetWithClientCerts(name, addr, msg, rootCA, nil, protos)
+}
+
+func quicGetWithClientCerts(name, addr, msg string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate, protos []string) (string, error) {
 	ctx := context.Background()
 	tc := &tls.Config{
-		ServerName: name,
-		RootCAs:    rootCA.RootCACertPool(),
-		NextProtos: protos,
+		ServerName:   name,
+		RootCAs:      rootCA.RootCACertPool(),
+		Certificates: clientCerts,
+		NextProtos:   protos,
 	}
 
 	conn, err := quicapi.DialAddr(ctx, addr, tc, &quic.Config{})
@@ -1207,6 +1212,64 @@ func TestQUICPreHandshakeCheckIPAndALPN(t *testing.T) {
 	for _, proto := range tc.NextProtos {
 		if proto == "h2" {
 			t.Errorf("be.tlsConfig(true) for ModeHTTP offered ALPN %q, want it excluded", proto)
+		}
+	}
+}
+
+// TestQUICStreamHTTPClientCertHeader verifies that X-Forwarded-Client-Cert is
+// populated when HTTP is served over a raw QUIC stream (ALPN other than h3),
+// where req.TLS is nil and the TLS state comes from the QUIC connection.
+func TestQUICStreamHTTPClientCertHeader(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	clientCA, err := certmanager.New("client-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	be := newHTTPServer(t, ctx, "HTTP Backend", nil)
+
+	cfg := &Config{
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(100),
+		Backends: []*Backend{{
+			ServerNames: Strings{"http.example.com"},
+			Mode:        "HTTP",
+			Addresses:   Strings{be.String()},
+			ALPNProtos:  &Strings{"http/1.1"},
+			ClientAuth: &ClientAuth{
+				RootCAs:             Strings{clientCA.RootCAPEM()},
+				AddClientCertHeader: Strings{"subject", "hash"},
+			},
+		}},
+	}
+	proxy := newTestProxy(cfg, extCA)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	defer proxy.Stop()
+
+	clientCert, err := clientCA.GetCert("client.example.com")
+	if err != nil {
+		t.Fatalf("clientCA.GetCert: %v", err)
+	}
+	msg := "GET /?header=x-forwarded-client-cert HTTP/1.1\r\nHost: http.example.com\r\nConnection: close\r\n\r\n"
+	got, err := quicGetWithClientCerts("http.example.com", proxy.quicTransport.(*netw.QUICTransport).Addr().String(), msg, extCA, []tls.Certificate{*clientCert}, []string{"http/1.1"})
+	if err != nil {
+		t.Fatalf("quicGetWithClientCerts: %v", err)
+	}
+	if !strings.HasPrefix(got, "HTTP/1.1 200") {
+		t.Fatalf("unexpected response: %q", got)
+	}
+	for _, want := range []string{"x-forwarded-client-cert=", "Hash=", "Subject=", "client.example.com"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("response does not contain %q:\n%s", want, got)
 		}
 	}
 }

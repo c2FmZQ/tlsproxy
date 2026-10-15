@@ -35,6 +35,7 @@ import (
 	"net"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	quicapi "github.com/c2FmZQ/quic-api"
@@ -147,17 +148,17 @@ func newQUICConn(qc quicapi.Conn) *QUICConn {
 type QUICConn struct {
 	qc quicapi.Conn
 
-	ingressLimiter *rate.Limiter
-	egressLimiter  *rate.Limiter
+	ingressLimiter  atomic.Pointer[rate.Limiter]
+	egressLimiter   atomic.Pointer[rate.Limiter]
+	upBytesSent     atomic.Pointer[counter.Counter]
+	upBytesReceived atomic.Pointer[counter.Counter]
 
-	mu              sync.Mutex
-	onClose         func()
-	annotations     map[string]any
-	bytesSent       *counter.Counter
-	bytesReceived   *counter.Counter
-	upBytesSent     *counter.Counter
-	upBytesReceived *counter.Counter
-	streams         []*QUICStream
+	mu            sync.Mutex
+	onClose       func()
+	annotations   map[string]any
+	bytesSent     *counter.Counter
+	bytesReceived *counter.Counter
+	streams       []*QUICStream
 }
 
 // SetAnnotation sets an annotation. The value can be any go value.
@@ -195,33 +196,24 @@ func (c *QUICConn) removeStream(qs *QUICStream) {
 	})
 }
 
-// SetLimiter sets the rate limiters for this connection.
-// It must be called before the first Read() or Write(). Peek() is OK.
+// SetLimiters sets the rate limiters for this connection.
 func (c *QUICConn) SetLimiters(ingress, egress *rate.Limiter) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.ingressLimiter = ingress
-	c.egressLimiter = egress
+	c.ingressLimiter.Store(ingress)
+	c.egressLimiter.Store(egress)
 }
 
 // SetCounters sets the byte counters to use for this connection.
 func (c *QUICConn) SetCounters(sent, received *counter.Counter) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.upBytesSent = sent
-	c.upBytesReceived = received
+	c.upBytesSent.Store(sent)
+	c.upBytesReceived.Store(received)
 }
 
 func (c *QUICConn) getLimiters() (ingress, egress *rate.Limiter) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.ingressLimiter, c.egressLimiter
+	return c.ingressLimiter.Load(), c.egressLimiter.Load()
 }
 
 func (c *QUICConn) getCounters() (sent, received *counter.Counter) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.upBytesSent, c.upBytesReceived
+	return c.upBytesSent.Load(), c.upBytesReceived.Load()
 }
 
 // BytesSent returns the number of bytes sent on this connection so far.

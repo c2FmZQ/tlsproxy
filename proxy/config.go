@@ -1384,6 +1384,9 @@ func (cfg *Config) Check() error {
 					if rr.OutputClaim == "" {
 						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.RewriteRules[%d].OutputClaim must be set", i, j)
 					}
+					if slices.Contains(oidc.ReservedClaims, rr.OutputClaim) {
+						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.RewriteRules[%d].OutputClaim %q is reserved", i, j, rr.OutputClaim)
+					}
 					if rr.Regex == "" {
 						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.RewriteRules[%d].Regex must be set", i, j)
 					}

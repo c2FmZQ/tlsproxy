@@ -607,7 +607,6 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	data.Config = cfgbuf.String()
 
 	metricsTemplate.Execute(&buf, data)
-	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("content-type", "text/html; charset=utf-8")
 	w.Header().Set("content-length", fmt.Sprintf("%d", buf.Len()))

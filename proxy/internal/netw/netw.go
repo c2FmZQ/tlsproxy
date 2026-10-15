@@ -29,6 +29,7 @@ import (
 	"context"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -84,12 +85,12 @@ type Conn struct {
 
 	ctx             context.Context
 	cancel          func()
-	ingressLimiter  *rate.Limiter
-	egressLimiter   *rate.Limiter
+	ingressLimiter  atomic.Pointer[rate.Limiter]
+	egressLimiter   atomic.Pointer[rate.Limiter]
 	bytesSent       *counter.Counter
 	bytesReceived   *counter.Counter
-	upBytesSent     *counter.Counter
-	upBytesReceived *counter.Counter
+	upBytesSent     atomic.Pointer[counter.Counter]
+	upBytesReceived atomic.Pointer[counter.Counter]
 
 	mu          sync.Mutex
 	onClose     func()
@@ -135,32 +136,24 @@ func (c *Conn) Annotation(key string, defaultValue any) any {
 	return defaultValue
 }
 
-// SetLimiter sets the rate limiters for this connection.
-// It must be called before the first Read() or Write().
+// SetLimiters sets the rate limiters for this connection.
 func (c *Conn) SetLimiters(ingress, egress *rate.Limiter) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.ingressLimiter = ingress
-	c.egressLimiter = egress
+	c.ingressLimiter.Store(ingress)
+	c.egressLimiter.Store(egress)
 }
 
+// SetCounters sets the byte counters to use for this connection.
 func (c *Conn) SetCounters(sent, received *counter.Counter) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.upBytesSent = sent
-	c.upBytesReceived = received
+	c.upBytesSent.Store(sent)
+	c.upBytesReceived.Store(received)
 }
 
 func (c *Conn) getLimiters() (ingress, egress *rate.Limiter) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.ingressLimiter, c.egressLimiter
+	return c.ingressLimiter.Load(), c.egressLimiter.Load()
 }
 
 func (c *Conn) getCounters() (sent, received *counter.Counter) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.upBytesSent, c.upBytesReceived
+	return c.upBytesSent.Load(), c.upBytesReceived.Load()
 }
 
 // BytesSent returns the number of bytes sent on this connection so far.

@@ -31,6 +31,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"math/big"
 	"sync"
 	"testing"
 
@@ -370,5 +371,47 @@ func TestValidateCertificateRequestWeakKey(t *testing.T) {
 	}
 	if _, err := m.ValidateCertificateRequest(csrECDSA); err == nil {
 		t.Errorf("ValidateCertificateRequest(P-224 ECDSA) succeeded, want error")
+	}
+}
+
+func TestValidateCertificateRequestRSAExponent3(t *testing.T) {
+	m := newPKI(t, nil)
+	key := newRSAKeyWithExponent3(t)
+	csrRaw, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: "rsa-e3"},
+	}, key)
+	if err != nil {
+		t.Fatalf("CreateCertificateRequest: %v", err)
+	}
+	if _, err := m.ValidateCertificateRequest(csrRaw); err != nil {
+		t.Errorf("ValidateCertificateRequest(2048-bit RSA, e=3) = %v, want nil", err)
+	}
+}
+
+// newRSAKeyWithExponent3 returns a 2048-bit RSA key with public exponent 3.
+func newRSAKeyWithExponent3(t *testing.T) *rsa.PrivateKey {
+	t.Helper()
+	one := big.NewInt(1)
+	for {
+		k, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			t.Fatalf("rsa.GenerateKey: %v", err)
+		}
+		p, q := k.Primes[0], k.Primes[1]
+		phi := new(big.Int).Mul(new(big.Int).Sub(p, one), new(big.Int).Sub(q, one))
+		d := new(big.Int).ModInverse(big.NewInt(3), phi)
+		if d == nil {
+			continue
+		}
+		key := &rsa.PrivateKey{
+			PublicKey: rsa.PublicKey{N: k.N, E: 3},
+			D:         d,
+			Primes:    []*big.Int{p, q},
+		}
+		key.Precompute()
+		if err := key.Validate(); err != nil {
+			continue
+		}
+		return key
 	}
 }

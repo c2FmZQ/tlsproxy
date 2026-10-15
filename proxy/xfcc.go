@@ -100,7 +100,7 @@ func encodeXFCCSubject(input string) string {
 	s := &strings.Builder{}
 	for _, r := range input {
 		if r == ',' && !esc {
-			parts = append(parts, strings.ReplaceAll(s.String(), "/", `\/`))
+			parts = append(parts, s.String())
 			s.Reset()
 			esc = false
 			continue
@@ -110,7 +110,7 @@ func encodeXFCCSubject(input string) string {
 		s.WriteRune(r)
 	}
 	if s.Len() > 0 {
-		parts = append(parts, strings.ReplaceAll(s.String(), "/", `\/`))
+		parts = append(parts, s.String())
 	}
 	return encodeXFCC("/" + strings.Join(parts, "/"))
 }

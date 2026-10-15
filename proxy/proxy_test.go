@@ -1822,6 +1822,17 @@ func TestProxyListenerCloseAndDocRootCleanup(t *testing.T) {
 	}
 	be1.close(nil)
 	be2.close(nil)
+	// The document roots are closed after the HTTP server is closed,
+	// asynchronously.
+	rootsClosed := func() bool {
+		_, err1 := root1.Stat(".")
+		_, err2 := root2.Stat(".")
+		return err1 != nil && err2 != nil
+	}
+	deadline = time.Now().Add(time.Second)
+	for !rootsClosed() && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
 	if _, err := root1.Stat("."); err == nil {
 		t.Errorf("be.documentRoot was not closed by be.close(nil)")
 	}

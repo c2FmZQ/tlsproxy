@@ -327,6 +327,17 @@ func TestEnforceSSOPolicy(t *testing.T) {
 	if got := proxy.cfg.Backends[0].enforceSSOPolicy(w, unauthReq, Strings{"pki"}); got != false {
 		t.Errorf("enforceSSOPolicy(unauthenticated, overrideScopes=pki) = %v, want false", got)
 	}
+	// The unauthenticated user must go through the login flow, not get a
+	// bare 403.
+	if got, want := w.Code, http.StatusForbidden; got != want {
+		t.Errorf("response code = %d, want %d", got, want)
+	}
+	if body := w.Body.String(); strings.Contains(body, "missing request authorization") {
+		t.Errorf("unexpected response body: %q", body)
+	}
+	if got, want := w.Header().Get("X-Frame-Options"), "DENY"; got != want {
+		t.Errorf("X-Frame-Options = %q, want %q (login page expected)", got, want)
+	}
 	for _, tc := range []struct {
 		scope any
 		want  bool

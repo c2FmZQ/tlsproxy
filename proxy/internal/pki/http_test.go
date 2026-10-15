@@ -218,4 +218,13 @@ func TestRevokeCAAndOCSPGet(t *testing.T) {
 	if wRaw.Code != http.StatusOK {
 		t.Errorf("ServeOCSP(raw '/') status = %d, want 200", wRaw.Code)
 	}
+
+	// OCSPServer URL without a path: the whole path is the request.
+	m.opts.OCSPServer = []string{"https://pki.example.com"}
+	reqNoPath := httptest.NewRequest(http.MethodGet, "https://pki.example.com/"+b64, nil)
+	wNoPath := httptest.NewRecorder()
+	m.ServeOCSP(wNoPath, reqNoPath)
+	if wNoPath.Code != http.StatusOK {
+		t.Errorf("ServeOCSP(no path, raw '/') status = %d, want 200", wNoPath.Code)
+	}
 }

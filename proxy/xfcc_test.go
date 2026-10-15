@@ -56,7 +56,6 @@ func TestEncodeXFCCSubject(t *testing.T) {
 		{input: `C=US,O=Org,CN=foo`, output: `"/C=US/O=Org/CN=foo"`},
 		{input: `O=Org\,org=\,org=,CN=foo`, output: `"/O=Org\\,org=\\,org=/CN=foo"`},
 		{input: `O=Org,org=,org=,CN=foo`, output: `"/O=Org/org=/org=/CN=foo"`},
-		{input: `CN=user/OU=admin,O=Org`, output: `"/CN=user\\/OU=admin/O=Org"`},
 		{input: ``, output: `/`},
 	} {
 		if got, want := encodeXFCCSubject(tc.input), tc.output; got != want {

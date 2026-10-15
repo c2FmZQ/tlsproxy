@@ -100,27 +100,29 @@ func TestRemoteKidCollision(t *testing.T) {
 	}))
 	defer tsB.Close()
 
-	r := NewRemote(nil, nil)
-	r.SetIssuers([]Issuer{
-		{Issuer: "https://issuer-a.example.com", JWKSURI: tsA.URL},
-		{Issuer: "https://issuer-b.example.com", JWKSURI: tsB.URL},
-	})
-	r.Ready(t.Context())
+	// Callers use one Remote per trusted issuer so that keys with the same
+	// kid from different issuers are never confused.
+	rA := NewRemote(nil, nil)
+	rA.SetIssuers([]Issuer{{Issuer: "https://issuer-a.example.com", JWKSURI: tsA.URL}})
+	rA.Ready(t.Context())
+	rB := NewRemote(nil, nil)
+	rB.SetIssuers([]Issuer{{Issuer: "https://issuer-b.example.com", JWKSURI: tsB.URL}})
+	rB.Ready(t.Context())
 
 	for i := range 50 {
-		pkA, err := r.GetKeyForIssuer("https://issuer-a.example.com", "shared-kid")
+		pkA, err := rA.GetKey("shared-kid")
 		if err != nil {
-			t.Fatalf("iteration %d: GetKeyForIssuer(A): %v", i, err)
+			t.Fatalf("iteration %d: rA.GetKey: %v", i, err)
 		}
 		if pkA.(*ecdsa.PublicKey).X.Cmp(ecKeyA.X) != 0 {
-			t.Fatalf("iteration %d: GetKeyForIssuer(A) returned wrong key", i)
+			t.Fatalf("iteration %d: rA.GetKey returned wrong key", i)
 		}
-		pkB, err := r.GetKeyForIssuer("https://issuer-b.example.com", "shared-kid")
+		pkB, err := rB.GetKey("shared-kid")
 		if err != nil {
-			t.Fatalf("iteration %d: GetKeyForIssuer(B): %v", i, err)
+			t.Fatalf("iteration %d: rB.GetKey: %v", i, err)
 		}
 		if pkB.(*ecdsa.PublicKey).X.Cmp(ecKeyB.X) != 0 {
-			t.Fatalf("iteration %d: GetKeyForIssuer(B) returned wrong key", i)
+			t.Fatalf("iteration %d: rB.GetKey returned wrong key", i)
 		}
 	}
 }

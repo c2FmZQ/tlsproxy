@@ -311,6 +311,26 @@ func TestVerifyChains(t *testing.T) {
 		}
 	})
 
+	t.Run("Good without NextUpdate is cached", func(t *testing.T) {
+		mk, err := storagecrypto.CreateAESMasterKeyForTest()
+		if err != nil {
+			t.Fatalf("CreateAESMasterKeyForTest: %v", err)
+		}
+		c := New(storage.New(t.TempDir(), mk), testLogger{t})
+		leaf := newLeaf()
+		chains := [][]*x509.Certificate{{leaf.cert, ca.cert}}
+
+		serverResponse = newOCSPResponse(t, leaf, ca, ca, ocsp.Good, now, time.Time{})
+		if err := c.VerifyChains(context.Background(), chains, nil); err != nil {
+			t.Fatalf("VerifyChains(Good without NextUpdate) = %v, want nil", err)
+		}
+		// The response must now be served from the cache.
+		serverResponse = []byte("invalid-ocsp-response")
+		if err := c.VerifyChains(context.Background(), chains, nil); err != nil {
+			t.Errorf("VerifyChains(cached Good without NextUpdate) = %v, want nil", err)
+		}
+	})
+
 	t.Run("Non-200 HTTP status rejected before ASN.1 parsing", func(t *testing.T) {
 		var bodyRead bool
 		errServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {

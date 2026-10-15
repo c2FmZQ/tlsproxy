@@ -8,7 +8,7 @@ This release fixes additional security and reliability issues found during a fol
 
 * **Minimum key sizes and supported algorithms:**
   * The built-in PKI rejects CSRs with RSA keys smaller than 2048 bits, RSA keys with an even public exponent or an
-    exponent smaller than 65537, `P-224` ECDSA keys, the CA's own public key, or unsupported key types.
+    exponent smaller than 3, `P-224` ECDSA keys, the CA's own public key, or unsupported key types.
   * The SSH certificate authority rejects RSA keys smaller than 2048 bits and refuses to sign the CA's own public key.
   * Remote JWKS endpoints (`trustedIssuers`) ignore RSA keys smaller than 2048 bits, RSA keys with an even public
     exponent or an exponent outside `[3, 2^31-1]`, EC keys on unsupported curves or not on the curve, Ed25519 keys with
@@ -18,10 +18,13 @@ This release fixes additional security and reliability issues found during a fol
     certificate management endpoint (`?get=revokeCert`).
   * Delegated OCSP/CRL responder certificates are now issued with `IsCA: false` (instead of `IsCA: true`), and CRLs
     are signed directly with the Root CA key.
+  * If the Root CA certificate doesn't have the `CRLSign` key usage, it is re-issued at startup with the same key
+    and subject, but a new serial number and fingerprint. The old certificate is replaced in the list of issued
+    certificates, and a warning with the old and new fingerprints is logged. Clients that pin the CA certificate's
+    fingerprint must be updated.
   * The OCSP responder (`ServeOCSP`) rejects OCSP requests that use hash algorithms other than SHA-1, SHA-256,
     SHA-384, or SHA-512, and uses the request's hash algorithm for `IssuerHash` in responses.
-  * Browser-generated OpenPGP keys in the PKI WASM client now use iterated and salted S2K (`S2KMode: 3`) with
-    AES-256.
+  * Browser-generated OpenPGP keys in the PKI WASM client now use AES-256 and a higher S2K iteration count.
 * **OCSP verification (`ocspcache` and `tlsclient --ocsp`):**
   * Delegated OCSP responder certificates must be within their `NotBefore`/`NotAfter` validity window.
   * OCSP responses without `NextUpdate` are rejected if `ThisUpdate` is more than 24 hours old, and `ThisUpdate`
@@ -34,14 +37,14 @@ This release fixes additional security and reliability issues found during a fol
     is only forwarded when `generateIdTokens` is set on the backend's `sso` configuration and the token is valid.
   * Client `Connection` headers can no longer cause the proxy to strip headers it sets (`X-Forwarded-*`,
     `X-tlsproxy-user-id`, or `forwardHttpHeaders`).
-  * `/` characters in the RDN values of the `Subject` field of `X-Forwarded-Client-Cert` are now escaped as `\/`, and
-    `X-Forwarded-Client-Cert` is now populated on HTTP/3 requests.
+  * `X-Forwarded-Client-Cert` is now populated on HTTP requests served over raw QUIC streams (ALPN other than `h3`).
   * Logging out (`/.sso/logout`) rotates the `__tlsproxySid` session ID cookie.
   * Built-in HTML pages now include `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`.
 * **Local OIDC server and identity providers:**
-  * `rewriteRules` on the local OIDC server can no longer overwrite reserved JWT/OIDC claims (`sub`, `iss`, `aud`,
-    `exp`, `iat`, `nbf`, `jti`, `client_id`, `scope`, `groups`, `nonce`, `proxyauth`, `provider`, `hhash`, `sid`,
-    `th`, `depth`), and extra claims from identity providers can no longer overwrite `sub`, `iss`, `aud`, `exp`,
+  * `rewriteRules` on the local OIDC server are rejected at config validation if they would overwrite reserved
+    JWT/OIDC claims (`sub`, `iss`, `aud`, `exp`, `iat`, `nbf`, `jti`, `client_id`, `scope`, `groups`, `nonce`,
+    `proxyauth`, `provider`, `hhash`, `sid`, `th`, `depth`), and extra claims from identity providers can no longer
+    overwrite `sub`, `iss`, `aud`, `exp`,
     `iat`, `nbf`, `jti`, `email`, `scope`, `client_id`, `groups`, `proxyauth`, `provider`, `hhash`, `sid`, `th`, or
     non-integer `depth`.
   * The device verification endpoint only copies standard OIDC profile claims (`sub`, `email`, `email_verified`,
@@ -87,7 +90,6 @@ This release fixes additional security and reliability issues found during a fol
     status code before parsing fetched OCSP responses.
   * Fix `GET` OCSP requests when the base64-encoded request contains `/` or `%2F`, and stop caching `ocsp.Unknown`
     responses.
-  * Clear `req.URL.RawPath` when sanitizing request paths so `EscapedPath()` stays consistent with `Path`.
   * Enforce `localHandler` scopes in `enforceSSOPolicy` even when no SSO rule matches.
   * Key the connection tracker by connection pointer to avoid 4-tuple collisions and leaks on QUIC connection
     migration.

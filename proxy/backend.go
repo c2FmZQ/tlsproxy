@@ -103,8 +103,12 @@ func (be *Backend) close(ctx context.Context) {
 			be.httpServer = nil
 		}
 		if ctx == nil {
-			be.closeDocumentRoots()
-			go hs.Close()
+			go func() {
+				hs.Close()
+				be.state.mu.Lock()
+				be.closeDocumentRoots()
+				be.state.mu.Unlock()
+			}()
 		} else {
 			go func() {
 				hs.Shutdown(ctx)

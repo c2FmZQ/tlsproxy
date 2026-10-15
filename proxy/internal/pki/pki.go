@@ -290,7 +290,7 @@ func (m *PKIManager) initCA() (retErr error) {
 	}
 
 	now := time.Now().UTC()
-	var needCert bool
+	var needCert, replaceCert bool
 	if m.db.CACert == nil {
 		needCert = true
 	} else {
@@ -298,8 +298,14 @@ func (m *PKIManager) initCA() (retErr error) {
 		if err != nil {
 			return err
 		}
-		if cert.NotBefore.Add(cert.NotAfter.Sub(cert.NotBefore)/2).Before(now) || cert.KeyUsage&x509.KeyUsageCRLSign == 0 {
+		if cert.NotBefore.Add(cert.NotAfter.Sub(cert.NotBefore) / 2).Before(now) {
 			needCert = true
+		}
+		if cert.KeyUsage&x509.KeyUsageCRLSign == 0 {
+			// The CA certificate needs the CRLSign key usage to sign
+			// CRLs. Re-issue it with the same key and subject, and
+			// replace the old certificate.
+			needCert, replaceCert = true, true
 		}
 	}
 
@@ -332,6 +338,12 @@ func (m *PKIManager) initCA() (retErr error) {
 			SHA256:       bytesToHex(h256[:]),
 			SerialNumber: bytesToHex(sn.Bytes()),
 			Raw:          raw,
+		}
+		if old := m.db.CACert; old != nil && replaceCert {
+			m.opts.Logger.Errorf("ERR PKI %q: re-issued the CA certificate with the CRLSign key usage; SHA256 fingerprint %s ➔ %s; clients that pin the CA certificate must be updated", m.opts.Name, old.SHA256, c.SHA256)
+			m.db.IssuedCerts = slices.DeleteFunc(m.db.IssuedCerts, func(ic *certificate) bool {
+				return ic.SHA256 == old.SHA256
+			})
 		}
 		m.db.CACert = c
 		m.db.IssuedCerts = append(m.db.IssuedCerts, c)
@@ -784,7 +796,7 @@ func (m *PKIManager) ValidateCertificateRequest(csr []byte) (*x509.CertificateRe
 		if pub.N.BitLen() < 2048 {
 			return nil, errors.New("rsa key too small")
 		}
-		if pub.E < 65537 || pub.E%2 == 0 {
+		if pub.E < 3 || pub.E%2 == 0 {
 			return nil, errors.New("invalid rsa public exponent")
 		}
 	case *ecdsa.PublicKey:

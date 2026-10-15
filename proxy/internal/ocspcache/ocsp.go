@@ -299,6 +299,10 @@ func parseResponse(raw []byte, cert, issuer *x509.Certificate) (*ocsp.Response, 
 		}
 	} else if now.Sub(resp.ThisUpdate) > ocspDefaultMaxAge {
 		return nil, fmt.Errorf("response without NextUpdate is too old: %v", resp.ThisUpdate)
+	} else {
+		// Without NextUpdate, the response is considered valid for
+		// ocspDefaultMaxAge after ThisUpdate so that it can be cached.
+		resp.NextUpdate = resp.ThisUpdate.Add(ocspDefaultMaxAge)
 	}
 	return resp, nil
 }

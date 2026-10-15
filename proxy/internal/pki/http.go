@@ -133,18 +133,24 @@ func (m *PKIManager) ServeOCSP(w http.ResponseWriter, req *http.Request) {
 	switch req.Method {
 	case http.MethodGet:
 		// https://www.rfc-editor.org/rfc/rfc6960.html#page-30
+		// The encoded request follows the path of the configured OCSP
+		// server URL. Use the longest matching prefix when multiple URLs
+		// are configured, and fall back to the last path element when no
+		// URL matches.
 		escapedPath := req.URL.EscapedPath()
 		var b64 string
+		var matched bool
 		for _, s := range m.opts.OCSPServer {
-			if u, err := url.Parse(s); err == nil && u.Path != "" {
-				prefix := strings.TrimSuffix(u.EscapedPath(), "/") + "/"
-				if after, ok := strings.CutPrefix(escapedPath, prefix); ok {
-					b64 = after
-					break
-				}
+			u, err := url.Parse(s)
+			if err != nil {
+				continue
+			}
+			prefix := strings.TrimSuffix(u.EscapedPath(), "/") + "/"
+			if after, ok := strings.CutPrefix(escapedPath, prefix); ok && (!matched || len(after) < len(b64)) {
+				b64, matched = after, true
 			}
 		}
-		if b64 == "" {
+		if !matched {
 			off := strings.LastIndex(escapedPath, "/")
 			if off < 0 {
 				http.Error(w, "invalid request", http.StatusBadRequest)

@@ -482,6 +482,10 @@ func (tm *TokenManager) getKey(tok *jwt.Token) (interface{}, error) {
 	return nil, errors.New("not found")
 }
 
+// validateRemotePublicKey checks the parameters of public keys fetched from
+// remote JWKS endpoints. Newer versions of the jwks package perform the same
+// checks when the keys are fetched. This function can be removed once the jwks
+// module dependency is updated to a version that includes them.
 func validateRemotePublicKey(pub crypto.PublicKey) error {
 	switch k := pub.(type) {
 	case *ecdsa.PublicKey:
@@ -525,23 +529,6 @@ func (tm *TokenManager) getRemoteKey(issuer string) jwt.Keyfunc {
 		}
 		return pk, nil
 	}
-}
-
-func (tm *TokenManager) IssuerForKey(kid string) (string, bool) {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
-
-	for _, tk := range tm.keys.Keys {
-		if tk.ID == kid {
-			return "", true
-		}
-	}
-	for _, r := range tm.remotes {
-		if iss, ok := r.IssuerForKey(kid); ok {
-			return iss, true
-		}
-	}
-	return "", false
 }
 
 // ValidateToken validates a JSON Web Token (JWT) signed by one of the local

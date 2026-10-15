@@ -557,15 +557,11 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 
 	claims := fromctx.Claims(req.Context())
 	if claims == nil || claims["passkey_hash"] == nil {
+		// The request may have been authenticated by a different
+		// identity provider on this host. Look for a passkey session
+		// in the auth cookie.
 		if tok, _, err := m.cfg.CookieManager.ValidateAuthTokenCookie(req); err == nil {
 			claims, _ = tok.Claims.(jwt.MapClaims)
-		} else if claims != nil {
-			var opts []idp.Option
-			if email, ok := claims["email"].(string); ok {
-				opts = append(opts, idp.WithLoginHint(email))
-			}
-			m.RequestLogin(w, req, here, opts...)
-			return
 		}
 	}
 	var iat time.Time
@@ -575,7 +571,7 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 	hh := sha256.Sum256([]byte(req.Host))
-	if claims == nil || claims["hhash"] != hex.EncodeToString(hh[:]) || time.Since(iat) > 10*time.Minute {
+	if _, ok := claims["passkey_hash"].(string); !ok || claims["hhash"] != hex.EncodeToString(hh[:]) || time.Since(iat) > 10*time.Minute {
 		var opts []idp.Option
 		if claims != nil {
 			email, _ := claims["email"].(string)

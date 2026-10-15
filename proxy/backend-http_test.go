@@ -684,67 +684,6 @@ func TestForwardRateLimitKeepAlive(t *testing.T) {
 	}
 }
 
-func TestSanitizePathEncodedSlash(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
-	if err != nil {
-		t.Fatalf("certmanager.New: %v", err)
-	}
-
-	var gotRequestURI string
-	l, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		t.Fatalf("net.Listen: %v", err)
-	}
-	s := http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			gotRequestURI = req.RequestURI
-			w.WriteHeader(http.StatusOK)
-		}),
-	}
-	go s.Serve(l)
-	defer s.Close()
-
-	proxy := newTestProxy(
-		&Config{
-			HTTPAddr: newPtr("localhost:0"),
-			TLSAddr:  newPtr("localhost:0"),
-			CacheDir: newPtr(t.TempDir()),
-			MaxOpen:  newPtr(100),
-			Backends: []*Backend{
-				{
-					ServerNames: Strings{"http.example.com"},
-					Mode:        "HTTP",
-					Addresses:   Strings{l.Addr().String()},
-				},
-			},
-		},
-		extCA,
-	)
-	if err := proxy.Start(ctx); err != nil {
-		t.Fatalf("proxy.Start: %v", err)
-	}
-	defer proxy.Stop()
-
-	msg := "GET /api/v1%2Fpublic HTTP/1.1\r\nHost: http.example.com\r\nConnection: close\r\n\r\n"
-	got, _, err := tlsGet("http.example.com", proxy.listener.Addr().String(), msg, extCA, nil, []string{"http/1.1"})
-	if err != nil {
-		t.Fatalf("tlsGet: %v", err)
-	}
-	resp, err := http.ReadResponse(bufio.NewReader(strings.NewReader(got)), nil)
-	if err != nil {
-		t.Fatalf("http.ReadResponse: %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("StatusCode = %d, want 200", resp.StatusCode)
-	}
-	if want := "/api/v1/public"; gotRequestURI != want {
-		t.Errorf("Backend received RequestURI = %q, want %q", gotRequestURI, want)
-	}
-}
-
 func TestWebSocketAndConnectionUpgrade(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

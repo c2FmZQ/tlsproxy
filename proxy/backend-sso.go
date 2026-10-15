@@ -275,8 +275,7 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 	}
 	data.Token = token
 	_, data.Passkeys = be.SSO.p.(*passkeys.Manager)
-	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+	setNoFrameHeaders(w.Header())
 	ssoStatusTemplate.Execute(w, data)
 }
 
@@ -328,8 +327,7 @@ func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
 		be.SSO.cm.ClearCookies(w)
 		sid.SetSessionID(w, req, "")
 	}
-	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+	setNoFrameHeaders(w.Header())
 	logoutTemplate.Execute(w, struct {
 		Email  string
 		Method string
@@ -368,8 +366,7 @@ func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Reques
 	if len(data.DisplayURL) > 100 {
 		data.DisplayURL = data.DisplayURL[:97] + "..."
 	}
-	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+	setNoFrameHeaders(w.Header())
 	w.WriteHeader(http.StatusForbidden)
 	if err := permissionDeniedTemplate.Execute(w, data); err != nil {
 		be.logErrorF("ERR permission-denied-template: %v", err)
@@ -391,11 +388,13 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request, ov
 	}
 	rule := be.findSSORule(req)
 	if rule == nil {
-		// No rule applies, but the scopes of local handlers still apply.
-		if overrideScopes != nil {
-			return be.checkScopes(overrideScopes, w, req)
+		if overrideScopes == nil {
+			return true
 		}
-		return true
+		// No rule applies, but the scopes of local handlers still
+		// apply. Use a default rule so that unauthenticated users go
+		// through the login flow instead of getting a bare 403.
+		rule = &SSORule{}
 	}
 	claims := fromctx.Claims(req.Context())
 	var iat time.Time
@@ -452,8 +451,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request, ov
 		if len(data.DisplayURL) > 100 {
 			data.DisplayURL = data.DisplayURL[:97] + "..."
 		}
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+		setNoFrameHeaders(w.Header())
 		w.WriteHeader(http.StatusForbidden)
 		if err := loginTemplate.Execute(w, data); err != nil {
 			be.logErrorF("ERR login-template: %v", err)
