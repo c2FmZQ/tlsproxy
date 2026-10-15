@@ -559,6 +559,13 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 	if claims == nil || claims["passkey_hash"] == nil {
 		if tok, _, err := m.cfg.CookieManager.ValidateAuthTokenCookie(req); err == nil {
 			claims, _ = tok.Claims.(jwt.MapClaims)
+		} else if claims != nil {
+			var opts []idp.Option
+			if email, ok := claims["email"].(string); ok {
+				opts = append(opts, idp.WithLoginHint(email))
+			}
+			m.RequestLogin(w, req, here, opts...)
+			return
 		}
 	}
 	var iat time.Time

@@ -479,22 +479,26 @@ func TestPasskeyACLAggregationAndManageEndpoint(t *testing.T) {
 		t.Fatalf("FindStringSubmatch: %v", m)
 	}
 	token := m[2]
-	code, body, _ = get("https://"+host+m[1], nil, nil)
+	code, body, _ = get("https://login.example.com"+m[1], nil, nil)
 	if code != 200 {
 		t.Fatalf("RegisterNewID Code = %d, want 200", code)
 	}
 	// bob@example.com is not in allowed@example.com, so registerPasskey should NOT be offered
 	// and AddKey must return 403 Forbidden.
-	code, _, _ = get("https://"+host+"/passkey?get=AddKey&redirect="+token, nil, []byte{})
+	code, _, _ = get("https://login.example.com/passkey?get=AddKey&redirect="+token, nil, []byte{})
 	if code != http.StatusForbidden {
 		t.Errorf("AddKey for unauthorized user returned %d, want %d (403 Forbidden)", code, http.StatusForbidden)
 	}
 
 	// Visiting /.sso/passkeys on login.example.com (the passkey endpoint host)
-	// must be registered and return 200 (passkey login page) instead of 404.
-	code, _, _ = get("https://login.example.com/.sso/passkeys", nil, nil)
+	// when authenticated only with test-idp (same host, <10m, no passkey_hash)
+	// must redirect to the passkey login page (200) instead of failing with 500.
+	code, body, _ = get("https://login.example.com/.sso/passkeys", nil, nil)
 	if code != http.StatusOK {
 		t.Errorf("GET https://login.example.com/.sso/passkeys returned %d, want 200", code)
+	}
+	if !strings.Contains(body, "bob@example.com") {
+		t.Errorf("GET https://login.example.com/.sso/passkeys did not include login hint bob@example.com in body")
 	}
 
 	// Case 2: If a backend has both a restricted rule (/admin) and an unrestricted rule (/ with nil ACL),

@@ -11,7 +11,8 @@ This release fixes additional security and reliability issues found during a fol
     exponent smaller than 65537, `P-224` ECDSA keys, the CA's own public key, or unsupported key types.
   * The SSH certificate authority rejects RSA keys smaller than 2048 bits and refuses to sign the CA's own public key.
   * Remote JWKS endpoints (`trustedIssuers`) ignore RSA keys smaller than 2048 bits, RSA keys with an even public
-    exponent or an exponent smaller than 65537, keys on unsupported curves, and keys whose `use` is not `sig`.
+    exponent or an exponent outside `[3, 2^31-1]`, EC keys on unsupported curves or not on the curve, Ed25519 keys with
+    an invalid size, and keys whose `use` is not `sig`.
 * **Built-in PKI:**
   * The Root CA certificate and delegated OCSP/CRL signing certificates can no longer be revoked through the
     certificate management endpoint (`?get=revokeCert`).
@@ -25,11 +26,12 @@ This release fixes additional security and reliability issues found during a fol
   * Delegated OCSP responder certificates must be within their `NotBefore`/`NotAfter` validity window.
   * OCSP responses without `NextUpdate` are rejected if `ThisUpdate` is more than 24 hours old, and `ThisUpdate`
     cannot be more than 5 minutes in the future.
-  * `ocspcache` verifies that stapled OCSP response serial numbers match the certificate.
+  * `tlsclient --ocsp` verifies that stapled OCSP response serial numbers match the certificate, and `ocspcache` fails
+    chain verification when constructing an OCSP request or parsing an `OCSPServer` URL fails.
 * **Cookies and headers:**
   * TLSPROXY's internal cookies (`TLSPROXYAUTH`, `TLSPROXYIDTOKEN`, `TLSPROXYNONCE`, `TLSPROXYSAMLNONCE`, and
     `__tlsproxySid`) are stripped from the `Cookie` header before forwarding requests to backends. `TLSPROXYIDTOKEN`
-    is only forwarded when `forwardJwt` is set on the matching SSO rule and the token is valid.
+    is only forwarded when `generateIdTokens` is set on the backend's `sso` configuration and the token is valid.
   * Client `Connection` headers can no longer cause the proxy to strip headers it sets (`X-Forwarded-*`,
     `X-tlsproxy-user-id`, or `forwardHttpHeaders`).
   * `/` characters in the RDN values of the `Subject` field of `X-Forwarded-Client-Cert` are now escaped as `\/`, and
@@ -40,9 +42,12 @@ This release fixes additional security and reliability issues found during a fol
   * `rewriteRules` on the local OIDC server can no longer overwrite reserved JWT/OIDC claims (`sub`, `iss`, `aud`,
     `exp`, `iat`, `nbf`, `jti`, `client_id`, `scope`, `groups`, `nonce`, `proxyauth`, `provider`, `hhash`, `sid`,
     `th`, `depth`), and extra claims from identity providers can no longer overwrite `sub`, `iss`, `aud`, `exp`,
-    `iat`, `nbf`, `jti`, `email`, `proxyauth`, `provider`, `hhash`, `sid`, or `th`.
-  * The device verification endpoint only copies standard OIDC profile/group claims (`email`, `name`, `given_name`,
-    `middle_name`, `family_name`, `picture`, `hd`, `groups`) into device tokens instead of internal session claims.
+    `iat`, `nbf`, `jti`, `email`, `scope`, `client_id`, `groups`, `proxyauth`, `provider`, `hhash`, `sid`, `th`, or
+    non-integer `depth`.
+  * The device verification endpoint only copies standard OIDC profile claims (`sub`, `email`, `email_verified`,
+    `name`, `family_name`, `given_name`, `middle_name`, `nickname`, `preferred_username`, `profile`, `picture`,
+    `website`, `gender`, `birthdate`, `zoneinfo`, `locale`) and `sid` into device authorization sessions instead of
+    internal session claims.
 * **Passkeys:**
   * When a passkey provider is shared across multiple backends or SSO rules, ACLs from all rules are merged and any
     open rule (`acl: null`) allows all authenticated users to register passkeys.
