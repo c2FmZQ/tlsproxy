@@ -48,6 +48,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1697,11 +1698,11 @@ func newPtr[T any](v T) *T {
 
 type closeTrackingConn struct {
 	testConn
-	closed bool
+	closed atomic.Bool
 }
 
 func (c *closeTrackingConn) Close() error {
-	c.closed = true
+	c.closed.Store(true)
 	return nil
 }
 
@@ -1754,7 +1755,7 @@ func TestReAuthorizeNilBackendAndClientAuth(t *testing.T) {
 
 	proxy.reAuthorize()
 
-	if !tc2.closed {
+	if !tc2.closed.Load() {
 		t.Errorf("reAuthorize() did not close connection without clientCert when ClientAuth is enabled")
 	}
 }
@@ -1773,10 +1774,10 @@ func TestProxyListenerCloseAndDocRootCleanup(t *testing.T) {
 	close(ch)
 
 	deadline := time.Now().Add(time.Second)
-	for !tc.closed && time.Now().Before(deadline) {
+	for !tc.closed.Load() && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
-	if !tc.closed {
+	if !tc.closed.Load() {
 		t.Errorf("proxyListener.Close() drained connection without closing it")
 	}
 
