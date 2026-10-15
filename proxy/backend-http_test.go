@@ -876,6 +876,7 @@ func TestWebSocketAndConnectionUpgrade(t *testing.T) {
 	}
 	resp.Body.Close()
 	defer wsConn.Close()
+	wsConn.SetPingHandler(func(string) error { return nil })
 
 	for range 5 {
 		if err := wsConn.WriteControl(websocket.PongMessage, []byte("pong"), time.Now().Add(time.Second)); err != nil {

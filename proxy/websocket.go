@@ -24,6 +24,8 @@
 package proxy
 
 import (
+	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -46,6 +48,7 @@ func newWebSocketUpgrader() *websocket.Upgrader {
 
 func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		pingInterval := wsPingInterval
 		in, err := p.wsUpgrader.Upgrade(w, req, nil)
 		if err != nil {
 			p.logErrorF("ERR %v", err)
@@ -53,11 +56,14 @@ func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 		}
 		defer in.Close()
 
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+
 		dialer := &net.Dialer{
 			Timeout:   10 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}
-		out, err := dialer.DialContext(req.Context(), "tcp", cfg.Address)
+		out, err := dialer.DialContext(ctx, "tcp", cfg.Address)
 		if err != nil {
 			p.logErrorF("ERR webSocketHandler: %v", err)
 			return
@@ -87,8 +93,7 @@ func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 			return nil
 		})
 		go func() {
-			ctx := req.Context()
-			ticker := time.NewTicker(wsPingInterval)
+			ticker := time.NewTicker(pingInterval)
 			defer ticker.Stop()
 			for {
 				select {
@@ -104,7 +109,10 @@ func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 						return
 					}
 					if err := in.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(5*time.Second)); err != nil {
-						p.logErrorF("ERR WriteControl: %v", err)
+						if !errors.Is(err, websocket.ErrCloseSent) && !errors.Is(err, net.ErrClosed) {
+							p.logErrorF("ERR WriteControl: %v", err)
+						}
+						return
 					}
 				}
 			}
