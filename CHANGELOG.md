@@ -1,5 +1,24 @@
 # TLSPROXY Release Notes
 
+## next
+
+This release fixes more security issues.
+
+### :wrench: Misc
+
+* Update go: 1.27.2
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/storage v0.3.2 => v0.3.3
+  * upgraded github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261007172857-b4d54d07896c => v0.0.0-20261007173353-8a25cfd4b704
+  * upgraded github.com/c2FmZQ/tpm v0.5.0 => v0.6.0
+  * upgraded github.com/google/go-tpm-tools v0.4.7 => v0.4.10
+  * upgraded golang.org/x/crypto v0.57.0 => v0.58.0
+  * upgraded golang.org/x/net v0.59.0 => v0.61.0
+  * upgraded golang.org/x/sys v0.48.0 => v0.49.0
+  * upgraded golang.org/x/text v0.42.0 => v0.43.0
+  * upgraded google.golang.org/protobuf v1.36.5 => v1.36.12
+  * upgraded software.sslmate.com/src/go-pkcs12 v0.7.3 => v0.7.4
+
 ## v0.26.0
 
 This release fixes a number of security issues found during a security review. Some of the fixes change the
