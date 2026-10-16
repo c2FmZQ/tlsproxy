@@ -1,6 +1,6 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.26.1
 
 This release fixes additional security and reliability issues found during a follow-up review.
 
