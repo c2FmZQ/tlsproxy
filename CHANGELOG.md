@@ -118,6 +118,7 @@ This release fixes additional security and reliability issues found during a fol
   * upgraded github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261007172857-b4d54d07896c => v0.0.0-20261007173353-8a25cfd4b704
   * upgraded github.com/c2FmZQ/tpm v0.5.0 => v0.6.0
   * upgraded github.com/google/go-tpm-tools v0.4.7 => v0.4.10
+  * upgraded github.com/quic-go/quic-go v0.63.0 => v0.64.0
   * upgraded golang.org/x/crypto v0.57.0 => v0.58.0
   * upgraded golang.org/x/net v0.59.0 => v0.61.0
   * upgraded golang.org/x/sys v0.48.0 => v0.49.0
