@@ -16,8 +16,8 @@ github.com/c2FmZQ/quic-api v0.62.0 h1:VgtKObRB0PrFSRtRdeq7+CJB7d3w+zBag4A6wjT1ms
 github.com/c2FmZQ/quic-api v0.62.0/go.mod h1:gp5HWm41H4RC2GrdcLPTT+to3nuf2QZb5WP8ACE7GyA=
 github.com/c2FmZQ/storage v0.3.3 h1:aTBboyPxP1EWJLiBVSi2v0TMT/ghvSi0T6Y5XI+EqDA=
 github.com/c2FmZQ/storage v0.3.3/go.mod h1:HqbZdRtToj3EpWvoRRIRBjJIB+AOM0yDPigUK45btbw=
-github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261007173353-8a25cfd4b704 h1:MLq3cHTr/acRUcGV85QFndJZR0g+NpjMGpU94xa4ebg=
-github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261007173353-8a25cfd4b704/go.mod h1:WfdfzY1e35KBYAAZqBsrQYPl5xi9xBvXcvvwFt2I2Vc=
+github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261016145207-b32dbbe649da h1:LlOsB9ebROu1Bf7LX7f4VtWsmWVEnRNL8k6kV1jF4RM=
+github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261016145207-b32dbbe649da/go.mod h1:WfdfzY1e35KBYAAZqBsrQYPl5xi9xBvXcvvwFt2I2Vc=
 github.com/c2FmZQ/tpm v0.6.0 h1:yyCB3gikpaQAXNZl6mHzNn1+Jg5i1DvxzVTwsM6mggU=
 github.com/c2FmZQ/tpm v0.6.0/go.mod h1:GREbgaoxMdtsUrK6pf8j5HxfEWdxNP+rWS0lVkUZJT8=
 github.com/cloudflare/circl v1.6.5 h1:O64F26HEqNhznd/hrC5KZXVKYuKM2rx4deZDTc4ihQA=
