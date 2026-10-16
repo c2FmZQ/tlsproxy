@@ -96,9 +96,9 @@ type TokenManager struct {
 	logger logger
 	client *retryablehttp.Client
 
-	mu     sync.Mutex
-	keys   tokenKeys
-	remote *jwks.Remote
+	mu      sync.Mutex
+	keys    tokenKeys
+	remotes map[string]*jwks.Remote
 }
 
 // New returns a new TokenManager.
@@ -107,13 +107,13 @@ func New(store *storage.Storage, tpm *tpm.TPM, logger logger) (*TokenManager, er
 		logger = defaultLogger{}
 	}
 	tm := TokenManager{
-		store:  store,
-		tpm:    tpm,
-		logger: logger,
-		client: retryablehttp.NewClient(),
+		store:   store,
+		tpm:     tpm,
+		logger:  logger,
+		client:  retryablehttp.NewClient(),
+		remotes: make(map[string]*jwks.Remote),
 	}
 	tm.client.Logger = nil
-	tm.remote = jwks.NewRemote(tm.client, logger)
 	store.CreateEmptyFile(tokenKeyFile, &tm.keys)
 	if err := tm.rotateKeys(); err != nil {
 		return nil, err
@@ -136,10 +136,30 @@ func (tm *TokenManager) KeyRotationLoop(ctx context.Context) {
 }
 
 func (tm *TokenManager) SetTrustedIssuers(issuers []jwks.Issuer) {
-	tm.remote.SetIssuers(slices.Clone(issuers))
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+
+	inUse := make(map[string]bool, len(issuers))
+	for _, iss := range issuers {
+		inUse[iss.Issuer] = true
+		r, ok := tm.remotes[iss.Issuer]
+		if !ok {
+			r = jwks.NewRemote(tm.client, tm.logger)
+			tm.remotes[iss.Issuer] = r
+		}
+		r.SetIssuers([]jwks.Issuer{iss})
+	}
+	for k, r := range tm.remotes {
+		if !inUse[k] {
+			r.Stop()
+			delete(tm.remotes, k)
+		}
+	}
 }
 
 func (tm *TokenManager) HMAC(b []byte) []byte {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
 	mac := hmac.New(sha256.New, tm.keys.HMACKey)
 	mac.Write(b)
 	h := mac.Sum(nil)
@@ -186,7 +206,10 @@ func (tm *TokenManager) rotateKeys() (retErr error) {
 		keys.Keys = keys.Keys[1:]
 		changed = true
 	}
-	if !changed && len(tm.keys.Keys) > 0 {
+	tm.mu.Lock()
+	hasKeys := len(tm.keys.Keys) > 0
+	tm.mu.Unlock()
+	if !changed && hasKeys {
 		return nil
 	}
 
@@ -392,6 +415,9 @@ func (tm *TokenManager) CreateToken(claims jwt.Claims, alg string) (string, erro
 			tk = k
 		}
 	}
+	if tk == nil {
+		return "", errors.New("no matching key found")
+	}
 	tok := jwt.NewWithClaims(&tpmSigningMethod{method}, claims)
 	tok.Header["kid"] = tk.ID
 	return tok.SignedString(tk.privKey)
@@ -456,29 +482,53 @@ func (tm *TokenManager) getKey(tok *jwt.Token) (interface{}, error) {
 	return nil, errors.New("not found")
 }
 
+// validateRemotePublicKey checks the parameters of public keys fetched from
+// remote JWKS endpoints. Newer versions of the jwks package perform the same
+// checks when the keys are fetched. This function can be removed once the jwks
+// module dependency is updated to a version that includes them.
+func validateRemotePublicKey(pub crypto.PublicKey) error {
+	switch k := pub.(type) {
+	case *ecdsa.PublicKey:
+		if k.Curve == nil || k.X == nil || k.Y == nil || k.X.Sign() <= 0 || k.Y.Sign() <= 0 || !k.Curve.IsOnCurve(k.X, k.Y) {
+			return errors.New("invalid EC public key")
+		}
+		return nil
+	case *rsa.PublicKey:
+		if k.N == nil || k.N.BitLen() < 2048 || k.E < 3 || k.E%2 == 0 {
+			return errors.New("invalid RSA public key")
+		}
+		return nil
+	case ed25519.PublicKey:
+		if len(k) != ed25519.PublicKeySize {
+			return errors.New("invalid Ed25519 public key")
+		}
+		return nil
+	default:
+		return errors.New("unsupported public key type")
+	}
+}
+
 func (tm *TokenManager) getRemoteKey(issuer string) jwt.Keyfunc {
 	return func(tok *jwt.Token) (interface{}, error) {
 		kid, ok := tok.Header["kid"].(string)
 		if !ok {
 			return nil, errors.New("kid header missing")
 		}
-		if iss, ok := tm.remote.IssuerForKey(kid); !ok || iss != issuer {
+		tm.mu.Lock()
+		r := tm.remotes[issuer]
+		tm.mu.Unlock()
+		if r == nil {
 			return nil, errors.New("not found")
 		}
-		return tm.remote.GetKey(kid)
-	}
-}
-
-func (tm *TokenManager) IssuerForKey(kid string) (string, bool) {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
-
-	for _, tk := range tm.keys.Keys {
-		if tk.ID == kid {
-			return "", true
+		pk, err := r.GetKey(kid)
+		if err != nil {
+			return nil, err
 		}
+		if err := validateRemotePublicKey(pk); err != nil {
+			return nil, err
+		}
+		return pk, nil
 	}
-	return tm.remote.IssuerForKey(kid)
 }
 
 // ValidateToken validates a JSON Web Token (JWT) signed by one of the local

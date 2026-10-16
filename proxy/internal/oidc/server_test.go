@@ -99,6 +99,34 @@ func TestRewriteRules(t *testing.T) {
 	if want, got := "jdoe", out["username2"]; want != got {
 		t.Errorf("username2 = %q, want %q", got, want)
 	}
+
+	outReserved := jwt.MapClaims{
+		"sub":   "original-sub",
+		"scope": []string{"openid"},
+	}
+	rrReserved := []RewriteRule{
+		{InputClaim: "email", OutputClaim: "sub", Regex: "^(.*)$", Value: "admin"},
+		{InputClaim: "email", OutputClaim: "proxyauth", Regex: "^(.*)$", Value: "https://idp.example.com"},
+		{InputClaim: "email", OutputClaim: "scope", Regex: "^(.*)$", Value: "admin"},
+		{InputClaim: "email", OutputClaim: "client_id", Regex: "^(.*)$", Value: "other-client"},
+		{InputClaim: "email", OutputClaim: "groups", Regex: "^(.*)$", Value: "admins"},
+	}
+	s.applyRewriteRules(rrReserved, in, outReserved)
+	if got := outReserved["sub"]; got != "original-sub" {
+		t.Errorf("RewriteRule overwrote reserved claim sub = %v", got)
+	}
+	if got := outReserved["proxyauth"]; got != nil {
+		t.Errorf("RewriteRule set reserved claim proxyauth = %v", got)
+	}
+	if _, ok := outReserved["scope"].([]string); !ok {
+		t.Errorf("RewriteRule overwrote reserved claim scope = %v", outReserved["scope"])
+	}
+	if got := outReserved["client_id"]; got != nil {
+		t.Errorf("RewriteRule set reserved claim client_id = %v", got)
+	}
+	if got := outReserved["groups"]; got != nil {
+		t.Errorf("RewriteRule set reserved claim groups = %v", got)
+	}
 }
 
 func TestAuthorizationSameUser(t *testing.T) {
@@ -261,5 +289,104 @@ func TestTokenRedirectURIAndPKCE(t *testing.T) {
 		if got := token(getCode(), tc.redirectURI, tc.verifier); got != tc.want {
 			t.Errorf("%s: code %d, want %d", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestAuthorizationStateCleanupAndDeviceTokenStatus(t *testing.T) {
+	mk, err := crypto.CreateAESMasterKeyForTest()
+	if err != nil {
+		t.Fatalf("crypto.CreateAESMasterKeyForTest: %v", err)
+	}
+	tm, err := tokenmanager.New(storage.New(t.TempDir(), mk), nil, nil)
+	if err != nil {
+		t.Fatalf("tokenmanager.New: %v", err)
+	}
+	s := NewServer(ServerOptions{
+		CookieManager:  cookiemanager.New(tm, "idp", "example.com", "https://idp.example.com", 0, nil),
+		Clients:        []Client{{ID: "client", Secret: "secret", RedirectURI: []string{"https://app.example.com/callback"}}},
+		Scopes:         []string{"openid"},
+		ACLMatcher:     func([]string, string) bool { return true },
+		GroupsForEmail: func(string) []string { return nil },
+		EventRecorder:  nopRecorder{},
+		Logger:         nopLogger{},
+	})
+	withUser := func(req *http.Request) *http.Request {
+		return req.WithContext(fromctx.WithClaims(req.Context(), jwt.MapClaims{"email": "alice@example.com", "sub": "alice"}))
+	}
+
+	// 1. Denied authorization request must delete its code from s.codes.
+	args := url.Values{
+		"response_type": {"code"},
+		"client_id":     {"client"},
+		"redirect_uri":  {"https://app.example.com/callback"},
+		"scope":         {"openid"},
+	}
+	w := httptest.NewRecorder()
+	s.ServeAuthorization(w, withUser(httptest.NewRequest(http.MethodGet, "https://idp.example.com/authorization?"+args.Encode(), nil)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET: code %d", w.Code)
+	}
+	var reqID1 string
+	s.mu.Lock()
+	for _, v := range s.codes {
+		reqID1 = v.requestID
+	}
+	s.mu.Unlock()
+
+	form := url.Values{"request_id": {reqID1}, "approve": {"false"}}
+	req := httptest.NewRequest(http.MethodPost, "https://idp.example.com/authorization", strings.NewReader(form.Encode()))
+	req.Header.Set("content-type", "application/x-www-form-urlencoded")
+	w = httptest.NewRecorder()
+	s.ServeAuthorization(w, withUser(req))
+	if w.Code != http.StatusForbidden {
+		t.Errorf("POST deny: code %d, want %d", w.Code, http.StatusForbidden)
+	}
+	s.mu.Lock()
+	numCodes := len(s.codes)
+	s.mu.Unlock()
+	if numCodes != 0 {
+		t.Errorf("len(s.codes) after denial = %d, want 0", numCodes)
+	}
+
+	// 2. Approved authorization request must clear requestID so it cannot be approved twice.
+	w = httptest.NewRecorder()
+	s.ServeAuthorization(w, withUser(httptest.NewRequest(http.MethodGet, "https://idp.example.com/authorization?"+args.Encode(), nil)))
+	var reqID2 string
+	s.mu.Lock()
+	for _, v := range s.codes {
+		reqID2 = v.requestID
+	}
+	s.mu.Unlock()
+
+	form = url.Values{"request_id": {reqID2}, "approve": {"true"}}
+	req = httptest.NewRequest(http.MethodPost, "https://idp.example.com/authorization", strings.NewReader(form.Encode()))
+	req.Header.Set("content-type", "application/x-www-form-urlencoded")
+	w = httptest.NewRecorder()
+	s.ServeAuthorization(w, withUser(req))
+	if w.Code != http.StatusOK {
+		t.Errorf("POST approve: code %d, want %d", w.Code, http.StatusOK)
+	}
+
+	// Second POST with same request_id must fail.
+	req = httptest.NewRequest(http.MethodPost, "https://idp.example.com/authorization", strings.NewReader(form.Encode()))
+	req.Header.Set("content-type", "application/x-www-form-urlencoded")
+	w = httptest.NewRecorder()
+	s.ServeAuthorization(w, withUser(req))
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("second POST approve with same request_id: code %d, want %d", w.Code, http.StatusBadRequest)
+	}
+
+	// 3. Device token error responses must use HTTP 400 Bad Request per RFC 8628 Section 3.5.
+	devForm := url.Values{
+		"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
+		"device_code": {"nonexistent-device-code"},
+		"client_id":   {"client"},
+	}
+	req = httptest.NewRequest(http.MethodPost, "https://idp.example.com/token", strings.NewReader(devForm.Encode()))
+	req.Header.Set("content-type", "application/x-www-form-urlencoded")
+	w = httptest.NewRecorder()
+	s.ServeToken(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("ServeToken(expired_token) status = %d, want %d", w.Code, http.StatusBadRequest)
 	}
 }

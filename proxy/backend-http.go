@@ -233,6 +233,10 @@ func (be *Backend) reverseProxy() http.Handler {
 				be.logPanic(req, r)
 			}
 		}()
+		// Remove the hop-by-hop headers listed in the client's Connection
+		// header before the proxy injects any header of its own, so that
+		// clients can't use it to strip proxy-injected headers.
+		cleanConnectionHeaders(req.Header)
 		if !be.checkRequestHost(w, req) {
 			return
 		}
@@ -256,7 +260,8 @@ func (be *Backend) reverseProxy() http.Handler {
 
 		// Apply the forward rate limit. The first request was already
 		// counted when the connection was established.
-		if conn, ok := ctx.Value(connCtxKey).(annotatedConnection); ok {
+		if ac, ok := ctx.Value(connCtxKey).(anyConn); ok {
+			conn := annotatedConn(ac)
 			if !conn.Annotation(requestFlagKey, false).(bool) {
 				conn.SetAnnotation(requestFlagKey, true)
 			} else if err := be.waitConnLimit(ctx); err != nil {
@@ -317,15 +322,17 @@ func (be *Backend) reverseProxy() http.Handler {
 		// Detect forwarding loops using the via headers.
 		me := localNetConn(req.Context().Value(connCtxKey).(anyConn)).LocalAddr().String()
 		var hops []string
-		if h := req.Header.Get(viaHeader); h != "" {
-			hops = commaRE.Split(h, -1)
+		for _, h := range req.Header.Values(viaHeader) {
+			if h != "" {
+				hops = append(hops, commaRE.Split(h, -1)...)
+			}
 		}
 		for _, via := range hops {
 			if _, via, _ = strings.Cut(via, " "); via == me {
 				if req.Body != nil {
 					req.Body.Close()
 				}
-				http.Error(w, req.Header.Get(viaHeader), http.StatusLoopDetected)
+				http.Error(w, strings.Join(req.Header.Values(viaHeader), ", "), http.StatusLoopDetected)
 				return
 			}
 		}
@@ -463,13 +470,21 @@ func (be *Backend) checkScopes(want []string, w http.ResponseWriter, req *http.R
 	return false
 }
 
+// setNoFrameHeaders prevents the response from being displayed in a frame
+// (clickjacking protection).
+func setNoFrameHeaders(h http.Header) {
+	h.Set("X-Frame-Options", "DENY")
+	h.Set("Content-Security-Policy", "frame-ancestors 'none'")
+}
+
 // handleLocalEndpointsAndAuthorize handles local endpoints and applies the SSO
 // authorization policy. It returns true if processing of the request should
 // continue.
 func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *http.Request) bool {
 	defer func() {
-		// Filter out the tlsproxy auth cookie.
+		// Filter out the tlsproxy auth and session cookies.
 		cookiemanager.FilterOutAuthTokenCookie(req)
+		sid.FilterOutSessionCookie(req)
 	}()
 
 	reqHost := hostFromReq(req)
@@ -494,6 +509,7 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 			be.redirectPermanently(w, req, cleanPath)
 			return false
 		}
+		setNoFrameHeaders(w.Header())
 		be.setAltSvc(w.Header(), req)
 		// Set a sensible limit for local handlers.
 		req.Body = http.MaxBytesReader(w, req.Body, 102400)
@@ -519,7 +535,7 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 }
 
 func (be *Backend) reverseProxyDirector(req *http.Request) {
-	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 && be.ClientAuth != nil && len(be.ClientAuth.AddClientCertHeader) > 0 {
+	if be.ClientAuth != nil && len(be.ClientAuth.AddClientCertHeader) > 0 {
 		addXFCCHeader(req, be.ClientAuth.AddClientCertHeader)
 	}
 }
@@ -558,7 +574,7 @@ func (be *Backend) reverseProxyTransport() http.RoundTripper {
 
 	return funcRoundTripper(func(req *http.Request) (*http.Response, error) {
 		// Connection upgrades, e.g. websocket, must use http/1.
-		if req.ProtoMajor == 1 && strings.ToLower(req.Header.Get("connection")) == "upgrade" {
+		if req.ProtoMajor == 1 && isConnectionUpgrade(req.Header) {
 			return h1.RoundTrip(req)
 		}
 
@@ -579,6 +595,17 @@ func (be *Backend) reverseProxyTransport() http.RoundTripper {
 		}
 		return h1.RoundTrip(req)
 	})
+}
+
+func isConnectionUpgrade(h http.Header) bool {
+	for _, v := range h.Values("Connection") {
+		for _, tok := range strings.Split(v, ",") {
+			if strings.EqualFold(strings.TrimSpace(tok), "upgrade") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (be *Backend) reverseProxyModifyResponse(resp *http.Response) error {
@@ -621,5 +648,33 @@ func filterOutProxyCookies(h http.Header) {
 			continue
 		}
 		h.Add("Set-Cookie", c)
+	}
+}
+
+// cleanConnectionHeaders removes client-specified hop-by-hop headers before the
+// proxy adds its own headers, preventing a client Connection header from
+// instructing httputil.ReverseProxy to strip proxy-injected headers.
+func cleanConnectionHeaders(h http.Header) {
+	connHeaders := h.Values("Connection")
+	if len(connHeaders) == 0 {
+		return
+	}
+	hasUpgrade := false
+	for _, v := range connHeaders {
+		for _, f := range commaRE.Split(v, -1) {
+			f = strings.TrimSpace(f)
+			if f == "" {
+				continue
+			}
+			if strings.EqualFold(f, "upgrade") && h.Get("Upgrade") != "" {
+				hasUpgrade = true
+				continue
+			}
+			delHeaderVariants(h, f)
+		}
+	}
+	delHeaderVariants(h, "Connection")
+	if hasUpgrade {
+		h.Set("Connection", "upgrade")
 	}
 }

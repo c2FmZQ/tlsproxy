@@ -90,3 +90,54 @@ func TestCookies(t *testing.T) {
 		t.Fatalf("ValidateIDTokenCookie: %v", err)
 	}
 }
+
+func TestSetAuthTokenCookieReservedClaims(t *testing.T) {
+	dir := t.TempDir()
+	mk, err := crypto.CreateAESMasterKeyForTest()
+	if err != nil {
+		t.Fatalf("crypto.CreateMasterKey: %v", err)
+	}
+	store := storage.New(dir, mk)
+	tm, err := tokenmanager.New(store, nil, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	cm := New(tm, "idp", "example.com", "https://idp.example.com", 0, nil)
+
+	recorder := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "http://example.com", nil)
+
+	extra := map[string]any{
+		"scope":     []string{"admin"},
+		"client_id": "evil-client",
+		"depth":     "2",
+		"th":        []string{"fake-th"},
+		"groups":    []string{"admins"},
+		"nbf":       9999999999,
+		"jti":       "forged-jti",
+		"name":      "Alice",
+	}
+	if err := cm.SetAuthTokenCookie(recorder, req, "alice@example.com", "alice@example.com", "session123", "example.com", extra); err != nil {
+		t.Fatalf("SetAuthTokenCookie: %v", err)
+	}
+	for _, c := range recorder.Header()["Set-Cookie"] {
+		cookie, err := http.ParseSetCookie(c)
+		if err != nil {
+			t.Fatalf("http.ParseSetCookie: %v", err)
+		}
+		req.AddCookie(cookie)
+	}
+	tok, _, err := cm.ValidateAuthTokenCookie(req)
+	if err != nil {
+		t.Fatalf("ValidateAuthTokenCookie: %v", err)
+	}
+	claims := tok.Claims.(jwt.MapClaims)
+	for _, reserved := range []string{"scope", "client_id", "depth", "th", "groups", "nbf", "jti"} {
+		if v, exists := claims[reserved]; exists {
+			t.Errorf("reserved claim %q was set from extraClaims: %v", reserved, v)
+		}
+	}
+	if got, want := claims["name"], "Alice"; got != want {
+		t.Errorf("name = %v, want %v", got, want)
+	}
+}

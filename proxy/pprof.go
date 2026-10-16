@@ -28,14 +28,20 @@ package proxy
 import (
 	"net/http"
 	"net/http/pprof"
+	"runtime"
 )
+
+func init() {
+	runtime.SetMutexProfileFraction(1)
+	runtime.MemProfileRate = 1
+}
 
 func addPProfHandlers(h *[]localHandler) {
 	*h = append(*h,
-		localHandler{path: "/debug/pprof", matchPrefix: true, handler: http.HandlerFunc(pprof.Index)},
-		localHandler{path: "/debug/pprof/cmdline", handler: http.HandlerFunc(pprof.Cmdline)},
-		localHandler{path: "/debug/pprof/profile", handler: http.HandlerFunc(pprof.Profile)},
-		localHandler{path: "/debug/pprof/symbol", handler: http.HandlerFunc(pprof.Symbol)},
-		localHandler{path: "/debug/pprof/trace", handler: http.HandlerFunc(pprof.Trace)},
+		localHandler{desc: "PProf Index", path: "/debug/pprof", matchPrefix: true, handler: http.HandlerFunc(pprof.Index), scopes: Strings{scopeMetrics}},
+		localHandler{desc: "PProf Cmdline", path: "/debug/pprof/cmdline", handler: http.HandlerFunc(pprof.Cmdline), scopes: Strings{scopeMetrics}},
+		localHandler{desc: "PProf Profile", path: "/debug/pprof/profile", handler: http.HandlerFunc(pprof.Profile), scopes: Strings{scopeMetrics}},
+		localHandler{desc: "PProf Symbol", path: "/debug/pprof/symbol", handler: http.HandlerFunc(pprof.Symbol), scopes: Strings{scopeMetrics}},
+		localHandler{desc: "PProf Trace", path: "/debug/pprof/trace", handler: http.HandlerFunc(pprof.Trace), scopes: Strings{scopeMetrics}},
 	)
 }

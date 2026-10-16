@@ -43,9 +43,10 @@ import (
 )
 
 const (
-	ocspCacheSize = 200
-	ocspFile      = "ocsp-cache"
-	ocspMaxSkew   = 5 * time.Minute
+	ocspCacheSize     = 200
+	ocspFile          = "ocsp-cache"
+	ocspMaxSkew       = 5 * time.Minute
+	ocspDefaultMaxAge = 24 * time.Hour
 )
 
 var (
@@ -162,9 +163,6 @@ nextChain:
 				issuer = chain[i+1]
 			}
 			resp, err := c.Response(ctx, cert, issuer, 0)
-			if err == errOCSPInternal {
-				continue
-			}
 			if err != nil {
 				lastError = err
 				continue nextChain
@@ -203,12 +201,17 @@ func (c *OCSPCache) Response(ctx context.Context, cert, issuer *x509.Certificate
 		return nil, nil
 	}
 	hash := certHash(cert.Raw)
-	if resp, ok := c.cache.Get(hash); ok && time.Now().Add(margin).Before(resp.NextUpdate) {
-		return resp, nil
+	now := time.Now()
+	cached, ok := c.cache.Get(hash)
+	if ok && now.Add(margin).Before(cached.NextUpdate) {
+		return cached, nil
 	}
 	resp, err := c.fetchOCSP(ctx, cert, issuer)
-	if err == nil {
+	if err == nil && resp.Status != ocsp.Unknown {
 		c.cache.Add(hash, resp)
+	}
+	if (err != nil || resp.Status == ocsp.Unknown) && ok && now.Before(cached.NextUpdate) {
+		return cached, nil
 	}
 	return resp, err
 }
@@ -250,6 +253,10 @@ func (c *OCSPCache) fetchOneOCSP(ctx context.Context, cert, issuer *x509.Certifi
 		return nil, errOCSPProtocol
 	}
 	defer httpResp.Body.Close()
+	if httpResp.StatusCode != http.StatusOK {
+		c.logger.Errorf("ERR OCSP response for %s from %s: status %d", cert.Subject, server, httpResp.StatusCode)
+		return nil, errOCSPProtocol
+	}
 	body, err := io.ReadAll(&io.LimitedReader{R: httpResp.Body, N: 4096})
 	if err != nil {
 		c.logger.Errorf("ERR body: %v", err)
@@ -271,18 +278,31 @@ func parseResponse(raw []byte, cert, issuer *x509.Certificate) (*ocsp.Response, 
 	if err != nil {
 		return nil, err
 	}
+	now := time.Now()
 	// ParseResponseForCert verifies that the responder certificate is
 	// signed by issuer, but not that it is authorized to sign OCSP
-	// responses (RFC 6960 section 4.2.2.2).
-	if rc := resp.Certificate; rc != nil && !rc.Equal(issuer) && !slices.Contains(rc.ExtKeyUsage, x509.ExtKeyUsageOCSPSigning) {
-		return nil, errors.New("responder certificate is not authorized to sign OCSP responses")
+	// responses (RFC 6960 section 4.2.2.2) or within its validity window.
+	if rc := resp.Certificate; rc != nil && !rc.Equal(issuer) {
+		if !slices.Contains(rc.ExtKeyUsage, x509.ExtKeyUsageOCSPSigning) {
+			return nil, errors.New("responder certificate is not authorized to sign OCSP responses")
+		}
+		if now.Before(rc.NotBefore) || now.After(rc.NotAfter) {
+			return nil, errors.New("responder certificate is expired or not yet valid")
+		}
 	}
-	now := time.Now()
 	if resp.ThisUpdate.After(now.Add(ocspMaxSkew)) {
 		return nil, fmt.Errorf("response is not yet valid: %v", resp.ThisUpdate)
 	}
-	if !resp.NextUpdate.IsZero() && !now.Before(resp.NextUpdate) {
-		return nil, fmt.Errorf("response is expired: %v", resp.NextUpdate)
+	if !resp.NextUpdate.IsZero() {
+		if !now.Before(resp.NextUpdate) {
+			return nil, fmt.Errorf("response is expired: %v", resp.NextUpdate)
+		}
+	} else if now.Sub(resp.ThisUpdate) > ocspDefaultMaxAge {
+		return nil, fmt.Errorf("response without NextUpdate is too old: %v", resp.ThisUpdate)
+	} else {
+		// Without NextUpdate, the response is considered valid for
+		// ocspDefaultMaxAge after ThisUpdate so that it can be cached.
+		resp.NextUpdate = resp.ThisUpdate.Add(ocspDefaultMaxAge)
 	}
 	return resp, nil
 }

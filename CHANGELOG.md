@@ -1,5 +1,130 @@
 # TLSPROXY Release Notes
 
+## next
+
+This release fixes additional security and reliability issues found during a follow-up review.
+
+### :warning: Breaking changes
+
+* **Minimum key sizes and supported algorithms:**
+  * The built-in PKI rejects CSRs with RSA keys smaller than 2048 bits, RSA keys with an even public exponent or an
+    exponent smaller than 3, `P-224` ECDSA keys, the CA's own public key, or unsupported key types.
+  * The SSH certificate authority rejects RSA keys smaller than 2048 bits and refuses to sign the CA's own public key.
+  * Remote JWKS endpoints (`trustedIssuers`) ignore RSA keys smaller than 2048 bits, RSA keys with an even public
+    exponent or an exponent outside `[3, 2^31-1]`, EC keys on unsupported curves or not on the curve, Ed25519 keys with
+    an invalid size, and keys whose `use` is not `sig`.
+* **Built-in PKI:**
+  * The Root CA certificate and delegated OCSP/CRL signing certificates can no longer be revoked through the
+    certificate management endpoint (`?get=revokeCert`).
+  * Delegated OCSP/CRL responder certificates are now issued with `IsCA: false` (instead of `IsCA: true`), and CRLs
+    are signed directly with the Root CA key.
+  * If the Root CA certificate doesn't have the `CRLSign` key usage, it is re-issued at startup with the same key,
+    subject, and `SubjectKeyId`, but a new serial number and fingerprint. The old certificate is replaced in the
+    list of issued certificates, and a warning with the old and new fingerprints is logged. Clients that pin the CA
+    certificate's fingerprint must be updated.
+  * The OCSP responder (`ServeOCSP`) rejects OCSP requests that use hash algorithms other than SHA-1, SHA-256,
+    SHA-384, or SHA-512, and uses the request's hash algorithm for `IssuerHash` in responses.
+  * Browser-generated OpenPGP keys in the PKI WASM client now use AES-256 and a higher S2K iteration count.
+* **OCSP verification (`ocspcache` and `tlsclient --ocsp`):**
+  * Delegated OCSP responder certificates must be within their `NotBefore`/`NotAfter` validity window.
+  * OCSP responses without `NextUpdate` are rejected if `ThisUpdate` is more than 24 hours old, and `ThisUpdate`
+    cannot be more than 5 minutes in the future.
+  * `tlsclient --ocsp` verifies that stapled OCSP response serial numbers match the certificate, and `ocspcache` fails
+    chain verification when constructing an OCSP request or parsing an `OCSPServer` URL fails.
+* **Cookies and headers:**
+  * TLSPROXY's internal cookies (`TLSPROXYAUTH`, `TLSPROXYIDTOKEN`, `TLSPROXYNONCE`, `TLSPROXYSAMLNONCE`, and
+    `__tlsproxySid`) are stripped from the `Cookie` header before forwarding requests to backends. `TLSPROXYIDTOKEN`
+    is only forwarded when `generateIdTokens` is set on the backend's `sso` configuration and the token is valid.
+  * Client `Connection` headers can no longer cause the proxy to strip headers it sets (`X-Forwarded-*`,
+    `X-tlsproxy-user-id`, or `forwardHttpHeaders`).
+  * `X-Forwarded-Client-Cert` is now populated on HTTP requests served over raw QUIC streams (ALPN other than `h3`).
+  * Logging out (`/.sso/logout`) rotates the `__tlsproxySid` session ID cookie.
+  * Built-in HTML pages now include `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`.
+* **Local OIDC server and identity providers:**
+  * `rewriteRules` on the local OIDC server are rejected at config validation if they would overwrite reserved
+    JWT/OIDC claims (`sub`, `iss`, `aud`, `exp`, `iat`, `nbf`, `jti`, `client_id`, `scope`, `groups`, `nonce`,
+    `proxyauth`, `provider`, `hhash`, `sid`, `th`, `depth`), and extra claims from identity providers can no longer
+    overwrite `sub`, `iss`, `aud`, `exp`,
+    `iat`, `nbf`, `jti`, `email`, `scope`, `client_id`, `groups`, `proxyauth`, `provider`, `hhash`, `sid`, `th`, or
+    non-integer `depth`.
+  * The device verification endpoint only copies standard OIDC profile claims (`sub`, `email`, `email_verified`,
+    `name`, `family_name`, `given_name`, `middle_name`, `nickname`, `preferred_username`, `profile`, `picture`,
+    `website`, `gender`, `birthdate`, `zoneinfo`, `locale`) and `sid` into device authorization sessions instead of
+    internal session claims.
+* **Passkeys:**
+  * When a passkey provider is shared across multiple backends or SSO rules, ACLs from all rules are merged and any
+    open rule (`acl: null`) allows all authenticated users to register passkeys.
+  * `/.sso/passkeys` and `/.well-known/passkey-endpoints` are now registered on a passkey provider's callback host
+    even when that backend uses a different identity provider.
+  * Passkey registration and assertion verification require RSA keys of at least 2048 bits with an odd public
+    exponent `>= 3`, credential IDs between 16 and 1023 bytes that are unique across users, and a matching
+    `rpIdHash` on assertions.
+* **Rate and bandwidth limits:**
+  * `forwardRateLimit` is now enforced on every HTTP request over keep-alive HTTP/1.1, HTTP/2, and HTTP/3
+    connections, not only when establishing a new connection.
+  * `bwLimits` names are matched case-insensitively on backends, and bandwidth limits also apply to QUIC datagrams.
+* **Metrics and profiling:**
+  * `runtime.MemProfileRate` is no longer set to `1` on startup; memory profiling uses Go's default sampling rate.
+  * `forwardHttpHeaders` values containing `${JWT:...}` expressions are redacted on the metrics config page.
+
+### :lock: Security fixes
+
+* Remote JWKS keys were cached by `kid` across all `trustedIssuers`, allowing one trusted issuer to override
+  another issuer's signing key with the same `kid`.
+* Unvalidated `TLSPROXYIDTOKEN` and internal session/nonce cookies were forwarded to backends.
+* A client could list `X-Forwarded-For`, `X-tlsproxy-user-id`, or custom `forwardHttpHeaders` in the `Connection`
+  header to have the proxy strip them before forwarding the request.
+* Reserved JWT claims could be overwritten via OIDC `rewriteRules` or identity provider extra claims.
+* The local OIDC server's device verification endpoint copied internal session claims (`provider`, `th`, `depth`)
+  into device authorization sessions.
+* Passkey assertions did not verify `rpIdHash`, passkey registration did not check for duplicate credential IDs
+  across users, and `RefreshID` did not verify the user's email or `RefreshInterval`.
+* Re-authorizing connections after a config reload did not close connections without a client certificate when
+  `clientAuth` had no `acl`.
+* `checkIP` was not enforced before the TLS handshake on QUIC connections.
+
+### :wrench: Misc
+
+* Hardening and bug fixes:
+  * Bypass CSRF checks on the PKI OCSP (`POST`) and local OIDC `/userinfo` (`POST`) endpoints, and check the HTTP
+    status code before parsing fetched OCSP responses.
+  * Fix `GET` OCSP requests when the base64-encoded request contains `/` or `%2F`, and stop caching `ocsp.Unknown`
+    responses.
+  * Enforce `localHandler` scopes in `enforceSSOPolicy` even when no SSO rule matches.
+  * Recognize certificates issued by a local PKI by the `AuthorityKeyId` of all its issued certificates, not only
+    the current CA certificate's `SubjectKeyId`, so that a CA certificate re-issued with a different `SubjectKeyId`
+    (go 1.25 changed the default derivation from SHA-1 to SHA-256) doesn't send client certificates through OCSP.
+  * Key the connection tracker by connection pointer to avoid 4-tuple collisions and leaks on QUIC connection
+    migration.
+  * Track QUIC stream goroutines during backend shutdown, recover from panics in QUIC stream handlers, close the
+    underlying QUIC connection when dialing a stream fails, and fix a `QUICConn.streams` leak on unidirectional
+    streams.
+  * Close queued connections when `proxyListener` closes, and close `os.Root` handles (`documentRoot`) on backend
+    shutdown or reload.
+  * Fix a data race in `TokenManager.HMAC()`, a data race on WebSocket `lastActive` timestamps, and a lock held
+    while collecting runtime memory/goroutine/mutex profiles on the metrics page; gate `/debug/pprof` handlers
+    behind the `pprof` build tag.
+  * Handle multi-token `Connection` headers and non-binary frames in the WebSocket handler.
+  * Add timeouts, status code checks, and 1 MiB response limits on OIDC discovery, token, and userinfo requests,
+    parse all PEM blocks in SAML IdP certificates, and delete denied or already-approved OIDC authorization
+    requests immediately.
+  * Wipe the temporary SSH CA private key buffer after loading, and cap `RLIM_INFINITY` in `openFileLimit()`.
+  * Harden the example servers (`examples/backend`, `examples/oauth2server`, `examples/deviceauth`) and build
+    scripts.
+* New tests for all the changes above.
+* Update go: 1.27.2
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/storage v0.3.2 => v0.3.3
+  * upgraded github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261007172857-b4d54d07896c => v0.0.0-20261007173353-8a25cfd4b704
+  * upgraded github.com/c2FmZQ/tpm v0.5.0 => v0.6.0
+  * upgraded github.com/google/go-tpm-tools v0.4.7 => v0.4.10
+  * upgraded golang.org/x/crypto v0.57.0 => v0.58.0
+  * upgraded golang.org/x/net v0.59.0 => v0.61.0
+  * upgraded golang.org/x/sys v0.48.0 => v0.49.0
+  * upgraded golang.org/x/text v0.42.0 => v0.43.0
+  * upgraded google.golang.org/protobuf v1.36.5 => v1.36.12
+  * upgraded software.sslmate.com/src/go-pkcs12 v0.7.3 => v0.7.4
+
 ## v0.26.0
 
 This release fixes a number of security issues found during a security review. Some of the fixes change the

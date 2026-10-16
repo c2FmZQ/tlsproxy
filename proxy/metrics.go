@@ -54,8 +54,6 @@ var metricsTemplate *template.Template
 
 func init() {
 	metricsTemplate = template.Must(template.New("metrics").Parse(metricsEmbed))
-	runtime.SetMutexProfileFraction(1)
-	runtime.MemProfileRate = 1
 }
 
 func (p *Proxy) recordEvent(msg string) {
@@ -237,7 +235,6 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	defer buf.WriteTo(w)
 
 	p.mu.RLock()
-	defer p.mu.RUnlock()
 
 	totals := make(map[string]*backendMetrics)
 	for k, v := range p.metrics {
@@ -455,6 +452,9 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	data.Runtime.Uptime = time.Since(p.startTime).Truncate(time.Second).String()
+	cfg := p.cfg.clone()
+	p.mu.RUnlock()
+
 	data.Runtime.NumCPU = runtime.NumCPU()
 	data.Runtime.NumGoroutine = runtime.NumGoroutine()
 	var memStats runtime.MemStats
@@ -598,7 +598,6 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 		p.logErrorF("ERR GoroutineProfile n=%d", n)
 	}
 
-	cfg := p.cfg.clone()
 	redactConfig(cfg)
 	var cfgbuf bytes.Buffer
 	enc := yaml.NewEncoder(&cfgbuf)
@@ -608,6 +607,7 @@ func (p *Proxy) metricsHandler(w http.ResponseWriter, req *http.Request) {
 	data.Config = cfgbuf.String()
 
 	metricsTemplate.Execute(&buf, data)
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("content-type", "text/html; charset=utf-8")
 	w.Header().Set("content-length", fmt.Sprintf("%d", buf.Len()))
 }
@@ -620,6 +620,32 @@ func (p *Proxy) faviconHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 const redacted = "**REDACTED**"
+
+func redactHeaderValue(v string) string {
+	var b strings.Builder
+	for len(v) > 0 {
+		start := strings.Index(v, "${")
+		if start == -1 {
+			b.WriteString(redacted)
+			break
+		}
+		end := strings.Index(v[start:], "}")
+		if end == -1 {
+			b.WriteString(redacted)
+			break
+		}
+		end += start + 1
+		if start > 0 {
+			b.WriteString(redacted)
+		}
+		b.WriteString(v[start:end])
+		v = v[end:]
+	}
+	if b.Len() == 0 {
+		return redacted
+	}
+	return b.String()
+}
 
 // redactConfig removes secrets from cfg, so that it can be shown on the
 // metrics page.
@@ -642,12 +668,10 @@ func redactConfig(cfg *Config) {
 		p.ClientSecret = redacted
 	}
 	// Static header values can contain secrets, e.g. Authorization headers.
-	// Values with variables are not redacted.
+	// Only variable placeholders (${...}) are preserved unredacted.
 	redactHeaders := func(h map[string]string) {
 		for k, v := range h {
-			if !strings.Contains(v, "${") {
-				h[k] = redacted
-			}
+			h[k] = redactHeaderValue(v)
 		}
 	}
 	for _, be := range cfg.Backends {

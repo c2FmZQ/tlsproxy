@@ -523,11 +523,16 @@ func isCancel999(err error) bool {
 }
 
 func quicGet(name, addr, msg string, rootCA *certmanager.CertManager, protos []string) (string, error) {
+	return quicGetWithClientCerts(name, addr, msg, rootCA, nil, protos)
+}
+
+func quicGetWithClientCerts(name, addr, msg string, rootCA *certmanager.CertManager, clientCerts []tls.Certificate, protos []string) (string, error) {
 	ctx := context.Background()
 	tc := &tls.Config{
-		ServerName: name,
-		RootCAs:    rootCA.RootCACertPool(),
-		NextProtos: protos,
+		ServerName:   name,
+		RootCAs:      rootCA.RootCACertPool(),
+		Certificates: clientCerts,
+		NextProtos:   protos,
 	}
 
 	conn, err := quicapi.DialAddr(ctx, addr, tc, &quic.Config{})
@@ -944,5 +949,327 @@ func TestQUICStreamRateLimit(t *testing.T) {
 	}
 	if got, err := quicGet("tcp.example.com", addr, "Hello!\n", extCA, []string{"http/1.1"}); err == nil && got == want {
 		t.Fatalf("quicGet #2 = %q, %v, want rate limit error", got, err)
+	}
+}
+
+type migratableTestConn struct {
+	net.Conn
+	local      net.Addr
+	remote     net.Addr
+	annotation map[string]any
+}
+
+func (c *migratableTestConn) LocalAddr() net.Addr            { return c.local }
+func (c *migratableTestConn) RemoteAddr() net.Addr           { return c.remote }
+func (c *migratableTestConn) Annotation(k string, d any) any { return d }
+func (c *migratableTestConn) SetAnnotation(k string, v any)  {}
+func (c *migratableTestConn) BytesSent() int64               { return 0 }
+func (c *migratableTestConn) BytesReceived() int64           { return 0 }
+func (c *migratableTestConn) ByteRateSent() float64          { return 0 }
+func (c *migratableTestConn) ByteRateReceived() float64      { return 0 }
+
+func TestConnTrackerQUICCollisionAndMigration(t *testing.T) {
+	tr := newConnTracker()
+	local := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 443}
+	remote1 := &net.UDPAddr{IP: net.ParseIP("192.0.2.1"), Port: 50000}
+	remote2 := &net.UDPAddr{IP: net.ParseIP("198.51.100.2"), Port: 60000}
+
+	// Two distinct QUIC connections from the same UDP 4-tuple.
+	c1 := &migratableTestConn{local: local, remote: remote1}
+	c2 := &migratableTestConn{local: local, remote: remote1}
+
+	if n := tr.add(c1); n != 1 {
+		t.Fatalf("tr.add(c1) = %d, want 1", n)
+	}
+	if n := tr.add(c2); n != 2 {
+		t.Fatalf("tr.add(c2) with same 4-tuple = %d, want 2", n)
+	}
+	if n := tr.remove(c2); n != 1 {
+		t.Fatalf("tr.remove(c2) = %d, want 1 (c1 should still be tracked)", n)
+	}
+
+	// Simulate QUIC connection migration on c1 before removal.
+	c1.remote = remote2
+	if n := tr.remove(c1); n != 0 {
+		t.Fatalf("tr.remove(c1) after address migration = %d, want 0", n)
+	}
+}
+
+func TestQUICStreamPanicAndShutdownRace(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	cfg := &Config{
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(1000),
+		Backends: []*Backend{
+			{
+				ServerNames: Strings{"local.example.com"},
+				Mode:        "LOCAL",
+			},
+		},
+	}
+	p := newTestProxy(cfg, extCA)
+	if err := p.Start(ctx); err != nil {
+		t.Fatalf("p.Start: %v", err)
+	}
+	defer p.Stop()
+
+	be := p.cfg.Backends[0]
+
+	// 1. A panic inside handleQUICTCPStream must be recovered instead of crashing.
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("handleQUICTCPStream did not recover panic: %v", r)
+			}
+		}()
+		p.handleQUICTCPStream(ctx, be, &netw.Conn{})
+	}()
+
+	// 2. While a connection/stream is in-flight (incInFlight(1)), calling be.close(nil)
+	// must not close be.httpConnChan until incInFlight(-1) drops inFlight to 0.
+	if be.incInFlight(1) <= 0 {
+		t.Fatalf("be.incInFlight(1) failed before shutdown")
+	}
+	be.close(nil)
+
+	// New connections must be rejected once shutdown has started.
+	if be.incInFlight(1) > 0 {
+		t.Fatalf("be.incInFlight(1) succeeded after be.close")
+	}
+
+	// The in-flight stream sending to be.httpConnChan before incInFlight(-1) must not panic.
+	c1, c2 := net.Pipe()
+	defer c1.Close()
+	defer c2.Close()
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("sending to httpConnChan while inFlight > 0 panicked: %v", r)
+			}
+		}()
+		be.httpConnChan <- c1
+	}()
+	be.incInFlight(-1)
+}
+
+func TestQUICUniStreamCleanupAndDialQUICStreamClose(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ca, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	var key quic.StatelessResetKey
+	qt, err := netw.NewQUIC("localhost:0", key)
+	if err != nil {
+		t.Fatalf("netw.NewQUIC: %v", err)
+	}
+	defer qt.Close()
+
+	tc := ca.TLSConfig()
+	tc.NextProtos = []string{"h3"}
+	ln, err := qt.Listen(tc)
+	if err != nil {
+		t.Fatalf("qt.Listen: %v", err)
+	}
+	defer ln.Close()
+
+	serverConnCh := make(chan *netw.QUICConn, 2)
+	go func() {
+		for {
+			sConn, err := ln.Accept(ctx)
+			if err != nil {
+				return
+			}
+			serverConnCh <- sConn
+		}
+	}()
+
+	clientTC := &tls.Config{
+		ServerName: "quic.example.com",
+		RootCAs:    ca.RootCACertPool(),
+		NextProtos: []string{"h3"},
+	}
+	cConn, err := qt.Dial(ctx, ln.Addr(), clientTC)
+	if err != nil {
+		t.Fatalf("qt.Dial: %v", err)
+	}
+	defer cConn.Close()
+	sConn := <-serverConnCh
+	defer sConn.Close()
+
+	// 1. Open and close a unidirectional stream; verify both client and server remove it from Streams().
+	sendStream, err := cConn.OpenUniStreamSync(ctx)
+	if err != nil {
+		t.Fatalf("OpenUniStreamSync: %v", err)
+	}
+	wrappedSend := cConn.WrapConn(sendStream)
+	if _, err := wrappedSend.Write([]byte("hello uni")); err != nil {
+		t.Fatalf("wrappedSend.Write: %v", err)
+	}
+	if err := wrappedSend.Close(); err != nil {
+		t.Fatalf("wrappedSend.Close: %v", err)
+	}
+	if got := wrappedSend.BytesSent(); got != 9 {
+		t.Errorf("wrappedSend.BytesSent() = %d, want 9", got)
+	}
+
+	recvStream, err := sConn.AcceptUniStream(ctx)
+	if err != nil {
+		t.Fatalf("AcceptUniStream: %v", err)
+	}
+	b, err := io.ReadAll(recvStream)
+	if err != nil || string(b) != "hello uni" {
+		t.Fatalf("io.ReadAll(recvStream) = %q, %v", string(b), err)
+	}
+
+	if got := len(cConn.Streams()); got != 0 {
+		t.Errorf("len(cConn.Streams()) = %d after uni stream closed, want 0", got)
+	}
+	if got := len(sConn.Streams()); got != 0 {
+		t.Errorf("len(sConn.Streams()) = %d after uni stream EOF, want 0", got)
+	}
+
+	// 2. Verify dialQUICStream closes the underlying QUIC connection when the returned net.Conn is closed.
+	be := &Backend{
+		quicTransport: qt,
+	}
+	streamConn, err := be.dialQUICStream(ctx, ln.Addr().String(), clientTC)
+	if err != nil {
+		t.Fatalf("dialQUICStream: %v", err)
+	}
+	if _, err := streamConn.Write([]byte("hi")); err != nil {
+		t.Fatalf("streamConn.Write: %v", err)
+	}
+	sc2 := <-serverConnCh
+	defer sc2.Close()
+	if err := streamConn.Close(); err != nil {
+		t.Fatalf("streamConn.Close: %v", err)
+	}
+	select {
+	case <-sc2.Context().Done():
+	case <-time.After(500 * time.Millisecond):
+		t.Errorf("dialQUICStream connection was not closed when streamConn.Close() was called")
+	}
+}
+
+func TestQUICPreHandshakeCheckIPAndALPN(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	be := newHTTPServer(t, ctx, "HTTP Backend", nil)
+	cfg := &Config{
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(100),
+		Backends: []*Backend{
+			{
+				ServerNames: Strings{"denied.example.com"},
+				Mode:        "HTTP",
+				Addresses:   Strings{be.String()},
+				DenyIPs:     &Strings{"127.0.0.1/32", "::1/128"},
+			},
+			{
+				ServerNames: Strings{"http.example.com"},
+				Mode:        "HTTP",
+				Addresses:   Strings{be.String()},
+			},
+		},
+	}
+	p := newTestProxy(cfg, extCA)
+	if err := p.Start(ctx); err != nil {
+		t.Fatalf("p.Start: %v", err)
+	}
+	defer p.Stop()
+
+	// 1. QUIC connection from denied IP should fail during TLS handshake (before handleQUICConnection).
+	addr := p.quicTransport.(*netw.QUICTransport).Addr().String()
+	_, err = quicapi.DialAddr(ctx, addr, &tls.Config{
+		ServerName: "denied.example.com",
+		RootCAs:    extCA.RootCACertPool(),
+		NextProtos: []string{"h3"},
+	}, &quic.Config{})
+	if err == nil {
+		t.Errorf("quicapi.DialAddr to denied IP succeeded, want TLS handshake failure")
+	}
+
+	// 2. For ModeHTTP on QUIC, be.tlsConfig(true) should not offer "h2".
+	tc := p.cfg.Backends[1].tlsConfig(true)
+	for _, proto := range tc.NextProtos {
+		if proto == "h2" {
+			t.Errorf("be.tlsConfig(true) for ModeHTTP offered ALPN %q, want it excluded", proto)
+		}
+	}
+}
+
+// TestQUICStreamHTTPClientCertHeader verifies that X-Forwarded-Client-Cert is
+// populated when HTTP is served over a raw QUIC stream (ALPN other than h3),
+// where req.TLS is nil and the TLS state comes from the QUIC connection.
+func TestQUICStreamHTTPClientCertHeader(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	clientCA, err := certmanager.New("client-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	be := newHTTPServer(t, ctx, "HTTP Backend", nil)
+
+	cfg := &Config{
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(100),
+		Backends: []*Backend{{
+			ServerNames: Strings{"http.example.com"},
+			Mode:        "HTTP",
+			Addresses:   Strings{be.String()},
+			ALPNProtos:  &Strings{"http/1.1"},
+			ClientAuth: &ClientAuth{
+				RootCAs:             Strings{clientCA.RootCAPEM()},
+				AddClientCertHeader: Strings{"subject", "hash"},
+			},
+		}},
+	}
+	proxy := newTestProxy(cfg, extCA)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	defer proxy.Stop()
+
+	clientCert, err := clientCA.GetCert("client.example.com")
+	if err != nil {
+		t.Fatalf("clientCA.GetCert: %v", err)
+	}
+	msg := "GET /?header=x-forwarded-client-cert HTTP/1.1\r\nHost: http.example.com\r\nConnection: close\r\n\r\n"
+	got, err := quicGetWithClientCerts("http.example.com", proxy.quicTransport.(*netw.QUICTransport).Addr().String(), msg, extCA, []tls.Certificate{*clientCert}, []string{"http/1.1"})
+	if err != nil {
+		t.Fatalf("quicGetWithClientCerts: %v", err)
+	}
+	if !strings.HasPrefix(got, "HTTP/1.1 200") {
+		t.Fatalf("unexpected response: %q", got)
+	}
+	for _, want := range []string{"x-forwarded-client-cert=", "Hash=", "Subject=", "client.example.com"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("response does not contain %q:\n%s", want, got)
+		}
 	}
 }

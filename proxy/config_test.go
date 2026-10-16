@@ -24,6 +24,7 @@
 package proxy
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -501,5 +502,78 @@ func TestValidDNSNamePattern(t *testing.T) {
 		if got := validDNSNamePattern(tc.pattern); got != tc.want {
 			t.Errorf("validDNSNamePattern(%q) = %v, want %v", tc.pattern, got, tc.want)
 		}
+	}
+}
+
+func TestBWLimitCaseInsensitive(t *testing.T) {
+	cfg := &Config{
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(100),
+		BWLimits: []*BWLimit{
+			{
+				Name:    "FastLimit",
+				Ingress: 1e6,
+				Egress:  1e6,
+			},
+		},
+		Backends: []*Backend{
+			{
+				ServerNames: Strings{"example.com"},
+				Mode:        "CONSOLE",
+				BWLimit:     "FastLimit",
+			},
+		},
+	}
+	p := newTestProxy(cfg, nil)
+	if p.cfg.Backends[0].bwLimit == nil {
+		t.Errorf("Backend with mixed-case BWLimit %q has nil bwLimit", cfg.Backends[0].BWLimit)
+	}
+}
+
+func TestRewriteRuleReservedClaim(t *testing.T) {
+	cfg := &Config{
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(100),
+		OIDCProviders: []*ConfigOIDC{
+			{
+				Name:          "test-idp",
+				AuthEndpoint:  "https://idp/authorization",
+				TokenEndpoint: "https://idp/token",
+				RedirectURL:   "https://example.com/redirect",
+				ClientID:      "CLIENTID",
+				ClientSecret:  "CLIENTSECRET",
+				Domain:        "example.com",
+			},
+		},
+		Backends: []*Backend{
+			{
+				ServerNames: Strings{"example.com"},
+				Mode:        "LOCAL",
+				SSO: &BackendSSO{
+					Provider: "test-idp",
+					LocalOIDCServer: &LocalOIDCServer{
+						Clients: []*LocalOIDCClient{{ID: "foo"}},
+						RewriteRules: []*LocalOIDCRewriteRule{{
+							InputClaim:  "email",
+							OutputClaim: "sub",
+							Regex:       "^(.*)$",
+							Value:       "admin",
+						}},
+					},
+				},
+			},
+		},
+	}
+	err := cfg.Check()
+	if err == nil || !strings.Contains(err.Error(), "is reserved") {
+		t.Errorf("Check() = %v, want reserved claim error", err)
+	}
+	cfg.Backends[0].SSO.LocalOIDCServer.RewriteRules[0].OutputClaim = "preferred_username"
+	if err := cfg.Check(); err != nil {
+		t.Errorf("Check() = %v, want nil", err)
 	}
 }

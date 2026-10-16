@@ -63,6 +63,9 @@ func (be *Backend) waitConnLimit(ctx context.Context) error {
 func (be *Backend) incInFlight(delta int) int {
 	be.state.mu.Lock()
 	defer be.state.mu.Unlock()
+	if delta > 0 && be.state.shutdown {
+		return 0
+	}
 	be.state.inFlight += delta
 	if be.state.inFlight == 0 && be.state.shutdown && be.httpServer != nil {
 		close(be.httpConnChan)
@@ -71,32 +74,52 @@ func (be *Backend) incInFlight(delta int) int {
 	return be.state.inFlight
 }
 
+func (be *Backend) closeDocumentRoots() {
+	if be.state.docRootClosed {
+		return
+	}
+	be.state.docRootClosed = true
+	if be.documentRoot != nil {
+		be.documentRoot.Close()
+	}
+	for _, po := range be.PathOverrides {
+		if po.documentRoot != nil {
+			po.documentRoot.Close()
+		}
+	}
+}
+
 func (be *Backend) close(ctx context.Context) {
 	be.state.mu.Lock()
 	defer be.state.mu.Unlock()
-	if be.httpServer == nil {
-		return
-	}
-	if ctx == nil {
-		close(be.httpConnChan)
-		go be.httpServer.Close()
-		be.httpServer = nil
-		if h3 := be.http3Server; h3 != nil {
-			be.http3Server = nil
-			go h3.Close()
-		}
-		return
-	}
-	go be.httpServer.Shutdown(ctx)
 	be.state.shutdown = true
-	if be.state.inFlight == 0 {
-		close(be.httpConnChan)
-		be.httpServer = nil
-		if h3 := be.http3Server; h3 != nil {
-			be.http3Server = nil
-			go h3.Close()
-		}
+	if h3 := be.http3Server; h3 != nil {
+		be.http3Server = nil
+		go h3.Close()
 	}
+	if hs := be.httpServer; hs != nil {
+		if be.state.inFlight == 0 {
+			close(be.httpConnChan)
+			be.httpServer = nil
+		}
+		if ctx == nil {
+			go func() {
+				hs.Close()
+				be.state.mu.Lock()
+				be.closeDocumentRoots()
+				be.state.mu.Unlock()
+			}()
+		} else {
+			go func() {
+				hs.Shutdown(ctx)
+				be.state.mu.Lock()
+				be.closeDocumentRoots()
+				be.state.mu.Unlock()
+			}()
+		}
+		return
+	}
+	be.closeDocumentRoots()
 }
 
 func setIfNotNil[T any](a, b *T) {
@@ -272,7 +295,13 @@ func writeProxyHeader(v byte, out io.Writer, in anyConn) error {
 }
 
 func (be *Backend) authorize(cert *x509.Certificate) error {
-	if be.ClientAuth == nil || be.ClientAuth.ACL == nil {
+	if be.ClientAuth == nil {
+		return nil
+	}
+	if cert == nil {
+		return tlsCertificateRequired
+	}
+	if be.ClientAuth.ACL == nil {
 		return nil
 	}
 	if be.aclMatcher.certMatches(*be.ClientAuth.ACL, cert) {

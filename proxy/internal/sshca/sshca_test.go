@@ -28,6 +28,7 @@ import (
 	"crypto/dsa"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -317,5 +318,51 @@ func TestCertificateSlowRequest(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("ServeCertificate is blocked by another request")
+	}
+}
+
+func TestSSHCASecurityChecks(t *testing.T) {
+	m := newCA(t, nil)
+
+	// 1. PrivateKey in memory must be wiped after initCA().
+	var nonZero bool
+	for _, b := range m.db.PrivateKey {
+		if b != 0 {
+			nonZero = true
+			break
+		}
+	}
+	if nonZero {
+		t.Errorf("ca.db.PrivateKey was not wiped in memory after initCA()")
+	}
+
+	withClaims := func(req *http.Request) *http.Request {
+		req.Header.Set("content-type", "text/plain")
+		return req.WithContext(fromctx.WithClaims(req.Context(), jwt.MapClaims{
+			"email": "alice@example.com",
+		}))
+	}
+
+	// 2. Weak 1024-bit RSA key must be rejected.
+	weakRSA, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey(1024): %v", err)
+	}
+	weakSSHPub, err := ssh.NewPublicKey(&weakRSA.PublicKey)
+	if err != nil {
+		t.Fatalf("ssh.NewPublicKey(weakRSA): %v", err)
+	}
+	w := httptest.NewRecorder()
+	m.ServeCertificate(w, withClaims(httptest.NewRequest("POST", "https://example.com/cert", bytes.NewReader(ssh.MarshalAuthorizedKey(weakSSHPub)))))
+	if got, want := w.Code, http.StatusBadRequest; got != want {
+		t.Errorf("ServeCertificate(1024-bit RSA) = %d, want %d", got, want)
+	}
+
+	// 3. Submitting the CA's own public key must be rejected.
+	caPubBytes := ssh.MarshalAuthorizedKey(m.signer.PublicKey())
+	w2 := httptest.NewRecorder()
+	m.ServeCertificate(w2, withClaims(httptest.NewRequest("POST", "https://example.com/cert", bytes.NewReader(caPubBytes))))
+	if got, want := w2.Code, http.StatusBadRequest; got != want {
+		t.Errorf("ServeCertificate(CA own key) = %d, want %d", got, want)
 	}
 }

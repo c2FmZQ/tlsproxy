@@ -119,15 +119,25 @@ func main() {
 			if err != nil {
 				return err
 			}
+			now := time.Now()
 			// The response must be signed by the issuer or by a
 			// delegated responder (RFC 6960 section 4.2.2.2).
-			if rc := resp.Certificate; rc != nil && !rc.Equal(issuer) && !slices.Contains(rc.ExtKeyUsage, x509.ExtKeyUsageOCSPSigning) {
-				return errors.New("ocsp responder is not authorized")
+			if rc := resp.Certificate; rc != nil && !rc.Equal(issuer) {
+				if !slices.Contains(rc.ExtKeyUsage, x509.ExtKeyUsageOCSPSigning) {
+					return errors.New("ocsp responder is not authorized")
+				}
+				if now.Before(rc.NotBefore) || now.After(rc.NotAfter) {
+					return errors.New("ocsp responder certificate is expired or not yet valid")
+				}
 			}
-			if time.Now().After(resp.NextUpdate) {
-				return errors.New("ocsp response is expired")
+			if !resp.NextUpdate.IsZero() {
+				if now.After(resp.NextUpdate) {
+					return errors.New("ocsp response is expired")
+				}
+			} else if now.Sub(resp.ThisUpdate) > 24*time.Hour {
+				return errors.New("ocsp response without NextUpdate is too old")
 			}
-			if resp.ThisUpdate.After(time.Now().Add(5 * time.Minute)) {
+			if resp.ThisUpdate.After(now.Add(5 * time.Minute)) {
 				return errors.New("ocsp response is not yet valid")
 			}
 			if resp.Status != ocsp.Good {

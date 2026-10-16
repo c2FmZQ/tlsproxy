@@ -38,6 +38,7 @@ import (
 
 	jwt "github.com/golang-jwt/jwt/v5"
 
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/idp"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/passkeys"
@@ -111,6 +112,8 @@ func (be *Backend) authenticateUser(w http.ResponseWriter, req **http.Request) b
 				sid.SetSessionID(w, *req, tokenHash)
 			}
 		}
+	} else {
+		cookiemanager.FilterOutIDTokenCookie(*req)
 	}
 	return true
 }
@@ -130,27 +133,33 @@ func (be *Backend) checkCookies(w http.ResponseWriter, req *http.Request) (claim
 				return nil, "", false, false
 			}
 		}
+		cookiemanager.FilterOutIDTokenCookie(req)
 		return c, "", true, true
 	}
 
 	authToken, tokenHash, err := be.SSO.cm.ValidateAuthTokenCookie(req)
 	if err != nil {
+		cookiemanager.FilterOutIDTokenCookie(req)
 		return nil, "", false, true
 	}
 	authClaims, ok := authToken.Claims.(jwt.MapClaims)
 	if !ok {
+		cookiemanager.FilterOutIDTokenCookie(req)
 		return nil, "", false, true
 	}
 	email, ok := authClaims["email"].(string)
 	if !ok || email == "" {
+		cookiemanager.FilterOutIDTokenCookie(req)
 		return nil, "", false, true
 	}
 
 	if !be.SSO.GenerateIDTokens {
+		cookiemanager.FilterOutIDTokenCookie(req)
 		return authClaims, tokenHash, false, true
 	}
 
 	if !slices.Contains(be.ServerNames, hostFromReq(req)) {
+		cookiemanager.FilterOutIDTokenCookie(req)
 		return authClaims, tokenHash, false, true
 	}
 
@@ -266,6 +275,7 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 	}
 	data.Token = token
 	_, data.Passkeys = be.SSO.p.(*passkeys.Manager)
+	setNoFrameHeaders(w.Header())
 	ssoStatusTemplate.Execute(w, data)
 }
 
@@ -301,9 +311,6 @@ func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
 	if claims := fromctx.Claims(req.Context()); claims != nil {
 		email, _ = claims["email"].(string)
 	}
-	if req.Method == http.MethodPost {
-		be.SSO.cm.ClearCookies(w)
-	}
 	req.ParseForm()
 	if tokenStr := req.Form.Get("u"); tokenStr != "" {
 		url, _, err := be.tm.ValidateURLToken(req, tokenStr)
@@ -312,9 +319,15 @@ func (be *Backend) serveLogout(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		be.SSO.cm.ClearCookies(w)
+		sid.SetSessionID(w, req, "")
 		be.SSO.p.RequestLogin(w, req, url.String(), idp.WithSelectAccount(true))
 		return
 	}
+	if req.Method == http.MethodPost {
+		be.SSO.cm.ClearCookies(w)
+		sid.SetSessionID(w, req, "")
+	}
+	setNoFrameHeaders(w.Header())
 	logoutTemplate.Execute(w, struct {
 		Email  string
 		Method string
@@ -353,6 +366,7 @@ func (be *Backend) servePermissionDenied(w http.ResponseWriter, req *http.Reques
 	if len(data.DisplayURL) > 100 {
 		data.DisplayURL = data.DisplayURL[:97] + "..."
 	}
+	setNoFrameHeaders(w.Header())
 	w.WriteHeader(http.StatusForbidden)
 	if err := permissionDeniedTemplate.Execute(w, data); err != nil {
 		be.logErrorF("ERR permission-denied-template: %v", err)
@@ -374,12 +388,13 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request, ov
 	}
 	rule := be.findSSORule(req)
 	if rule == nil {
-		// No rule applies, but the scopes of local handlers still
-		// apply to authenticated users.
-		if overrideScopes != nil && fromctx.Claims(req.Context()) != nil {
-			return be.checkScopes(overrideScopes, w, req)
+		if overrideScopes == nil {
+			return true
 		}
-		return true
+		// No rule applies, but the scopes of local handlers still
+		// apply. Use a default rule so that unauthenticated users go
+		// through the login flow instead of getting a bare 403.
+		rule = &SSORule{}
 	}
 	claims := fromctx.Claims(req.Context())
 	var iat time.Time
@@ -436,6 +451,7 @@ func (be *Backend) enforceSSOPolicy(w http.ResponseWriter, req *http.Request, ov
 		if len(data.DisplayURL) > 100 {
 			data.DisplayURL = data.DisplayURL[:97] + "..."
 		}
+		setNoFrameHeaders(w.Header())
 		w.WriteHeader(http.StatusForbidden)
 		if err := loginTemplate.Execute(w, data); err != nil {
 			be.logErrorF("ERR login-template: %v", err)

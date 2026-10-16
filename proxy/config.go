@@ -535,11 +535,12 @@ type Backend struct {
 }
 
 type backendState struct {
-	mu       sync.Mutex
-	inFlight int
-	shutdown bool
-	next     int
-	oNext    []int
+	mu            sync.Mutex
+	inFlight      int
+	shutdown      bool
+	docRootClosed bool
+	next          int
+	oNext         []int
 }
 
 type localHandler struct {
@@ -1299,10 +1300,11 @@ func (cfg *Config) Check() error {
 
 	bwLimits := make(map[string]bool)
 	for i, l := range cfg.BWLimits {
-		if bwLimits[l.Name] {
+		name := strings.ToLower(l.Name)
+		if bwLimits[name] {
 			return fmt.Errorf("bwLimit[%d].Name: duplicate name %q", i, l.Name)
 		}
-		bwLimits[l.Name] = true
+		bwLimits[name] = true
 	}
 
 	for i, be := range cfg.Backends {
@@ -1318,7 +1320,7 @@ func (cfg *Config) Check() error {
 		if be.DocumentRoot != "" && len(be.Addresses) != 0 {
 			return fmt.Errorf("backend[%d].DocumentRoot: only valid when Addresses is empty", i)
 		}
-		if n := be.BWLimit; n != "" && !bwLimits[n] {
+		if n := be.BWLimit; n != "" && !bwLimits[strings.ToLower(n)] {
 			return fmt.Errorf("backend[%d].BWLimit: undefined name %q", i, n)
 		}
 		if be.UseDoH == "" {
@@ -1381,6 +1383,9 @@ func (cfg *Config) Check() error {
 					}
 					if rr.OutputClaim == "" {
 						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.RewriteRules[%d].OutputClaim must be set", i, j)
+					}
+					if slices.Contains(oidc.ReservedClaims, rr.OutputClaim) {
+						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.RewriteRules[%d].OutputClaim %q is reserved", i, j, rr.OutputClaim)
 					}
 					if rr.Regex == "" {
 						return fmt.Errorf("backend[%d].SSO.LocalOIDCServer.RewriteRules[%d].Regex must be set", i, j)

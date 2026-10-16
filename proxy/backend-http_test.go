@@ -30,12 +30,14 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
+	"github.com/gorilla/websocket"
 	"golang.org/x/time/rate"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
@@ -385,6 +387,9 @@ func TestWaitConnLimit(t *testing.T) {
 }
 
 func TestRedactConfig(t *testing.T) {
+	if runtime.MemProfileRate == 1 {
+		t.Errorf("runtime.MemProfileRate = 1 by default, want default sampling rate")
+	}
 	poHeaders := map[string]string{"Authorization": "Bearer S3CR3T3"}
 	cfg := &Config{
 		ECH: &ECH{
@@ -396,6 +401,7 @@ func TestRedactConfig(t *testing.T) {
 				ForwardHTTPHeaders: map[string]string{
 					"X-Api-Key": "S3CR3T5",
 					"X-User":    "${JWT:email}",
+					"X-Mixed":   "Bearer S3CR3T7-${JWT:email}",
 				},
 				PathOverrides: []*PathOverride{{ForwardHTTPHeaders: &poHeaders}},
 				SSO: &BackendSSO{
@@ -484,5 +490,345 @@ func TestBackendCannotSetProxyCookies(t *testing.T) {
 	}
 	if want := []string{"app"}; !slices.Equal(names, want) {
 		t.Errorf("Cookies = %v, want %v", names, want)
+	}
+}
+
+func TestConnectionHeaderStripping(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	clientCA, err := certmanager.New("client-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+
+	var gotHeaders http.Header
+	l, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	s := http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			gotHeaders = req.Header.Clone()
+			w.WriteHeader(http.StatusOK)
+		}),
+	}
+	go s.Serve(l)
+	defer s.Close()
+
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
+			Backends: []*Backend{
+				{
+					ServerNames: Strings{"http.example.com"},
+					Mode:        "HTTP",
+					Addresses:   Strings{l.Addr().String()},
+					ForwardHTTPHeaders: map[string]string{
+						"X-Custom-Header": "custom-value",
+					},
+					ClientAuth: &ClientAuth{
+						RootCAs:             Strings{clientCA.RootCAPEM()},
+						AddClientCertHeader: Strings{"subject"},
+					},
+				},
+			},
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	defer proxy.Stop()
+
+	clientCert, err := clientCA.GetCert("client.example.com")
+	if err != nil {
+		t.Fatalf("clientCA.GetCert: %v", err)
+	}
+
+	msg := "GET / HTTP/1.1\r\n" +
+		"Host: http.example.com\r\n" +
+		"Connection: Via, X-Forwarded-Client-Cert, X-Forwarded-Host, X-Forwarded-Proto, X-Custom-Header, close\r\n\r\n"
+	got, _, err := tlsGet("http.example.com", proxy.listener.Addr().String(), msg, extCA, []tls.Certificate{*clientCert}, []string{"http/1.1"})
+	if err != nil {
+		t.Fatalf("tlsGet: %v", err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(strings.NewReader(got)), nil)
+	if err != nil {
+		t.Fatalf("http.ReadResponse: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("StatusCode = %d, want 200", resp.StatusCode)
+	}
+	for _, h := range []string{"Via", "X-Forwarded-Client-Cert", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Custom-Header"} {
+		if gotHeaders.Get(h) == "" {
+			t.Errorf("Backend did not receive %s header (stripped via Connection header)", h)
+		}
+	}
+
+	// Also verify that multi-line Via header loop detection inspects all Via headers.
+	msg2 := "GET / HTTP/1.1\r\nHost: http.example.com\r\nConnection: close\r\n\r\n"
+	if _, _, err := tlsGet("http.example.com", proxy.listener.Addr().String(), msg2, extCA, []tls.Certificate{*clientCert}, []string{"http/1.1"}); err != nil {
+		t.Fatalf("tlsGet(2): %v", err)
+	}
+	viaLine := gotHeaders.Get("Via")
+	_, me, _ := strings.Cut(viaLine, " ")
+	loopMsg := "GET / HTTP/1.1\r\n" +
+		"Host: http.example.com\r\n" +
+		"Via: HTTP/1.1 other-proxy\r\n" +
+		"Via: HTTP/1.1 " + me + "\r\n" +
+		"Connection: close\r\n\r\n"
+	gotLoop, _, err := tlsGet("http.example.com", proxy.listener.Addr().String(), loopMsg, extCA, []tls.Certificate{*clientCert}, []string{"http/1.1"})
+	if err != nil {
+		t.Fatalf("tlsGet(loop): %v", err)
+	}
+	respLoop, err := http.ReadResponse(bufio.NewReader(strings.NewReader(gotLoop)), nil)
+	if err != nil {
+		t.Fatalf("http.ReadResponse(loop): %v", err)
+	}
+	if respLoop.StatusCode != http.StatusLoopDetected {
+		t.Errorf("Loop StatusCode = %d, want %d", respLoop.StatusCode, http.StatusLoopDetected)
+	}
+}
+
+func TestForwardRateLimitKeepAlive(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	l, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	s := http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	}
+	go s.Serve(l)
+	defer s.Close()
+
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
+			Backends: []*Backend{
+				{
+					ServerNames: Strings{"http.example.com"},
+					Mode:        "HTTP",
+					Addresses:   Strings{l.Addr().String()},
+				},
+			},
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	defer proxy.Stop()
+
+	// Allow 1 token every 100s (taken by initial TLS connection establishment).
+	proxy.mu.Lock()
+	for _, b := range proxy.backends {
+		b.connLimit = rate.NewLimiter(rate.Every(100*time.Second), 1)
+	}
+	proxy.mu.Unlock()
+
+	conn, err := tls.Dial("tcp", proxy.listener.Addr().String(), &tls.Config{
+		ServerName: "http.example.com",
+		RootCAs:    extCA.RootCACertPool(),
+		NextProtos: []string{"http/1.1"},
+	})
+	if err != nil {
+		t.Fatalf("tls.Dial: %v", err)
+	}
+	defer conn.Close()
+
+	br := bufio.NewReader(conn)
+	// First request on the connection uses the token already consumed at connection time.
+	if _, err := conn.Write([]byte("HEAD / HTTP/1.1\r\nHost: http.example.com\r\n\r\n")); err != nil {
+		t.Fatalf("Write #1: %v", err)
+	}
+	resp1, err := http.ReadResponse(br, &http.Request{Method: "HEAD"})
+	if err != nil {
+		t.Fatalf("ReadResponse #1: %v", err)
+	}
+	resp1.Body.Close()
+	if resp1.StatusCode != http.StatusOK {
+		t.Fatalf("resp1.StatusCode = %d, want 200", resp1.StatusCode)
+	}
+
+	// Second request on the same keep-alive TLS connection must be rate-limited.
+	if _, err := conn.Write([]byte("HEAD / HTTP/1.1\r\nHost: http.example.com\r\n\r\n")); err != nil {
+		t.Fatalf("Write #2: %v", err)
+	}
+	resp2, err := http.ReadResponse(br, &http.Request{Method: "HEAD"})
+	if err != nil {
+		t.Fatalf("ReadResponse #2: %v", err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode == http.StatusOK {
+		t.Fatalf("resp2.StatusCode = %d, want rate limit failure (500)", resp2.StatusCode)
+	}
+}
+
+func TestWebSocketAndConnectionUpgrade(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+
+	// Backend HTTP/1.1 server that handles Upgrade requests.
+	l, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	s := http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if strings.EqualFold(req.Header.Get("Upgrade"), "websocket") {
+				hj, ok := w.(http.Hijacker)
+				if !ok {
+					http.Error(w, "no hijacker", http.StatusInternalServerError)
+					return
+				}
+				conn, rw, err := hj.Hijack()
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\nupgraded")
+				rw.Flush()
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}),
+	}
+	go s.Serve(l)
+	defer s.Close()
+
+	// TCP echo server for WebSocket bridge.
+	tcpListener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("net.Listen(tcp): %v", err)
+	}
+	defer tcpListener.Close()
+	go func() {
+		for {
+			c, err := tcpListener.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				buf := make([]byte, 1024)
+				for {
+					n, err := c.Read(buf)
+					if n > 0 {
+						c.Write(buf[:n])
+					}
+					if err != nil {
+						return
+					}
+				}
+			}(c)
+		}
+	}()
+
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
+			WebSockets: []*WebSocketConfig{
+				{
+					Endpoint: "https://http.example.com/ws",
+					Address:  tcpListener.Addr().String(),
+				},
+			},
+			Backends: []*Backend{
+				{
+					ServerNames:  Strings{"http.example.com"},
+					Mode:         "HTTP",
+					BackendProto: newPtr("h2"),
+					Addresses:    Strings{l.Addr().String()},
+				},
+			},
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	defer proxy.Stop()
+
+	// 1. Multi-token Connection: keep-alive, Upgrade must use HTTP/1.1 transport even when BackendProto is "h2".
+	rt := proxy.cfg.Backends[0].reverseProxyTransport()
+	reqCtx := context.WithValue(ctx, connCtxKey, mockConn{annotations: map[string]any{}})
+	upReq, err := http.NewRequestWithContext(reqCtx, "GET", "http://http.example.com/chat", nil)
+	if err != nil {
+		t.Fatalf("http.NewRequestWithContext: %v", err)
+	}
+	upReq.Header.Set("Connection", "keep-alive, Upgrade")
+	upReq.Header.Set("Upgrade", "websocket")
+	upResp, err := rt.RoundTrip(upReq)
+	if err != nil {
+		t.Fatalf("rt.RoundTrip(upgrade): %v", err)
+	}
+	upResp.Body.Close()
+	if upResp.StatusCode != http.StatusSwitchingProtocols {
+		t.Errorf("Multi-token Connection upgrade StatusCode = %d, want 101 Switching Protocols", upResp.StatusCode)
+	}
+
+	// 2. WebSocket endpoint should handle concurrent ping/pong without data race and reject non-binary frames.
+	origPing := wsPingInterval
+	wsPingInterval = 5 * time.Millisecond
+	defer func() { wsPingInterval = origPing }()
+
+	dialer := websocket.Dialer{
+		NetDialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return tls.Dial(network, proxy.listener.Addr().String(), &tls.Config{
+				ServerName: "http.example.com",
+				RootCAs:    extCA.RootCACertPool(),
+				NextProtos: []string{"http/1.1"},
+			})
+		},
+	}
+	wsConn, resp, err := dialer.DialContext(ctx, "wss://http.example.com/ws", nil)
+	if err != nil {
+		t.Fatalf("dialer.DialContext: %v", err)
+	}
+	resp.Body.Close()
+	defer wsConn.Close()
+	wsConn.SetPingHandler(func(string) error { return nil })
+
+	for range 5 {
+		if err := wsConn.WriteControl(websocket.PongMessage, []byte("pong"), time.Now().Add(time.Second)); err != nil {
+			t.Fatalf("WriteControl(Pong): %v", err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if err := wsConn.WriteMessage(websocket.TextMessage, []byte("not binary")); err != nil {
+		t.Fatalf("WriteMessage(TextMessage): %v", err)
+	}
+	wsConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, _, err = wsConn.ReadMessage()
+	if !websocket.IsCloseError(err, websocket.CloseUnsupportedData) {
+		t.Errorf("ReadMessage after TextMessage: err = %v, want CloseUnsupportedData (1003)", err)
 	}
 }

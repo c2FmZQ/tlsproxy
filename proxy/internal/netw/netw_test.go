@@ -24,10 +24,14 @@
 package netw_test
 
 import (
+	"bytes"
 	"crypto/tls"
 	"io"
+	"net"
 	"testing"
 	"time"
+
+	"golang.org/x/time/rate"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/counter"
@@ -109,5 +113,41 @@ func TestConnWrapper(t *testing.T) {
 
 	if got, want := <-ch, "Hello, Bye\n"; got != want {
 		t.Errorf("[CLIENT] Received %q, want %q", got, want)
+	}
+}
+
+func TestConnBWLimitBurstAndSmallReads(t *testing.T) {
+	c1, c2 := net.Pipe()
+	defer c1.Close()
+	defer c2.Close()
+
+	nc := netw.NewConn(c1)
+	// Rate: 10 MB/s, Burst: 1024 bytes.
+	ingress := rate.NewLimiter(rate.Limit(10<<20), 1024)
+	egress := rate.NewLimiter(rate.Limit(10<<20), 1024)
+	nc.SetLimiters(ingress, egress)
+
+	// 1. Write larger than burst (4096 > 1024) must succeed by chunking WaitN.
+	payload := bytes.Repeat([]byte("A"), 4096)
+	done := make(chan error, 1)
+	go func() {
+		_, err := io.ReadFull(c2, make([]byte, len(payload)))
+		done <- err
+	}()
+	if _, err := nc.Write(payload); err != nil {
+		t.Errorf("nc.Write(4096) with burst=1024 failed: %v", err)
+	} else if err := <-done; err != nil {
+		t.Errorf("ReadFull: %v", err)
+	}
+
+	// 2. Reading 1 byte into a 32 KB buffer must not fail with 'exceeds limiter's burst'
+	// and must only consume 1 token, not 32768 tokens.
+	go func() {
+		c2.Write([]byte("X"))
+	}()
+	buf := make([]byte, 32768)
+	n, err := nc.Read(buf)
+	if err != nil || n != 1 {
+		t.Errorf("nc.Read(32KB buf) = (%d, %v), want (1, nil)", n, err)
 	}
 }

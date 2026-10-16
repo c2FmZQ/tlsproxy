@@ -70,3 +70,59 @@ func TestRemote(t *testing.T) {
 		t.Errorf("IssuerForKey = %q, want https://example.com", issuer)
 	}
 }
+
+func TestRemoteKidCollision(t *testing.T) {
+	ecKeyA, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey: %v", err)
+	}
+	ecKeyB, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey: %v", err)
+	}
+	ksA := New([]crypto.PublicKey{&ecKeyA.PublicKey})
+	ksA.Keys[0].ID = "shared-kid"
+	bA, _ := json.Marshal(ksA)
+
+	ksB := New([]crypto.PublicKey{&ecKeyB.PublicKey})
+	ksB.Keys[0].ID = "shared-kid"
+	bB, _ := json.Marshal(ksB)
+
+	tsA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(bA)
+	}))
+	defer tsA.Close()
+
+	tsB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(bB)
+	}))
+	defer tsB.Close()
+
+	// Callers use one Remote per trusted issuer so that keys with the same
+	// kid from different issuers are never confused.
+	rA := NewRemote(nil, nil)
+	rA.SetIssuers([]Issuer{{Issuer: "https://issuer-a.example.com", JWKSURI: tsA.URL}})
+	rA.Ready(t.Context())
+	rB := NewRemote(nil, nil)
+	rB.SetIssuers([]Issuer{{Issuer: "https://issuer-b.example.com", JWKSURI: tsB.URL}})
+	rB.Ready(t.Context())
+
+	for i := range 50 {
+		pkA, err := rA.GetKey("shared-kid")
+		if err != nil {
+			t.Fatalf("iteration %d: rA.GetKey: %v", i, err)
+		}
+		if pkA.(*ecdsa.PublicKey).X.Cmp(ecKeyA.X) != 0 {
+			t.Fatalf("iteration %d: rA.GetKey returned wrong key", i)
+		}
+		pkB, err := rB.GetKey("shared-kid")
+		if err != nil {
+			t.Fatalf("iteration %d: rB.GetKey: %v", i, err)
+		}
+		if pkB.(*ecdsa.PublicKey).X.Cmp(ecKeyB.X) != 0 {
+			t.Fatalf("iteration %d: rB.GetKey returned wrong key", i)
+		}
+	}
+}

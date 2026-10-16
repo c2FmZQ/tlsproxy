@@ -554,3 +554,49 @@ type samlIssuer struct {
 	Format  string   `xml:",attr"`
 	Value   string   `xml:",chardata"`
 }
+
+func TestSAMLReadCertsTrailingText(t *testing.T) {
+	ca, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	idpCert, err := ca.GetCert("idp.example.com")
+	if err != nil {
+		t.Fatalf("ca.GetCert: %v", err)
+	}
+	certPEM := string(pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: idpCert.Certificate[0],
+	})) + "\n# trailing comment after PEM\n"
+
+	cfg := &Config{
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(100),
+		SAMLProviders: []*ConfigSAML{
+			{
+				Name:     "test-idp",
+				SSOURL:   "https://idp.example.com/sso",
+				EntityID: "https.example.com",
+				Certs:    certPEM,
+				ACSURL:   "https://sso.example.com/saml/acs",
+				Domain:   "example.com",
+			},
+		},
+		Backends: []*Backend{
+			{
+				ServerNames: []string{"sso.example.com"},
+				Mode:        "HTTPS",
+				SSO:         &BackendSSO{Provider: "test-idp"},
+			},
+		},
+	}
+	proxy := newTestProxy(cfg, ca)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start with trailing text in SAML Certs failed: %v", err)
+	}
+	defer proxy.Stop()
+}

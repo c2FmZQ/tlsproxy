@@ -27,15 +27,19 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net"
 	"net/http"
 	"net/url"
@@ -44,19 +48,24 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/c2FmZQ/ech"
 	"github.com/c2FmZQ/storage"
+	"github.com/c2FmZQ/storage/autocertcache"
 	"github.com/c2FmZQ/storage/crypto"
 	"github.com/c2FmZQ/tpm"
 	"github.com/google/go-tpm-tools/simulator"
 	"github.com/pires/go-proxyproto"
+	"golang.org/x/crypto/acme/autocert"
+	"golang.org/x/crypto/ocsp"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
 	"github.com/c2FmZQ/tlsproxy/certmanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/ocspcache"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
@@ -1685,4 +1694,319 @@ func (c *pkiCert) TLSConfig() *tls.Config {
 
 func newPtr[T any](v T) *T {
 	return &v
+}
+
+type closeTrackingConn struct {
+	testConn
+	closed atomic.Bool
+}
+
+func (c *closeTrackingConn) Close() error {
+	c.closed.Store(true)
+	return nil
+}
+
+func (c *closeTrackingConn) RemoteAddr() net.Addr {
+	return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12345}
+}
+
+func TestReAuthorizeNilBackendAndClientAuth(t *testing.T) {
+	intCA, err := certmanager.New("internal-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
+			Backends: []*Backend{
+				{
+					ServerNames:  Strings{"example.com"},
+					Mode:         "LOCAL",
+					DocumentRoot: ".",
+					ClientAuth: &ClientAuth{
+						RootCAs: Strings{intCA.RootCAPEM()},
+					},
+				},
+			},
+		},
+		extCA,
+	)
+
+	// 1. Connection with serverNameKey set but backendKey still nil must not panic in reAuthorize().
+	tc1 := &closeTrackingConn{}
+	c1 := netw.NewConnForTest(tc1)
+	c1.SetAnnotation(serverNameKey, "example.com")
+	proxy.inConns.add(c1)
+
+	// 2. Connection established without clientCert when ClientAuth (ACL==nil) is enabled must be closed.
+	tc2 := &closeTrackingConn{}
+	c2 := netw.NewConnForTest(tc2)
+	c2.SetAnnotation(serverNameKey, "example.com")
+	c2.SetAnnotation(backendKey, proxy.cfg.Backends[0])
+	c2.SetAnnotation(handshakeDoneKey, time.Now())
+	proxy.inConns.add(c2)
+
+	proxy.reAuthorize()
+
+	if !tc2.closed.Load() {
+		t.Errorf("reAuthorize() did not close connection without clientCert when ClientAuth is enabled")
+	}
+}
+
+func TestProxyListenerCloseAndDocRootCleanup(t *testing.T) {
+	ch := make(chan net.Conn, 1)
+	l := &proxyListener{
+		ch:       ch,
+		closedCh: make(chan struct{}),
+	}
+	if err := l.Close(); err != nil {
+		t.Fatalf("l.Close: %v", err)
+	}
+	tc := &closeTrackingConn{}
+	ch <- tc
+	close(ch)
+
+	deadline := time.Now().Add(time.Second)
+	for !tc.closed.Load() && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !tc.closed.Load() {
+		t.Errorf("proxyListener.Close() drained connection without closing it")
+	}
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	docDir1 := t.TempDir()
+	docDir2 := t.TempDir()
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
+			Backends: []*Backend{
+				{
+					ServerNames:  Strings{"local.example.com"},
+					Mode:         "LOCAL",
+					DocumentRoot: docDir1,
+				},
+				{
+					ServerNames: Strings{"http.example.com"},
+					Mode:        "HTTP",
+					Addresses:   Strings{"127.0.0.1:8080"},
+					PathOverrides: []*PathOverride{
+						{
+							Paths:        Strings{"/sub/"},
+							DocumentRoot: docDir2,
+						},
+					},
+				},
+			},
+		},
+		extCA,
+	)
+	be1 := proxy.cfg.Backends[0]
+	be2 := proxy.cfg.Backends[1]
+	root1 := be1.documentRoot
+	root2 := be2.PathOverrides[0].documentRoot
+	if root1 == nil || root2 == nil {
+		t.Fatalf("documentRoot not initialized")
+	}
+	be1.close(nil)
+	be2.close(nil)
+	// The document roots are closed after the HTTP server is closed,
+	// asynchronously.
+	rootsClosed := func() bool {
+		_, err1 := root1.Stat(".")
+		_, err2 := root2.Stat(".")
+		return err1 != nil && err2 != nil
+	}
+	deadline = time.Now().Add(time.Second)
+	for !rootsClosed() && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if _, err := root1.Stat("."); err == nil {
+		t.Errorf("be.documentRoot was not closed by be.close(nil)")
+	}
+	if _, err := root2.Stat("."); err == nil {
+		t.Errorf("po.documentRoot was not closed by be.close(nil)")
+	}
+}
+
+func TestRevokeUnusedCertificatesPartialFailure(t *testing.T) {
+	ctx := context.Background()
+	mk, err := crypto.CreateAESMasterKeyForTest()
+	if err != nil {
+		t.Fatalf("CreateAESMasterKeyForTest: %v", err)
+	}
+	store := storage.New(t.TempDir(), mk)
+	cache := autocertcache.New("certs", store)
+
+	acctKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey: %v", err)
+	}
+	acctDER, err := x509.MarshalECPrivateKey(acctKey)
+	if err != nil {
+		t.Fatalf("MarshalECPrivateKey: %v", err)
+	}
+	if err := cache.Put(ctx, acmeAccountKey, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: acctDER})); err != nil {
+		t.Fatalf("cache.Put(account): %v", err)
+	}
+
+	putCert := func(keyName, dnsName string, notBefore, notAfter time.Time) {
+		k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			t.Fatalf("ecdsa.GenerateKey: %v", err)
+		}
+		kDER, err := x509.MarshalECPrivateKey(k)
+		if err != nil {
+			t.Fatalf("MarshalECPrivateKey: %v", err)
+		}
+		templ := &x509.Certificate{
+			SerialNumber: big.NewInt(1),
+			Subject:      pkix.Name{CommonName: dnsName},
+			DNSNames:     []string{dnsName},
+			NotBefore:    notBefore,
+			NotAfter:     notAfter,
+		}
+		cDER, err := x509.CreateCertificate(rand.Reader, templ, templ, &k.PublicKey, k)
+		if err != nil {
+			t.Fatalf("CreateCertificate: %v", err)
+		}
+		var buf bytes.Buffer
+		pem.Encode(&buf, &pem.Block{Type: "EC PRIVATE KEY", Bytes: kDER})
+		pem.Encode(&buf, &pem.Block{Type: "CERTIFICATE", Bytes: cDER})
+		if err := cache.Put(ctx, keyName, buf.Bytes()); err != nil {
+			t.Fatalf("cache.Put(%s): %v", keyName, err)
+		}
+	}
+
+	now := time.Now()
+	// cert1 is already expired; cert2 is unexpired and will fail revocation against ACME.
+	putCert("cert1", "expired.example.com", now.Add(-2*time.Hour), now.Add(-time.Hour))
+	putCert("cert2", "unexpired.example.com", now.Add(-time.Hour), now.Add(time.Hour))
+
+	p := &Proxy{
+		cfg: &Config{
+			RevokeUnusedCertificates: newPtr(true),
+		},
+		certManager: &autocert.Manager{
+			Cache: cache,
+		},
+	}
+	_ = p.revokeUnusedCertificates(ctx)
+
+	// Even when cert2 fails revocation, expired cert1 must already be deleted from the cache.
+	if _, err := cache.Get(ctx, "cert1"); err == nil {
+		t.Errorf("Expired cert1 remained in cache after partial failure in revokeUnusedCertificates")
+	}
+
+	if got := int(capRlimitCur(^uint64(0))); got <= 0 {
+		t.Errorf("capRlimitCur(RLIM_INFINITY) = %d, want > 0", got)
+	}
+}
+
+func TestPKIOCSPPost(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	cfg := &Config{
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(100),
+		PKI: []*ConfigPKI{
+			{
+				Name:       "TEST CA",
+				OCSPServer: Strings{"https://pki.example.com/pki/ocsp"},
+			},
+		},
+		Backends: []*Backend{
+			{
+				ServerNames: Strings{"pki.example.com"},
+				Mode:        "CONSOLE",
+			},
+		},
+	}
+	proxy := newTestProxy(cfg, extCA)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+
+	caCert, err := proxy.pkis["TEST CA"].CACert()
+	if err != nil {
+		t.Fatalf("CACert: %v", err)
+	}
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey: %v", err)
+	}
+	rawCert, err := proxy.pkis["TEST CA"].IssueCertificate(&x509.CertificateRequest{
+		PublicKey:      &privKey.PublicKey,
+		EmailAddresses: []string{"bob@example.com"},
+	})
+	if err != nil {
+		t.Fatalf("IssueCertificate: %v", err)
+	}
+	leafCert, err := x509.ParseCertificate(rawCert)
+	if err != nil {
+		t.Fatalf("x509.ParseCertificate: %v", err)
+	}
+
+	ocspReq, err := ocsp.CreateRequest(leafCert, caCert, nil)
+	if err != nil {
+		t.Fatalf("ocsp.CreateRequest: %v", err)
+	}
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialTLSContext: func(context.Context, string, string) (net.Conn, error) {
+				return tls.Dial("tcp", proxy.listener.Addr().String(), &tls.Config{
+					ServerName: "pki.example.com",
+					RootCAs:    extCA.RootCACertPool(),
+					NextProtos: []string{"h2", "http/1.1"},
+				})
+			},
+			ForceAttemptHTTP2: true,
+		},
+		Timeout: 5 * time.Second,
+	}
+	req, err := http.NewRequest(http.MethodPost, "https://pki.example.com/pki/ocsp", bytes.NewReader(ocspReq))
+	if err != nil {
+		t.Fatalf("http.NewRequest: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/ocsp-request")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do(POST /pki/ocsp): %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("io.ReadAll: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /pki/ocsp status = %d, body = %q", resp.StatusCode, body)
+	}
+	ocspResp, err := ocsp.ParseResponseForCert(body, leafCert, caCert)
+	if err != nil {
+		t.Fatalf("ocsp.ParseResponseForCert: %v", err)
+	}
+	if ocspResp.Status != ocsp.Good {
+		t.Errorf("ocspResp.Status = %v, want %v", ocspResp.Status, ocsp.Good)
+	}
 }

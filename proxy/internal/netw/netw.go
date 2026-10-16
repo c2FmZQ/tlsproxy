@@ -29,6 +29,7 @@ import (
 	"context"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -84,12 +85,12 @@ type Conn struct {
 
 	ctx             context.Context
 	cancel          func()
-	ingressLimiter  *rate.Limiter
-	egressLimiter   *rate.Limiter
+	ingressLimiter  atomic.Pointer[rate.Limiter]
+	egressLimiter   atomic.Pointer[rate.Limiter]
 	bytesSent       *counter.Counter
 	bytesReceived   *counter.Counter
-	upBytesSent     *counter.Counter
-	upBytesReceived *counter.Counter
+	upBytesSent     atomic.Pointer[counter.Counter]
+	upBytesReceived atomic.Pointer[counter.Counter]
 
 	mu          sync.Mutex
 	onClose     func()
@@ -135,16 +136,24 @@ func (c *Conn) Annotation(key string, defaultValue any) any {
 	return defaultValue
 }
 
-// SetLimiter sets the rate limiters for this connection.
-// It must be called before the first Read() or Write().
+// SetLimiters sets the rate limiters for this connection.
 func (c *Conn) SetLimiters(ingress, egress *rate.Limiter) {
-	c.ingressLimiter = ingress
-	c.egressLimiter = egress
+	c.ingressLimiter.Store(ingress)
+	c.egressLimiter.Store(egress)
 }
 
+// SetCounters sets the byte counters to use for this connection.
 func (c *Conn) SetCounters(sent, received *counter.Counter) {
-	c.upBytesSent = sent
-	c.upBytesReceived = received
+	c.upBytesSent.Store(sent)
+	c.upBytesReceived.Store(received)
+}
+
+func (c *Conn) getLimiters() (ingress, egress *rate.Limiter) {
+	return c.ingressLimiter.Load(), c.egressLimiter.Load()
+}
+
+func (c *Conn) getCounters() (sent, received *counter.Counter) {
+	return c.upBytesSent.Load(), c.upBytesReceived.Load()
 }
 
 // BytesSent returns the number of bytes sent on this connection so far.
@@ -177,27 +186,44 @@ func (c *Conn) OnClose(f func()) {
 	c.onClose = f
 }
 
+func waitTokens(ctx context.Context, l *rate.Limiter, n int) error {
+	for n > 0 {
+		chunk := min(n, max(1, l.Burst()))
+		if err := l.WaitN(ctx, chunk); err != nil {
+			return err
+		}
+		n -= chunk
+	}
+	return nil
+}
+
 func (c *Conn) Read(b []byte) (int, error) {
-	if l := c.ingressLimiter; l != nil {
-		if err := l.WaitN(c.ctx, len(b)); err != nil {
-			return 0, err
+	n, err := c.Conn.Read(b)
+	if n > 0 {
+		c.bytesReceived.Incr(int64(n))
+		_, upRecv := c.getCounters()
+		upRecv.Incr(int64(n))
+		if l, _ := c.getLimiters(); l != nil {
+			if werr := waitTokens(c.ctx, l, n); werr != nil && err == nil {
+				err = werr
+			}
 		}
 	}
-	n, err := c.Conn.Read(b)
-	c.bytesReceived.Incr(int64(n))
-	c.upBytesReceived.Incr(int64(n))
 	return n, err
 }
 
 func (c *Conn) Write(b []byte) (int, error) {
-	if l := c.egressLimiter; l != nil {
-		if err := l.WaitN(c.ctx, len(b)); err != nil {
+	if _, l := c.getLimiters(); l != nil && len(b) > 0 {
+		if err := waitTokens(c.ctx, l, len(b)); err != nil {
 			return 0, err
 		}
 	}
 	n, err := c.Conn.Write(b)
-	c.bytesSent.Incr(int64(n))
-	c.upBytesSent.Incr(int64(n))
+	if n > 0 {
+		c.bytesSent.Incr(int64(n))
+		upSent, _ := c.getCounters()
+		upSent.Incr(int64(n))
+	}
 	return n, err
 }
 

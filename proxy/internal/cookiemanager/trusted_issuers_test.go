@@ -4,7 +4,9 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/base64"
+
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -194,5 +196,184 @@ func TestTrustedIssuers(t *testing.T) {
 	reqBearer.Header.Set("Authorization", "Bearer "+signedWithExp)
 	if _, err := cm.ValidateAuthorizationHeader(reqBearer); err != nil {
 		t.Errorf("ValidateAuthorizationHeader(local key, exp): %v", err)
+	}
+}
+
+func TestTrustedIssuersKidCollision(t *testing.T) {
+	privKeyA, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey: %v", err)
+	}
+	privKeyB, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey: %v", err)
+	}
+
+	makeJWKSServer := func(priv *ecdsa.PrivateKey, kid string) *httptest.Server {
+		ks := jwks.JWKS{
+			Keys: []jwks.JWK{{
+				Type:  "EC",
+				Use:   "sig",
+				ID:    kid,
+				Alg:   "ES256",
+				Curve: "P-256",
+				X:     base64.RawURLEncoding.EncodeToString(priv.X.Bytes()),
+				Y:     base64.RawURLEncoding.EncodeToString(priv.Y.Bytes()),
+			}},
+		}
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "max-age=3600")
+			json.NewEncoder(w).Encode(ks)
+		}))
+	}
+
+	serverA := makeJWKSServer(privKeyA, "shared-kid")
+	defer serverA.Close()
+	serverB := makeJWKSServer(privKeyB, "shared-kid")
+	defer serverB.Close()
+
+	dir := t.TempDir()
+	mk, err := crypto.CreateAESMasterKeyForTest()
+	if err != nil {
+		t.Fatalf("crypto.CreateMasterKey: %v", err)
+	}
+	store := storage.New(dir, mk)
+	tm, err := tokenmanager.New(store, nil, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	issuerA := "https://issuer-a.example.com/"
+	issuerB := "https://issuer-b.example.com/"
+	localJWKS := httptest.NewServer(http.HandlerFunc(tm.ServeJWKS))
+	defer localJWKS.Close()
+	issuerLocalOther := "https://other-local.example.com/"
+
+	tm.SetTrustedIssuers([]jwks.Issuer{
+		{Issuer: issuerA, JWKSURI: serverA.URL},
+		{Issuer: issuerB, JWKSURI: serverB.URL},
+		{Issuer: issuerLocalOther, JWKSURI: localJWKS.URL},
+	})
+	time.Sleep(100 * time.Millisecond)
+
+	// cmA only trusts issuerA and issuerLocalOther, NOT issuerB.
+	cmA := New(tm, "idp-a", "a.example.com", "https://a.example.com/", 0, []string{issuerA, issuerLocalOther})
+
+	// 1. Token signed by issuerB's key claiming to be from issuerA MUST ALWAYS fail.
+	forgedByB := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
+		"iss":       issuerA,
+		"aud":       issuerA,
+		"sub":       "admin",
+		"email":     "admin@example.com",
+		"exp":       time.Now().Add(time.Hour).Unix(),
+		"proxyauth": issuerA,
+	})
+	forgedByB.Header["kid"] = "shared-kid"
+	signedForged, err := forgedByB.SignedString(privKeyB)
+	if err != nil {
+		t.Fatalf("SignedString: %v", err)
+	}
+	reqForged, _ := http.NewRequest("GET", "https://a.example.com/", nil)
+	reqForged.AddCookie(&http.Cookie{Name: tlsProxyAuthCookie, Value: signedForged})
+
+	// 2. Valid token signed by issuerA's key MUST ALWAYS succeed.
+	validFromA := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
+		"iss":       issuerA,
+		"aud":       issuerA,
+		"sub":       "user1",
+		"email":     "user1@example.com",
+		"exp":       time.Now().Add(time.Hour).Unix(),
+		"proxyauth": issuerA,
+	})
+	validFromA.Header["kid"] = "shared-kid"
+	signedValidA, err := validFromA.SignedString(privKeyA)
+	if err != nil {
+		t.Fatalf("SignedString: %v", err)
+	}
+	reqValidA, _ := http.NewRequest("GET", "https://a.example.com/", nil)
+	reqValidA.AddCookie(&http.Cookie{Name: tlsProxyAuthCookie, Value: signedValidA})
+
+	for i := range 50 {
+		if _, _, err := cmA.ValidateAuthTokenCookie(reqForged); err == nil {
+			t.Fatalf("iteration %d: forged token signed by issuerB was accepted as issuerA", i)
+		}
+		if _, _, err := cmA.ValidateAuthTokenCookie(reqValidA); err != nil {
+			t.Fatalf("iteration %d: valid token from issuerA was rejected: %v", i, err)
+		}
+	}
+
+	// 3. Token issued by another CookieManager on the same TokenManager instance (issuerLocalOther)
+	// and trusted via TrustedIssuers MUST succeed.
+	cmOther := New(tm, "idp-other", "other.example.com", issuerLocalOther, 0, nil)
+	wOther := httptest.NewRecorder()
+	reqOther, _ := http.NewRequest("GET", issuerLocalOther, nil)
+	if err := cmOther.SetAuthTokenCookie(wOther, reqOther, "user2", "user2@example.com", "sid2", "other.example.com", nil); err != nil {
+		t.Fatalf("SetAuthTokenCookie: %v", err)
+	}
+	reqCrossLocal, _ := http.NewRequest("GET", "https://a.example.com/", nil)
+	for _, c := range wOther.Result().Cookies() {
+		reqCrossLocal.AddCookie(c)
+	}
+	if _, _, err := cmA.ValidateAuthTokenCookie(reqCrossLocal); err != nil {
+		t.Fatalf("ValidateAuthTokenCookie(same-instance trusted issuer): %v", err)
+	}
+}
+
+func TestTrustedIssuersInvalidJWK(t *testing.T) {
+	weakRSA, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey: %v", err)
+	}
+	weakJWK := jwks.PublicKeyToJWK(&weakRSA.PublicKey)
+	weakJWK.ID = "weak-rsa"
+
+	badJWKS := jwks.JWKS{
+		Keys: []jwks.JWK{*weakJWK},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "max-age=3600")
+		json.NewEncoder(w).Encode(badJWKS)
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	mk, err := crypto.CreateAESMasterKeyForTest()
+	if err != nil {
+		t.Fatalf("crypto.CreateMasterKey: %v", err)
+	}
+	store := storage.New(dir, mk)
+	tm, err := tokenmanager.New(store, nil, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	trustedIssuer := "https://bad-jwks.example.com/"
+	tm.SetTrustedIssuers([]jwks.Issuer{{
+		Issuer:  trustedIssuer,
+		JWKSURI: server.URL,
+	}})
+	time.Sleep(100 * time.Millisecond)
+
+	cm := New(tm, "idp", "example.com", "https://idp.example.com/", 0, []string{trustedIssuer})
+
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"iss":       trustedIssuer,
+		"aud":       trustedIssuer,
+		"sub":       "user1",
+		"email":     "user1@example.com",
+		"exp":       time.Now().Add(time.Hour).Unix(),
+		"proxyauth": trustedIssuer,
+	})
+	tok.Header["kid"] = "weak-rsa"
+	rawToken, err := tok.SignedString(weakRSA)
+	if err != nil {
+		t.Fatalf("SignedString: %v", err)
+	}
+
+	req, _ := http.NewRequest("GET", "https://example.com/", nil)
+	req.AddCookie(&http.Cookie{Name: tlsProxyAuthCookie, Value: rawToken})
+
+	if _, _, err := cm.ValidateAuthTokenCookie(req); err == nil {
+		t.Fatal("ValidateAuthTokenCookie succeeded with weak 1024-bit RSA key, want error")
 	}
 }

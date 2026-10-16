@@ -32,9 +32,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/c2FmZQ/storage"
+	"github.com/c2FmZQ/storage/crypto"
 	jwt "github.com/golang-jwt/jwt/v5"
 
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
 )
 
 type nopRecorder struct{}
@@ -149,5 +153,78 @@ func TestDeviceVerificationPage(t *testing.T) {
 	}
 	if body := w.Body.String(); !strings.Contains(body, `class="invalid"`) {
 		t.Error("Body doesn't contain invalid class")
+	}
+}
+
+func TestDeviceVerificationClaimsAllowlist(t *testing.T) {
+	mk, err := crypto.CreateAESMasterKeyForTest()
+	if err != nil {
+		t.Fatalf("crypto.CreateAESMasterKeyForTest: %v", err)
+	}
+	tm, err := tokenmanager.New(storage.New(t.TempDir(), mk), nil, nil)
+	if err != nil {
+		t.Fatalf("tokenmanager.New: %v", err)
+	}
+	cm := cookiemanager.New(tm, "idp", "example.com", "https://idp.example.com", 0, nil)
+	s := NewServer(ServerOptions{
+		CookieManager: cm,
+		Clients:       []Client{{ID: "my-client"}},
+		Scopes:        []string{"openid", "email"},
+		ACLMatcher:    func([]string, string) bool { return true },
+		EventRecorder: nopRecorder{},
+		Logger:        nopLogger{},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "https://idp.example.com/device/authorization", strings.NewReader("client_id=my-client&scope=openid+email"))
+	req.Header.Set("content-type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	s.ServeDeviceAuthorization(w, req)
+	var authResp struct {
+		DeviceCode string `json:"device_code"`
+		UserCode   string `json:"user_code"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&authResp); err != nil {
+		t.Fatalf("json.Decode: %v", err)
+	}
+
+	form := url.Values{"user_code": {authResp.UserCode}, "approve": {"true"}}
+	req = httptest.NewRequest(http.MethodPost, "https://idp.example.com/device/verify", strings.NewReader(form.Encode()))
+	req.Header.Set("content-type", "application/x-www-form-urlencoded")
+	userClaims := jwt.MapClaims{
+		"sub":      "bob-sub",
+		"email":    "bob@example.com",
+		"name":     "Bob",
+		"provider": "idp",
+		"th":       []any{"hash1"},
+		"depth":    1,
+		"internal": "secret",
+	}
+	req = req.WithContext(fromctx.WithClaims(req.Context(), userClaims))
+	w = httptest.NewRecorder()
+	s.ServeDeviceVerification(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ServeDeviceVerification: code %d", w.Code)
+	}
+
+	s.mu.Lock()
+	accessToken := s.deviceTokens[authResp.DeviceCode].accessToken
+	s.mu.Unlock()
+
+	parser := new(jwt.Parser)
+	tok, _, err := parser.ParseUnverified(accessToken, jwt.MapClaims{})
+	if err != nil {
+		t.Fatalf("ParseUnverified: %v", err)
+	}
+	claims := tok.Claims.(jwt.MapClaims)
+	for _, disallowed := range []string{"provider", "th", "depth", "internal"} {
+		if v, exists := claims[disallowed]; exists {
+			t.Errorf("device access token leaked internal claim %q = %v", disallowed, v)
+		}
+	}
+	if got, want := claims["email"], "bob@example.com"; got != want {
+		t.Errorf("email = %v, want %v", got, want)
+	}
+	if got, want := claims["name"], "Bob"; got != want {
+		t.Errorf("name = %v, want %v", got, want)
 	}
 }

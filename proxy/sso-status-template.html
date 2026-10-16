@@ -59,7 +59,7 @@ window.logout = logout;
 <div id="claims">
 {{ range .Claims }}
 <div>{{.Key}}</div>
-<div>{{.Value}}{{ if eq .Key "picture" }}<br /><img style="max-width: 40vw; max-height: 40vh;" src="{{.Value}}" />{{ end }}</div>
+<div>{{.Value}}{{ if eq .Key "picture" }}<br /><img referrerpolicy="no-referrer" style="max-width: 40vw; max-height: 40vh;" src="{{.Value}}" />{{ end }}</div>
 {{ end }}
 {{ else }}
 <span tkey="sso-not-logged-in">You Are Not Logged In</span>

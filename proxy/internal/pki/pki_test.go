@@ -25,13 +25,22 @@ package pki
 
 import (
 	"bytes"
+	stdcrypto "crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha1"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
+	"encoding/hex"
+	"math/big"
+	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/storage/crypto"
@@ -236,5 +245,402 @@ func TestConcurrentRevocationList(t *testing.T) {
 	defer m.mu.Unlock()
 	if got, want := len(m.db.DelegateCerts), 1; got != want {
 		t.Errorf("len(DelegateCerts) = %d, want %d", got, want)
+	}
+}
+
+func TestPKIDelegateAndCRLVerification(t *testing.T) {
+	m := newPKI(t, nil)
+	caCert, err := m.CACert()
+	if err != nil {
+		t.Fatalf("CACert: %v", err)
+	}
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey: %v", err)
+	}
+	csrRaw, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: "leaf"},
+	}, key)
+	if err != nil {
+		t.Fatalf("CreateCertificateRequest: %v", err)
+	}
+	cr, err := m.ValidateCertificateRequest(csrRaw)
+	if err != nil {
+		t.Fatalf("ValidateCertificateRequest: %v", err)
+	}
+	certBytes, err := m.IssueCertificate(cr)
+	if err != nil {
+		t.Fatalf("IssueCertificate: %v", err)
+	}
+	leaf, err := x509.ParseCertificate(certBytes)
+	if err != nil {
+		t.Fatalf("ParseCertificate: %v", err)
+	}
+
+	ocspReqRaw, err := ocsp.CreateRequest(leaf, caCert, nil)
+	if err != nil {
+		t.Fatalf("ocsp.CreateRequest: %v", err)
+	}
+	ocspReq, err := ocsp.ParseRequest(ocspReqRaw)
+	if err != nil {
+		t.Fatalf("ocsp.ParseRequest: %v", err)
+	}
+	ocspRespRaw, err := m.OCSPResponse(ocspReq)
+	if err != nil {
+		t.Fatalf("m.OCSPResponse: %v", err)
+	}
+	ocspResp, err := ocsp.ParseResponse(ocspRespRaw, caCert)
+	if err != nil {
+		t.Fatalf("ocsp.ParseResponse: %v", err)
+	}
+
+	// 1. Delegate cert must not be a CA and must pass x509.Verify against caCert.
+	if ocspResp.Certificate.IsCA {
+		t.Errorf("Delegate certificate has IsCA = true, want false")
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(caCert)
+	if _, err := ocspResp.Certificate.Verify(x509.VerifyOptions{
+		Roots:     roots,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageOCSPSigning},
+	}); err != nil {
+		t.Errorf("Delegate certificate failed x509.Verify against CA: %v", err)
+	}
+
+	// 2. id-pkix-ocsp-nocheck extension must have ASN.1 NULL (0x05, 0x00) value.
+	var foundNoCheck bool
+	for _, ext := range ocspResp.Certificate.Extensions {
+		if ext.Id.Equal([]int{1, 3, 6, 1, 5, 5, 7, 48, 1, 5}) {
+			foundNoCheck = true
+			if !bytes.Equal(ext.Value, []byte{0x05, 0x00}) {
+				t.Errorf("id-pkix-ocsp-nocheck Value = %x, want 0500", ext.Value)
+			}
+		}
+	}
+	if !foundNoCheck {
+		t.Errorf("id-pkix-ocsp-nocheck extension not found on delegate cert")
+	}
+
+	// 3. CRL must be directly verifiable against caCert via CheckSignatureFrom.
+	_, crlBytes, err := m.RevocationList()
+	if err != nil {
+		t.Fatalf("m.RevocationList: %v", err)
+	}
+	rl, err := x509.ParseRevocationList(crlBytes)
+	if err != nil {
+		t.Fatalf("x509.ParseRevocationList: %v", err)
+	}
+	if err := rl.CheckSignatureFrom(caCert); err != nil {
+		t.Errorf("rl.CheckSignatureFrom(caCert) failed: %v", err)
+	}
+
+	// 4. OCSP response IssuerHash must match ocspReq.HashAlgorithm.
+	if ocspResp.IssuerHash != ocspReq.HashAlgorithm {
+		t.Errorf("ocspResp.IssuerHash = %v, want %v", ocspResp.IssuerHash, ocspReq.HashAlgorithm)
+	}
+
+	// 5. RevokeCertificate must reject revoking the Root CA or OCSP delegate cert.
+	if err := m.RevokeCertificate(caCert.SerialNumber, RevokeReasonKeyCompromise); err == nil {
+		t.Errorf("RevokeCertificate(caCert) succeeded, want error")
+	}
+	if err := m.RevokeCertificate(ocspResp.Certificate.SerialNumber, RevokeReasonKeyCompromise); err == nil {
+		t.Errorf("RevokeCertificate(delegateCert) succeeded, want error")
+	}
+}
+
+func TestValidateCertificateRequestWeakKey(t *testing.T) {
+	m := newPKI(t, nil)
+
+	weakRSA, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey(1024): %v", err)
+	}
+	csrRaw, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: "weak-rsa"},
+	}, weakRSA)
+	if err != nil {
+		t.Fatalf("CreateCertificateRequest(weakRSA): %v", err)
+	}
+	if _, err := m.ValidateCertificateRequest(csrRaw); err == nil {
+		t.Errorf("ValidateCertificateRequest(1024-bit RSA) succeeded, want error")
+	}
+
+	weakECDSA, err := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey(P224): %v", err)
+	}
+	csrECDSA, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: "weak-ecdsa"},
+	}, weakECDSA)
+	if err != nil {
+		t.Fatalf("CreateCertificateRequest(weakECDSA): %v", err)
+	}
+	if _, err := m.ValidateCertificateRequest(csrECDSA); err == nil {
+		t.Errorf("ValidateCertificateRequest(P-224 ECDSA) succeeded, want error")
+	}
+}
+
+func TestValidateCertificateRequestRSAExponent3(t *testing.T) {
+	m := newPKI(t, nil)
+	key := newRSAKeyWithExponent3(t)
+	csrRaw, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: "rsa-e3"},
+	}, key)
+	if err != nil {
+		t.Fatalf("CreateCertificateRequest: %v", err)
+	}
+	if _, err := m.ValidateCertificateRequest(csrRaw); err != nil {
+		t.Errorf("ValidateCertificateRequest(2048-bit RSA, e=3) = %v, want nil", err)
+	}
+}
+
+// newRSAKeyWithExponent3 returns a 2048-bit RSA key with public exponent 3.
+func newRSAKeyWithExponent3(t *testing.T) *rsa.PrivateKey {
+	t.Helper()
+	one := big.NewInt(1)
+	for {
+		k, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			t.Fatalf("rsa.GenerateKey: %v", err)
+		}
+		p, q := k.Primes[0], k.Primes[1]
+		phi := new(big.Int).Mul(new(big.Int).Sub(p, one), new(big.Int).Sub(q, one))
+		d := new(big.Int).ModInverse(big.NewInt(3), phi)
+		if d == nil {
+			continue
+		}
+		key := &rsa.PrivateKey{
+			PublicKey: rsa.PublicKey{N: k.N, E: 3},
+			D:         d,
+			Primes:    []*big.Int{p, q},
+		}
+		key.Precompute()
+		if err := key.Validate(); err != nil {
+			continue
+		}
+		return key
+	}
+}
+
+// newCACertForTest creates a self-signed CA certificate for m's key with
+// the given key usage and SubjectKeyId, and installs it as m's CA cert.
+func newCACertForTest(t *testing.T, m *PKIManager, ku x509.KeyUsage, skid []byte, serial int64, notBefore time.Time) *x509.Certificate {
+	t.Helper()
+	var err error
+	commit, err := m.open()
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	pk, err := m.parseKeyBytes(m.db.PrivateKey)
+	if err != nil {
+		t.Fatalf("parseKeyBytes: %v", err)
+	}
+	signer := pk.(stdcrypto.Signer)
+	templ := &x509.Certificate{
+		SerialNumber:          big.NewInt(serial),
+		Subject:               pkix.Name{CommonName: m.opts.Name},
+		NotBefore:             notBefore,
+		NotAfter:              notBefore.Add(caCertLifetime),
+		KeyUsage:              ku,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLenZero:        true,
+		SubjectKeyId:          skid,
+	}
+	raw, err := x509.CreateCertificate(rand.Reader, templ, templ, signer.Public(), signer)
+	if err != nil {
+		t.Fatalf("CreateCertificate: %v", err)
+	}
+	h := sha256.Sum256(raw)
+	c := &certificate{SHA256: bytesToHex(h[:]), SerialNumber: bytesToHex(big.NewInt(serial).Bytes()), Raw: raw}
+	m.db.CACert = c
+	m.db.IssuedCerts = append(m.db.IssuedCerts, c)
+	if err := commit(true, &err); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	cert, err := x509.ParseCertificate(raw)
+	if err != nil {
+		t.Fatalf("ParseCertificate: %v", err)
+	}
+	return cert
+}
+
+func TestCAReissuePreservesSubjectKeyId(t *testing.T) {
+	m := newPKI(t, nil)
+	caCert, err := m.CACert()
+	if err != nil {
+		t.Fatalf("CACert: %v", err)
+	}
+
+	// Replace the CA certificate with one created the way older versions
+	// did: same key, no CRLSign key usage, and a SHA-1 SubjectKeyId as
+	// generated by go < 1.25.
+	var spki struct {
+		Algorithm pkix.AlgorithmIdentifier
+		PublicKey asn1.BitString
+	}
+	if _, err := asn1.Unmarshal(caCert.RawSubjectPublicKeyInfo, &spki); err != nil {
+		t.Fatalf("asn1.Unmarshal: %v", err)
+	}
+	sha1SKID := sha1.Sum(spki.PublicKey.Bytes)
+	commit, err := m.open()
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	m.db.IssuedCerts = nil
+	if err := commit(true, &err); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	oldCA := newCACertForTest(t, m, x509.KeyUsageCertSign, sha1SKID[:], 1234, time.Now())
+
+	// Issue a leaf certificate with the old CA.
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey: %v", err)
+	}
+	csrRaw, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: "leaf"},
+	}, key)
+	if err != nil {
+		t.Fatalf("CreateCertificateRequest: %v", err)
+	}
+	cr, err := m.ValidateCertificateRequest(csrRaw)
+	if err != nil {
+		t.Fatalf("ValidateCertificateRequest: %v", err)
+	}
+	certBytes, err := m.IssueCertificate(cr)
+	if err != nil {
+		t.Fatalf("IssueCertificate: %v", err)
+	}
+	leaf, err := x509.ParseCertificate(certBytes)
+	if err != nil {
+		t.Fatalf("ParseCertificate: %v", err)
+	}
+	if !bytes.Equal(leaf.AuthorityKeyId, oldCA.SubjectKeyId) {
+		t.Fatalf("leaf.AuthorityKeyId = %x, want %x", leaf.AuthorityKeyId, oldCA.SubjectKeyId)
+	}
+
+	// Re-issue the CA certificate (adds CRLSign).
+	if err := m.initCA(); err != nil {
+		t.Fatalf("initCA: %v", err)
+	}
+	newCA, err := m.CACert()
+	if err != nil {
+		t.Fatalf("CACert: %v", err)
+	}
+	if newCA.SerialNumber.Cmp(oldCA.SerialNumber) == 0 {
+		t.Errorf("CA certificate was not re-issued")
+	}
+	if newCA.KeyUsage&x509.KeyUsageCRLSign == 0 {
+		t.Errorf("re-issued CA certificate doesn't have CRLSign")
+	}
+	if !bytes.Equal(newCA.SubjectKeyId, oldCA.SubjectKeyId) {
+		t.Errorf("re-issued CA SubjectKeyId = %x, want %x", newCA.SubjectKeyId, oldCA.SubjectKeyId)
+	}
+	if !bytes.Equal(leaf.AuthorityKeyId, newCA.SubjectKeyId) {
+		t.Errorf("leaf.AuthorityKeyId = %x, re-issued CA SubjectKeyId = %x", leaf.AuthorityKeyId, newCA.SubjectKeyId)
+	}
+	ids, err := m.KeyIDs()
+	if err != nil {
+		t.Fatalf("KeyIDs: %v", err)
+	}
+	if want := []string{hex.EncodeToString(newCA.SubjectKeyId)}; !slices.Equal(ids, want) {
+		t.Errorf("KeyIDs() = %v, want %v", ids, want)
+	}
+	// The old CA certificate must have been replaced in the issued list.
+	var caCount int
+	for _, c := range m.db.IssuedCerts {
+		if cert, _ := c.parse(); cert != nil && cert.IsCA && cert.Subject.CommonName == m.opts.Name {
+			caCount++
+		}
+	}
+	if caCount != 1 {
+		t.Errorf("found %d CA certificates in IssuedCerts, want 1", caCount)
+	}
+
+	// Simulate a CA certificate that was already re-issued with a
+	// different (go default) SubjectKeyId. KeyIDs must still return the
+	// AuthorityKeyId used by the issued certificates.
+	otherCA := newCACertForTest(t, m, x509.KeyUsageCertSign|x509.KeyUsageCRLSign, nil, 5678, time.Now())
+	if bytes.Equal(otherCA.SubjectKeyId, leaf.AuthorityKeyId) {
+		t.Fatalf("test setup: expected a different SubjectKeyId")
+	}
+	ids, err = m.KeyIDs()
+	if err != nil {
+		t.Fatalf("KeyIDs: %v", err)
+	}
+	for _, want := range []string{hex.EncodeToString(otherCA.SubjectKeyId), hex.EncodeToString(leaf.AuthorityKeyId)} {
+		if !slices.Contains(ids, want) {
+			t.Errorf("KeyIDs() = %v, missing %s", ids, want)
+		}
+	}
+}
+
+func TestCARotationPreservesSubjectKeyId(t *testing.T) {
+	m := newPKI(t, nil)
+
+	// Install a CA certificate that is past half of its lifetime, with a
+	// SubjectKeyId that differs from the go default.
+	skid := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
+	commit, err := m.open()
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	m.db.IssuedCerts = nil
+	if err := commit(true, &err); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	oldCA := newCACertForTest(t, m, x509.KeyUsageCertSign|x509.KeyUsageCRLSign, skid, 1234, time.Now().Add(-3*caCertLifetime/4))
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey: %v", err)
+	}
+	csrRaw, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: "leaf"},
+	}, key)
+	if err != nil {
+		t.Fatalf("CreateCertificateRequest: %v", err)
+	}
+	cr, err := m.ValidateCertificateRequest(csrRaw)
+	if err != nil {
+		t.Fatalf("ValidateCertificateRequest: %v", err)
+	}
+	certBytes, err := m.IssueCertificate(cr)
+	if err != nil {
+		t.Fatalf("IssueCertificate: %v", err)
+	}
+	leaf, err := x509.ParseCertificate(certBytes)
+	if err != nil {
+		t.Fatalf("ParseCertificate: %v", err)
+	}
+
+	// Rotate the CA certificate.
+	if err := m.initCA(); err != nil {
+		t.Fatalf("initCA: %v", err)
+	}
+	newCA, err := m.CACert()
+	if err != nil {
+		t.Fatalf("CACert: %v", err)
+	}
+	if newCA.SerialNumber.Cmp(oldCA.SerialNumber) == 0 {
+		t.Fatalf("CA certificate was not rotated")
+	}
+	if !bytes.Equal(newCA.SubjectKeyId, skid) {
+		t.Errorf("rotated CA SubjectKeyId = %x, want %x", newCA.SubjectKeyId, skid)
+	}
+	if !bytes.Equal(leaf.AuthorityKeyId, newCA.SubjectKeyId) {
+		t.Errorf("leaf.AuthorityKeyId = %x, rotated CA SubjectKeyId = %x", leaf.AuthorityKeyId, newCA.SubjectKeyId)
+	}
+	// On rotation, the old CA certificate is kept in the issued list.
+	var caCount int
+	for _, c := range m.db.IssuedCerts {
+		if cert, _ := c.parse(); cert != nil && cert.IsCA && cert.Subject.CommonName == m.opts.Name {
+			caCount++
+		}
+	}
+	if caCount != 2 {
+		t.Errorf("found %d CA certificates in IssuedCerts, want 2", caCount)
 	}
 }

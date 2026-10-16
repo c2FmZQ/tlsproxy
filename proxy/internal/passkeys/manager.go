@@ -143,7 +143,8 @@ type Manager struct {
 		Handles  map[string]*user
 		Subjects map[string]string
 	}
-	acl *[]string
+	acl      *[]string
+	allowAll bool
 
 	mu         sync.Mutex
 	challenges *idp.PendingLogins[*challenge]
@@ -166,6 +167,11 @@ type nonceData struct {
 
 func (m *Manager) SetACL(acl *[]string) {
 	if acl == nil {
+		m.allowAll = true
+		m.acl = nil
+		return
+	}
+	if m.allowAll {
 		return
 	}
 	if m.acl == nil {
@@ -321,7 +327,22 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	}
 
 	token, _, err := m.cfg.OtherCookieManager.ValidateAuthTokenCookie(req)
-	if err != nil {
+	needLogin := err != nil
+	if !needLogin && mode == "RefreshID" {
+		email, _ := redirectClaims["email"].(string)
+		if email == "" {
+			email = req.Form.Get("email")
+		}
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok || (email != "" && claims["email"] != email) {
+			needLogin = true
+		} else if m.cfg.RefreshInterval > 0 {
+			if iat, err := claims.GetIssuedAt(); err != nil || iat == nil || time.Since(iat.Time) > m.cfg.RefreshInterval {
+				needLogin = true
+			}
+		}
+	}
+	if needLogin {
 		switch mode {
 		case "RegisterNewID", "RefreshID":
 			depth, _ := redirectClaims["depth"].(int)
@@ -535,6 +556,14 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 	here := req.URL.String()
 
 	claims := fromctx.Claims(req.Context())
+	if claims == nil || claims["passkey_hash"] == nil {
+		// The request may have been authenticated by a different
+		// identity provider on this host. Look for a passkey session
+		// in the auth cookie.
+		if tok, _, err := m.cfg.CookieManager.ValidateAuthTokenCookie(req); err == nil {
+			claims, _ = tok.Claims.(jwt.MapClaims)
+		}
+	}
 	var iat time.Time
 	if claims != nil {
 		if p, _ := claims.GetIssuedAt(); p != nil {
@@ -542,7 +571,7 @@ func (m *Manager) ManageKeys(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 	hh := sha256.Sum256([]byte(req.Host))
-	if claims == nil || claims["hhash"] != hex.EncodeToString(hh[:]) || time.Since(iat) > 10*time.Minute {
+	if _, ok := claims["passkey_hash"].(string); !ok || claims["hhash"] != hex.EncodeToString(hh[:]) || time.Since(iat) > 10*time.Minute {
 		var opts []idp.Option
 		if claims != nil {
 			email, _ := claims["email"].(string)
@@ -868,6 +897,14 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 	}
 	defer commit(false, &retErr)
 
+	for _, existingUser := range m.db.Handles {
+		for _, k := range existingUser.Keys {
+			if bytes.Equal(k.ID, creds.ID) {
+				return nil, errors.New("duplicate credential ID")
+			}
+		}
+	}
+
 	var u *user
 	if h, ok := m.db.Subjects[email]; ok {
 		u = m.db.Handles[h]
@@ -963,6 +1000,13 @@ func (m *Manager) processAssertion(host, jsargs string, token *jwt.Token) (claim
 	var authData authenticatorData
 	if err := parseAuthenticatorData(args.AuthenticatorData, &authData); err != nil {
 		return nil, err
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if hash := sha256.Sum256([]byte(host)); subtle.ConstantTimeCompare(authData.RPIDHash, hash[:]) != 1 {
+		m.cfg.Logger.Errorf("ERR rpidHash: %v != %v", authData.RPIDHash, hash[:])
+		return nil, errors.New("invalid rpIdHash")
 	}
 	if !authData.UserPresence {
 		return nil, errors.New("UserPresence is false")

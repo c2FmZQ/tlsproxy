@@ -481,6 +481,14 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	}
 
 	backends := make(map[beKey]*Backend, len(cfg.Backends))
+	var reconfigSuccess bool
+	defer func() {
+		if !reconfigSuccess {
+			for _, be := range cfg.Backends {
+				be.close(nil)
+			}
+		}
+	}()
 	for _, be := range cfg.Backends {
 		be.aclMatcher = aclMatcher
 		be.recordEvent = p.recordEvent
@@ -504,7 +512,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				backends[beKey{serverName: sn, proto: proto}] = be
 			}
 		}
-		if l, ok := p.bwLimits[be.BWLimit]; ok {
+		if l, ok := p.bwLimits[strings.ToLower(be.BWLimit)]; ok {
 			be.bwLimit = l
 		}
 		be.localHandlers = append(be.localHandlers,
@@ -568,6 +576,9 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				},
 			)
 			if m, ok := be.SSO.p.(*passkeys.Manager); ok {
+				for _, r := range be.SSO.Rules {
+					m.SetACL((*[]string)(r.ACL))
+				}
 				be.localHandlers = append(be.localHandlers,
 					localHandler{
 						desc:    "Manage Passkeys",
@@ -639,10 +650,11 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 						csrfBypass: true,
 					},
 					localHandler{
-						desc:    "OIDC Server Userinfo Endpoint",
-						path:    ls.PathPrefix + "/userinfo",
-						handler: logHandler(http.HandlerFunc(be.SSO.oidcServer.ServeUserInfo)),
-						scopes:  Strings{scopeOpenID},
+						desc:       "OIDC Server Userinfo Endpoint",
+						path:       ls.PathPrefix + "/userinfo",
+						handler:    logHandler(http.HandlerFunc(be.SSO.oidcServer.ServeUserInfo)),
+						scopes:     Strings{scopeOpenID},
+						csrfBypass: true,
 					},
 					localHandler{
 						desc:      "OIDC Server JWKS Endpoint",
@@ -678,7 +690,13 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 					if err != nil {
 						return err
 					}
-					be.pkiMap[hex.EncodeToString(ca.SubjectKeyId)] = m
+					ids, err := m.KeyIDs()
+					if err != nil {
+						return err
+					}
+					for _, id := range ids {
+						be.pkiMap[id] = m
+					}
 					be.clientCAs.AddCert(ca)
 					continue
 				}
@@ -705,6 +723,12 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				// lead to confusion.
 				tc.NextProtos = slices.DeleteFunc(tc.NextProtos, func(p string) bool {
 					return quicOnlyProtocols[p]
+				})
+			} else if be.Mode == ModeConsole || be.Mode == ModeLocal || be.Mode == ModeHTTP || be.Mode == ModeHTTPS {
+				// http/2 over a raw QUIC stream is not supported by the internal
+				// http.Server.
+				tc.NextProtos = slices.DeleteFunc(tc.NextProtos, func(p string) bool {
+					return p == "h2"
 				})
 			}
 			return tc
@@ -739,7 +763,13 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 				if err != nil {
 					return err
 				}
-				be.pkiMap[hex.EncodeToString(ca.SubjectKeyId)] = m
+				ids, err := m.KeyIDs()
+				if err != nil {
+					return err
+				}
+				for _, id := range ids {
+					be.pkiMap[id] = m
+				}
 				be.forwardRootCAs.AddCert(ca)
 				continue
 			}
@@ -764,7 +794,13 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 					if err != nil {
 						return err
 					}
-					be.pkiMap[hex.EncodeToString(ca.SubjectKeyId)] = m
+					ids, err := m.KeyIDs()
+					if err != nil {
+						return err
+					}
+					for _, id := range ids {
+						be.pkiMap[id] = m
+					}
 					po.forwardRootCAs.AddCert(ca)
 					continue
 				}
@@ -827,14 +863,6 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			h.host = host
 			h.path = path
 			be.localHandlers = append(be.localHandlers, h)
-
-			if h.isCallback && be.SSO != nil {
-				if m, ok := be.SSO.p.(*passkeys.Manager); ok {
-					for _, r := range be.SSO.Rules {
-						m.SetACL((*[]string)(r.ACL))
-					}
-				}
-			}
 		}
 	}
 	if cfg.ECH != nil {
@@ -870,6 +898,22 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			csrfBypass: true,
 			isCallback: true,
 		}, p.callback)
+		if m, ok := p.identityProvider.(*passkeys.Manager); ok {
+			if host, _, _, err := hostAndPath(p.callback); err == nil {
+				if be, exists := backends[beKey{serverName: host}]; exists && (be.SSO == nil || be.SSO.p != m) {
+					addLocalHandler(localHandler{
+						desc:      "Manage Passkeys",
+						handler:   logHandler(http.HandlerFunc(m.ManageKeys)),
+						ssoBypass: true,
+					}, "https://"+host+"/.sso/passkeys")
+					addLocalHandler(localHandler{
+						desc:      "List of Passkey Endpoints",
+						handler:   logHandler(http.HandlerFunc(m.ServeWellKnown)),
+						ssoBypass: true,
+					}, "https://"+host+"/.well-known/passkey-endpoints")
+				}
+			}
+		}
 	}
 	for _, pp := range cfg.PKI {
 		addLocalHandler(localHandler{
@@ -886,6 +930,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 			desc:        fmt.Sprintf("PKI OCSP (%s)", pp.Name),
 			handler:     logHandler(http.HandlerFunc(pkis[pp.Name].ServeOCSP)),
 			ssoBypass:   true,
+			csrfBypass:  true,
 			matchPrefix: true,
 		}, pp.OCSPServer...)
 		if pp.Endpoint != "" {
@@ -964,6 +1009,7 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	p.backends = backends
 	p.pkis = pkis
 	p.cfg = cfg
+	reconfigSuccess = true
 	if err := p.rotateECH(true); err != nil && err != storage.ErrRolledBack {
 		return err
 	}
@@ -988,7 +1034,11 @@ func (p *Proxy) reAuthorize() {
 			conn.Close()
 			continue
 		}
-		if oldBE := connBackend(conn); be.Mode != oldBE.Mode {
+		oldBE := connBackend(conn)
+		if oldBE == nil {
+			continue
+		}
+		if be.Mode != oldBE.Mode {
 			be.logErrorF("INF [-] ReAuth %s ➔  %q backend mode changed %s->%s", conn.RemoteAddr(), idnaToUnicode(serverName), oldBE.Mode, be.Mode)
 			conn.Close()
 			continue
@@ -1003,13 +1053,19 @@ func (p *Proxy) reAuthorize() {
 			continue
 		}
 		clientCert := connClientCert(conn)
+		if clientCert == nil {
+			if _, isTCP := conn.(*netw.Conn); isTCP && oldBE.ClientAuth != nil && conn.Annotation(handshakeDoneKey, nil) == nil {
+				continue
+			}
+			p.recordEvent(fmt.Sprintf("deny no cert to %s", idnaToUnicode(serverName)))
+			be.logErrorF("BAD [-] ReAuth %s ➔ %q no client cert", conn.RemoteAddr(), idnaToUnicode(serverName))
+			conn.Close()
+			continue
+		}
 		if err := be.authorize(clientCert); err != nil {
 			p.recordEvent(err.Error())
 			be.logErrorF("BAD [-] ReAuth %s ➔ %q Authorize(%q): %v", conn.RemoteAddr(), idnaToUnicode(serverName), certSummary(clientCert), err)
 			conn.Close()
-			continue
-		}
-		if clientCert == nil {
 			continue
 		}
 		if m, ok := be.pkiMap[hex.EncodeToString(clientCert.AuthorityKeyId)]; ok && m.IsRevoked(clientCert.SerialNumber) {
@@ -1322,7 +1378,6 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		p.inConns.remove(conn)
 		p.ipConns.dec(ip)
 		if be := connBackend(conn); be != nil {
-			be.incInFlight(-1)
 			if conn.Annotation(reportEndKey, false).(bool) {
 				startTime := conn.Annotation(startTimeKey, time.Time{}).(time.Time)
 				be.logConnF("END %s; Dur:%s Recv:%d Sent:%d",
@@ -1382,8 +1437,12 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 	} else if echConn.ECHPresented() {
 		p.recordEvent("encrypted client hello rejected " + idnaToUnicode(serverName))
 	}
+	if be.incInFlight(1) <= 0 {
+		sendCloseNotify(conn)
+		return
+	}
+	defer be.incInFlight(-1)
 	conn.SetAnnotation(backendKey, be)
-	be.incInFlight(1)
 	p.setCounters(conn, serverName)
 	if l := be.bwLimit; l != nil {
 		conn.SetLimiters(l.ingress, l.egress)
@@ -1465,7 +1524,6 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 		be.logErrorF("BAD [-] %s ➔ %q Handshake: %v", conn.RemoteAddr(), idnaToUnicode(serverName), unwrapErr(err))
 		return false
 	}
-	annotatedConn(conn).SetAnnotation(handshakeDoneKey, time.Now())
 	cs := conn.ConnectionState()
 	if (cs.ServerName == "" && serverName != p.defaultServerName()) || (cs.ServerName != "" && cs.ServerName != serverName) {
 		p.recordEvent("mismatched server name")
@@ -1479,6 +1537,7 @@ func (p *Proxy) authorizeTLSConnection(conn *tls.Conn) bool {
 	}
 	annotatedConn(conn).SetAnnotation(protoKey, proto)
 	annotatedConn(conn).SetAnnotation(clientCertKey, clientCert)
+	annotatedConn(conn).SetAnnotation(handshakeDoneKey, time.Now())
 
 	// The check below is also done in VerifyConnection.
 	if be.ClientAuth != nil && be.ClientAuth.ACL != nil {

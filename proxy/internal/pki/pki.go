@@ -28,13 +28,17 @@ package pki
 import (
 	"bytes"
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	_ "crypto/sha512"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -287,7 +291,8 @@ func (m *PKIManager) initCA() (retErr error) {
 	}
 
 	now := time.Now().UTC()
-	var needCert bool
+	var needCert, replaceCert bool
+	var oldCert *x509.Certificate
 	if m.db.CACert == nil {
 		needCert = true
 	} else {
@@ -295,8 +300,15 @@ func (m *PKIManager) initCA() (retErr error) {
 		if err != nil {
 			return err
 		}
+		oldCert = cert
 		if cert.NotBefore.Add(cert.NotAfter.Sub(cert.NotBefore) / 2).Before(now) {
 			needCert = true
+		}
+		if cert.KeyUsage&x509.KeyUsageCRLSign == 0 {
+			// The CA certificate needs the CRLSign key usage to sign
+			// CRLs. Re-issue it with the same key and subject, and
+			// replace the old certificate.
+			needCert, replaceCert = true, true
 		}
 	}
 
@@ -311,13 +323,20 @@ func (m *PKIManager) initCA() (retErr error) {
 			Subject:               pkix.Name{CommonName: m.opts.Name},
 			NotBefore:             now,
 			NotAfter:              now.Add(caCertLifetime),
-			KeyUsage:              x509.KeyUsageCertSign,
+			KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 			BasicConstraintsValid: true,
 			IsCA:                  true,
 			MaxPathLenZero:        true,
 			IssuingCertificateURL: m.opts.IssuingCertificateURL,
 			CRLDistributionPoints: m.opts.CRLDistributionPoints,
 			OCSPServer:            m.opts.OCSPServer,
+		}
+		if oldCert != nil {
+			// The key doesn't change. Keep the same SubjectKeyId so
+			// that the AuthorityKeyId of previously issued
+			// certificates still refers to this CA. (The default
+			// derivation changed from SHA-1 to SHA-256 in go 1.25.)
+			templ.SubjectKeyId = oldCert.SubjectKeyId
 		}
 		raw, err := x509.CreateCertificate(rand.Reader, templ, templ, privKey.Public(), privKey)
 		if err != nil {
@@ -329,6 +348,12 @@ func (m *PKIManager) initCA() (retErr error) {
 			SHA256:       bytesToHex(h256[:]),
 			SerialNumber: bytesToHex(sn.Bytes()),
 			Raw:          raw,
+		}
+		if old := m.db.CACert; old != nil && replaceCert {
+			m.opts.Logger.Errorf("ERR PKI %q: re-issued the CA certificate with the CRLSign key usage; SHA256 fingerprint %s ➔ %s; clients that pin the CA certificate must be updated", m.opts.Name, old.SHA256, c.SHA256)
+			m.db.IssuedCerts = slices.DeleteFunc(m.db.IssuedCerts, func(ic *certificate) bool {
+				return ic.SHA256 == old.SHA256
+			})
 		}
 		m.db.CACert = c
 		m.db.IssuedCerts = append(m.db.IssuedCerts, c)
@@ -415,7 +440,7 @@ func (m *PKIManager) needDelegateRotation() bool {
 		return true
 	}
 	c, err := m.db.DelegateCerts[0].parse()
-	return err != nil || c.NotBefore.Add(c.NotAfter.Sub(c.NotBefore)/2).Before(time.Now().UTC()) || c.PublicKeyAlgorithm == x509.Ed25519
+	return err != nil || c.NotBefore.Add(c.NotAfter.Sub(c.NotBefore)/2).Before(time.Now().UTC()) || c.PublicKeyAlgorithm == x509.Ed25519 || c.IsCA
 }
 
 func (m *PKIManager) maybeRotateDelegateCert() error {
@@ -453,17 +478,17 @@ func (m *PKIManager) maybeRotateDelegateCert() error {
 		SerialNumber: sn,
 		PublicKey:    delegateKey.(crypto.Signer).Public(),
 		Issuer:       caCert.Subject,
-		Subject:      pkix.Name{CommonName: m.opts.Name + " CRL OCSP"},
+		Subject:      pkix.Name{CommonName: m.opts.Name + " OCSP"},
 		NotBefore:    now,
 		NotAfter:     now.Add(caDelegateLifetime),
-		KeyUsage:     x509.KeyUsageCRLSign,
+		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtraExtensions: []pkix.Extension{
 			// id-pkix-ocsp-nocheck
-			pkix.Extension{Id: asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 48, 1, 5}},
+			{Id: asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 48, 1, 5}, Value: asn1.NullBytes},
 		},
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageOCSPSigning},
 		BasicConstraintsValid: true,
-		IsCA:                  true,
+		IsCA:                  false,
 		IssuingCertificateURL: m.opts.IssuingCertificateURL,
 		CRLDistributionPoints: m.opts.CRLDistributionPoints,
 		OCSPServer:            m.opts.OCSPServer,
@@ -544,7 +569,7 @@ func (m *PKIManager) RevocationList() (cert, crl []byte, retErr error) {
 		}
 	}
 
-	signCert, err := m.db.DelegateCerts[0].parse()
+	signCert, err := m.db.CACert.parse()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -573,7 +598,7 @@ func (m *PKIManager) RevocationList() (cert, crl []byte, retErr error) {
 		})
 	}
 
-	key, err := m.parseKeyBytes(m.db.DelegateKey)
+	key, err := m.parseKeyBytes(m.db.PrivateKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -612,6 +637,11 @@ func (m *PKIManager) IsRevoked(serialNumber *big.Int) bool {
 
 // OCSPResponse creates an OCSP Response from the given request.
 func (m *PKIManager) OCSPResponse(req *ocsp.Request) ([]byte, error) {
+	switch req.HashAlgorithm {
+	case crypto.SHA1, crypto.SHA256, crypto.SHA384, crypto.SHA512:
+	default:
+		return nil, errors.New("invalid hash algorithm")
+	}
 	if !req.HashAlgorithm.Available() {
 		return nil, errors.New("invalid hash algorithm")
 	}
@@ -668,7 +698,7 @@ func (m *PKIManager) OCSPResponse(req *ocsp.Request) ([]byte, error) {
 			SerialNumber: req.SerialNumber,
 			ThisUpdate:   now,
 			NextUpdate:   now.Add(crlRefreshPeriod),
-			IssuerHash:   crypto.SHA256,
+			IssuerHash:   req.HashAlgorithm,
 			Certificate:  delegateCert,
 		}, signer)
 	}
@@ -680,7 +710,7 @@ func (m *PKIManager) OCSPResponse(req *ocsp.Request) ([]byte, error) {
 			NextUpdate:       now.Add(crlRefreshPeriod),
 			RevokedAt:        now,
 			RevocationReason: RevokeReasonCertificateHold,
-			IssuerHash:       crypto.SHA256,
+			IssuerHash:       req.HashAlgorithm,
 			Certificate:      delegateCert,
 		}, signer)
 	}
@@ -692,7 +722,7 @@ func (m *PKIManager) OCSPResponse(req *ocsp.Request) ([]byte, error) {
 			NextUpdate:       now.Add(crlRefreshPeriod),
 			RevokedAt:        rev.Time,
 			RevocationReason: rev.ReasonCode,
-			IssuerHash:       crypto.SHA256,
+			IssuerHash:       req.HashAlgorithm,
 			Certificate:      delegateCert,
 		}, signer)
 	}
@@ -701,7 +731,7 @@ func (m *PKIManager) OCSPResponse(req *ocsp.Request) ([]byte, error) {
 		SerialNumber: req.SerialNumber,
 		ThisUpdate:   now,
 		NextUpdate:   now.Add(crlRefreshPeriod),
-		IssuerHash:   crypto.SHA256,
+		IssuerHash:   req.HashAlgorithm,
 		Certificate:  delegateCert,
 	}, signer)
 }
@@ -729,6 +759,9 @@ func (m *PKIManager) RevokeCertificate(serialNumber *big.Int, reasonCode int) (r
 	snh := bytesToHex(serialNumber.Bytes())
 	for _, c := range m.db.IssuedCerts {
 		if c.SerialNumber == snh {
+			if cert, err := c.parse(); err == nil && (cert.IsCA || slices.Contains(cert.ExtKeyUsage, x509.ExtKeyUsageOCSPSigning)) {
+				return errors.New("cannot revoke CA or OCSP certificate")
+			}
 			c.revoke(reasonCode)
 			if m.db.Revoked == nil {
 				m.db.Revoked = make(map[string]bool)
@@ -758,6 +791,37 @@ func (m *PKIManager) CACert() (*x509.Certificate, error) {
 	return m.db.CACert.parse()
 }
 
+// KeyIDs returns the hex-encoded key identifiers that refer to this CA: the
+// SubjectKeyId of the CA certificate, and the AuthorityKeyId of all the
+// certificates it issued. They can differ if the CA certificate was re-issued
+// with a different SubjectKeyId.
+func (m *PKIManager) KeyIDs() ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.db == nil {
+		return nil, errNotFound
+	}
+	ca, err := m.db.CACert.parse()
+	if err != nil {
+		return nil, err
+	}
+	ids := []string{hex.EncodeToString(ca.SubjectKeyId)}
+	for _, c := range m.db.IssuedCerts {
+		cert, err := c.parse()
+		if err != nil {
+			return nil, err
+		}
+		if len(cert.AuthorityKeyId) == 0 {
+			continue
+		}
+		if id := hex.EncodeToString(cert.AuthorityKeyId); !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
+
 // ValidateCertificateRequest parses and validates a certificate signing
 // request.
 func (m *PKIManager) ValidateCertificateRequest(csr []byte) (*x509.CertificateRequest, error) {
@@ -767,6 +831,25 @@ func (m *PKIManager) ValidateCertificateRequest(csr []byte) (*x509.CertificateRe
 	}
 	if err := cr.CheckSignature(); err != nil {
 		return nil, err
+	}
+	switch pub := cr.PublicKey.(type) {
+	case *rsa.PublicKey:
+		if pub.N.BitLen() < 2048 {
+			return nil, errors.New("rsa key too small")
+		}
+		if pub.E < 3 || pub.E%2 == 0 {
+			return nil, errors.New("invalid rsa public exponent")
+		}
+	case *ecdsa.PublicKey:
+		if pub.Curve.Params().BitSize < 256 {
+			return nil, errors.New("ecdsa curve too small")
+		}
+	case ed25519.PublicKey:
+	default:
+		return nil, errors.New("unsupported public key type")
+	}
+	if caCert, err := m.CACert(); err == nil && bytes.Equal(cr.RawSubjectPublicKeyInfo, caCert.RawSubjectPublicKeyInfo) {
+		return nil, errors.New("cannot sign CA public key")
 	}
 	return cr, nil
 }

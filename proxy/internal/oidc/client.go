@@ -115,7 +115,8 @@ func New(cfg Config, er EventRecorder, cm CookieManager) (*ProviderClient, error
 		states: idp.NewPendingLogins(5*time.Minute, func(s *oauthState) time.Time { return s.Created }),
 	}
 	if p.cfg.DiscoveryURL != "" {
-		resp, err := http.Get(p.cfg.DiscoveryURL)
+		httpClient := &http.Client{Timeout: 30 * time.Second}
+		resp, err := httpClient.Get(p.cfg.DiscoveryURL)
 		if err != nil {
 			return nil, err
 		}
@@ -128,7 +129,7 @@ func New(cfg Config, er EventRecorder, cm CookieManager) (*ProviderClient, error
 			TokenEndpoint    string `json:"token_endpoint"`
 			UserinfoEndpoint string `json:"userinfo_endpoint"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&disc); err != nil {
+		if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&disc); err != nil {
 			return nil, fmt.Errorf("discovery document: %v", err)
 		}
 		p.cfg.AuthEndpoint = disc.AuthEndpoint
@@ -239,6 +240,7 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 	form.Add("grant_type", "authorization_code")
 	form.Add("code_verifier", state.CodeVerifier)
 
+	httpClient := &http.Client{Timeout: 30 * time.Second}
 	tokenReq, err := http.NewRequest(http.MethodPost, p.cfg.TokenEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -246,18 +248,22 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 	}
 	tokenReq.Header.Set("content-type", "application/x-www-form-urlencoded")
 	tokenReq.Header.Set("accept", "application/json")
-	resp, err := http.DefaultClient.Do(tokenReq)
+	resp, err := httpClient.Do(tokenReq)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		http.Error(w, "token exchange failed", http.StatusBadGateway)
+		return
+	}
 	var data struct {
 		AccessToken string `json:"access_token"`
 		IDToken     string `json:"id_token"`
 		TokenType   string `json:"token_type"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -290,14 +296,18 @@ func (p *ProviderClient) HandleCallback(w http.ResponseWriter, req *http.Request
 		}
 		userinfoReq.Header.Set("authorization", "Bearer "+data.AccessToken)
 		userinfoReq.Header.Set("accept", "application/json")
-		resp, err := http.DefaultClient.Do(userinfoReq)
+		resp, err := httpClient.Do(userinfoReq)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			http.Error(w, "userinfo request failed", http.StatusBadGateway)
+			return
+		}
 		claims.Issuer = p.cfg.UserinfoEndpoint
-		if err := json.NewDecoder(resp.Body).Decode(&claims); err != nil {
+		if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&claims); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

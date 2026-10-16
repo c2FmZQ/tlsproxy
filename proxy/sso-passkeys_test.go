@@ -353,3 +353,163 @@ func TestSSOEnforcePasskey(t *testing.T) {
 		})
 	}
 }
+
+func TestPasskeyACLAggregationAndManageEndpoint(t *testing.T) {
+	oidc.AutoApproveForTests = true
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	idp := newIDPServer(t)
+	defer idp.Close()
+
+	ca, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	be := newHTTPServer(t, ctx, "https-server", ca)
+
+	// Case 1: Backend using test-passkey restricts ACL to allowed@example.com,
+	// while login.example.com uses test-idp. SetACL must still enforce allowed@example.com.
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr: newPtr("localhost:0"),
+			TLSAddr:  newPtr("localhost:0"),
+			CacheDir: newPtr(t.TempDir()),
+			MaxOpen:  newPtr(100),
+			OIDCProviders: []*ConfigOIDC{
+				{
+					Name:          "test-idp",
+					AuthEndpoint:  idp.URL + "/authorization",
+					TokenEndpoint: idp.URL + "/token",
+					RedirectURL:   "https://öauth2.example.com/redirect",
+					ClientID:      "CLIENTID",
+					ClientSecret:  "CLIENTSECRET",
+					Domain:        "example.com",
+				},
+			},
+			PasskeyProviders: []*ConfigPasskey{
+				{
+					Name:             "test-passkey",
+					IdentityProvider: "test-idp",
+					Endpoint:         "https://login.example.com/passkey",
+					Domain:           "example.com",
+				},
+			},
+			Backends: []*Backend{
+				{
+					ServerNames:       []string{"https.example.com"},
+					Mode:              "HTTPS",
+					Addresses:         []string{be.String()},
+					ForwardServerName: "https-server",
+					ForwardRootCAs:    []string{ca.RootCAPEM()},
+					SSO: &BackendSSO{
+						Provider:  "test-passkey",
+						LegacyACL: &Strings{"allowed@example.com"},
+					},
+				},
+				{
+					ServerNames: []string{"öauth2.example.com", "oauth2.example.com", "login.example.com"},
+					Mode:        "LOCAL",
+					SSO: &BackendSSO{
+						Provider: "test-idp",
+					},
+				},
+			},
+		},
+		ca,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	defer proxy.Stop()
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar: %v", err)
+	}
+	get := func(urlToGet string, hdr http.Header, postBody []byte) (int, string, string) {
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = &tls.Config{RootCAs: ca.RootCACertPool()}
+		var host string
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host = addr
+			var d net.Dialer
+			if strings.Contains(addr, "example.com") {
+				return d.DialContext(ctx, "tcp", proxy.listener.Addr().String())
+			}
+			return d.DialContext(ctx, network, addr)
+		}
+		client := http.Client{Transport: transport, Jar: jar}
+		req, err := http.NewRequest("GET", urlToGet, nil)
+		if err != nil {
+			t.Fatalf("http.NewRequest: %v", err)
+		}
+		if postBody != nil {
+			req.Method = "POST"
+			req.Body = io.NopCloser(bytes.NewReader(postBody))
+		}
+		if hdr != nil {
+			req.Header = hdr
+		}
+		if req.Method == "POST" {
+			for _, c := range jar.Cookies(req.URL) {
+				req.AddCookie(c)
+				if c.Name == "__tlsproxySid" {
+					req.Header.Set("x-csrf-token", c.Value)
+					break
+				}
+			}
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("%s: get failed: %v", urlToGet, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return resp.StatusCode, string(body), host
+	}
+
+	// Unauthenticated user bob@example.com (from test-idp) tries to register a passkey.
+	code, body, host := get("https://https.example.com/blah", nil, nil)
+	if code != 200 {
+		t.Fatalf("Code = %d, want 200", code)
+	}
+	m := regexp.MustCompile(`href="(/passkey[?]get=RegisterNewID&redirect=([^"]*))"`).FindStringSubmatch(body)
+	if len(m) != 3 {
+		t.Fatalf("FindStringSubmatch: %v", m)
+	}
+	token := m[2]
+	code, body, _ = get("https://login.example.com"+m[1], nil, nil)
+	if code != 200 {
+		t.Fatalf("RegisterNewID Code = %d, want 200", code)
+	}
+	// bob@example.com is not in allowed@example.com, so registerPasskey should NOT be offered
+	// and AddKey must return 403 Forbidden.
+	code, _, _ = get("https://login.example.com/passkey?get=AddKey&redirect="+token, nil, []byte{})
+	if code != http.StatusForbidden {
+		t.Errorf("AddKey for unauthorized user returned %d, want %d (403 Forbidden)", code, http.StatusForbidden)
+	}
+
+	// Visiting /.sso/passkeys on login.example.com (the passkey endpoint host)
+	// when authenticated only with test-idp (same host, <10m, no passkey_hash)
+	// must redirect to the passkey login page (200) instead of failing with 500.
+	code, body, _ = get("https://login.example.com/.sso/passkeys", nil, nil)
+	if code != http.StatusOK {
+		t.Errorf("GET https://login.example.com/.sso/passkeys returned %d, want 200", code)
+	}
+	if !strings.Contains(body, "bob@example.com") {
+		t.Errorf("GET https://login.example.com/.sso/passkeys did not include login hint bob@example.com in body")
+	}
+
+	// Case 2: If a backend has both a restricted rule (/admin) and an unrestricted rule (/ with nil ACL),
+	// SetACL(nil) must make all identities allowed to register passkeys.
+	pkBe := proxy.cfg.Backends[0]
+	pkMgr := pkBe.SSO.p.(*passkeys.Manager)
+	restricted := []string{"admin@example.com"}
+	pkMgr.SetACL(&restricted)
+	pkMgr.SetACL(nil)
+	code, _, _ = get("https://"+host+"/passkey?get=AddKey&redirect="+token, nil, []byte{})
+	if code == http.StatusForbidden {
+		t.Errorf("AddKey after SetACL(nil) still returned 403 Forbidden")
+	}
+}

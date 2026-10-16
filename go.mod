@@ -10,25 +10,25 @@ require (
 	github.com/c2FmZQ/ech/quic v0.3.6
 	github.com/c2FmZQ/http3-go v0.62.0
 	github.com/c2FmZQ/quic-api v0.62.0
-	github.com/c2FmZQ/storage v0.3.2
-	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261007172857-b4d54d07896c
-	github.com/c2FmZQ/tpm v0.5.0
+	github.com/c2FmZQ/storage v0.3.3
+	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261007173353-8a25cfd4b704
+	github.com/c2FmZQ/tpm v0.6.0
 	github.com/fxamacker/cbor/v2 v2.9.6
 	github.com/go-test/deep v1.1.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/google/go-tpm-tools v0.4.7
+	github.com/google/go-tpm-tools v0.4.10
 	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/pires/go-proxyproto v0.15.0
 	github.com/quic-go/quic-go v0.63.0
 	github.com/russellhaering/goxmldsig v1.6.1
-	golang.org/x/crypto v0.57.0
-	golang.org/x/net v0.59.0
-	golang.org/x/sys v0.48.0
+	golang.org/x/crypto v0.58.0
+	golang.org/x/net v0.61.0
+	golang.org/x/sys v0.49.0
 	golang.org/x/time v0.16.0
 	gopkg.in/yaml.v3 v3.0.1
-	software.sslmate.com/src/go-pkcs12 v0.7.3
+	software.sslmate.com/src/go-pkcs12 v0.7.4
 )
 
 require (
@@ -40,6 +40,5 @@ require (
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	golang.org/x/text v0.42.0 // indirect
-	google.golang.org/protobuf v1.36.5 // indirect
+	golang.org/x/text v0.43.0 // indirect
 )

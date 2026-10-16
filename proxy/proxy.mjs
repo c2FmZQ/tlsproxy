@@ -26,7 +26,7 @@
  * @returns {string} The session ID, or an empty string if not found.
  */
 function sessionId() {
-  const m = document.cookie.match(/__tlsproxySid=([^;]*)(;|$)/);
+  const m = document.cookie.match(/(?:^|;\s*)__tlsproxySid=([^;]*)/);
   return m ? m[1] : '';
 }
 
@@ -46,7 +46,7 @@ window.fetch = function(res, opt) {
     opt = {};
   }
   if (!opt.headers) {
-    opt.headers = {};
+    opt.headers = res instanceof Request ? new Headers(res.headers) : {};
   }
   if (opt.headers instanceof Headers) {
     opt.headers.set('x-csrf-token', sessionId());
@@ -97,11 +97,10 @@ let langData = {};
  * key is not found.
  */
 export function translate(key) {
-  const value = langData[key];
-  if (!value) {
+  if (!Object.hasOwn(langData, key) || !langData[key]) {
     return '###' + key + '###';
   }
-  return value;
+  return langData[key];
 }
 
 /**
@@ -136,7 +135,7 @@ function setLanguage(langs) {
     .then(r => r.json())
     .then(data => {
       for (let opt of opts) {
-        if (data[opt]) {
+        if (Object.hasOwn(data, opt) && data[opt]) {
           currentLang = opt;
           langData = data[opt];
           console.log(`translations: found ${opt} for ${langs}`);
@@ -207,7 +206,7 @@ async function applyTranslations(lang) {
     document.body.appendChild(b);
     // Populate the selector with available languages from the server.
     return fetch('/.sso/languages.json', {method: 'POST'}).then(r => r.json()).then(r => {
-      for (let key in r) {
+      for (let key of Object.keys(r)) {
         const o = document.createElement('option');
         o.value = key;
         o.setAttribute('lang', key);

@@ -35,6 +35,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"math/big"
 
 	cbor "github.com/fxamacker/cbor/v2"
 )
@@ -238,12 +239,12 @@ func rs256CoseKey(publicKey rsa.PublicKey) ([]byte, error) {
 		KTY int    `cbor:"1,keyasint"`
 		ALG int    `cbor:"3,keyasint"`
 		N   []byte `cbor:"-1,keyasint"`
-		E   int    `cbor:"-2,keyasint"`
+		E   []byte `cbor:"-2,keyasint"`
 	}{
 		KTY: 3,
 		ALG: algRS256,
 		N:   publicKey.N.Bytes(),
-		E:   publicKey.E,
+		E:   big.NewInt(int64(publicKey.E)).Bytes(),
 	}
 	return cbor.Marshal(rsaKey)
 }

@@ -122,7 +122,10 @@ func createRootKeyAndCert(name string, d time.Duration) (*rsa.PrivateKey, *x509.
 	if err != nil {
 		return nil, nil, fmt.Errorf("rsa.GenerateKey: %w", err)
 	}
-	sn, _ := rand.Int(rand.Reader, big.NewInt(1<<32))
+	sn, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return nil, nil, fmt.Errorf("rand.Int: %w", err)
+	}
 	now := time.Now()
 	templ := &x509.Certificate{
 		PublicKeyAlgorithm:    x509.RSA,
@@ -239,13 +242,24 @@ func (cm *CertManager) GetCert(name string) (*tls.Certificate, error) {
 	if n, err := idna.Lookup.ToASCII(name); err == nil {
 		name = n
 	}
+	now := time.Now()
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	if c := cm.certs[name]; c != nil && time.Now().Before(c.Leaf.NotAfter.Add(-5*time.Minute)) {
+	if c := cm.certs[name]; c != nil && now.Before(c.Leaf.NotAfter.Add(-5*time.Minute)) {
 		return c, nil
 	}
 	if len(cm.certs) >= cm.maxCachedCerts {
-		clear(cm.certs)
+		for k, c := range cm.certs {
+			if !now.Before(c.Leaf.NotAfter.Add(-5 * time.Minute)) {
+				delete(cm.certs, k)
+			}
+		}
+		if len(cm.certs) >= cm.maxCachedCerts {
+			for k := range cm.certs {
+				delete(cm.certs, k)
+				break
+			}
+		}
 	}
 
 	cm.logger("[%s] GetCert(%q)", cm.name, name)
@@ -253,8 +267,10 @@ func (cm *CertManager) GetCert(name string) (*tls.Certificate, error) {
 	if err != nil {
 		return nil, fmt.Errorf("rsa.GenerateKey: %w", err)
 	}
-	sn, _ := rand.Int(rand.Reader, big.NewInt(1<<32))
-	now := time.Now()
+	sn, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return nil, fmt.Errorf("rand.Int: %w", err)
+	}
 	templ := &x509.Certificate{
 		PublicKeyAlgorithm:    x509.RSA,
 		SerialNumber:          sn,
@@ -262,6 +278,7 @@ func (cm *CertManager) GetCert(name string) (*tls.Certificate, error) {
 		NotBefore:             now,
 		NotAfter:              now.Add(time.Hour),
 		KeyUsage:              x509.KeyUsageDataEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
 		DNSNames:              []string{name},
 	}

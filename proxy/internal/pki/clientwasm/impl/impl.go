@@ -38,6 +38,7 @@ import (
 	"strings"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/ProtonMail/go-crypto/openpgp/packet"
 	pkcs12 "software.sslmate.com/src/go-pkcs12"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/pki/keys"
@@ -64,7 +65,7 @@ func GetCertificate(url, keyType, format, label, dnsname, password, sid string) 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(resp.Body)
+		b, _ := io.ReadAll(&io.LimitedReader{R: resp.Body, N: 102400})
 		return nil, "", "", fmt.Errorf("status code %d: %s", resp.StatusCode, b)
 	}
 	var reqResult struct {
@@ -111,8 +112,13 @@ func makeResponse(privKey any, pemCert []byte, format, password string) ([]byte,
 		if err != nil {
 			return nil, "", "", fmt.Errorf("x509.MarshalPKCS8PrivateKey: %v\n", err)
 		}
+		defer clear(b)
 		var buf bytes.Buffer
-		w, err := openpgp.SymmetricallyEncrypt(&buf, []byte(password), &openpgp.FileHints{FileName: sn + ".pem", ModTime: cert.NotBefore}, nil)
+		cfg := &packet.Config{
+			DefaultCipher: packet.CipherAES256,
+			S2KCount:      65011712,
+		}
+		w, err := openpgp.SymmetricallyEncrypt(&buf, []byte(password), &openpgp.FileHints{FileName: sn + ".pem", ModTime: cert.NotBefore}, cfg)
 		if err != nil {
 			return nil, "", "", fmt.Errorf("openpgp.SymmetricallyEncrypt: %v\n", err)
 		}

@@ -94,3 +94,53 @@ func TestJWKS(t *testing.T) {
 		t.Errorf("len(got.Keys) = %d, want 5", len(got.Keys))
 	}
 }
+
+func TestJWKSValidation(t *testing.T) {
+	edPub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("ed25519.GenerateKey: %v", err)
+	}
+	validEdJWK := PublicKeyToJWK(edPub)
+
+	invalidKeys := []struct {
+		name string
+		jwk  JWK
+	}{
+		{
+			name: "OKP short X",
+			jwk:  JWK{Type: "OKP", Curve: "Ed25519", X: "AAAA"},
+		},
+		{
+			name: "OKP wrong curve",
+			jwk:  JWK{Type: "OKP", Curve: "X25519", X: validEdJWK.X},
+		},
+		{
+			name: "RSA empty modulus",
+			jwk:  JWK{Type: "RSA", N: "", E: "AQAB"},
+		},
+		{
+			name: "RSA small modulus",
+			jwk:  JWK{Type: "RSA", N: "AQAB", E: "AQAB"},
+		},
+		{
+			name: "RSA even exponent",
+			jwk:  JWK{Type: "RSA", N: validEdJWK.X, E: "Ag"},
+		},
+		{
+			name: "EC off-curve point",
+			jwk:  JWK{Type: "EC", Curve: "P-256", X: "AQ", Y: "AQ"},
+		},
+		{
+			name: "Use enc instead of sig",
+			jwk:  JWK{Type: "OKP", Use: "enc", Curve: "Ed25519", X: validEdJWK.X},
+		},
+	}
+
+	for _, tc := range invalidKeys {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := tc.jwk.PublicKey(); err == nil {
+				t.Errorf("PublicKey() succeeded for invalid JWK %s, want error", tc.name)
+			}
+		})
+	}
+}

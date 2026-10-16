@@ -82,6 +82,7 @@ type samlState struct {
 	Created     time.Time
 	OriginalURL string
 	Host        string
+	Depth       int
 }
 
 func New(cfg Config, er EventRecorder, cm CookieManager) (*Provider, error) {
@@ -129,6 +130,7 @@ func (p *Provider) RequestLogin(w http.ResponseWriter, req *http.Request, origUR
 		Created:     time.Now(),
 		OriginalURL: origURL,
 		Host:        ou.Host,
+		Depth:       idp.ApplyOptions(opts).Depth(),
 	})
 	p.mu.Unlock()
 	if !added {
@@ -225,7 +227,7 @@ func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		host = h
 	}
 	self := "https://" + host + "/"
-	if aud := findElementText(v, "./Conditions/AudienceRestriction/Audience"); aud != self {
+	if aud := findElementText(v, "./Conditions/AudienceRestriction/Audience"); aud != self && (p.cfg.EntityID == "" || aud != p.cfg.EntityID) {
 		http.Error(w, "invalid saml response", http.StatusForbidden)
 		return
 	}
@@ -253,11 +255,17 @@ func (p *Provider) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			continue
 		}
 		key := attr.Value
+		if key == "depth" {
+			continue
+		}
 		value := findElementText(a, "./AttributeValue")
 		// Example:
 		// Key: firstname
 		// Value: Bob
 		extraClaims[key] = value
+	}
+	if state.Depth > 0 {
+		extraClaims["depth"] = state.Depth
 	}
 	if err := p.cm.SetAuthTokenCookie(w, req, sub, sub, id, state.Host, extraClaims); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -279,6 +287,9 @@ func readCerts(s string) ([]*x509.Certificate, error) {
 	var certs []*x509.Certificate
 	for len(b) > 0 {
 		block, rest := pem.Decode(b)
+		if block == nil {
+			break
+		}
 		b = rest
 		if block.Type == "CERTIFICATE" {
 			cert, err := x509.ParseCertificate(block.Bytes)
@@ -287,6 +298,9 @@ func readCerts(s string) ([]*x509.Certificate, error) {
 			}
 			certs = append(certs, cert)
 		}
+	}
+	if len(certs) == 0 {
+		return nil, fmt.Errorf("no certificate found")
 	}
 	return certs, nil
 }

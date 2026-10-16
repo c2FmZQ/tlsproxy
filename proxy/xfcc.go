@@ -26,17 +26,36 @@ package proxy
 import (
 	"bytes"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/pem"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
 
 const xFCCHeader = "x-forwarded-client-cert"
 
 func addXFCCHeader(req *http.Request, which []string) {
-	if req.TLS == nil || len(req.TLS.PeerCertificates) == 0 {
+	cs := req.TLS
+	if cs == nil {
+		type tlsStateProvider interface {
+			TLSConnectionState() tls.ConnectionState
+		}
+		switch c := req.Context().Value(connCtxKey).(type) {
+		case tlsStateProvider:
+			state := c.TLSConnectionState()
+			cs = &state
+		case *netw.Conn:
+			if tc, ok := c.Conn.(tlsStateProvider); ok {
+				state := tc.TLSConnectionState()
+				cs = &state
+			}
+		}
+	}
+	if cs == nil || len(cs.PeerCertificates) == 0 {
 		return
 	}
 	var fields []string
@@ -46,11 +65,11 @@ func addXFCCHeader(req *http.Request, which []string) {
 			fields = append(fields, "Cert="+encodeXFCC(url.QueryEscape(
 				string(pem.EncodeToMemory(&pem.Block{
 					Type:  "CERTIFICATE",
-					Bytes: req.TLS.PeerCertificates[0].Raw,
+					Bytes: cs.PeerCertificates[0].Raw,
 				})),
 			)))
 		case "chain":
-			for _, chain := range req.TLS.VerifiedChains {
+			for _, chain := range cs.VerifiedChains {
 				var buf bytes.Buffer
 				for _, cert := range chain {
 					pem.Encode(&buf, &pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
@@ -58,16 +77,16 @@ func addXFCCHeader(req *http.Request, which []string) {
 				fields = append(fields, "Chain="+encodeXFCC(url.QueryEscape(buf.String())))
 			}
 		case "hash":
-			h := sha256.Sum256(req.TLS.PeerCertificates[0].Raw)
+			h := sha256.Sum256(cs.PeerCertificates[0].Raw)
 			fields = append(fields, "Hash="+encodeXFCC(hex.EncodeToString(h[:])))
 		case "subject":
-			fields = append(fields, "Subject="+encodeXFCCSubject(req.TLS.PeerCertificates[0].Subject.String()))
+			fields = append(fields, "Subject="+encodeXFCCSubject(cs.PeerCertificates[0].Subject.String()))
 		case "uri":
-			for _, uri := range req.TLS.PeerCertificates[0].URIs {
+			for _, uri := range cs.PeerCertificates[0].URIs {
 				fields = append(fields, "URI="+encodeXFCC(url.QueryEscape(uri.String())))
 			}
 		case "dns":
-			for _, n := range req.TLS.PeerCertificates[0].DNSNames {
+			for _, n := range cs.PeerCertificates[0].DNSNames {
 				fields = append(fields, "DNS="+encodeXFCC(url.QueryEscape(n)))
 			}
 		}

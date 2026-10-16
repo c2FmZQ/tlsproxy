@@ -321,6 +321,23 @@ func TestEnforceSSOPolicy(t *testing.T) {
 	proxy.cfg.Backends[0].SSO.Rules = []*SSORule{{
 		Paths: Strings{"/bar"},
 	}}
+	unauthReq := httptest.NewRequest("GET", "https://example.com/foo", nil)
+	unauthReq = unauthReq.WithContext(context.WithValue(context.Background(), connCtxKey, conn))
+	w = httptest.NewRecorder()
+	if got := proxy.cfg.Backends[0].enforceSSOPolicy(w, unauthReq, Strings{"pki"}); got != false {
+		t.Errorf("enforceSSOPolicy(unauthenticated, overrideScopes=pki) = %v, want false", got)
+	}
+	// The unauthenticated user must go through the login flow, not get a
+	// bare 403.
+	if got, want := w.Code, http.StatusForbidden; got != want {
+		t.Errorf("response code = %d, want %d", got, want)
+	}
+	if body := w.Body.String(); strings.Contains(body, "missing request authorization") {
+		t.Errorf("unexpected response body: %q", body)
+	}
+	if got, want := w.Header().Get("X-Frame-Options"), "DENY"; got != want {
+		t.Errorf("X-Frame-Options = %q, want %q (login page expected)", got, want)
+	}
 	for _, tc := range []struct {
 		scope any
 		want  bool
@@ -598,5 +615,93 @@ func TestSSOStatusWithoutSSO(t *testing.T) {
 	be.serveSSOStatus(w, httptest.NewRequest("POST", "https://example.com/.sso/", nil))
 	if got, want := w.Body.String(), "null\n"; got != want {
 		t.Errorf("POST: body %q, want %q", got, want)
+	}
+}
+
+func TestStripUnvalidatedIDTokenAndInternalCookies(t *testing.T) {
+	proxy := newBackendSSOTestProxy(t)
+	be := proxy.cfg.Backends[0]
+	conn := netw.NewConnForTest(testConn{})
+	conn.SetAnnotation(serverNameKey, "example.com")
+
+	// 1. Unauthenticated request with forged/stale TLSPROXYIDTOKEN and internal cookies.
+	req := httptest.NewRequest("GET", "https://example.com/public", nil)
+	req = req.WithContext(context.WithValue(req.Context(), connCtxKey, conn))
+	req.AddCookie(&http.Cookie{Name: "TLSPROXYIDTOKEN", Value: "forged-id-token"})
+	req.AddCookie(&http.Cookie{Name: "TLSPROXYNONCE", Value: "nonce1"})
+	req.AddCookie(&http.Cookie{Name: "TLSPROXYSAMLNONCE", Value: "nonce2"})
+	req.AddCookie(&http.Cookie{Name: "__tlsproxySid", Value: "sid1"})
+	req.AddCookie(&http.Cookie{Name: "app_cookie", Value: "keep-me"})
+
+	be.SSO.Rules = []*SSORule{{Paths: Strings{"/private"}}}
+	w := httptest.NewRecorder()
+	if !be.authenticateUser(w, &req) {
+		t.Fatalf("authenticateUser() = false")
+	}
+	if !be.handleLocalEndpointsAndAuthorize(w, req) {
+		t.Fatalf("handleLocalEndpointsAndAuthorize() = false")
+	}
+	for _, stripped := range []string{"TLSPROXYIDTOKEN", "TLSPROXYAUTH", "TLSPROXYNONCE", "TLSPROXYSAMLNONCE", "__tlsproxySid"} {
+		if c, err := req.Cookie(stripped); err == nil {
+			t.Errorf("Unvalidated/internal cookie %s=%q was not stripped", stripped, c.Value)
+		}
+	}
+	if c, err := req.Cookie("app_cookie"); err != nil || c.Value != "keep-me" {
+		t.Errorf("app_cookie = %v, %v; want keep-me", c, err)
+	}
+
+	// 2. Bearer token authentication must also strip any accompanying TLSPROXYIDTOKEN cookie.
+	req2 := httptest.NewRequest("GET", "https://example.com/public", nil)
+	req2 = req2.WithContext(context.WithValue(req2.Context(), connCtxKey, conn))
+	if err := setAuthHeader(req2, "foo", "bob@", "example.com", "https://example.com/", proxy.tokenManager); err != nil {
+		t.Fatalf("setAuthHeader: %v", err)
+	}
+	req2.AddCookie(&http.Cookie{Name: "TLSPROXYIDTOKEN", Value: "stale-id-token"})
+	w = httptest.NewRecorder()
+	if !be.authenticateUser(w, &req2) {
+		t.Fatalf("authenticateUser(bearer) = false")
+	}
+	if c, err := req2.Cookie("TLSPROXYIDTOKEN"); err == nil {
+		t.Errorf("TLSPROXYIDTOKEN=%q was not stripped on Bearer auth request", c.Value)
+	}
+}
+
+func TestLogoutSessionCookieAndFrameHeaders(t *testing.T) {
+	proxy := newBackendSSOTestProxy(t)
+	be := proxy.cfg.Backends[0]
+
+	// 1. POST /.sso/logout must rotate __tlsproxySid and set clickjacking headers.
+	req := httptest.NewRequest(http.MethodPost, "https://example.com/.sso/logout", nil)
+	req.AddCookie(&http.Cookie{Name: "__tlsproxySid", Value: "old-session-id"})
+	w := httptest.NewRecorder()
+	be.serveLogout(w, req)
+
+	var foundSidCookie bool
+	for _, c := range w.Result().Cookies() {
+		if c.Name == "__tlsproxySid" {
+			foundSidCookie = true
+			if c.Value == "old-session-id" || c.Value == "" {
+				t.Errorf("__tlsproxySid cookie after logout = %q, want new session ID", c.Value)
+			}
+		}
+	}
+	if !foundSidCookie {
+		t.Errorf("POST /.sso/logout did not rotate __tlsproxySid cookie")
+	}
+	if got := w.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("serveLogout X-Frame-Options = %q, want DENY", got)
+	}
+
+	// 2. serveSSOStatus and servePermissionDenied must set X-Frame-Options: DENY.
+	wStatus := httptest.NewRecorder()
+	be.serveSSOStatus(wStatus, httptest.NewRequest(http.MethodGet, "https://example.com/.sso/", nil))
+	if got := wStatus.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("serveSSOStatus X-Frame-Options = %q, want DENY", got)
+	}
+
+	wDenied := httptest.NewRecorder()
+	be.servePermissionDenied(wDenied, httptest.NewRequest(http.MethodGet, "https://example.com/secret", nil))
+	if got := wDenied.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("servePermissionDenied X-Frame-Options = %q, want DENY", got)
 	}
 }

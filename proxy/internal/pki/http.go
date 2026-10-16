@@ -97,7 +97,7 @@ func (m *PKIManager) ServeCACert(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	w.Header().Set("content-type", "application/x-x509-ca-cert")
-	out := m.db.CACert.Raw
+	out := slices.Clone(m.db.CACert.Raw)
 	for _, c := range m.db.DelegateCerts {
 		out = append(out, c.Raw...)
 	}
@@ -133,12 +133,32 @@ func (m *PKIManager) ServeOCSP(w http.ResponseWriter, req *http.Request) {
 	switch req.Method {
 	case http.MethodGet:
 		// https://www.rfc-editor.org/rfc/rfc6960.html#page-30
-		off := strings.LastIndex(req.URL.Path, "/")
-		if off < 0 {
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
+		// The encoded request follows the path of the configured OCSP
+		// server URL. Use the longest matching prefix when multiple URLs
+		// are configured, and fall back to the last path element when no
+		// URL matches.
+		escapedPath := req.URL.EscapedPath()
+		var b64 string
+		var matched bool
+		for _, s := range m.opts.OCSPServer {
+			u, err := url.Parse(s)
+			if err != nil {
+				continue
+			}
+			prefix := strings.TrimSuffix(u.EscapedPath(), "/") + "/"
+			if after, ok := strings.CutPrefix(escapedPath, prefix); ok && (!matched || len(after) < len(b64)) {
+				b64, matched = after, true
+			}
 		}
-		data, err := url.PathUnescape(req.URL.Path[off+1:])
+		if !matched {
+			off := strings.LastIndex(escapedPath, "/")
+			if off < 0 {
+				http.Error(w, "invalid request", http.StatusBadRequest)
+				return
+			}
+			b64 = escapedPath[off+1:]
+		}
+		data, err := url.PathUnescape(b64)
 		if err != nil {
 			m.opts.Logger.Errorf("ERR url.PathUnescape: %v", err)
 			http.Error(w, "invalid request", http.StatusBadRequest)
@@ -321,7 +341,7 @@ func (m *PKIManager) ServeCertificateManagement(w http.ResponseWriter, req *http
 			IsCA:           c.IsCA,
 			Status:         status,
 			UsedNow:        currentSN == ic.SerialNumber,
-			CanRevoke:      !c.IsCA && ((enableAdmin != "" && isAdmin) || slices.Contains(c.EmailAddresses, email)),
+			CanRevoke:      !c.IsCA && !slices.Contains(c.ExtKeyUsage, x509.ExtKeyUsageOCSPSigning) && ((enableAdmin != "" && isAdmin) || slices.Contains(c.EmailAddresses, email)),
 		})
 	}
 	slices.Reverse(certs)
@@ -443,7 +463,7 @@ func (m *PKIManager) handleRevokeCert(w http.ResponseWriter, req *http.Request, 
 		return
 	}
 	now := time.Now().UTC()
-	if now.After(c.NotAfter) {
+	if now.After(c.NotAfter) || c.IsCA || slices.Contains(c.ExtKeyUsage, x509.ExtKeyUsageOCSPSigning) {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}

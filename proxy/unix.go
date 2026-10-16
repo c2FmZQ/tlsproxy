@@ -29,12 +29,21 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const maxOpenFilesLimit = 1 << 20
+
+func capRlimitCur(max uint64) uint64 {
+	if max == unix.RLIM_INFINITY || max > maxOpenFilesLimit {
+		return maxOpenFilesLimit
+	}
+	return max
+}
+
 func openFileLimit() (int, error) {
 	var rl unix.Rlimit
 	if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &rl); err != nil {
 		return 0, err
 	}
-	rl.Cur = rl.Max
+	rl.Cur = capRlimitCur(rl.Max)
 	if err := unix.Setrlimit(unix.RLIMIT_NOFILE, &rl); err != nil {
 		return 0, err
 	}

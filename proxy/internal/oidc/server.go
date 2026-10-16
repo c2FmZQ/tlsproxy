@@ -332,6 +332,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 			return
 		}
 		if req.Form.Get("approve") != "true" && !AutoApproveForTests {
+			delete(s.codes, code)
 			s.opts.EventRecorder.Record("denied openid auth request for " + data.clientID)
 			http.Error(w, "request was denied", http.StatusForbidden)
 			return
@@ -380,6 +381,7 @@ func (s *ProviderServer) ServeAuthorization(w http.ResponseWriter, req *http.Req
 			return
 		}
 
+		data.requestID = ""
 		data.accessToken = accessToken
 		data.idToken = idToken
 
@@ -565,11 +567,15 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 		delete(s.codes, code)
 		s.mu.Unlock()
 
-		if !ok || expired(data.created) || data.clientID != clientID || data.origRedirectURI != redirectURI || !data.verifyCodeChallenge(req.Form.Get("code_verifier")) {
+		if !ok || expired(data.created) || data.accessToken == "" || data.clientID != clientID || data.origRedirectURI != redirectURI || !data.verifyCodeChallenge(req.Form.Get("code_verifier")) {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
 
+		ttl := s.opts.TokenLifetime
+		if ttl == 0 {
+			ttl = defaultTokenLifetime
+		}
 		resp := struct {
 			AccessToken string `json:"access_token"`
 			ExpiresIn   int    `json:"expires_in"`
@@ -578,7 +584,7 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 			TokenType   string `json:"token_type"`
 		}{
 			AccessToken: data.accessToken,
-			ExpiresIn:   90,
+			ExpiresIn:   int(ttl / time.Second),
 			IDToken:     data.idToken,
 			Scope:       strings.Join(data.scopes, " "),
 			TokenType:   "Bearer",
@@ -624,20 +630,21 @@ func (s *ProviderServer) ServeToken(w http.ResponseWriter, req *http.Request) {
 			TokenType   string `json:"token_type,omitempty"`
 		}
 
-		status := http.StatusOK
+		status := http.StatusBadRequest
 		switch {
 		case !ok:
 			resp.Error = "expired_token"
 		case data.clientID != clientID:
 			resp.Error = "invalid_client"
-			status = http.StatusBadRequest
 		case data.accessToken != "":
 			resp.AccessToken = data.accessToken
 			resp.Scope = strings.Join(data.scope, " ")
 			resp.TokenType = "Bearer"
+			status = http.StatusOK
 			delete(s.deviceTokens, deviceCode)
 		case data.denied:
 			resp.Error = "access_denied"
+			delete(s.deviceTokens, deviceCode)
 		default:
 			resp.Error = "authorization_pending"
 		}
@@ -692,6 +699,13 @@ func (s *ProviderServer) ServeUserInfo(w http.ResponseWriter, req *http.Request)
 	w.Write(content)
 }
 
+// ReservedClaims are the claims that rewrite rules are not allowed to set.
+var ReservedClaims = []string{
+	"sub", "iss", "aud", "exp", "iat", "nbf", "jti",
+	"proxyauth", "provider", "hhash", "sid", "th", "depth",
+	"client_id", "scope", "groups", "nonce",
+}
+
 func (s *ProviderServer) applyRewriteRules(rules []RewriteRule, in, out jwt.MapClaims) {
 	buf := maps.Clone(in)
 	getClaim := func(n string) string {
@@ -707,6 +721,10 @@ func (s *ProviderServer) applyRewriteRules(rules []RewriteRule, in, out jwt.MapC
 		return ""
 	}
 	for _, rr := range rules {
+		if slices.Contains(ReservedClaims, rr.OutputClaim) {
+			s.opts.Logger.Errorf("ERR REGEX %q: output claim %q is reserved", rr.Regex, rr.OutputClaim)
+			continue
+		}
 		var input string
 		if strings.Contains(rr.InputClaim, "$") {
 			input = os.Expand(rr.InputClaim, getClaim)
