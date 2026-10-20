@@ -11,7 +11,7 @@ require (
 	github.com/c2FmZQ/http3-go v0.62.0
 	github.com/c2FmZQ/quic-api v0.62.0
 	github.com/c2FmZQ/storage v0.3.3
-	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261016145207-b32dbbe649da
+	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261016150158-c16d56e09afd
 	github.com/c2FmZQ/tpm v0.6.0
 	github.com/fxamacker/cbor/v2 v2.9.6
 	github.com/go-test/deep v1.1.0
@@ -20,8 +20,8 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/pires/go-proxyproto v0.15.0
-	github.com/quic-go/quic-go v0.64.0
+	github.com/pires/go-proxyproto v0.16.0
+	github.com/quic-go/quic-go v0.64.1
 	github.com/russellhaering/goxmldsig v1.6.1
 	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.61.0

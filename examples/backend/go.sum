@@ -1,9 +1,9 @@
 github.com/blend/go-sdk v1.20240719.1 h1:eyispDP9DzQuNE+y7j1xSqwRm6ndMS4jgwlOQU4BTGY=
 github.com/blend/go-sdk v1.20240719.1/go.mod h1:aTw/exIbMHDYcJLTiqeWMMVhUs9+72BDe26AA0A6jno=
-github.com/c2FmZQ/tlsproxy v0.26.0 h1:NlzS57iZiF5r50JogiocFZjXF++Y6Qi/JZIviPGd7CY=
-github.com/c2FmZQ/tlsproxy v0.26.0/go.mod h1:UiNFCNrVDswxMoyQk0QHvZ/Bzvtq1CC/rjYdk4XqnAA=
-github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261007173353-8a25cfd4b704 h1:MLq3cHTr/acRUcGV85QFndJZR0g+NpjMGpU94xa4ebg=
-github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261007173353-8a25cfd4b704/go.mod h1:WfdfzY1e35KBYAAZqBsrQYPl5xi9xBvXcvvwFt2I2Vc=
+github.com/c2FmZQ/tlsproxy v0.26.1 h1:uTwiZzJkdD/q6N4ef7EA8x7dYRU6h2eYtLo67zaHOEw=
+github.com/c2FmZQ/tlsproxy v0.26.1/go.mod h1:b71Eh6jYMIqTnB55XnfJhLe0U9UW4mjn9m0iLBN0Ca4=
+github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261016150158-c16d56e09afd h1:mgt2Zka8t/LtUxOJchSbivYLga5EdilPQBIyafIkUi4=
+github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261016150158-c16d56e09afd/go.mod h1:WfdfzY1e35KBYAAZqBsrQYPl5xi9xBvXcvvwFt2I2Vc=
 github.com/fatih/color v1.16.0 h1:zmkK9Ngbjj+K0yRhTVONQh1p/HknKYSlNT+vZCzyokM=
 github.com/fatih/color v1.16.0/go.mod h1:fL2Sau1YI5c0pdGEVCbKQbLXB6edEj1ZgiY4NijnWvE=
 github.com/golang-jwt/jwt/v4 v4.5.2 h1:YtQM7lnr8iZ+j5q71MGKkNw9Mn7AjHM68uc9g5fXeUI=
@@ -24,8 +24,8 @@ github.com/quic-go/go-ossfuzz-seeds v0.1.0 h1:APacT+iIaNF6fd8AGEiN3bT/Jtkd2jz4v4
 github.com/quic-go/go-ossfuzz-seeds v0.1.0/go.mod h1:3IOHRbJIc+L6YKMwfDtJAM9Vj9k0YY4muhuyUYk5tbk=
 github.com/quic-go/qpack v0.6.0 h1:g7W+BMYynC1LbYLSqRt8PBg5Tgwxn214ZZR34VIOjz8=
 github.com/quic-go/qpack v0.6.0/go.mod h1:lUpLKChi8njB4ty2bFLX2x4gzDqXwUpaO1DP9qMDZII=
-github.com/quic-go/quic-go v0.63.0 h1:LIFGHI4PFUhhw2dDD1ARHdCff143ffMHwZtbnbuJ78A=
-github.com/quic-go/quic-go v0.63.0/go.mod h1:RAro2j2yN9a9EiPACLHT9IB2NXCvGQmmo/alT0yYI0w=
+github.com/quic-go/quic-go v0.64.1 h1:BCNTP+6x6++OPKrGST2FR3f1tycx8O3QOA3QQv09g70=
+github.com/quic-go/quic-go v0.64.1/go.mod h1:RAro2j2yN9a9EiPACLHT9IB2NXCvGQmmo/alT0yYI0w=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 go.uber.org/mock v0.5.2 h1:LbtPTcP8A5k9WPXj54PPPbjcI4Y6lhyOZXn+VS7wNko=

@@ -1,5 +1,15 @@
 # TLSPROXY Release Notes
 
+## v0.26.2
+
+### :wrench: Misc
+
+* Update go: 1.27.3
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261016145207-b32dbbe649da => v0.0.0-20261016150158-c16d56e09afd
+  * upgraded github.com/pires/go-proxyproto v0.15.0 => v0.16.0
+  * upgraded github.com/quic-go/quic-go v0.64.0 => v0.64.1
+
 ## v0.26.1
 
 This release fixes additional security and reliability issues found during a follow-up review.
