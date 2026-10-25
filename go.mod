@@ -5,12 +5,12 @@ go 1.27.0
 require (
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/beevik/etree v1.8.1
-	github.com/c2FmZQ/ech v0.4.3
-	github.com/c2FmZQ/ech/publish v0.1.2
-	github.com/c2FmZQ/ech/quic v0.3.6
+	github.com/c2FmZQ/ech v0.4.4
+	github.com/c2FmZQ/ech/publish v0.1.3
+	github.com/c2FmZQ/ech/quic v0.3.7
 	github.com/c2FmZQ/http3-go v0.62.0
 	github.com/c2FmZQ/quic-api v0.62.0
-	github.com/c2FmZQ/storage v0.3.3
+	github.com/c2FmZQ/storage v0.3.4
 	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261016150158-c16d56e09afd
 	github.com/c2FmZQ/tpm v0.6.0
 	github.com/fxamacker/cbor/v2 v2.9.6

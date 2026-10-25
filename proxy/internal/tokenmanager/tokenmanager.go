@@ -379,7 +379,6 @@ func createNewED25519TokenKey() (*tokenKey, error) {
 // CreateToken creates a new JSON Web Token (JWT) with the provided claims.
 func (tm *TokenManager) CreateToken(claims jwt.Claims, alg string) (string, error) {
 	tm.mu.Lock()
-	defer tm.mu.Unlock()
 	if alg == "" {
 		if tm.tpm != nil {
 			alg = "ES256"
@@ -390,6 +389,7 @@ func (tm *TokenManager) CreateToken(claims jwt.Claims, alg string) (string, erro
 
 	method := jwt.GetSigningMethod(alg)
 	if method == nil {
+		tm.mu.Unlock()
 		return "", errors.New("unknown signing method")
 	}
 	var tk *tokenKey
@@ -416,11 +416,16 @@ func (tm *TokenManager) CreateToken(claims jwt.Claims, alg string) (string, erro
 		}
 	}
 	if tk == nil {
+		tm.mu.Unlock()
 		return "", errors.New("no matching key found")
 	}
+	keyID := tk.ID
+	privKey := tk.privKey
+	tm.mu.Unlock()
+
 	tok := jwt.NewWithClaims(&tpmSigningMethod{method}, claims)
-	tok.Header["kid"] = tk.ID
-	return tok.SignedString(tk.privKey)
+	tok.Header["kid"] = keyID
+	return tok.SignedString(privKey)
 }
 
 type tpmSigningMethod struct {

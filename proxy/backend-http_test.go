@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"runtime"
 	"slices"
 	"strings"
@@ -830,5 +831,130 @@ func TestWebSocketAndConnectionUpgrade(t *testing.T) {
 	_, _, err = wsConn.ReadMessage()
 	if !websocket.IsCloseError(err, websocket.CloseUnsupportedData) {
 		t.Errorf("ReadMessage after TextMessage: err = %v, want CloseUnsupportedData (1003)", err)
+	}
+}
+
+func TestCheckRequestHostAndOpaqueURI(t *testing.T) {
+	be := &Backend{
+		ServerNames: Strings{"http.example.com"},
+		recordEvent: func(string) {},
+	}
+	ctx := context.WithValue(context.Background(), connCtxKey, mockConn{
+		annotations: map[string]any{
+			serverNameKey: "http.example.com",
+		},
+	})
+
+	// 1. Opaque URL must be rejected with 400 Bad Request.
+	reqOpaque, err := http.NewRequestWithContext(ctx, "GET", "http://http.example.com/ok", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	reqOpaque.URL.Opaque = "//evil.example.com/admin"
+	w := httptest.NewRecorder()
+	if be.checkRequestHost(w, reqOpaque) {
+		t.Errorf("checkRequestHost accepted request with non-empty URL.Opaque")
+	}
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Opaque URL status = %d, want 400", w.Code)
+	}
+
+	// 2. Mismatched req.URL.Host and req.Host must be rejected with 400 Bad Request.
+	reqMismatch, err := http.NewRequestWithContext(ctx, "GET", "http://evil.example.com/ok", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	reqMismatch.Host = "http.example.com"
+	w = httptest.NewRecorder()
+	if be.checkRequestHost(w, reqMismatch) {
+		t.Errorf("checkRequestHost accepted request with mismatched URL.Host and Host")
+	}
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Mismatched URL.Host status = %d, want 400", w.Code)
+	}
+
+	// 3. Relative path (not starting with '/') must be rejected with 400 Bad Request.
+	reqRel, err := http.NewRequestWithContext(ctx, "GET", "http://http.example.com/ok", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	reqRel.URL.Host = ""
+	reqRel.URL.Path = "relative/path"
+	w = httptest.NewRecorder()
+	if be.checkRequestHost(w, reqRel) {
+		t.Errorf("checkRequestHost accepted request with non-slash URL.Path")
+	}
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Relative path status = %d, want 400", w.Code)
+	}
+
+	// 4. OPTIONS * must be accepted.
+	reqOpt, err := http.NewRequestWithContext(ctx, "OPTIONS", "http://http.example.com/*", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	reqOpt.URL.Host = ""
+	reqOpt.URL.Path = ""
+	reqOpt.RequestURI = "*"
+	w = httptest.NewRecorder()
+	if !be.checkRequestHost(w, reqOpt) {
+		t.Errorf("checkRequestHost rejected valid OPTIONS * request (code=%d)", w.Code)
+	}
+}
+
+func TestBWLimitConfigAndOneSided(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+
+	// Negative Ingress must be rejected by Config.Check().
+	badCfg := &Config{
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		BWLimits: []*BWLimit{
+			{Name: "neg", Ingress: -1, Egress: 1000},
+		},
+	}
+	if err := badCfg.Check(); err == nil {
+		t.Errorf("Config.Check() accepted negative BWLimit.Ingress")
+	}
+
+	// One-sided BWLimit (Ingress: 0, Egress: 1000000) must leave ingress nil and set egress non-nil.
+	cfg := &Config{
+		HTTPAddr: newPtr("localhost:0"),
+		TLSAddr:  newPtr("localhost:0"),
+		CacheDir: newPtr(t.TempDir()),
+		MaxOpen:  newPtr(100),
+		BWLimits: []*BWLimit{
+			{Name: "egress-only", Ingress: 0, Egress: 1000000},
+		},
+		Backends: []*Backend{
+			{
+				ServerNames: Strings{"local.example.com"},
+				Mode:        "LOCAL",
+				BWLimit:     "egress-only",
+			},
+		},
+	}
+	proxy := newTestProxy(cfg, extCA)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	defer proxy.Stop()
+
+	grp := proxy.bwLimits["egress-only"]
+	if grp == nil {
+		t.Fatalf("bwLimits[\"egress-only\"] is nil")
+	}
+	if grp.ingress != nil {
+		t.Errorf("grp.ingress = %v, want nil when Ingress is 0", grp.ingress)
+	}
+	if grp.egress == nil {
+		t.Errorf("grp.egress is nil, want non-nil when Egress > 0")
 	}
 }

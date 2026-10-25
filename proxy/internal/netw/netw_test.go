@@ -151,3 +151,35 @@ func TestConnBWLimitBurstAndSmallReads(t *testing.T) {
 		t.Errorf("nc.Read(32KB buf) = (%d, %v), want (1, nil)", n, err)
 	}
 }
+
+func TestConnBWLimitHonorsDeadline(t *testing.T) {
+	c1, c2 := net.Pipe()
+	defer c1.Close()
+	defer c2.Close()
+
+	nc := netw.NewConn(c1)
+	// Very slow rate: 0.1 bytes/s (1 byte every 10s), burst 1 byte.
+	egress := rate.NewLimiter(rate.Limit(0.1), 1)
+	nc.SetLimiters(nil, egress)
+
+	go func() {
+		io.Copy(io.Discard, c2)
+	}()
+
+	// Consume the 1-byte burst token.
+	if _, err := nc.Write([]byte("A")); err != nil {
+		t.Fatalf("first Write: %v", err)
+	}
+
+	// Second write requires waiting ~10s, which exceeds the 50ms write deadline.
+	if err := nc.SetWriteDeadline(time.Now().Add(50 * time.Millisecond)); err != nil {
+		t.Fatalf("SetWriteDeadline: %v", err)
+	}
+	start := time.Now()
+	if _, err := nc.Write([]byte("B")); err == nil {
+		t.Errorf("second Write succeeded, want rate-limit deadline error")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("second Write took %v, want <= 1s", elapsed)
+	}
+}

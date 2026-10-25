@@ -1273,3 +1273,87 @@ func TestQUICStreamHTTPClientCertHeader(t *testing.T) {
 		}
 	}
 }
+
+func TestQUICStreamCloseCancelsReadAndProxyHeaderV1(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ca, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	tc := ca.TLSConfig()
+	tc.NextProtos = []string{"foo"}
+
+	var statelessKey quic.StatelessResetKey
+	qt, err := netw.NewQUIC("localhost:0", statelessKey)
+	if err != nil {
+		t.Fatalf("netw.NewQUIC: %v", err)
+	}
+	defer qt.Close()
+
+	ln, err := qt.Listen(tc)
+	if err != nil {
+		t.Fatalf("qt.Listen: %v", err)
+	}
+	defer ln.Close()
+
+	serverStreamCh := make(chan *netw.Conn, 1)
+	serverQCCh := make(chan *netw.QUICConn, 1)
+	go func() {
+		qconn, err := ln.Accept(ctx)
+		if err != nil {
+			return
+		}
+		serverQCCh <- qconn
+		s, err := qconn.AcceptStream(ctx)
+		if err != nil {
+			return
+		}
+		serverStreamCh <- qconn.WrapConn(s)
+	}()
+
+	clientTC := &tls.Config{
+		ServerName: "quic.example.com",
+		RootCAs:    ca.RootCACertPool(),
+		NextProtos: []string{"foo"},
+	}
+	cConn, err := quicapi.DialAddr(ctx, qt.Addr().String(), clientTC, &quic.Config{})
+	if err != nil {
+		t.Fatalf("DialAddr: %v", err)
+	}
+	defer cConn.CloseWithError(0, "done")
+
+	cStream, err := cConn.OpenStreamSync(ctx)
+	if err != nil {
+		t.Fatalf("OpenStreamSync: %v", err)
+	}
+	if _, err := cStream.Write([]byte("hello")); err != nil {
+		t.Fatalf("cStream.Write: %v", err)
+	}
+
+	serverQC := <-serverQCCh
+	defer serverQC.Close()
+	wrapped := <-serverStreamCh
+
+	if got := len(serverQC.Streams()); got != 1 {
+		t.Fatalf("len(serverQC.Streams()) before Close = %d, want 1", got)
+	}
+
+	// Verify writeProxyHeader v1 works with a QUIC stream (*net.UDPAddr endpoints).
+	var buf bytes.Buffer
+	if err := writeProxyHeader(1, &buf, wrapped); err != nil {
+		t.Errorf("writeProxyHeader(1) on QUIC stream failed: %v", err)
+	}
+	if !strings.HasPrefix(buf.String(), "PROXY TCP") {
+		t.Errorf("writeProxyHeader(1) output = %q, want prefix %q", buf.String(), "PROXY TCP")
+	}
+
+	// Closing wrapped *netw.Conn without reading to EOF must cancel read and remove the stream.
+	if err := wrapped.Close(); err != nil {
+		t.Fatalf("wrapped.Close: %v", err)
+	}
+	if got := len(serverQC.Streams()); got != 0 {
+		t.Errorf("len(serverQC.Streams()) after Close = %d, want 0", got)
+	}
+}

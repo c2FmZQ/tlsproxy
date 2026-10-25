@@ -66,6 +66,9 @@ func NewQUIC(addr string, statelessResetKey quic.StatelessResetKey) (*QUICTransp
 	tr := &quic.Transport{
 		Conn:              conn,
 		StatelessResetKey: &statelessResetKey,
+		VerifySourceAddress: func(net.Addr) bool {
+			return true
+		},
 	}
 	return &QUICTransport{
 		qt: quicapi.WrapTransport(tr),
@@ -596,10 +599,12 @@ type QUICStream struct {
 	quicapi.Stream
 	qc *QUICConn
 
-	mu         sync.Mutex
-	readDone   bool
-	writeDone  bool
-	bridgeAddr string
+	mu            sync.Mutex
+	readDone      bool
+	writeDone     bool
+	bridgeAddr    string
+	readDeadline  time.Time
+	writeDeadline time.Time
 }
 
 func (s *QUICStream) streamID() int64 {
@@ -648,6 +653,40 @@ func (s *QUICStream) markWriteDone() {
 	}
 }
 
+func (s *QUICStream) SetDeadline(t time.Time) error {
+	s.mu.Lock()
+	s.readDeadline = t
+	s.writeDeadline = t
+	s.mu.Unlock()
+	return s.Stream.SetDeadline(t)
+}
+
+func (s *QUICStream) SetReadDeadline(t time.Time) error {
+	s.mu.Lock()
+	s.readDeadline = t
+	s.mu.Unlock()
+	return s.Stream.SetReadDeadline(t)
+}
+
+func (s *QUICStream) SetWriteDeadline(t time.Time) error {
+	s.mu.Lock()
+	s.writeDeadline = t
+	s.mu.Unlock()
+	return s.Stream.SetWriteDeadline(t)
+}
+
+func (s *QUICStream) getReadDeadline() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.readDeadline
+}
+
+func (s *QUICStream) getWriteDeadline() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.writeDeadline
+}
+
 func (s *QUICStream) Read(b []byte) (int, error) {
 	n, err := s.Stream.Read(b)
 	if err != nil {
@@ -658,7 +697,7 @@ func (s *QUICStream) Read(b []byte) (int, error) {
 		_, upRecv := s.qc.getCounters()
 		upRecv.Incr(int64(n))
 		if l, _ := s.qc.getLimiters(); l != nil {
-			if werr := waitTokens(s.Context(), l, n); werr != nil && err == nil {
+			if werr := waitTokensWithDeadline(s.Context(), s.getReadDeadline(), l, n); werr != nil && err == nil {
 				err = werr
 			}
 		}
@@ -668,7 +707,7 @@ func (s *QUICStream) Read(b []byte) (int, error) {
 
 func (s *QUICStream) Write(b []byte) (int, error) {
 	if _, l := s.qc.getLimiters(); l != nil && len(b) > 0 {
-		if err := waitTokens(s.Context(), l, len(b)); err != nil {
+		if err := waitTokensWithDeadline(s.Context(), s.getWriteDeadline(), l, len(b)); err != nil {
 			return 0, err
 		}
 	}

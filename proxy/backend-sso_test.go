@@ -705,3 +705,22 @@ func TestLogoutSessionCookieAndFrameHeaders(t *testing.T) {
 		t.Errorf("servePermissionDenied X-Frame-Options = %q, want DENY", got)
 	}
 }
+
+func TestServeSSOStatusNilIssuedAtOrExp(t *testing.T) {
+	proxy := newBackendSSOTestProxy(t)
+	be := proxy.cfg.Backends[0]
+
+	req := httptest.NewRequest(http.MethodGet, "https://example.com/.sso/", nil)
+	ctx := fromctx.WithClaims(req.Context(), jwt.MapClaims{
+		"email": "bob@example.org",
+		"iat":   nil,
+		"exp":   nil,
+	})
+	req = req.WithContext(ctx)
+
+	w := httptest.NewRecorder()
+	be.serveSSOStatus(w, req)
+	if got, want := w.Code, http.StatusOK; got != want {
+		t.Errorf("serveSSOStatus with nil iat/exp code = %d, want %d", got, want)
+	}
+}

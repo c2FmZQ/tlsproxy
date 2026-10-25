@@ -283,6 +283,9 @@ func parseResponse(raw []byte, cert, issuer *x509.Certificate) (*ocsp.Response, 
 	// signed by issuer, but not that it is authorized to sign OCSP
 	// responses (RFC 6960 section 4.2.2.2) or within its validity window.
 	if rc := resp.Certificate; rc != nil && !rc.Equal(issuer) {
+		if err := rc.CheckSignatureFrom(issuer); err != nil {
+			return nil, fmt.Errorf("responder certificate signature: %w", err)
+		}
 		if !slices.Contains(rc.ExtKeyUsage, x509.ExtKeyUsageOCSPSigning) {
 			return nil, errors.New("responder certificate is not authorized to sign OCSP responses")
 		}

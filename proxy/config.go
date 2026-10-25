@@ -1300,9 +1300,18 @@ func (cfg *Config) Check() error {
 
 	bwLimits := make(map[string]bool)
 	for i, l := range cfg.BWLimits {
+		if l.Name == "" {
+			return fmt.Errorf("bwLimit[%d].Name: must be set", i)
+		}
 		name := strings.ToLower(l.Name)
 		if bwLimits[name] {
 			return fmt.Errorf("bwLimit[%d].Name: duplicate name %q", i, l.Name)
+		}
+		if l.Ingress < 0 {
+			return fmt.Errorf("bwLimit[%d].Ingress: must not be negative", i)
+		}
+		if l.Egress < 0 {
+			return fmt.Errorf("bwLimit[%d].Egress: must not be negative", i)
 		}
 		bwLimits[name] = true
 	}
