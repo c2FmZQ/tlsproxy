@@ -12,7 +12,11 @@ description: >-
 
 ## Overview
 
-This skill updates the Go version and upstream module dependencies using [`scripts/update-go-version.sh`](../../../scripts/update-go-version.sh), extracts the exact source code diffs between the old and new module versions from `GOMODCACHE`, and audits every change for security vulnerabilities or subtle behavioral changes that could be exploited through `tlsproxy` or `tlsclient`.
+This skill updates the Go version and upstream module dependencies using [`scripts/update-go-version.sh`](../../../scripts/update-go-version.sh), extracts the exact source code diffs between the old and new module versions from `GOMODCACHE`, and audits every change for malicious/suspicious code, security vulnerabilities, or subtle behavioral changes before any build or test command is executed.
+
+> [!CAUTION]
+> **CRITICAL: Never run `go build`, `go test`, `go run`, or `go generate` BEFORE completing the full source diff audit in Step 3, and NEVER run them if suspicious or malicious code is detected in any dependency.**
+> Compiling or testing untrusted dependency updates can execute attacker-controlled code on the host (via `init()` functions, test binaries, CGo, or compiler directives). If suspicious code is found during Step 3, stop immediately, do not build or run tests, and report the finding to the user.
 
 ## Workflow
 
@@ -46,7 +50,10 @@ For each upgraded module (delegate to parallel `research` subagents if multiple 
 
 1. **Read the upstream diff** (`/tmp/tlsproxy-dep-audit/<module>.diff`) and the surrounding upstream package code in `GOMODCACHE`.
 2. **Read every call site** in `tlsproxy` (`proxy/`, `certmanager/`, `jwks/`) and `tlsclient/` that interacts with the upgraded module.
-3. **Evaluate against the `tlsproxy` / `tlsclient` threat model**:
+3. **Evaluate against supply-chain threats and the `tlsproxy` / `tlsclient` threat model**:
+   - **Supply-Chain & Suspicious Code Inspection (Must Pass Before Any Build/Test)**:
+     - Check for newly added or modified `init()` functions, `os/exec` commands, `syscall` / `unsafe` / `reflect` abuse, `//go:linkname` or `//go:cgo_*` directives, CGo/assembly files, obfuscated strings or encoded payloads (base64/hex blobs), unexpected outbound network calls (`net`, `net/http`), environment variable access (`os.Getenv`, `os.Environ`), or unexpected filesystem reads/writes.
+     - **If any suspicious, backdoored, or unexplained code is detected: STOP IMMEDIATELY. Do NOT proceed to Step 4 (`go test` / `go build`).** Alert the user with the exact file path and line numbers in `GOMODCACHE`.
    - **Parsing & Input Validation**:
      - Can malformed network input (TLS `ClientHello` / ECH extensions, QUIC frames/streams, HTTP/1.1, HTTP/2, HTTP/3 pseudo-headers `:path` / `:authority` / `:scheme`, WebSocket control/data frames, PROXY protocol v1/v2 headers, SSH certificates, OCSP responses, JWT/OIDC/SAML tokens, CBOR/WebAuthn passkeys, DNS/DoH responses) trigger panics (slice bounds, nil-pointer dereference, type assertion, divide-by-zero, `close of closed channel`, concurrent map read/write)?
      - Does any parser change introduce request-target / host / path normalization discrepancies that could bypass `Backend.checkRequestHost`, `be.SSO.Rules`, `PathOverrides`, `localHandlers`, or `SanitizePath`?
@@ -60,7 +67,10 @@ For each upgraded module (delegate to parallel `research` subagents if multiple 
 
 ### 4. Build, Test, and Report Findings
 
-1. Run the test suite and build checks:
+> [!IMPORTANT]
+> **Only run the build and test commands below if Step 3 confirmed that no suspicious or malicious code was introduced in any dependency diff.** If suspicious code was detected, skip Step 4.1 entirely and report the suspicious code immediately.
+
+1. Run the test suite and build checks (only after all diffs pass inspection):
    ```bash
    go test -count=1 ./...
    GOOS=js GOARCH=wasm go build -o /dev/null ./proxy/internal/pki/clientwasm
