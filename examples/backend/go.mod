@@ -4,8 +4,8 @@ go 1.27.0
 
 require (
 	github.com/blend/go-sdk v1.20240719.1
-	github.com/c2FmZQ/tlsproxy v0.26.1
-	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261016150158-c16d56e09afd
+	github.com/c2FmZQ/tlsproxy v0.26.2
+	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261020132445-f578f361147c
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/quic-go/quic-go v0.64.1

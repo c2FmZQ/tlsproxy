@@ -515,6 +515,7 @@ func (be *Backend) handleQUICQUICStream(ctx context.Context, dest *netw.QUICConn
 			if errors.As(err, &appErr) {
 				qs.CancelRead(quic.StreamErrorCode(appErr.ErrorCode))
 			}
+			conn.Close()
 			return
 		}
 		intConn = dest.WrapConn(sendStream)
@@ -527,10 +528,12 @@ func (be *Backend) handleQUICQUICStream(ctx context.Context, dest *netw.QUICConn
 			if errors.As(err, &appErr) {
 				qs.CancelRead(quic.StreamErrorCode(appErr.ErrorCode))
 			}
+			conn.Close()
 			return
 		}
 		intConn = dest.WrapConn(stream)
 	}
+	defer conn.Close()
 	defer intConn.Close()
 
 	now := time.Now()

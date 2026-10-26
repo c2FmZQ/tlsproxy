@@ -117,33 +117,42 @@ func (p *Proxy) rotateECH(forceCheck bool) (retErr error) {
 	}
 	if (changed || forceCheck) && len(p.cfg.ECH.Cloudflare) > 0 {
 		ctx := p.ctx
-		cf := p.cfg.ECH.Cloudflare
+		type pubTargets struct {
+			pub     publish.ECHPublisher
+			targets []publish.Target
+		}
+		var pubs []pubTargets
+		targets := make(map[string][]publish.Target)
+		for _, z := range p.cfg.ECH.Cloudflare {
+			t := targets[z.Token]
+			for _, name := range z.Names {
+				t = append(t, publish.Target{Zone: z.Zone, Name: name})
+			}
+			targets[z.Token] = t
+		}
+		for tok, tar := range targets {
+			if pub := p.echPublishers[tok]; pub != nil {
+				pubs = append(pubs, pubTargets{pub: pub, targets: tar})
+			}
+		}
 		go func() {
 			if ctx == nil {
 				ctx = context.Background()
 			}
 			ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 			defer cancel()
-			targets := make(map[string][]publish.Target)
-			for _, z := range cf {
-				t := targets[z.Token]
-				for _, name := range z.Names {
-					t = append(t, publish.Target{Zone: z.Zone, Name: name})
-				}
-				targets[z.Token] = t
-			}
-			for tok, tar := range targets {
-				for i, result := range p.echPublishers[tok].PublishECH(ctx, tar, configList) {
-					if i >= len(tar) {
-						p.logErrorF("ERR cloudflare more results than targets: %d >= %d", i, len(tar))
+			for _, pt := range pubs {
+				for i, result := range pt.pub.PublishECH(ctx, pt.targets, configList) {
+					if i >= len(pt.targets) {
+						p.logErrorF("ERR cloudflare more results than targets: %d >= %d", i, len(pt.targets))
 						continue
 					}
 					if err := result.Err(); err != nil {
-						p.logErrorF("ERR cloudflare [%s] %s: %v", tar[i].Zone, tar[i].Name, err)
+						p.logErrorF("ERR cloudflare [%s] %s: %v", pt.targets[i].Zone, pt.targets[i].Name, err)
 						continue
 					}
 					if result.Code != publish.StatusNoChange {
-						p.logErrorF("INF cloudflare [%s] %s: %s", tar[i].Zone, tar[i].Name, result)
+						p.logErrorF("INF cloudflare [%s] %s: %s", pt.targets[i].Zone, pt.targets[i].Name, result)
 					}
 				}
 			}
@@ -163,6 +172,7 @@ func (p *Proxy) rotateECH(forceCheck bool) (retErr error) {
 			defer cancel()
 			client := retryablehttp.NewClient()
 			client.Logger = nil
+			defer client.HTTPClient.CloseIdleConnections()
 			for _, wh := range webhooks {
 				req, err := retryablehttp.NewRequestWithContext(ctx, "POST", wh, nil)
 				if err != nil {

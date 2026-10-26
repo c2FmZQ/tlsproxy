@@ -118,6 +118,13 @@ func (be *Backend) checkRequestHost(w http.ResponseWriter, req *http.Request) bo
 		http.Error(w, "Misdirected Request", http.StatusMisdirectedRequest)
 		return false
 	}
+	if req.URL.Opaque != "" || (req.URL.Host != "" && req.URL.Host != req.Host) || (req.URL.Path != "" && !strings.HasPrefix(req.URL.Path, "/") && !(req.Method == http.MethodOptions && req.URL.Path == "*")) {
+		if req.Body != nil {
+			req.Body.Close()
+		}
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return false
+	}
 	return true
 }
 

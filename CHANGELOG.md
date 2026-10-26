@@ -1,5 +1,48 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :lock: Security fixes
+
+* Reject HTTP requests with a non-empty `URL.Opaque`, a `URL.Host` that doesn't match `Host`, or a `URL.Path` that
+  doesn't start with `/` (except `OPTIONS *`) in `checkRequestHost` to prevent HTTP/3 `:path` opaque URI routing
+  and SSO path-rule bypasses.
+* Enable QUIC Retry source-address validation (`VerifySourceAddress`) on `quic.Transport` to mitigate spoofed UDP
+  Initial floods prior to `Accept`.
+* Cancel the receive direction (`CloseRead`) when closing wrapped `netw.Conn` QUIC streams and when opening a
+  backend stream fails in `handleQUICQUICStream`, preventing `QUICConn.streams` and incoming stream slot leaks.
+* Honor connection and stream read/write deadlines (capped at 30 seconds) when waiting on bandwidth rate limiters
+  (`waitTokensWithDeadline`), validate `bwLimits` configuration (`name`, `ingress >= 0`, `egress >= 0`), and keep
+  one-sided (`0`) ingress/egress limiters unlimited (`nil`).
+* Check `maxOpen` and register `OnClose` before wrapping connections in `proxyproto.NewConn` with a 5-second header
+  read timeout (`SetReadHeaderTimeout`).
+
+### :wrench: Misc
+
+* Hardening and bug fixes:
+  * Convert `*net.UDPAddr` endpoints to `*net.TCPAddr` when writing PROXY protocol v1 headers for QUIC streams.
+  * Signal WebSocket bridge shutdown when `WriteControl` fails in the ping watchdog loop so stalled connections are
+    closed instead of outliving their idle timeout.
+  * Guard `serveSSOStatus` (`GET /.sso/`) against `nil` `*jwt.NumericDate` pointers returned by
+    `claims.GetIssuedAt()` and `claims.GetExpirationTime()`.
+  * Resolve `echPublishers` while holding `p.mu` before spawning the ECH rotation goroutine and close idle webhook
+    HTTP connections.
+  * Release `TokenManager`'s mutex before calling `tok.SignedString` so hardware TPM signing does not block
+    concurrent token validation or JWKS requests.
+  * Explicitly verify `rc.CheckSignatureFrom(issuer)` on delegated OCSP responder certificates in `ocspcache` and
+    `tlsclient`.
+  * Bound `tls.Conn.Close()` in `netw.Conn.Close()` with a 250ms timer on the underlying network connection so
+    stalled HTTP/2 backends cannot hang connection close.
+  * Validate the requested certificate format (`gpg` or `p12`) and reject non-BMP PKCS#12 password characters in the
+    PKI WASM client before generating and submitting a CSR.
+  * Initialize `Handles` and `Subjects` maps if `nil` when registering a passkey in `passkeys.Manager`.
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/ech v0.4.3 => v0.4.4
+  * upgraded github.com/c2FmZQ/ech/publish v0.1.2 => v0.1.3
+  * upgraded github.com/c2FmZQ/ech/quic v0.3.6 => v0.3.7
+  * upgraded github.com/c2FmZQ/storage v0.3.3 => v0.3.4
+  * upgraded github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261016150158-c16d56e09afd => v0.0.0-20261020132445-f578f361147c
+
 ## v0.26.2
 
 ### :wrench: Misc

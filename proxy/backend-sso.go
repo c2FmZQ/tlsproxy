@@ -255,14 +255,16 @@ func (be *Backend) serveSSOStatus(w http.ResponseWriter, req *http.Request) {
 	}
 	for _, k := range keys {
 		if k == "iat" {
-			v, _ := claims.GetIssuedAt()
-			data.Claims = append(data.Claims, kv{k, v.String()})
-			continue
+			if v, err := claims.GetIssuedAt(); err == nil && v != nil {
+				data.Claims = append(data.Claims, kv{k, v.String()})
+				continue
+			}
 		}
 		if k == "exp" {
-			v, _ := claims.GetExpirationTime()
-			data.Claims = append(data.Claims, kv{k, v.String()})
-			continue
+			if v, err := claims.GetExpirationTime(); err == nil && v != nil {
+				data.Claims = append(data.Claims, kv{k, v.String()})
+				continue
+			}
 		}
 		data.Claims = append(data.Claims, kv{k, fmt.Sprint(claims[k])})
 	}

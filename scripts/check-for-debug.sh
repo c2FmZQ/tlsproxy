@@ -1,6 +1,6 @@
 #!/bin/bash
 
-out="$(git grep X\XX)"
+out="$(git grep -w X\XX)"
 if [[ "${out}" != "" ]]; then
   echo "Found:"
   echo "${out}" | sed -re 's/^/> /'

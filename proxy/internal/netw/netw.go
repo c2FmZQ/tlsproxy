@@ -27,6 +27,7 @@ package netw
 
 import (
 	"context"
+	"crypto/tls"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -92,9 +93,11 @@ type Conn struct {
 	upBytesSent     atomic.Pointer[counter.Counter]
 	upBytesReceived atomic.Pointer[counter.Counter]
 
-	mu          sync.Mutex
-	onClose     func()
-	annotations map[string]any
+	mu            sync.Mutex
+	onClose       func()
+	annotations   map[string]any
+	readDeadline  time.Time
+	writeDeadline time.Time
 }
 
 func (c *Conn) StreamID() int64 {
@@ -186,15 +189,62 @@ func (c *Conn) OnClose(f func()) {
 	c.onClose = f
 }
 
+const maxWaitTokensTimeout = 30 * time.Second
+
 func waitTokens(ctx context.Context, l *rate.Limiter, n int) error {
+	return waitTokensWithDeadline(ctx, time.Time{}, l, n)
+}
+
+func waitTokensWithDeadline(ctx context.Context, deadline time.Time, l *rate.Limiter, n int) error {
 	for n > 0 {
 		chunk := min(n, max(1, l.Burst()))
-		if err := l.WaitN(ctx, chunk); err != nil {
+		maxDeadline := time.Now().Add(maxWaitTokensTimeout)
+		if deadline.IsZero() || deadline.After(maxDeadline) {
+			deadline = maxDeadline
+		}
+		waitCtx, cancel := context.WithDeadline(ctx, deadline)
+		err := l.WaitN(waitCtx, chunk)
+		cancel()
+		if err != nil {
 			return err
 		}
 		n -= chunk
 	}
 	return nil
+}
+
+func (c *Conn) SetDeadline(t time.Time) error {
+	c.mu.Lock()
+	c.readDeadline = t
+	c.writeDeadline = t
+	c.mu.Unlock()
+	return c.Conn.SetDeadline(t)
+}
+
+func (c *Conn) SetReadDeadline(t time.Time) error {
+	c.mu.Lock()
+	c.readDeadline = t
+	c.mu.Unlock()
+	return c.Conn.SetReadDeadline(t)
+}
+
+func (c *Conn) SetWriteDeadline(t time.Time) error {
+	c.mu.Lock()
+	c.writeDeadline = t
+	c.mu.Unlock()
+	return c.Conn.SetWriteDeadline(t)
+}
+
+func (c *Conn) getReadDeadline() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.readDeadline
+}
+
+func (c *Conn) getWriteDeadline() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.writeDeadline
 }
 
 func (c *Conn) Read(b []byte) (int, error) {
@@ -204,7 +254,7 @@ func (c *Conn) Read(b []byte) (int, error) {
 		_, upRecv := c.getCounters()
 		upRecv.Incr(int64(n))
 		if l, _ := c.getLimiters(); l != nil {
-			if werr := waitTokens(c.ctx, l, n); werr != nil && err == nil {
+			if werr := waitTokensWithDeadline(c.ctx, c.getReadDeadline(), l, n); werr != nil && err == nil {
 				err = werr
 			}
 		}
@@ -214,7 +264,7 @@ func (c *Conn) Read(b []byte) (int, error) {
 
 func (c *Conn) Write(b []byte) (int, error) {
 	if _, l := c.getLimiters(); l != nil && len(b) > 0 {
-		if err := waitTokens(c.ctx, l, len(b)); err != nil {
+		if err := waitTokensWithDeadline(c.ctx, c.getWriteDeadline(), l, len(b)); err != nil {
 			return 0, err
 		}
 	}
@@ -235,6 +285,17 @@ func (c *Conn) Close() error {
 	c.cancel()
 	if f != nil {
 		f()
+	}
+	if cr, ok := c.Conn.(interface{ CloseRead() error }); ok {
+		cr.CloseRead()
+	}
+	if tc, ok := c.Conn.(*tls.Conn); ok {
+		if nc := tc.NetConn(); nc != nil {
+			t := time.AfterFunc(250*time.Millisecond, func() {
+				nc.Close()
+			})
+			defer t.Stop()
+		}
 	}
 	return c.Conn.Close()
 }

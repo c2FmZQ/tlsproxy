@@ -123,6 +123,9 @@ func main() {
 			// The response must be signed by the issuer or by a
 			// delegated responder (RFC 6960 section 4.2.2.2).
 			if rc := resp.Certificate; rc != nil && !rc.Equal(issuer) {
+				if err := rc.CheckSignatureFrom(issuer); err != nil {
+					return fmt.Errorf("ocsp responder certificate signature: %w", err)
+				}
 				if !slices.Contains(rc.ExtKeyUsage, x509.ExtKeyUsageOCSPSigning) {
 					return errors.New("ocsp responder is not authorized")
 				}

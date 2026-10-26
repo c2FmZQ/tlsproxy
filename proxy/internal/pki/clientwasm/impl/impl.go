@@ -45,6 +45,17 @@ import (
 )
 
 func GetCertificate(url, keyType, format, label, dnsname, password, sid string) (data []byte, contentType, filename string, err error) {
+	switch format {
+	case "gpg":
+	case "p12":
+		for _, r := range password {
+			if r > 0xffff {
+				return nil, "", "", errors.New("pkcs12 password cannot contain characters outside the Basic Multilingual Plane")
+			}
+		}
+	default:
+		return nil, "", "", errors.New("unexpected format")
+	}
 	privKey, err := keys.GenerateKey(keyType)
 	if err != nil {
 		return nil, "", "", err

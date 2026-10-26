@@ -467,16 +467,30 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	for _, bwl := range cfg.BWLimits {
 		const minBurst = 1 << 17 // 128 KB
 		name := strings.ToLower(bwl.Name)
-		if l, ok := p.bwLimits[name]; ok {
-			l.ingress.SetLimit(rate.Limit(bwl.Ingress))
-			l.ingress.SetBurst(int(max(bwl.Ingress, minBurst)))
-			l.egress.SetLimit(rate.Limit(bwl.Egress))
-			l.egress.SetBurst(int(max(bwl.Egress, minBurst)))
-			continue
+		l, ok := p.bwLimits[name]
+		if !ok {
+			l = &bwLimit{}
+			p.bwLimits[name] = l
 		}
-		p.bwLimits[name] = &bwLimit{
-			ingress: rate.NewLimiter(rate.Limit(bwl.Ingress), int(max(bwl.Ingress, minBurst))),
-			egress:  rate.NewLimiter(rate.Limit(bwl.Egress), int(max(bwl.Egress, minBurst))),
+		if bwl.Ingress > 0 {
+			if l.ingress == nil {
+				l.ingress = rate.NewLimiter(rate.Limit(bwl.Ingress), int(max(bwl.Ingress, minBurst)))
+			} else {
+				l.ingress.SetLimit(rate.Limit(bwl.Ingress))
+				l.ingress.SetBurst(int(max(bwl.Ingress, minBurst)))
+			}
+		} else {
+			l.ingress = nil
+		}
+		if bwl.Egress > 0 {
+			if l.egress == nil {
+				l.egress = rate.NewLimiter(rate.Limit(bwl.Egress), int(max(bwl.Egress, minBurst)))
+			} else {
+				l.egress.SetLimit(rate.Limit(bwl.Egress))
+				l.egress.SetBurst(int(max(bwl.Egress, minBurst)))
+			}
+		} else {
+			l.egress = nil
 		}
 	}
 
@@ -1368,15 +1382,13 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		}
 	}()
 	conn.SetAnnotation(startTimeKey, time.Now())
-	if p.acceptProxyHeader(conn.RemoteAddr()) {
-		cc := proxyproto.NewConn(conn.Conn)
-		conn.Conn = cc
-	}
 	numOpen := p.inConns.add(conn)
-	ip, numOpenIP := p.ipConns.inc(conn.RemoteAddr())
+	var ip string
 	conn.OnClose(func() {
 		p.inConns.remove(conn)
-		p.ipConns.dec(ip)
+		if ip != "" {
+			p.ipConns.dec(ip)
+		}
 		if be := connBackend(conn); be != nil {
 			if conn.Annotation(reportEndKey, false).(bool) {
 				startTime := conn.Annotation(startTimeKey, time.Time{}).(time.Time)
@@ -1393,6 +1405,12 @@ func (p *Proxy) handleConnection(conn *netw.Conn) {
 		sendCloseNotify(conn)
 		return
 	}
+	if p.acceptProxyHeader(conn.RemoteAddr()) {
+		cc := proxyproto.NewConn(conn.Conn, proxyproto.SetReadHeaderTimeout(5*time.Second))
+		conn.Conn = cc
+	}
+	var numOpenIP int
+	ip, numOpenIP = p.ipConns.inc(conn.RemoteAddr())
 	if max := p.cfg.MaxOpenPerIP; max != nil && *max > 0 && numOpenIP > *max {
 		p.recordEvent("too many open connections from IP")
 		p.logErrorF("ERR [-] %s: too many open connections from IP: %d > %d", conn.RemoteAddr(), numOpenIP, *max)

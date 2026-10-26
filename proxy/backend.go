@@ -270,7 +270,16 @@ func (be *Backend) dial(ctx context.Context, protos ...string) (net.Conn, error)
 }
 
 func writeProxyHeader(v byte, out io.Writer, in anyConn) error {
-	header := proxyproto.HeaderProxyFromAddrs(v, in.RemoteAddr(), in.LocalAddr())
+	remoteAddr, localAddr := in.RemoteAddr(), in.LocalAddr()
+	if v == 1 {
+		if u, ok := remoteAddr.(*net.UDPAddr); ok {
+			remoteAddr = &net.TCPAddr{IP: u.IP, Port: u.Port, Zone: u.Zone}
+		}
+		if u, ok := localAddr.(*net.UDPAddr); ok {
+			localAddr = &net.TCPAddr{IP: u.IP, Port: u.Port, Zone: u.Zone}
+		}
+	}
+	header := proxyproto.HeaderProxyFromAddrs(v, remoteAddr, localAddr)
 	header.Command = proxyproto.PROXY
 	var tlvs []proxyproto.TLV
 	if sn := connServerName(in); sn != "" {

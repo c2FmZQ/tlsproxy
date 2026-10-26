@@ -915,6 +915,12 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 			Claims: challenge.claims,
 		}
 		uids := base64.RawURLEncoding.EncodeToString(challenge.uid)
+		if m.db.Handles == nil {
+			m.db.Handles = make(map[string]*user)
+		}
+		if m.db.Subjects == nil {
+			m.db.Subjects = make(map[string]string)
+		}
 		m.db.Handles[uids] = u
 		m.db.Subjects[email] = uids
 	}

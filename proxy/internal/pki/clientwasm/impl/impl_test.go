@@ -109,3 +109,15 @@ func TestKeyTypeFormat(t *testing.T) {
 		}
 	}
 }
+
+func TestGetCertificatePreCSRValidation(t *testing.T) {
+	// Invalid format must fail before generating CSR or making any network call.
+	if _, _, _, err := GetCertificate("http://127.0.0.1:0/never", "ed25519", "invalid-format", "label", "", "secret", "sid"); err == nil {
+		t.Errorf("GetCertificate accepted invalid format")
+	}
+
+	// Non-BMP rune in PKCS#12 password must fail before generating CSR or making any network call.
+	if _, _, _, err := GetCertificate("http://127.0.0.1:0/never", "ed25519", "p12", "label", "", "pass🔑", "sid"); err == nil {
+		t.Errorf("GetCertificate accepted non-BMP password for p12 format")
+	}
+}

@@ -137,6 +137,13 @@ func TestDuplicateCredentialIDAndRefreshIDLoop(t *testing.T) {
 	}
 	auth.SetOrigin("https://example.com")
 
+	// Overwrite passkeyFile with nil Handles/Subjects maps to simulate a zeroed DB on disk.
+	m.db.Handles = nil
+	m.db.Subjects = nil
+	if err := store.SaveDataFile(passkeyFile, &m.db); err != nil {
+		t.Fatalf("SaveDataFile(nil maps): %v", err)
+	}
+
 	aliceClaims := map[string]any{"email": "alice@example.com", "sub": "alice"}
 	opts, err := m.attestationOptions(aliceClaims)
 	if err != nil {

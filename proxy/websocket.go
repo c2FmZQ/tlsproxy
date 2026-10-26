@@ -112,6 +112,10 @@ func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 						if !errors.Is(err, websocket.ErrCloseSent) && !errors.Is(err, net.ErrClosed) {
 							p.logErrorF("ERR WriteControl: %v", err)
 						}
+						select {
+						case done <- true:
+						default:
+						}
 						return
 					}
 				}
