@@ -11,7 +11,7 @@ require (
 	github.com/c2FmZQ/http3-go v0.62.0
 	github.com/c2FmZQ/quic-api v0.62.0
 	github.com/c2FmZQ/storage v0.3.4
-	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261016150158-c16d56e09afd
+	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261020132445-f578f361147c
 	github.com/c2FmZQ/tpm v0.6.0
 	github.com/fxamacker/cbor/v2 v2.9.6
 	github.com/go-test/deep v1.1.0
