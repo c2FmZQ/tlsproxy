@@ -2,6 +2,8 @@ module github.com/c2FmZQ/tlsproxy
 
 go 1.27.0
 
+godebug multipathtcp=0
+
 require (
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/beevik/etree v1.8.1
