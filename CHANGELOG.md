@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Fix bad translations.
+
 ## v0.26.4
 
 * Disable multipathtcp (https://github.com/golang/go/issues/82717)
