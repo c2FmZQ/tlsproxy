@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Fix bad translations.
+
 ## v0.26.3
 
 ### :lock: Security fixes
