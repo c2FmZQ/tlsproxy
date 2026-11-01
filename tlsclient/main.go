@@ -39,15 +39,113 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/c2FmZQ/ech"
 	"github.com/c2FmZQ/ech/quic"
+	quicgo "github.com/quic-go/quic-go"
 	"golang.org/x/crypto/ocsp"
 )
 
 // Version is set with -ldflags="-X main.Version=${VERSION}"
 var Version = "dev"
+
+type streamConn interface {
+	io.ReadWriteCloser
+	CloseWrite() error
+	SetReadDeadline(time.Time) error
+}
+
+type quicStream struct {
+	*quicgo.Stream
+}
+
+func (s quicStream) CloseWrite() error {
+	return s.Stream.Close()
+}
+
+func (s quicStream) Close() error {
+	s.Stream.CancelRead(0)
+	return s.Stream.Close()
+}
+
+func clientCertLoader(certFile, keyFile string) (func(*tls.CertificateRequestInfo) (*tls.Certificate, error), error) {
+	if certFile == "" || keyFile == "" {
+		return nil, nil
+	}
+	var (
+		mu          sync.Mutex
+		cachedCert  *tls.Certificate
+		certModTime time.Time
+		keyModTime  time.Time
+	)
+	getCert := func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		certStat, err := os.Stat(certFile)
+		if err != nil {
+			return nil, err
+		}
+		keyStat, err := os.Stat(keyFile)
+		if err != nil {
+			return nil, err
+		}
+		if cachedCert == nil || !certStat.ModTime().Equal(certModTime) || !keyStat.ModTime().Equal(keyModTime) {
+			c, err := tls.LoadX509KeyPair(certFile, keyFile)
+			if err != nil {
+				return nil, err
+			}
+			cachedCert = &c
+			certModTime = certStat.ModTime()
+			keyModTime = keyStat.ModTime()
+		}
+		return cachedCert, nil
+	}
+	if _, err := getCert(nil); err != nil {
+		return nil, err
+	}
+	return getCert, nil
+}
+
+func handleConn(ctx context.Context, localConn net.Conn, dial func(context.Context) (streamConn, error)) {
+	defer localConn.Close()
+	remoteConn, err := dial(ctx)
+	if err != nil {
+		log.Printf("ERR Dial: %v", err)
+		return
+	}
+	defer remoteConn.Close()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if _, err := io.Copy(remoteConn, localConn); err != nil && !errors.Is(err, net.ErrClosed) {
+			log.Printf("ERR Local->Remote: %v", err)
+			localConn.Close()
+			remoteConn.Close()
+			return
+		}
+		if err := remoteConn.CloseWrite(); err != nil {
+			localConn.Close()
+			remoteConn.Close()
+			return
+		}
+		remoteConn.SetReadDeadline(time.Now().Add(time.Minute))
+	}()
+	if _, err := io.Copy(localConn, remoteConn); err != nil && !errors.Is(err, net.ErrClosed) {
+		log.Printf("ERR Remote->Local: %v", err)
+		localConn.Close()
+		remoteConn.Close()
+	} else if c, ok := localConn.(interface{ CloseWrite() error }); ok {
+		if err := c.CloseWrite(); err != nil {
+			localConn.Close()
+			remoteConn.Close()
+		} else {
+			localConn.SetReadDeadline(time.Now().Add(time.Minute))
+		}
+	}
+	<-done
+}
 
 func main() {
 	versionFlag := flag.Bool("v", false, "Show the version.")
@@ -60,6 +158,7 @@ func main() {
 	verifyOCSP := flag.Bool("ocsp", false, "Require stapled OCSP response.")
 	insecureDNS := flag.Bool("insecuredns", false, "Use insecure DNS.")
 	serverName := flag.String("servername", "", "The expected server name.")
+	listenAddr := flag.String("listen", "", "Listen for TCP connections on this address instead of using stdin/stdout.")
 	flag.Parse()
 
 	if *versionFlag {
@@ -67,18 +166,14 @@ func main() {
 		return
 	}
 	if flag.NArg() != 1 || (*key == "") != (*cert == "") {
-		os.Stderr.WriteString("Usage: tlsclient [-key=<keyfile> -cert=<certfile>] [-alpn=<proto>] [-ech=<configlist>] [-publicname=<ECH publicname>] [-quic] host:port\n")
+		os.Stderr.WriteString("Usage: tlsclient [-key=<keyfile> -cert=<certfile>] [-alpn=<proto>] [-ech=<configlist>] [-publicname=<ECH publicname>] [-quic] [-listen=<addr>] host:port\n")
 		os.Exit(1)
 	}
 	addr := flag.Arg(0)
 
-	var certs []tls.Certificate
-	if *key != "" && *cert != "" {
-		c, err := tls.LoadX509KeyPair(*cert, *key)
-		if err != nil {
-			log.Fatalf("ERR: %v", err)
-		}
-		certs = append(certs, c)
+	getClientCert, err := clientCertLoader(*cert, *key)
+	if err != nil {
+		log.Fatalf("ERR: %v", err)
 	}
 
 	var protos []string
@@ -96,9 +191,9 @@ func main() {
 		*serverName = host
 	}
 	tc := &tls.Config{
-		Certificates: certs,
-		NextProtos:   protos,
-		ServerName:   *serverName,
+		GetClientCertificate: getClientCert,
+		NextProtos:           protos,
+		ServerName:           *serverName,
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			if !*verifyOCSP {
 				return nil
@@ -165,43 +260,41 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	var dial func(context.Context) (streamConn, error)
 	if *useQUIC {
 		dialer := quic.NewDialer(nil)
 		dialer.RequireECH = *echFlag != "" || *echPublicName != ""
 		dialer.PublicName = *echPublicName
 		dialer.Resolver = resolver
-		conn, err := dialer.Dial(ctx, "udp", target, tc)
+		var closeConn func()
+		dial, closeConn = newQUICStreamDialer(dialer, target, tc)
+		defer closeConn()
+	} else {
+		dialer := ech.NewDialer()
+		dialer.RequireECH = *echFlag != "" || *echPublicName != ""
+		dialer.PublicName = *echPublicName
+		dialer.Resolver = resolver
+		dial = newTLSConnDialer(dialer, target, tc)
+	}
+
+	if *listenAddr != "" {
+		ln, err := net.Listen("tcp", *listenAddr)
 		if err != nil {
-			log.Fatalf("ERR Dial: %v", err)
+			log.Fatalf("ERR Listen: %v", err)
 		}
-		fmt.Fprintf(os.Stderr, "Connected to %s\n", target)
-		stream, err := conn.OpenStream()
-		if err != nil {
-			log.Fatalf("ERR: %v", err)
-		}
-		go func() {
-			if _, err := io.Copy(stream, os.Stdin); err != nil && !errors.Is(err, net.ErrClosed) {
-				log.Printf("ERR: %v", err)
-			}
-			stream.Close()
-		}()
-		if _, err := io.Copy(os.Stdout, stream); err != nil {
-			stream.CancelRead(0)
-			log.Printf("ERR: %v", err)
+		defer ln.Close()
+		fmt.Fprintf(os.Stderr, "Listening on %s\n", ln.Addr())
+		if err := serveListener(ctx, ln, dial); err != nil {
+			log.Fatalf("ERR Accept: %v", err)
 		}
 		return
 	}
 
-	dialer := ech.NewDialer()
-	dialer.RequireECH = *echFlag != "" || *echPublicName != ""
-	dialer.PublicName = *echPublicName
-	dialer.Resolver = resolver
-	conn, err := dialer.Dial(ctx, "tcp", target, tc)
+	conn, err := dial(ctx)
 	if err != nil {
 		log.Fatalf("ERR Dial: %v", err)
 	}
 	defer conn.Close()
-	fmt.Fprintf(os.Stderr, "Connected to %s\n", target)
 	go func() {
 		if _, err := io.Copy(conn, os.Stdin); err != nil && !errors.Is(err, net.ErrClosed) {
 			log.Printf("ERR Stdin: %v", err)
@@ -210,5 +303,78 @@ func main() {
 	}()
 	if _, err := io.Copy(os.Stdout, conn); err != nil && !errors.Is(err, net.ErrClosed) {
 		log.Printf("ERR Conn: %v", err)
+	}
+}
+
+func newQUICStreamDialer(dialer *ech.Dialer[*quicgo.Conn], target string, tc *tls.Config) (func(context.Context) (streamConn, error), func()) {
+	var (
+		mu       sync.Mutex
+		quicConn *quicgo.Conn
+	)
+	closeConn := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if quicConn != nil {
+			quicConn.CloseWithError(0, "")
+			quicConn = nil
+		}
+	}
+	getConn := func(ctx context.Context, failedConn *quicgo.Conn) (*quicgo.Conn, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if failedConn != nil && quicConn == failedConn {
+			quicConn.CloseWithError(0, "")
+			quicConn = nil
+		}
+		if quicConn != nil && quicConn.Context().Err() == nil {
+			return quicConn, nil
+		}
+		conn, err := dialer.Dial(ctx, "udp", target, tc)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Fprintf(os.Stderr, "Connected to %s\n", target)
+		quicConn = conn
+		return quicConn, nil
+	}
+	dial := func(ctx context.Context) (streamConn, error) {
+		conn, err := getConn(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
+		stream, err := conn.OpenStreamSync(ctx)
+		if err != nil {
+			conn, err = getConn(ctx, conn)
+			if err != nil {
+				return nil, err
+			}
+			stream, err = conn.OpenStreamSync(ctx)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return quicStream{stream}, nil
+	}
+	return dial, closeConn
+}
+
+func newTLSConnDialer(dialer *ech.Dialer[*tls.Conn], target string, tc *tls.Config) func(context.Context) (streamConn, error) {
+	return func(ctx context.Context) (streamConn, error) {
+		conn, err := dialer.Dial(ctx, "tcp", target, tc)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Fprintf(os.Stderr, "Connected to %s\n", target)
+		return conn, nil
+	}
+}
+
+func serveListener(ctx context.Context, ln net.Listener, dial func(context.Context) (streamConn, error)) error {
+	for {
+		localConn, err := ln.Accept()
+		if err != nil {
+			return err
+		}
+		go handleConn(ctx, localConn, dial)
 	}
 }
