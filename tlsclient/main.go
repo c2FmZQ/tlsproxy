@@ -59,15 +59,29 @@ type streamConn interface {
 
 type quicStream struct {
 	*quicgo.Stream
+	mu          sync.Mutex
+	writeClosed bool
 }
 
-func (s quicStream) CloseWrite() error {
+func (s *quicStream) CloseWrite() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.writeClosed {
+		return nil
+	}
+	s.writeClosed = true
 	return s.Stream.Close()
 }
 
-func (s quicStream) Close() error {
+func (s *quicStream) Close() error {
 	s.Stream.CancelRead(0)
-	return s.Stream.Close()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.writeClosed {
+		s.writeClosed = true
+		s.Stream.CancelWrite(0)
+	}
+	return nil
 }
 
 func clientCertLoader(certFile, keyFile string) (func(*tls.CertificateRequestInfo) (*tls.Certificate, error), error) {
@@ -322,11 +336,11 @@ func newQUICStreamDialer(dialer *ech.Dialer[*quicgo.Conn], target string, tc *tl
 	getConn := func(ctx context.Context, failedConn *quicgo.Conn) (*quicgo.Conn, error) {
 		mu.Lock()
 		defer mu.Unlock()
-		if failedConn != nil && quicConn == failedConn {
+		if quicConn != nil && (quicConn == failedConn || quicConn.Context().Err() != nil) {
 			quicConn.CloseWithError(0, "")
 			quicConn = nil
 		}
-		if quicConn != nil && quicConn.Context().Err() == nil {
+		if quicConn != nil {
 			return quicConn, nil
 		}
 		conn, err := dialer.Dial(ctx, "udp", target, tc)
@@ -353,7 +367,7 @@ func newQUICStreamDialer(dialer *ech.Dialer[*quicgo.Conn], target string, tc *tl
 				return nil, err
 			}
 		}
-		return quicStream{stream}, nil
+		return &quicStream{Stream: stream}, nil
 	}
 	return dial, closeConn
 }
