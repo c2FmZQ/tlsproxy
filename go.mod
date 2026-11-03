@@ -4,8 +4,6 @@ go 1.27.0
 
 godebug multipathtcp=0
 
-replace github.com/c2FmZQ/http3-go => ../http3-go
-
 require (
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/beevik/etree v1.8.1
