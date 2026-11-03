@@ -545,6 +545,9 @@ func (s *SendOnlyStream) WriteWithLimit(b []byte, f func(int) int) (int, error) 
 func (s *SendOnlyStream) SetReceiveFinalSizeCallback(func(int64)) {
 }
 
+func (s *SendOnlyStream) ReleaseStreamCredit() {
+}
+
 type ReceiveOnlyStream struct {
 	quicapi.ReceiveStream
 	ctx context.Context
@@ -589,6 +592,10 @@ func (s *ReceiveOnlyStream) WriteWithLimit(b []byte, f func(int) int) (int, erro
 
 func (s *ReceiveOnlyStream) SetReceiveFinalSizeCallback(f func(int64)) {
 	s.ReceiveStream.SetReceiveFinalSizeCallback(f)
+}
+
+func (s *ReceiveOnlyStream) ReleaseStreamCredit() {
+	s.ReceiveStream.ReleaseStreamCredit()
 }
 
 var _ net.Conn = (*QUICStream)(nil)

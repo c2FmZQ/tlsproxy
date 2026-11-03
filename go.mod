@@ -4,14 +4,16 @@ go 1.27.0
 
 godebug multipathtcp=0
 
+replace github.com/c2FmZQ/http3-go => ../http3-go
+
 require (
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/beevik/etree v1.8.1
 	github.com/c2FmZQ/ech v0.4.4
 	github.com/c2FmZQ/ech/publish v0.1.3
 	github.com/c2FmZQ/ech/quic v0.3.7
-	github.com/c2FmZQ/http3-go v0.62.0
-	github.com/c2FmZQ/quic-api v0.62.0
+	github.com/c2FmZQ/http3-go v0.65.0
+	github.com/c2FmZQ/quic-api v0.65.0
 	github.com/c2FmZQ/storage v0.3.4
 	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261020132445-f578f361147c
 	github.com/c2FmZQ/tpm v0.6.0
@@ -23,10 +25,10 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/pires/go-proxyproto v0.16.0
-	github.com/quic-go/quic-go v0.64.1
+	github.com/quic-go/quic-go v0.65.0
 	github.com/russellhaering/goxmldsig v1.6.1
 	golang.org/x/crypto v0.58.0
-	golang.org/x/net v0.61.0
+	golang.org/x/net v0.62.0
 	golang.org/x/sys v0.49.0
 	golang.org/x/time v0.16.0
 	gopkg.in/yaml.v3 v3.0.1

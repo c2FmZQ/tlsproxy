@@ -5,6 +5,11 @@
 ### :wrench: Misc
 
 * Fix bad translations.
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/http3-go v0.62.0 => v0.65.0
+  * upgraded github.com/c2FmZQ/quic-api v0.62.0 => v0.65.0
+  * upgraded github.com/quic-go/quic-go v0.64.1 => v0.65.0
+  * upgraded golang.org/x/net v0.61.0 => v0.62.0
 
 ## v0.26.4
 
