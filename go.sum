@@ -16,8 +16,8 @@ github.com/c2FmZQ/quic-api v0.65.0 h1:wEQdZXksHjJJy1V72hKNdREHJvkJqfN6cKXloGocte
 github.com/c2FmZQ/quic-api v0.65.0/go.mod h1:67Emmqq+PPRfzBBfHkESC9Kix6jAk16nDFQoDryrrbE=
 github.com/c2FmZQ/storage v0.3.4 h1:pFh3MPouwoyvSpO9fs1B3BYf1VyDjjpt+5fB/fKhvGo=
 github.com/c2FmZQ/storage v0.3.4/go.mod h1:FLqvUjqkay/cDnj645pZdO2WN98wPO/zW93KnKEU+m0=
-github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261020132445-f578f361147c h1:XoVoUGOKbAPcABVup+KZcWRxymIxg0h70ODDr/5/Z+E=
-github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261020132445-f578f361147c/go.mod h1:WfdfzY1e35KBYAAZqBsrQYPl5xi9xBvXcvvwFt2I2Vc=
+github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261030185511-65b8456ea05d h1:JXJCvVPovQgdr1NHIqPvjDyqqRJ5jFvSBiBx68RRLlE=
+github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261030185511-65b8456ea05d/go.mod h1:WfdfzY1e35KBYAAZqBsrQYPl5xi9xBvXcvvwFt2I2Vc=
 github.com/c2FmZQ/tpm v0.6.0 h1:yyCB3gikpaQAXNZl6mHzNn1+Jg5i1DvxzVTwsM6mggU=
 github.com/c2FmZQ/tpm v0.6.0/go.mod h1:GREbgaoxMdtsUrK6pf8j5HxfEWdxNP+rWS0lVkUZJT8=
 github.com/cloudflare/circl v1.6.5 h1:O64F26HEqNhznd/hrC5KZXVKYuKM2rx4deZDTc4ihQA=
@@ -25,8 +25,8 @@ github.com/cloudflare/circl v1.6.5/go.mod h1:h5LNyxAc5nTue9DS5jT+48en2PSDYt3zdGn
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/fatih/color v1.16.0 h1:zmkK9Ngbjj+K0yRhTVONQh1p/HknKYSlNT+vZCzyokM=
 github.com/fatih/color v1.16.0/go.mod h1:fL2Sau1YI5c0pdGEVCbKQbLXB6edEj1ZgiY4NijnWvE=
-github.com/fxamacker/cbor/v2 v2.9.6 h1:NHZPxuUjJXQjX9itA785y/5NKSlI4HQ+S7noZsmI7hs=
-github.com/fxamacker/cbor/v2 v2.9.6/go.mod h1:4EaZp6ClVunETjQ4GHmGNzysDK91Lr+r6Yz6tJqzVCw=
+github.com/fxamacker/cbor/v2 v2.10.0 h1:HVF3T5vYwLqO81ebPirWEPNv2SMrUMD3HLnKgEr6uWE=
+github.com/fxamacker/cbor/v2 v2.10.0/go.mod h1:uSwlToFuT9BZAKRxxVm3qQC8DR4tlWl7D6pf20iRYH4=
 github.com/go-test/deep v1.1.0 h1:WOcxcdHcvdgThNXjw0t76K42FXTU7HpNQWHpA2HHNlg=
 github.com/go-test/deep v1.1.0/go.mod h1:5C2ZWiW0ErCdrYzpqxLbTX7MG14M9iiw8DgHncVwcsE=
 github.com/golang-jwt/jwt/v5 v5.3.1 h1:kYf81DTWFe7t+1VvL7eS+jKFVWaUnK9cB1qbwn63YCY=
