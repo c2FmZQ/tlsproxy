@@ -1,13 +1,14 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.26.6
 
 ### :wrench: Misc
 
-* Register `[]any` and `map[string]any` with `encoding/gob` in `passkeys` so JWT claims containing arrays (such as
-  `"th"` or `"groups"`) or nested objects can be persisted to disk, propagate `depth` cleanly without persisting it in
-  `user.Claims`, and prefer the authenticated passkey's `email` query parameter over `redirectClaims["email"]` during
-  `RefreshID`.
+* Bug fix:
+  * Register `[]any` and `map[string]any` with `encoding/gob` in `passkeys` so JWT claims containing arrays (such as
+    `"th"` or `"groups"`) or nested objects can be persisted to disk, propagate `depth` cleanly without persisting it in
+    `user.Claims`, and prefer the authenticated passkey's `email` query parameter over `redirectClaims["email"]` during
+    `RefreshID`.
 
 ## v0.26.5
 
