@@ -38,6 +38,7 @@ import (
 	cbor "github.com/fxamacker/cbor/v2"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
+	"github.com/c2FmZQ/tlsproxy/proxy/internal/fromctx"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/idp"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/sid"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/tokenmanager"
@@ -84,10 +85,12 @@ func TestAssertionOptionsUnknownEmail(t *testing.T) {
 
 type fakeIDP struct {
 	loginRequested bool
+	lastOpts       idp.LoginOptions
 }
 
 func (f *fakeIDP) RequestLogin(w http.ResponseWriter, req *http.Request, origURL string, opts ...idp.Option) {
 	f.loginRequested = true
+	f.lastOpts = idp.ApplyOptions(opts)
 	http.Redirect(w, req, "https://idp.example.com/login", http.StatusFound)
 }
 
@@ -184,7 +187,7 @@ func TestDuplicateCredentialIDAndRefreshIDLoop(t *testing.T) {
 	}
 
 	// RefreshID when OtherCookieManager has a valid token for a DIFFERENT user (bob@example.com)
-	// must trigger Other.RequestLogin rather than looping.
+	// must trigger Other.RequestLogin for alice@example.com (even if redirectClaims had email=bob@example.com).
 	req := httptest.NewRequest(http.MethodGet, "https://example.com/passkey", nil)
 	w := httptest.NewRecorder()
 	sid.SetSessionID(w, req, "sid123")
@@ -192,7 +195,7 @@ func TestDuplicateCredentialIDAndRefreshIDLoop(t *testing.T) {
 		req.AddCookie(c)
 	}
 	u, _ := url.Parse("https://example.com/dest")
-	redirectTok, _, err := tm.URLToken(httptest.NewRecorder(), req, u, map[string]any{"email": "alice@example.com"})
+	redirectTok, _, err := tm.URLToken(httptest.NewRecorder(), req, u, map[string]any{"email": "bob@example.com", "depth": 1})
 	if err != nil {
 		t.Fatalf("URLToken: %v", err)
 	}
@@ -212,5 +215,63 @@ func TestDuplicateCredentialIDAndRefreshIDLoop(t *testing.T) {
 	m.HandleCallback(w, refreshReq)
 	if !otherIDP.loginRequested {
 		t.Errorf("HandleCallback(RefreshID) with mismatched user token did not request login from Other IdP")
+	}
+	if got := otherIDP.lastOpts.LoginHint(); got != "alice@example.com" {
+		t.Errorf("Other.RequestLogin LoginHint = %q, want %q", got, "alice@example.com")
+	}
+	if got := otherIDP.lastOpts.Depth(); got != 2 {
+		t.Errorf("Other.RequestLogin Depth = %d, want 2", got)
+	}
+
+	// Verify processAssertion succeeds when OtherCookieManager's token contains []any (e.g. "th"),
+	// map[string]any, and "depth", and that "depth" is stripped from persisted user.Claims.
+	reqWithTH := httptest.NewRequest(http.MethodGet, "https://example.com/passkey", nil)
+	reqWithTH = reqWithTH.WithContext(fromctx.WithTokenHash(reqWithTH.Context(), "prev-token-hash"))
+	w = httptest.NewRecorder()
+	if err := otherCM.SetAuthTokenCookie(w, reqWithTH, "alice", "alice@example.com", "sid123", "example.com", map[string]any{
+		"groups": []string{"admin", "users"},
+		"meta":   map[string]any{"role": "owner"},
+		"depth":  1,
+	}); err != nil {
+		t.Fatalf("SetAuthTokenCookie(alice with th): %v", err)
+	}
+	for _, c := range w.Result().Cookies() {
+		reqWithTH.AddCookie(c)
+	}
+	aliceTok, _, err := otherCM.ValidateAuthTokenCookie(reqWithTH)
+	if err != nil {
+		t.Fatalf("ValidateAuthTokenCookie(alice): %v", err)
+	}
+	aso, err := m.assertionOptions("alice@example.com")
+	if err != nil {
+		t.Fatalf("assertionOptions(alice): %v", err)
+	}
+	id, cd, ad, sig, vh, err := auth.Get(aso)
+	if err != nil {
+		t.Fatalf("auth.Get: %v", err)
+	}
+	assertArgs, _ := json.Marshal(map[string]any{
+		"id":                base64.RawURLEncoding.EncodeToString(id),
+		"clientDataJSON":    Bytes(cd),
+		"authenticatorData": Bytes(ad),
+		"signature":         Bytes(sig),
+		"userHandle":        Bytes(vh),
+		"loginId":           "alice@example.com",
+	})
+	if _, err := m.processAssertion("example.com", string(assertArgs), aliceTok); err != nil {
+		t.Fatalf("processAssertion with []any/map[string]any claims: %v", err)
+	}
+	reloadedDB := m.db
+	reloadedDB.Handles = nil
+	reloadedDB.Subjects = nil
+	if err := store.ReadDataFile(passkeyFile, &reloadedDB); err != nil {
+		t.Fatalf("ReadDataFile after processAssertion: %v", err)
+	}
+	aliceUser := reloadedDB.Handles[reloadedDB.Subjects["alice@example.com"]]
+	if _, ok := aliceUser.Claims["th"].([]any); !ok {
+		t.Errorf("reloadedDB Claims[th] = %T (%v), want []any", aliceUser.Claims["th"], aliceUser.Claims["th"])
+	}
+	if _, ok := aliceUser.Claims["depth"]; ok {
+		t.Errorf("reloadedDB Claims[depth] = %v, want nil", aliceUser.Claims["depth"])
 	}
 }

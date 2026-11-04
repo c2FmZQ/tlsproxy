@@ -30,6 +30,7 @@ import (
 	"crypto/subtle"
 	_ "embed"
 	"encoding/base64"
+	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -68,6 +69,8 @@ var (
 )
 
 func init() {
+	gob.Register([]any(nil))
+	gob.Register(map[string]any(nil))
 	authTemplate = template.Must(template.New("passkey-auth").Parse(authEmbed))
 	manageTemplate = template.Must(template.New("passkey-manage").Parse(manageEmbed))
 }
@@ -326,12 +329,13 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	depth, _ := redirectClaims["depth"].(float64)
 	token, _, err := m.cfg.OtherCookieManager.ValidateAuthTokenCookie(req)
 	needLogin := err != nil
 	if !needLogin && mode == "RefreshID" {
-		email, _ := redirectClaims["email"].(string)
+		email := req.Form.Get("email")
 		if email == "" {
-			email = req.Form.Get("email")
+			email, _ = redirectClaims["email"].(string)
 		}
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok || (email != "" && claims["email"] != email) {
@@ -345,16 +349,15 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 	if needLogin {
 		switch mode {
 		case "RegisterNewID", "RefreshID":
-			depth, _ := redirectClaims["depth"].(int)
 			req.URL.Scheme = "https"
 			req.URL.Host = req.Host
 			opts := []idp.Option{
-				idp.WithDepth(depth + 1),
+				idp.WithDepth(int(depth) + 1),
 			}
 			if mode == "RefreshID" {
-				email, _ := redirectClaims["email"].(string)
+				email := req.Form.Get("email")
 				if email == "" {
-					email = req.Form.Get("email")
+					email, _ = redirectClaims["email"].(string)
 				}
 				opts = append(opts, idp.WithLoginHint(email))
 			}
@@ -467,7 +470,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 		m.cfg.EventRecorder.Record("passkey check request")
-		m.setAuthToken(w, req, originalURL, claims)
+		m.setAuthToken(w, req, originalURL, claims, int(depth))
 
 	case "AddKey":
 		if req.Method != "POST" {
@@ -491,7 +494,7 @@ func (m *Manager) HandleCallback(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		m.cfg.EventRecorder.Record("passkey addkey request")
-		m.setAuthToken(w, req, originalURL, claims)
+		m.setAuthToken(w, req, originalURL, claims, int(depth))
 
 	case "Switch":
 		if req.Method != "POST" {
@@ -752,7 +755,7 @@ func (m *Manager) deleteKey(email string, id Bytes) (retErr error) {
 	return commit(true, nil)
 }
 
-func (m *Manager) setAuthToken(w http.ResponseWriter, req *http.Request, u *url.URL, claims map[string]any) {
+func (m *Manager) setAuthToken(w http.ResponseWriter, req *http.Request, u *url.URL, claims map[string]any, depth int) {
 	if u == nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -771,6 +774,10 @@ func (m *Manager) setAuthToken(w http.ResponseWriter, req *http.Request, u *url.
 	if !ok {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
+	}
+	delete(claims, "depth")
+	if depth > 0 {
+		claims["depth"] = depth
 	}
 	if err := m.cfg.CookieManager.SetAuthTokenCookie(w, req, subject, email, sid, u.Host, claims); err != nil {
 		m.cfg.Logger.Errorf("ERR SetAuthTokenCookie: %v", err)
@@ -910,9 +917,11 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 		u = m.db.Handles[h]
 	}
 	if u == nil {
+		uc := maps.Clone(challenge.claims)
+		delete(uc, "depth")
 		u = &user{
 			Handle: challenge.uid,
-			Claims: challenge.claims,
+			Claims: uc,
 		}
 		uids := base64.RawURLEncoding.EncodeToString(challenge.uid)
 		if m.db.Handles == nil {
@@ -1079,7 +1088,9 @@ func (m *Manager) processAssertion(host, jsargs string, token *jwt.Token) (claim
 	if token != nil {
 		// Refresh claims if ID matches.
 		if nc, ok := token.Claims.(jwt.MapClaims); ok && nc["sub"] == u.Claims["sub"] && nc["email"] == u.Claims["email"] {
-			u.Claims = nc
+			uc := maps.Clone(map[string]any(nc))
+			delete(uc, "depth")
+			u.Claims = uc
 		}
 	}
 
