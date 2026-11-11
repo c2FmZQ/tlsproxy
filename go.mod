@@ -13,7 +13,7 @@ require (
 	github.com/c2FmZQ/http3-go v0.65.0
 	github.com/c2FmZQ/quic-api v0.65.0
 	github.com/c2FmZQ/storage v0.3.4
-	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261030185511-65b8456ea05d
+	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261104191029-aa77a54eb20b
 	github.com/c2FmZQ/tpm v0.6.0
 	github.com/fxamacker/cbor/v2 v2.10.0
 	github.com/go-test/deep v1.1.0
@@ -27,7 +27,7 @@ require (
 	github.com/russellhaering/goxmldsig v1.6.1
 	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.62.0
-	golang.org/x/sys v0.49.0
+	golang.org/x/sys v0.50.0
 	golang.org/x/time v0.16.0
 	gopkg.in/yaml.v3 v3.0.1
 	software.sslmate.com/src/go-pkcs12 v0.7.4
@@ -42,5 +42,5 @@ require (
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 )
