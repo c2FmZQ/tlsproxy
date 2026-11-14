@@ -36,7 +36,28 @@ CLIENTID="$1"
 BASEURL="$(echo $2 | sed -re 's:/+$::')" # remove trailing /
 PUBKEY="$3"
 CERTFILE="${PUBKEY/.pub/}-cert.pub"
+
+is_current() {
+  if [[ ! -e "$1" ]]; then
+    return 1
+  fi
+  local exp_str exp now
+  exp_str="$(ssh-keygen -L -f "$1" 2>/dev/null | awk '/Valid:/ {print $5}')"
+  if [[ -z "${exp_str}" ]]; then
+    return 1
+  fi
+  exp="$(date -d "${exp_str}" +%s)" || return 1
+  now="$(date +%s)"
+  (( now + 60 <= exp ))
+}
+
+if is_current "${CERTFILE}"; then
+  echo "Certificate ${CERTFILE} is current"
+  exit 0
+fi
+
 TMPFILE="$(mktemp)"
+trap 'rm -f "${TMPFILE}"' EXIT
 
 export BASEURL PUBKEY CERTFILE TMPFILE
 
