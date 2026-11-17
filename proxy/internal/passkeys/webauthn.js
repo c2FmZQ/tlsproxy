@@ -25,6 +25,14 @@
 
 'use strict';
 
+function decodeBytes(v) {
+  if (typeof v === 'string') {
+    const b64 = v.replace(/-/g, '+').replace(/_/g, '/');
+    return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  }
+  return new Uint8Array(v);
+}
+
 function registerPasskey(token) {
   if (!('PublicKeyCredential' in window)) {
     throw new Error('Browser doesn\'t support WebAuthn');
@@ -40,13 +48,13 @@ function registerPasskey(token) {
     return resp.json();
   })
   .then(options => {
-    options.challenge = new Uint8Array(options.challenge);
+    options.challenge = decodeBytes(options.challenge);
     if (options.excludeCredentials) {
       for (let i = 0; i < options.excludeCredentials.length; i++) {
-        options.excludeCredentials[i].id = new Uint8Array(options.excludeCredentials[i].id);
+        options.excludeCredentials[i].id = decodeBytes(options.excludeCredentials[i].id);
       }
     }
-    options.user.id = new Uint8Array(options.user.id);
+    options.user.id = decodeBytes(options.user.id);
     return navigator.credentials.create({publicKey: options});
   })
   .then(pkc => {
@@ -110,9 +118,11 @@ function loginWithPasskey(token, loginId) {
     return resp.json();
   })
   .then(options => {
-    options.challenge = new Uint8Array(options.challenge);
-    for (let i = 0; i < options.allowCredentials.length; i++) {
-      options.allowCredentials[i].id = new Uint8Array(options.allowCredentials[i].id);
+    options.challenge = decodeBytes(options.challenge);
+    if (options.allowCredentials) {
+      for (let i = 0; i < options.allowCredentials.length; i++) {
+        options.allowCredentials[i].id = decodeBytes(options.allowCredentials[i].id);
+      }
     }
     return navigator.credentials.get({publicKey: options})
   })

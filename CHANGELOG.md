@@ -1,5 +1,11 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :wrench: Misc
+
+* Migrate to github.com/c2FmZQ/webauthn
+
 ## v0.26.7
 
 ### :wrench: Misc

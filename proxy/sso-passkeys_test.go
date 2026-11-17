@@ -41,6 +41,7 @@ import (
 	"github.com/c2FmZQ/tlsproxy/certmanager"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/oidc"
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/passkeys"
+	"github.com/c2FmZQ/webauthn"
 )
 
 func TestSSOEnforcePasskey(t *testing.T) {
@@ -212,9 +213,9 @@ func TestSSOEnforcePasskey(t *testing.T) {
 				t.Errorf("Body = %v, want %v", haystack, needle)
 			}
 
-			auth, err := passkeys.NewFakeAuthenticator()
+			auth, err := webauthn.NewFakeAuthenticator()
 			if err != nil {
-				t.Fatalf("passkeys.NewFakeAuthenticator: %v", err)
+				t.Fatalf("webauthn.NewFakeAuthenticator: %v", err)
 			}
 			auth.SetOrigin("https://" + host)
 
@@ -223,7 +224,7 @@ func TestSSOEnforcePasskey(t *testing.T) {
 			if got, want := code, 200; got != want {
 				t.Errorf("Code = %v, want %v", got, want)
 			}
-			var ao passkeys.AttestationOptions
+			var ao webauthn.AttestationOptions
 			if err := json.Unmarshal([]byte(body), &ao); err != nil {
 				t.Fatalf("AttestationOptions: %v", err)
 			}
@@ -232,8 +233,8 @@ func TestSSOEnforcePasskey(t *testing.T) {
 				t.Fatalf("auth.Create: %v", err)
 			}
 			data := struct {
-				ClientDataJSON    passkeys.Bytes `json:"clientDataJSON"`
-				AttestationObject passkeys.Bytes `json:"attestationObject"`
+				ClientDataJSON    webauthn.Bytes `json:"clientDataJSON"`
+				AttestationObject webauthn.Bytes `json:"attestationObject"`
 				Transports        []string       `json:"transports"`
 			}{
 				ClientDataJSON:    clientDataJSON,
@@ -292,7 +293,7 @@ func TestSSOEnforcePasskey(t *testing.T) {
 				if got, want := code, 200; got != want {
 					t.Errorf("Code = %v, want %v", got, want)
 				}
-				var aso passkeys.AssertionOptions
+				var aso webauthn.AssertionOptions
 				if err := json.Unmarshal([]byte(body), &aso); err != nil {
 					t.Fatalf("AssertionOptions: %v", err)
 				}
@@ -303,10 +304,10 @@ func TestSSOEnforcePasskey(t *testing.T) {
 				}
 				data := struct {
 					ID                string         `json:"id"`
-					ClientDataJSON    passkeys.Bytes `json:"clientDataJSON"`
-					AuthenticatorData passkeys.Bytes `json:"authenticatorData"`
-					Signature         passkeys.Bytes `json:"signature"`
-					UserHandle        passkeys.Bytes `json:"userHandle"`
+					ClientDataJSON    webauthn.Bytes `json:"clientDataJSON"`
+					AuthenticatorData webauthn.Bytes `json:"authenticatorData"`
+					Signature         webauthn.Bytes `json:"signature"`
+					UserHandle        webauthn.Bytes `json:"userHandle"`
 				}{
 					ID:                base64.RawURLEncoding.EncodeToString(id),
 					ClientDataJSON:    clientDataJSON,

@@ -35,6 +35,7 @@ import (
 
 	"github.com/c2FmZQ/storage"
 	"github.com/c2FmZQ/storage/crypto"
+	"github.com/c2FmZQ/webauthn"
 	cbor "github.com/fxamacker/cbor/v2"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
@@ -59,7 +60,7 @@ func TestAssertionOptionsUnknownEmail(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	fakeID := func(email string) Bytes {
+	fakeID := func(email string) webauthn.Bytes {
 		t.Helper()
 		opts, err := m.assertionOptions(email)
 		if err != nil {
@@ -134,7 +135,7 @@ func TestDuplicateCredentialIDAndRefreshIDLoop(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	auth, err := NewFakeAuthenticator()
+	auth, err := webauthn.NewFakeAuthenticator()
 	if err != nil {
 		t.Fatalf("NewFakeAuthenticator: %v", err)
 	}
@@ -157,8 +158,8 @@ func TestDuplicateCredentialIDAndRefreshIDLoop(t *testing.T) {
 		t.Fatalf("auth.Create: %v", err)
 	}
 	jsArgs, _ := json.Marshal(map[string]any{
-		"clientDataJSON":    Bytes(cdJSON),
-		"attestationObject": Bytes(attObj),
+		"clientDataJSON":    webauthn.Bytes(cdJSON),
+		"attestationObject": webauthn.Bytes(attObj),
 	})
 	if _, err := m.processAttestation(aliceClaims, "example.com", string(jsArgs), true); err != nil {
 		t.Fatalf("processAttestation(1): %v", err)
@@ -169,18 +170,18 @@ func TestDuplicateCredentialIDAndRefreshIDLoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("attestationOptions(2): %v", err)
 	}
-	var att attestation
+	var att webauthn.Attestation
 	if err := cbor.Unmarshal(attObj, &att); err != nil {
 		t.Fatalf("cbor.Unmarshal: %v", err)
 	}
-	cd2, _ := json.Marshal(clientData{
+	cd2, _ := json.Marshal(webauthn.ClientData{
 		Type:      "webauthn.create",
 		Challenge: base64.RawURLEncoding.EncodeToString(opts2.Challenge),
 		Origin:    "https://example.com",
 	})
 	jsArgs2, _ := json.Marshal(map[string]any{
-		"clientDataJSON":    Bytes(cd2),
-		"attestationObject": Bytes(attObj),
+		"clientDataJSON":    webauthn.Bytes(cd2),
+		"attestationObject": webauthn.Bytes(attObj),
 	})
 	if _, err := m.processAttestation(aliceClaims, "example.com", string(jsArgs2), true); err == nil {
 		t.Errorf("processAttestation allowed duplicate credential ID")
@@ -252,10 +253,10 @@ func TestDuplicateCredentialIDAndRefreshIDLoop(t *testing.T) {
 	}
 	assertArgs, _ := json.Marshal(map[string]any{
 		"id":                base64.RawURLEncoding.EncodeToString(id),
-		"clientDataJSON":    Bytes(cd),
-		"authenticatorData": Bytes(ad),
-		"signature":         Bytes(sig),
-		"userHandle":        Bytes(vh),
+		"clientDataJSON":    webauthn.Bytes(cd),
+		"authenticatorData": webauthn.Bytes(ad),
+		"signature":         webauthn.Bytes(sig),
+		"userHandle":        webauthn.Bytes(vh),
 		"loginId":           "alice@example.com",
 	})
 	if _, err := m.processAssertion("example.com", string(assertArgs), aliceTok); err != nil {
@@ -273,5 +274,186 @@ func TestDuplicateCredentialIDAndRefreshIDLoop(t *testing.T) {
 	}
 	if _, ok := aliceUser.Claims["depth"]; ok {
 		t.Errorf("reloadedDB Claims[depth] = %v, want nil", aliceUser.Claims["depth"])
+	}
+}
+
+func TestBackwardCompatibility(t *testing.T) {
+	mk, err := crypto.CreateAESMasterKeyForTest()
+	if err != nil {
+		t.Fatalf("crypto.CreateAESMasterKeyForTest: %v", err)
+	}
+	store := storage.New(t.TempDir(), mk)
+	tm, err := tokenmanager.New(store, nil, nil)
+	if err != nil {
+		t.Fatalf("tokenmanager.New: %v", err)
+	}
+
+	// Simulate a passkey database file written by the previous implementation
+	// before switching to github.com/c2FmZQ/webauthn.
+	type legacyBytes []byte
+	type legacyUserKey struct {
+		Name       string
+		ID         legacyBytes
+		PublicKey  legacyBytes
+		RPIDHash   legacyBytes
+		Transports []string
+		CreatedAt  time.Time
+		LastSeen   time.Time
+		SignCount  uint32
+	}
+	type legacyUser struct {
+		Handle legacyBytes
+		Keys   []*legacyUserKey
+		Claims map[string]any
+	}
+	var legacyDB struct {
+		Handles  map[string]*legacyUser
+		Subjects map[string]string
+	}
+
+	auth, err := webauthn.NewFakeAuthenticator()
+	if err != nil {
+		t.Fatalf("NewFakeAuthenticator: %v", err)
+	}
+	auth.SetOrigin("https://example.com")
+
+	userHandle := []byte("legacy-alice-handle-0123456789ab")
+	userHandleStr := base64.RawURLEncoding.EncodeToString(userHandle)
+	legacyDB.Handles = map[string]*legacyUser{
+		userHandleStr: {
+			Handle: legacyBytes(userHandle),
+			Claims: map[string]any{
+				"email": "alice@example.com",
+				"sub":   "alice-sub",
+				"sid":   "alice-sid",
+			},
+		},
+	}
+	legacyDB.Subjects = map[string]string{
+		"alice@example.com": userHandleStr,
+	}
+
+	// Create legacy ES256 and RS256 keys via FakeAuthenticator and store them in legacyDB.
+	for _, alg := range []int{webauthn.AlgES256, webauthn.AlgRS256} {
+		opts, err := webauthn.NewAttestationOptions()
+		if err != nil {
+			t.Fatalf("NewAttestationOptions: %v", err)
+		}
+		opts.RelyingParty.ID = "example.com"
+		opts.User.ID = userHandle
+		opts.PubKeyCredParams = []webauthn.PubKeyCredParam{{Type: "public-key", Alg: alg}}
+		_, attObj, err := auth.Create(opts)
+		if err != nil {
+			t.Fatalf("auth.Create(%d): %v", alg, err)
+		}
+		ao, err := webauthn.ParseAttestationObject(attObj)
+		if err != nil {
+			t.Fatalf("ParseAttestationObject(%d): %v", alg, err)
+		}
+		creds := ao.AuthData.AttestedCredentials
+		legacyDB.Handles[userHandleStr].Keys = append(legacyDB.Handles[userHandleStr].Keys, &legacyUserKey{
+			ID:         legacyBytes(creds.ID),
+			PublicKey:  legacyBytes(creds.COSEKey),
+			RPIDHash:   legacyBytes(ao.AuthData.RPIDHash),
+			Transports: []string{"internal"},
+			CreatedAt:  time.Now().Add(-time.Hour).UTC(),
+			LastSeen:   time.Now().Add(-time.Hour).UTC(),
+			SignCount:  ao.AuthData.SignCount,
+		})
+	}
+
+	store.CreateEmptyFile(passkeyFile, &legacyDB)
+	if err := store.SaveDataFile(passkeyFile, &legacyDB); err != nil {
+		t.Fatalf("SaveDataFile(legacyDB): %v", err)
+	}
+
+	// Open with the new Manager and verify all legacy keys load and work.
+	m, err := NewManager(Config{
+		Store:         store,
+		Endpoint:      "https://example.com/passkey",
+		EventRecorder: nopRecorder{},
+		TokenManager:  tm,
+		Logger:        nopLogger{},
+	})
+	if err != nil {
+		t.Fatalf("NewManager with legacy DB: %v", err)
+	}
+	if !m.subjectIsRegistered("alice@example.com") {
+		t.Fatalf("subjectIsRegistered(alice@example.com) = false, want true")
+	}
+	if got := len(m.keys("alice@example.com")); got != 2 {
+		t.Fatalf("len(m.keys) = %d, want 2", got)
+	}
+
+	// Authenticate using the legacy keys sending JSON number arrays (like webauthn.js does).
+	toIntSlice := func(b []byte) []int {
+		out := make([]int, len(b))
+		for i, v := range b {
+			out[i] = int(v)
+		}
+		return out
+	}
+
+	for i, key := range m.db.Handles[userHandleStr].Keys {
+		aso, err := m.assertionOptions("alice@example.com")
+		if err != nil {
+			t.Fatalf("assertionOptions(%d): %v", i, err)
+		}
+		if len(aso.AllowCredentials) != 2 {
+			t.Fatalf("AllowCredentials len = %d, want 2", len(aso.AllowCredentials))
+		}
+		// Restrict AllowCredentials to test each legacy key individually.
+		asoSingle := *aso
+		asoSingle.AllowCredentials = []webauthn.CredentialID{{Type: "public-key", ID: key.ID}}
+		id, cd, ad, sig, vh, err := auth.Get(&asoSingle)
+		if err != nil {
+			t.Fatalf("auth.Get(%d): %v", i, err)
+		}
+		assertArgs, err := json.Marshal(map[string]any{
+			"id":                base64.RawURLEncoding.EncodeToString(id),
+			"clientDataJSON":    toIntSlice(cd),
+			"authenticatorData": toIntSlice(ad),
+			"signature":         toIntSlice(sig),
+			"userHandle":        toIntSlice(vh),
+			"loginId":           "alice@example.com",
+		})
+		if err != nil {
+			t.Fatalf("json.Marshal: %v", err)
+		}
+		claims, err := m.processAssertion("example.com", string(assertArgs), nil)
+		if err != nil {
+			t.Fatalf("processAssertion(legacy key %d): %v", i, err)
+		}
+		if claims["email"] != "alice@example.com" {
+			t.Errorf("claims[email] = %v, want alice@example.com", claims["email"])
+		}
+	}
+
+	// Also verify registering a new Ed25519 (AlgEdDSA) passkey for the legacy user
+	// with webauthn.js byte-array args, and then authenticating with it.
+	aliceClaims := m.db.Handles[userHandleStr].Claims
+	attOpts, err := m.attestationOptions(aliceClaims)
+	if err != nil {
+		t.Fatalf("attestationOptions: %v", err)
+	}
+	if len(attOpts.ExcludeCredentials) != 2 {
+		t.Fatalf("ExcludeCredentials len = %d, want 2", len(attOpts.ExcludeCredentials))
+	}
+	edOpts := *attOpts
+	edOpts.PubKeyCredParams = []webauthn.PubKeyCredParam{{Type: "public-key", Alg: webauthn.AlgEdDSA}}
+	cdJSON, attObj, err := auth.Create(&edOpts)
+	if err != nil {
+		t.Fatalf("auth.Create(EdDSA): %v", err)
+	}
+	regArgs, _ := json.Marshal(map[string]any{
+		"clientDataJSON":    toIntSlice(cdJSON),
+		"attestationObject": toIntSlice(attObj),
+		"transports":        []string{"hybrid"},
+	})
+	if _, err := m.processAttestation(aliceClaims, "example.com", string(regArgs), true); err != nil {
+		t.Fatalf("processAttestation(EdDSA): %v", err)
+	}
+	if got := len(m.keys("alice@example.com")); got != 3 {
+		t.Fatalf("len(m.keys) after EdDSA registration = %d, want 3", got)
 	}
 }
