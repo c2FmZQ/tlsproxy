@@ -47,6 +47,7 @@ import (
 	"time"
 
 	"github.com/c2FmZQ/storage"
+	"github.com/c2FmZQ/webauthn"
 	jwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
@@ -76,16 +77,16 @@ func init() {
 }
 
 type user struct {
-	Handle Bytes
+	Handle webauthn.Bytes
 	Keys   []*userKey
 	Claims map[string]any
 }
 
 type userKey struct {
 	Name       string
-	ID         Bytes
-	PublicKey  Bytes
-	RPIDHash   Bytes
+	ID         webauthn.Bytes
+	PublicKey  webauthn.Bytes
+	RPIDHash   webauthn.Bytes
 	Transports []string
 	CreatedAt  time.Time
 	LastSeen   time.Time
@@ -727,7 +728,7 @@ func (m *Manager) subjectIsRegistered(email string) bool {
 	return ok && len(u.Keys) > 0
 }
 
-func (m *Manager) deleteKey(email string, id Bytes) (retErr error) {
+func (m *Manager) deleteKey(email string, id webauthn.Bytes) (retErr error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -791,8 +792,8 @@ func (m *Manager) setAuthToken(w http.ResponseWriter, req *http.Request, u *url.
 	})
 }
 
-func (m *Manager) attestationOptions(claims map[string]any) (*AttestationOptions, error) {
-	opts, err := newAttestationOptions()
+func (m *Manager) attestationOptions(claims map[string]any) (*webauthn.AttestationOptions, error) {
+	opts, err := webauthn.NewAttestationOptions()
 	if err != nil {
 		return nil, err
 	}
@@ -818,7 +819,7 @@ func (m *Manager) attestationOptions(claims map[string]any) (*AttestationOptions
 		}
 		opts.User.ID = u.Handle
 		for _, key := range u.Keys {
-			opts.ExcludeCredentials = append(opts.ExcludeCredentials, CredentialID{
+			opts.ExcludeCredentials = append(opts.ExcludeCredentials, webauthn.CredentialID{
 				Type:       "public-key",
 				ID:         key.ID,
 				Transports: key.Transports,
@@ -848,18 +849,18 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 		return nil, errors.New("invalid email")
 	}
 	var args struct {
-		ClientDataJSON    Bytes    `json:"clientDataJSON"`
-		AttestationObject Bytes    `json:"attestationObject"`
-		Transports        []string `json:"transports"`
+		ClientDataJSON    webauthn.Bytes `json:"clientDataJSON"`
+		AttestationObject webauthn.Bytes `json:"attestationObject"`
+		Transports        []string       `json:"transports"`
 	}
 	if err := json.Unmarshal([]byte(jsargs), &args); err != nil {
 		return nil, err
 	}
-	cd, err := parseClientData(args.ClientDataJSON)
+	cd, err := webauthn.ParseClientData(args.ClientDataJSON)
 	if err != nil {
 		return nil, err
 	}
-	if cd.Type != "webauthn.create" {
+	if cd.Type != "webauthn.create" || cd.CrossOrigin {
 		return nil, errors.New("expected clientData.type")
 	}
 	origin := "https://" + host
@@ -876,7 +877,7 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 		return nil, errors.New("invalid challenge")
 	}
 
-	ao, err := parseAttestationObject(args.AttestationObject)
+	ao, err := webauthn.ParseAttestationObject(args.AttestationObject)
 	if err != nil {
 		return nil, err
 	}
@@ -953,8 +954,8 @@ func (m *Manager) processAttestation(claims map[string]any, host, jsargs string,
 	return c, commit(true, nil)
 }
 
-func (m *Manager) assertionOptions(email string) (*AssertionOptions, error) {
-	opts, err := newAssertionOptions()
+func (m *Manager) assertionOptions(email string) (*webauthn.AssertionOptions, error) {
+	opts, err := webauthn.NewAssertionOptions()
 	if err != nil {
 		return nil, err
 	}
@@ -968,7 +969,7 @@ func (m *Manager) assertionOptions(email string) (*AssertionOptions, error) {
 	if h, ok := m.db.Subjects[email]; ok {
 		if u, ok := m.db.Handles[h]; ok {
 			for _, key := range u.Keys {
-				opts.AllowCredentials = append(opts.AllowCredentials, CredentialID{
+				opts.AllowCredentials = append(opts.AllowCredentials, webauthn.CredentialID{
 					Type:       "public-key",
 					ID:         key.ID,
 					Transports: key.Transports,
@@ -980,9 +981,9 @@ func (m *Manager) assertionOptions(email string) (*AssertionOptions, error) {
 		// error like "No passkey registered for ...". The ID looks
 		// like a real one, and is always the same for a given email,
 		// so that it doesn't reveal whether the email is registered.
-		opts.AllowCredentials = append(opts.AllowCredentials, CredentialID{
+		opts.AllowCredentials = append(opts.AllowCredentials, webauthn.CredentialID{
 			Type:       "public-key",
-			ID:         Bytes(m.cfg.TokenManager.HMAC([]byte("fake passkey id\x00" + email))),
+			ID:         webauthn.Bytes(m.cfg.TokenManager.HMAC([]byte("fake passkey id\x00" + email))),
 			Transports: []string{"hybrid", "internal"},
 		})
 	}
@@ -991,30 +992,33 @@ func (m *Manager) assertionOptions(email string) (*AssertionOptions, error) {
 
 func (m *Manager) processAssertion(host, jsargs string, token *jwt.Token) (claims map[string]any, retErr error) {
 	var args struct {
-		ID                string `json:"id"`
-		ClientDataJSON    Bytes  `json:"clientDataJSON"`
-		AuthenticatorData Bytes  `json:"authenticatorData"`
-		Signature         Bytes  `json:"signature"`
-		UserHandle        Bytes  `json:"userHandle"`
-		LoginID           string `json:"loginId"`
+		ID                string         `json:"id"`
+		ClientDataJSON    webauthn.Bytes `json:"clientDataJSON"`
+		AuthenticatorData webauthn.Bytes `json:"authenticatorData"`
+		Signature         webauthn.Bytes `json:"signature"`
+		UserHandle        webauthn.Bytes `json:"userHandle"`
+		LoginID           string         `json:"loginId"`
 	}
 	if err := json.Unmarshal([]byte(jsargs), &args); err != nil {
 		return nil, err
 	}
-	cd, err := parseClientData(args.ClientDataJSON)
+	cd, err := webauthn.ParseClientData(args.ClientDataJSON)
 	if err != nil {
 		return nil, err
 	}
-	if cd.Type != "webauthn.get" {
+	if cd.Type != "webauthn.get" || cd.CrossOrigin {
 		return nil, errors.New("unexpected clientData.type")
 	}
 	if origin := "https://" + host; cd.Origin != origin {
 		m.cfg.Logger.Errorf("ERR cd.Origin: %q != %q", cd.Origin, origin)
 		return nil, errors.New("unexpected clientData.origin")
 	}
-	var authData authenticatorData
-	if err := parseAuthenticatorData(args.AuthenticatorData, &authData); err != nil {
+	var authData webauthn.AuthenticatorData
+	if err := webauthn.ParseAuthenticatorData(args.AuthenticatorData, &authData); err != nil {
 		return nil, err
+	}
+	if authData.AttestedCredentialData {
+		return nil, errors.New("unexpected attested credential data in assertion")
 	}
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
@@ -1071,7 +1075,7 @@ func (m *Manager) processAssertion(host, jsargs string, token *jwt.Token) (claim
 	if subtle.ConstantTimeCompare(authData.RPIDHash, key.RPIDHash) != 1 {
 		return nil, errors.New("rpIdHash mismatch")
 	}
-	if err := verifySignature(key.PublicKey, args.AuthenticatorData, args.ClientDataJSON, args.Signature); err != nil {
+	if err := webauthn.VerifySignature(key.PublicKey, args.AuthenticatorData, args.ClientDataJSON, args.Signature); err != nil {
 		return nil, err
 	}
 	// A signature counter that doesn't increase may indicate that the

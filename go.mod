@@ -1,6 +1,6 @@
 module github.com/c2FmZQ/tlsproxy
 
-go 1.27.0
+go 1.27.4
 
 godebug multipathtcp=0
 
@@ -15,6 +15,7 @@ require (
 	github.com/c2FmZQ/storage v0.3.4
 	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261104191029-aa77a54eb20b
 	github.com/c2FmZQ/tpm v0.6.0
+	github.com/c2FmZQ/webauthn v0.0.0-20261117022304-9643eefd1e03
 	github.com/fxamacker/cbor/v2 v2.10.0
 	github.com/go-test/deep v1.1.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -25,7 +26,7 @@ require (
 	github.com/pires/go-proxyproto v0.16.0
 	github.com/quic-go/quic-go v0.65.0
 	github.com/russellhaering/goxmldsig v1.6.1
-	golang.org/x/crypto v0.58.0
+	golang.org/x/crypto v0.59.0
 	golang.org/x/net v0.62.0
 	golang.org/x/sys v0.50.0
 	golang.org/x/time v0.16.0
