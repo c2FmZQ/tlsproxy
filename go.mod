@@ -15,7 +15,7 @@ require (
 	github.com/c2FmZQ/storage v0.3.4
 	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261104191029-aa77a54eb20b
 	github.com/c2FmZQ/tpm v0.6.0
-	github.com/c2FmZQ/webauthn v0.0.0-20261117022304-9643eefd1e03
+	github.com/c2FmZQ/webauthn v0.1.0
 	github.com/fxamacker/cbor/v2 v2.10.0
 	github.com/go-test/deep v1.1.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
