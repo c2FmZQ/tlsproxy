@@ -4,6 +4,12 @@
 
 ### :wrench: Misc
 
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/http3-go v0.65.0 => v0.66.0
+  * upgraded github.com/c2FmZQ/quic-api v0.65.0 => v0.66.0
+  * upgraded github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261104191029-aa77a54eb20b => v0.0.0-20261118221516-b4d49459d942
+  * upgraded github.com/quic-go/quic-go v0.65.0 => v0.66.0
+  * upgraded golang.org/x/net v0.62.0 => v0.63.0
 * Migrate to github.com/c2FmZQ/webauthn
 
 ## v0.26.7
