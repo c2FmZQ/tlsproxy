@@ -10,24 +10,24 @@ require (
 	github.com/c2FmZQ/ech v0.4.4
 	github.com/c2FmZQ/ech/publish v0.1.3
 	github.com/c2FmZQ/ech/quic v0.3.7
-	github.com/c2FmZQ/http3-go v0.65.0
-	github.com/c2FmZQ/quic-api v0.65.0
+	github.com/c2FmZQ/http3-go v0.66.0
+	github.com/c2FmZQ/quic-api v0.66.0
 	github.com/c2FmZQ/storage v0.3.4
-	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261104191029-aa77a54eb20b
+	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261118221516-b4d49459d942
 	github.com/c2FmZQ/tpm v0.6.0
 	github.com/c2FmZQ/webauthn v0.1.0
 	github.com/fxamacker/cbor/v2 v2.10.0
 	github.com/go-test/deep v1.1.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-tpm-tools v0.4.10
-	github.com/gorilla/websocket v1.5.3
+	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/pires/go-proxyproto v0.16.0
-	github.com/quic-go/quic-go v0.65.0
+	github.com/quic-go/quic-go v0.66.0
 	github.com/russellhaering/goxmldsig v1.6.1
 	golang.org/x/crypto v0.59.0
-	golang.org/x/net v0.62.0
+	golang.org/x/net v0.63.0
 	golang.org/x/sys v0.50.0
 	golang.org/x/time v0.16.0
 	gopkg.in/yaml.v3 v3.0.1
