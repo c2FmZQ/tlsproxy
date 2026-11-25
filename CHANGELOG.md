@@ -1,6 +1,6 @@
 # TLSPROXY Release Notes
 
-## next
+## v0.27.0
 
 ### :warning: Breaking changes
 
