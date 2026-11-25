@@ -23,13 +23,21 @@
 
 package proxy
 
+// Enable HTTP/2 Extended CONNECT (RFC 8441) via GODEBUG=http2xconnect=1 before
+// net/http initializes (needed until Go 1.28's HTTP2Config.EnableConnectProtocol).
+import _ "github.com/c2FmZQ/websocket/h2xconnect"
+
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -42,8 +50,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
+	"golang.org/x/net/http/httpguts"
 	"golang.org/x/net/http2"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/cookiemanager"
@@ -76,7 +87,7 @@ var (
 func (be *Backend) logPanic(req *http.Request, recovered any) {
 	if recovered == http.ErrAbortHandler {
 		be.logErrorF("ERR %s ➔ %s %s ➔ Aborted (%q)", formatReqDesc(req), req.Method, req.URL, userAgent(req))
-		return
+		panic(http.ErrAbortHandler)
 	}
 	be.logErrorF("PANIC: %#v\n%s", recovered, string(debug.Stack()))
 }
@@ -91,6 +102,9 @@ func (be *Backend) localHandler() http.Handler {
 			}
 		}()
 		if !be.checkRequestHost(w, req) {
+			return
+		}
+		if !be.checkConnectRequest(w, req) {
 			return
 		}
 		if !be.authenticateUser(w, &req) {
@@ -228,9 +242,10 @@ func (be *Backend) serveStaticFiles(w http.ResponseWriter, req *http.Request, do
 // reverseProxy returns an HTTP handler for backends that act as a reverse
 // proxy for remote servers. This handler can also serve local endpoints.
 func (be *Backend) reverseProxy() http.Handler {
+	transport := be.reverseProxyTransport()
 	reverseProxy := &httputil.ReverseProxy{
 		Director:       be.reverseProxyDirector,
-		Transport:      be.reverseProxyTransport(),
+		Transport:      transport,
 		ModifyResponse: be.reverseProxyModifyResponse,
 	}
 
@@ -245,6 +260,9 @@ func (be *Backend) reverseProxy() http.Handler {
 		// clients can't use it to strip proxy-injected headers.
 		cleanConnectionHeaders(req.Header)
 		if !be.checkRequestHost(w, req) {
+			return
+		}
+		if !be.checkConnectRequest(w, req) {
 			return
 		}
 		if !be.authenticateUser(w, &req) {
@@ -343,7 +361,11 @@ func (be *Backend) reverseProxy() http.Handler {
 				return
 			}
 		}
-		hops = append(hops, req.Proto+" "+me)
+		viaProto := req.Proto
+		if req.ProtoMajor == 3 {
+			viaProto = "HTTP/3.0"
+		}
+		hops = append(hops, viaProto+" "+me)
 		req.Header.Set(viaHeader, strings.Join(hops, ", "))
 
 		if sanitizePath {
@@ -379,12 +401,16 @@ func (be *Backend) reverseProxy() http.Handler {
 		// To improve compatibility, we explicitly set the value to 0
 		// the HTTP methods don't expect a body and the client didn't
 		// provide a content length.
-		if req.ContentLength < 0 && req.Method != http.MethodPost && req.Method != http.MethodPut && req.Method != http.MethodPatch {
+		if req.ContentLength < 0 && req.Method != http.MethodPost && req.Method != http.MethodPut && req.Method != http.MethodPatch && req.Method != http.MethodConnect {
 			req.ContentLength = 0
 		}
 		if req.ContentLength == 0 && req.Body != nil {
 			req.Body.Close()
 			req.Body = nil
+		}
+		if extProto, isExt, _ := extendedConnectProtocol(req); isExt {
+			be.forwardExtendedConnect(w, req.WithContext(ctx), transport, extProto)
+			return
 		}
 		reverseProxy.ServeHTTP(w, req.WithContext(ctx))
 	})
@@ -518,8 +544,10 @@ func (be *Backend) handleLocalEndpointsAndAuthorize(w http.ResponseWriter, req *
 		}
 		setNoFrameHeaders(w.Header())
 		be.setAltSvc(w.Header(), req)
-		// Set a sensible limit for local handlers.
-		req.Body = http.MaxBytesReader(w, req.Body, 102400)
+		if !be.localHandlers[hi].noBodyLimit {
+			// Set a sensible limit for local handlers.
+			req.Body = http.MaxBytesReader(w, req.Body, 102400)
+		}
 		be.localHandlers[hi].handler.ServeHTTP(w, req)
 		return false
 	}
@@ -585,15 +613,7 @@ func (be *Backend) reverseProxyTransport() http.RoundTripper {
 			return h1.RoundTrip(req)
 		}
 
-		proto := "http/1.1"
-		if id, ok := req.Context().Value(ctxOverrideIDKey).(int); ok && id >= 0 && id < len(be.PathOverrides) && be.PathOverrides[id].BackendProto != nil {
-			proto = *be.PathOverrides[id].BackendProto
-		} else if be.BackendProto != nil {
-			proto = *be.BackendProto
-		}
-		if proto == "" && req.TLS != nil && req.TLS.NegotiatedProtocol != "" {
-			proto = req.TLS.NegotiatedProtocol
-		}
+		proto := be.backendProto(req)
 		if proto == "h3" && h3 != nil {
 			return h3.RoundTrip(req)
 		}
@@ -604,10 +624,65 @@ func (be *Backend) reverseProxyTransport() http.RoundTripper {
 	})
 }
 
-func isConnectionUpgrade(h http.Header) bool {
-	for _, v := range h.Values("Connection") {
+type eofSignalReader struct {
+	r    io.Reader
+	once sync.Once
+	done chan struct{}
+}
+
+func newEOFSignalReader(r io.Reader) *eofSignalReader {
+	done := make(chan struct{})
+	if r == nil {
+		close(done)
+		return &eofSignalReader{r: http.NoBody, done: done}
+	}
+	return &eofSignalReader{r: r, done: done}
+}
+
+func (e *eofSignalReader) Read(p []byte) (int, error) {
+	n, err := e.r.Read(p)
+	if err != nil {
+		e.once.Do(func() { close(e.done) })
+	}
+	return n, err
+}
+
+var hopByHopHeaders = []string{
+	"Connection",
+	"Proxy-Connection",
+	"Keep-Alive",
+	"Proxy-Authenticate",
+	"Proxy-Authorization",
+	"Te",
+	"Trailer",
+	"Transfer-Encoding",
+	"Upgrade",
+	"HTTP2-Settings",
+}
+
+func removeHopByHopHeaders(h http.Header, preserveTETrailers bool) {
+	cleanConnectionHeaders(h)
+	teTrailers := preserveTETrailers && headerContainsToken(h, "Te", "trailers")
+	for _, k := range hopByHopHeaders {
+		delHeaderVariants(h, k)
+	}
+	if teTrailers {
+		h.Set("Te", "trailers")
+	}
+}
+
+func copyHeader(dst, src http.Header) {
+	for k, vv := range src {
+		for _, v := range vv {
+			dst.Add(k, v)
+		}
+	}
+}
+
+func headerContainsToken(h http.Header, key, token string) bool {
+	for _, v := range h.Values(key) {
 		for _, tok := range strings.Split(v, ",") {
-			if strings.EqualFold(strings.TrimSpace(tok), "upgrade") {
+			if strings.EqualFold(strings.TrimSpace(tok), token) {
 				return true
 			}
 		}
@@ -615,11 +690,392 @@ func isConnectionUpgrade(h http.Header) bool {
 	return false
 }
 
+func computeWebSocketAccept(challengeKey string) string {
+	const wsGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+	h := sha1.New()
+	h.Write([]byte(challengeKey))
+	h.Write([]byte(wsGUID))
+	return base64.StdEncoding.EncodeToString(h.Sum(nil))
+}
+
+func isH2TransportProtocolHeaderUnsupported(err error) bool {
+	// In Go 1.27 (without -tags http2legacy), net/http.Transport rejects the
+	// ":protocol" header on outbound HTTP/2 requests (go.dev/issue/53208).
+	return err != nil && strings.Contains(err.Error(), `invalid header field name ":protocol"`)
+}
+
+func isExtendedConnectUnsupportedErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "extended connect not supported") ||
+		strings.Contains(msg, "didn't enable Extended CONNECT") ||
+		isH2TransportProtocolHeaderUnsupported(err)
+}
+
+func (be *Backend) halfCloseParams() (serverClose, clientClose bool, timeout time.Duration) {
+	serverClose = true
+	if be.ServerCloseEndsConnection != nil {
+		serverClose = *be.ServerCloseEndsConnection
+	}
+	clientClose = false
+	if be.ClientCloseEndsConnection != nil {
+		clientClose = *be.ClientCloseEndsConnection
+	}
+	timeout = time.Minute
+	if be.HalfCloseTimeout != nil {
+		timeout = *be.HalfCloseTimeout
+	}
+	return serverClose, clientClose, timeout
+}
+
+func prepareExtendedConnectHeaders(req *http.Request) {
+	removeHopByHopHeaders(req.Header, true)
+	if clientIP, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
+		if prior := req.Header.Values(xForwardedForHeader); len(prior) > 0 {
+			clientIP = strings.Join(prior, ", ") + ", " + clientIP
+		}
+		req.Header.Set(xForwardedForHeader, clientIP)
+	}
+	if _, ok := req.Header["User-Agent"]; !ok {
+		req.Header.Set("User-Agent", "")
+	}
+}
+
+func (be *Backend) forwardExtendedConnect(w http.ResponseWriter, req *http.Request, transport http.RoundTripper, extProto string) {
+	ctx, cancel := context.WithCancel(req.Context())
+	defer cancel()
+
+	origBody := req.Body
+	if origBody != nil {
+		defer origBody.Close()
+	}
+
+	req = req.WithContext(ctx)
+	prepareExtendedConnectHeaders(req)
+
+	isWS := strings.EqualFold(extProto, "websocket")
+	beProto := be.backendProto(req)
+	if beProto == "h3" && !quicIsEnabled {
+		beProto = "http/1.1"
+	}
+
+	if beProto != "h2" && beProto != "h3" {
+		if isWS {
+			be.forwardWebSocketViaH1(w, req, origBody, transport)
+			return
+		}
+		http.Error(w, http.StatusText(http.StatusNotImplemented), http.StatusNotImplemented)
+		return
+	}
+
+	outReq := req.Clone(ctx)
+	eofBody := newEOFSignalReader(origBody)
+	// Protect origBody from being closed by transport.RoundTrip if the peer
+	// rejects Extended CONNECT before sending headers, allowing fallback to
+	// HTTP/1.1 WebSocket upgrade.
+	outReq.Body = io.NopCloser(eofBody)
+	if beProto == "h2" {
+		outReq.Header.Set(":protocol", extProto)
+	} else {
+		outReq.Proto = extProto
+		outReq.Header.Del(":protocol")
+	}
+
+	be.reverseProxyDirector(outReq)
+	resp, err := transport.RoundTrip(outReq)
+	if err != nil {
+		if isWS && isExtendedConnectUnsupportedErr(err) {
+			be.forwardWebSocketViaH1(w, req, origBody, transport)
+			return
+		}
+		if isH2TransportProtocolHeaderUnsupported(err) {
+			http.Error(w, http.StatusText(http.StatusNotImplemented), http.StatusNotImplemented)
+			return
+		}
+		be.logErrorF("ERR Extended CONNECT: %v", err)
+		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	removeHopByHopHeaders(resp.Header, false)
+	if err := be.reverseProxyModifyResponse(resp); err != nil {
+		be.logErrorF("ERR Extended CONNECT ModifyResponse: %v", err)
+		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
+		return
+	}
+
+	copyHeader(w.Header(), resp.Header)
+	w.WriteHeader(resp.StatusCode)
+	rc := http.NewResponseController(w)
+	_ = rc.Flush()
+
+	serverClose, _, halfCloseTimeout := be.halfCloseParams()
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			if _, werr := w.Write(buf[:n]); werr != nil {
+				return
+			}
+			_ = rc.Flush()
+		}
+		if err != nil {
+			if err == io.EOF {
+				if !serverClose && resp.StatusCode == http.StatusOK {
+					select {
+					case <-eofBody.done:
+					case <-ctx.Done():
+					case <-time.After(halfCloseTimeout):
+					}
+				}
+				return
+			}
+			be.logErrorF("ERR Extended CONNECT copy: %v", err)
+			panic(http.ErrAbortHandler)
+		}
+	}
+}
+
+// forwardWebSocketViaH1 translates an incoming HTTP/2 (RFC 8441) or HTTP/3
+// (RFC 9220) Extended CONNECT WebSocket request into an outbound HTTP/1.1
+// GET + Upgrade: websocket handshake, and bridges the raw RFC 6455 frame
+// streams upon receiving 101 Switching Protocols.
+func (be *Backend) forwardWebSocketViaH1(w http.ResponseWriter, req *http.Request, origBody io.ReadCloser, transport http.RoundTripper) {
+	ctx := req.Context()
+	var nonce [16]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		be.logErrorF("ERR forwardWebSocketViaH1 rand: %v", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+	wsKey := base64.StdEncoding.EncodeToString(nonce[:])
+
+	h1Req := req.Clone(ctx)
+	h1Req.Method = http.MethodGet
+	h1Req.Proto = "HTTP/1.1"
+	h1Req.ProtoMajor = 1
+	h1Req.ProtoMinor = 1
+	h1Req.Body = nil
+	h1Req.ContentLength = 0
+	h1Req.Header.Del(":protocol")
+	h1Req.Header.Set("Connection", "Upgrade")
+	h1Req.Header.Set("Upgrade", "websocket")
+	h1Req.Header.Set("Sec-WebSocket-Key", wsKey)
+	if h1Req.Header.Get("Sec-WebSocket-Version") == "" {
+		h1Req.Header.Set("Sec-WebSocket-Version", "13")
+	}
+
+	be.reverseProxyDirector(h1Req)
+	resp, err := transport.RoundTrip(h1Req)
+	if err != nil {
+		be.logErrorF("ERR Extended CONNECT->H1 WebSocket: %v", err)
+		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	if err := be.reverseProxyModifyResponse(resp); err != nil {
+		be.logErrorF("ERR Extended CONNECT->H1 ModifyResponse: %v", err)
+		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
+		return
+	}
+
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		removeHopByHopHeaders(resp.Header, false)
+		copyHeader(w.Header(), resp.Header)
+		w.WriteHeader(resp.StatusCode)
+		if _, err := io.Copy(w, resp.Body); err != nil {
+			be.logErrorF("ERR Extended CONNECT->H1 error body copy: %v", err)
+			panic(http.ErrAbortHandler)
+		}
+		return
+	}
+
+	backConn, ok := resp.Body.(io.ReadWriteCloser)
+	if !ok ||
+		!headerContainsToken(resp.Header, "Upgrade", "websocket") ||
+		!headerContainsToken(resp.Header, "Connection", "upgrade") ||
+		resp.Header.Get("Sec-WebSocket-Accept") != computeWebSocketAccept(wsKey) {
+		be.logErrorF("ERR Extended CONNECT->H1 invalid 101 handshake response from backend")
+		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
+		return
+	}
+
+	removeHopByHopHeaders(resp.Header, false)
+	delHeaderVariants(resp.Header, "Sec-WebSocket-Accept")
+	copyHeader(w.Header(), resp.Header)
+	w.WriteHeader(http.StatusOK)
+	rc := http.NewResponseController(w)
+	_ = rc.Flush()
+
+	serverClose, clientClose, halfCloseTimeout := be.halfCloseParams()
+	var closing atomic.Bool
+	closeBack := func() {
+		closing.Store(true)
+		_ = backConn.Close()
+	}
+
+	var inReader io.Reader = http.NoBody
+	if origBody != nil {
+		inReader = origBody
+	}
+
+	reqDone := make(chan struct{})
+	var hcTimerMu sync.Mutex
+	var hcTimer *time.Timer
+	stopHCTimer := func() {
+		hcTimerMu.Lock()
+		if hcTimer != nil {
+			hcTimer.Stop()
+		}
+		hcTimerMu.Unlock()
+	}
+	defer stopHCTimer()
+
+	go func() {
+		defer close(reqDone)
+		_, copyErr := io.Copy(backConn, inReader)
+		if copyErr != nil || clientClose {
+			closeBack()
+			return
+		}
+		if cw, ok := backConn.(interface{ CloseWrite() error }); ok {
+			_ = cw.CloseWrite()
+		}
+		hcTimerMu.Lock()
+		if !closing.Load() {
+			hcTimer = time.AfterFunc(halfCloseTimeout, closeBack)
+		}
+		hcTimerMu.Unlock()
+	}()
+
+	stopOnCtx := context.AfterFunc(ctx, closeBack)
+	defer stopOnCtx()
+
+	buf := make([]byte, 32*1024)
+	var backendReadErr error
+	for {
+		n, rerr := backConn.Read(buf)
+		if n > 0 {
+			if _, werr := w.Write(buf[:n]); werr != nil {
+				closeBack()
+				if origBody != nil {
+					_ = origBody.Close()
+				}
+				<-reqDone
+				return
+			}
+			_ = rc.Flush()
+		}
+		if rerr != nil {
+			if rerr != io.EOF && !closing.Load() {
+				backendReadErr = rerr
+			}
+			break
+		}
+	}
+
+	if backendReadErr == nil && !serverClose {
+		select {
+		case <-reqDone:
+		case <-ctx.Done():
+		case <-time.After(halfCloseTimeout):
+		}
+	}
+
+	closeBack()
+	if origBody != nil {
+		_ = origBody.Close()
+	}
+	<-reqDone
+
+	if backendReadErr != nil {
+		be.logErrorF("ERR Extended CONNECT->H1 copy: %v", backendReadErr)
+		panic(http.ErrAbortHandler)
+	}
+}
+
+func (be *Backend) backendProto(req *http.Request) string {
+	proto := "http/1.1"
+	if id, ok := req.Context().Value(ctxOverrideIDKey).(int); ok && id >= 0 && id < len(be.PathOverrides) && be.PathOverrides[id].BackendProto != nil {
+		proto = *be.PathOverrides[id].BackendProto
+	} else if be.BackendProto != nil {
+		proto = *be.BackendProto
+	}
+	if proto == "" && req.TLS != nil && req.TLS.NegotiatedProtocol != "" {
+		proto = req.TLS.NegotiatedProtocol
+	}
+	return proto
+}
+
+// extendedConnectProtocol extracts and validates the Extended CONNECT :protocol
+// token (RFC 8441 / RFC 9220). It returns:
+//   - isExt=false, valid=true  for non-extended requests
+//   - isExt=true,  valid=false for malformed :protocol values
+//   - isExt=true,  valid=true  for valid Extended CONNECT requests
+func extendedConnectProtocol(req *http.Request) (proto string, isExt bool, valid bool) {
+	if req.Method != http.MethodConnect {
+		return "", false, true
+	}
+	switch req.ProtoMajor {
+	case 2:
+		protos, ok := req.Header[":protocol"]
+		if !ok {
+			return "", false, true
+		}
+		if len(protos) != 1 || protos[0] == "" || !httpguts.ValidHeaderFieldName(protos[0]) {
+			return "", true, false
+		}
+		return protos[0], true, true
+	case 3:
+		if req.Proto == "" || req.Proto == "HTTP/3.0" {
+			return "", false, true
+		}
+		if !httpguts.ValidHeaderFieldName(req.Proto) {
+			return "", true, false
+		}
+		return req.Proto, true, true
+	default:
+		return "", false, true
+	}
+}
+
+func (be *Backend) checkConnectRequest(w http.ResponseWriter, req *http.Request) bool {
+	if req.Method != http.MethodConnect {
+		return true
+	}
+	_, isExt, valid := extendedConnectProtocol(req)
+	if !valid {
+		if req.Body != nil {
+			req.Body.Close()
+		}
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return false
+	}
+	if !isExt {
+		if req.Body != nil {
+			req.Body.Close()
+		}
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return false
+	}
+	return true
+}
+
+func isConnectionUpgrade(h http.Header) bool {
+	return headerContainsToken(h, "Connection", "upgrade")
+}
+
 func (be *Backend) reverseProxyModifyResponse(resp *http.Response) error {
 	req := resp.Request
 	if resp.StatusCode == http.StatusSwitchingProtocols {
 		if c, ok := req.Context().Value(connCtxKey).(anyConn); ok {
-			annotatedConn(c).SetAnnotation(httpUpgradeKey, resp.Header.Get("upgrade"))
+			if p := connProto(c); p != "h2" && p != "h3" {
+				annotatedConn(c).SetAnnotation(httpUpgradeKey, resp.Header.Get("upgrade"))
+			}
 		}
 	}
 	var cl string

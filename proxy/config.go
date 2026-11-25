@@ -550,6 +550,7 @@ type localHandler struct {
 	handler     http.Handler
 	ssoBypass   bool
 	csrfBypass  bool
+	noBodyLimit bool
 	matchPrefix bool
 	isCallback  bool
 	scopes      []string
@@ -1211,8 +1212,13 @@ func (cfg *Config) Check() error {
 				be.ALPNProtos = defaultALPNProtos
 			}
 		}
-		if be.BackendProto != nil && be.Mode != ModeHTTP && be.Mode != ModeHTTPS {
-			return fmt.Errorf("backend[%d].BackendProto: field is not valid in mode %s", i, be.Mode)
+		if be.BackendProto != nil {
+			if be.Mode != ModeHTTP && be.Mode != ModeHTTPS {
+				return fmt.Errorf("backend[%d].BackendProto: field is not valid in mode %s", i, be.Mode)
+			}
+			if err := validateBackendProto(*be.BackendProto, be.Mode); err != nil {
+				return fmt.Errorf("backend[%d].BackendProto: %w", i, err)
+			}
 		}
 		if be.Mode == ModeQUIC {
 			var falsex bool
@@ -1476,6 +1482,11 @@ func (cfg *Config) Check() error {
 			if po.Mode != ModeHTTP && po.Mode != ModeHTTPS {
 				return fmt.Errorf("backend[%d].PathOverrides[%d].Mode: must be either %s or %s", i, j, ModeHTTP, ModeHTTPS)
 			}
+			if po.BackendProto != nil {
+				if err := validateBackendProto(*po.BackendProto, po.Mode); err != nil {
+					return fmt.Errorf("backend[%d].PathOverrides[%d].BackendProto: %w", i, j, err)
+				}
+			}
 			pool := x509.NewCertPool()
 			for k, n := range po.ForwardRootCAs {
 				if pkis[n] {
@@ -1504,6 +1515,23 @@ func (cfg *Config) Check() error {
 		}
 	}
 	return os.MkdirAll(*cfg.CacheDir, 0o700)
+}
+
+func validateBackendProto(proto, mode string) error {
+	switch proto {
+	case "", "http/1.1", "h2":
+		return nil
+	case "h3":
+		if !quicIsEnabled {
+			return errors.New("QUIC is not supported in this binary")
+		}
+		if mode != ModeHTTPS {
+			return fmt.Errorf("h3 is only valid in mode %s", ModeHTTPS)
+		}
+		return nil
+	default:
+		return fmt.Errorf("value %q must be one of [\"\" \"http/1.1\" \"h2\" \"h3\"]", proto)
+	}
 }
 
 func validateProxyProtoVersion(s string) (byte, error) {

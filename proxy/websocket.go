@@ -29,10 +29,11 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/c2FmZQ/websocket"
 
 	"github.com/c2FmZQ/tlsproxy/proxy/internal/netw"
 )
@@ -49,134 +50,136 @@ func newWebSocketUpgrader() *websocket.Upgrader {
 func (p *Proxy) webSocketHandler(cfg WebSocketConfig) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		pingInterval := wsPingInterval
-		in, err := p.wsUpgrader.Upgrade(w, req, nil)
-		if err != nil {
-			p.logErrorF("ERR %v", err)
-			return
-		}
-		defer in.Close()
+		err := p.wsUpgrader.Serve(w, req, nil, func(in *websocket.Conn) {
+			ctx, cancel := context.WithCancel(req.Context())
+			defer cancel()
 
-		ctx, cancel := context.WithCancel(req.Context())
-		defer cancel()
-
-		dialer := &net.Dialer{
-			Timeout:   10 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}
-		out, err := dialer.DialContext(ctx, "tcp", cfg.Address)
-		if err != nil {
-			p.logErrorF("ERR webSocketHandler: %v", err)
-			return
-		}
-		setKeepAlive(out)
-		wc := netw.NewConn(out)
-		wc.SetAnnotation(startTimeKey, time.Now())
-		if conn, ok := req.Context().Value(connCtxKey).(anyConn); ok {
-			annotatedConn(conn).SetAnnotation(httpUpgradeKey, "websocket")
-			wc.SetAnnotation(serverNameKey, connServerName(conn))
-			wc.SetAnnotation(protoKey, "websocket->tcp")
-			wc.SetAnnotation(modeKey, connMode(conn))
-		}
-		p.outConns.add(wc)
-		defer func() {
-			wc.Close()
-			p.outConns.remove(wc)
-		}()
-		out = wc
-
-		done := make(chan bool, 1)
-
-		var lastActive atomic.Int64
-		lastActive.Store(time.Now().UnixNano())
-		in.SetPongHandler(func(string) error {
-			lastActive.Store(time.Now().UnixNano())
-			return nil
-		})
-		go func() {
-			ticker := time.NewTicker(pingInterval)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					out.SetDeadline(time.Now())
-					return
-				case <-ticker.C:
-					if time.Since(time.Unix(0, lastActive.Load())) > 30*time.Second {
-						select {
-						case done <- true:
-						default:
-						}
-						return
-					}
-					if err := in.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(5*time.Second)); err != nil {
-						if !errors.Is(err, websocket.ErrCloseSent) && !errors.Is(err, net.ErrClosed) {
-							p.logErrorF("ERR WriteControl: %v", err)
-						}
-						select {
-						case done <- true:
-						default:
-						}
-						return
-					}
-				}
+			dialer := &net.Dialer{
+				Timeout:   10 * time.Second,
+				KeepAlive: 30 * time.Second,
 			}
-		}()
-
-		// in -> out loop
-		go func() {
-			defer func() {
-				select {
-				case done <- true:
-				default:
-				}
+			out, err := dialer.DialContext(ctx, "tcp", cfg.Address)
+			if err != nil {
+				p.logErrorF("ERR webSocketHandler: %v", err)
 				return
-			}()
-			for {
-				messageType, r, err := in.NextReader()
-				if err != nil {
-					return
-				}
-				lastActive.Store(time.Now().UnixNano())
-				if messageType != websocket.BinaryMessage {
-					_ = in.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseUnsupportedData, "binary messages only"), time.Now().Add(5*time.Second))
-					return
-				}
-				if _, err := io.Copy(out, r); err != nil {
-					return
-				}
 			}
-		}()
-
-		// out -> in loop
-		go func() {
+			setKeepAlive(out)
+			wc := netw.NewConn(out)
+			wc.SetAnnotation(startTimeKey, time.Now())
+			if conn, ok := req.Context().Value(connCtxKey).(anyConn); ok {
+				if req.ProtoMajor == 1 {
+					annotatedConn(conn).SetAnnotation(httpUpgradeKey, "websocket")
+				}
+				wc.SetAnnotation(serverNameKey, connServerName(conn))
+				wc.SetAnnotation(protoKey, "websocket->tcp")
+				wc.SetAnnotation(modeKey, connMode(conn))
+			}
+			p.outConns.add(wc)
 			defer func() {
-				select {
-				case done <- true:
-				default:
+				wc.Close()
+				p.outConns.remove(wc)
+			}()
+			out = wc
+
+			done := make(chan struct{})
+			var closeOnce sync.Once
+			signalDone := func() {
+				closeOnce.Do(func() {
+					close(done)
+				})
+			}
+
+			var lastActive atomic.Int64
+			lastActive.Store(time.Now().UnixNano())
+			in.SetPongHandler(func(string) error {
+				lastActive.Store(time.Now().UnixNano())
+				return nil
+			})
+
+			var wg sync.WaitGroup
+			wg.Add(3)
+			go func() {
+				defer wg.Done()
+				ticker := time.NewTicker(pingInterval)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						out.SetDeadline(time.Now())
+						signalDone()
+						return
+					case <-ticker.C:
+						if time.Since(time.Unix(0, lastActive.Load())) > 30*time.Second {
+							signalDone()
+							return
+						}
+						if err := in.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(5*time.Second)); err != nil {
+							if !errors.Is(err, websocket.ErrCloseSent) && !errors.Is(err, net.ErrClosed) {
+								p.logErrorF("ERR WriteControl: %v", err)
+							}
+							signalDone()
+							return
+						}
+					}
 				}
 			}()
-			buf := make([]byte, 1024)
-			for {
-				n, err := out.Read(buf)
-				if n > 0 {
-					w, err := in.NextWriter(websocket.BinaryMessage)
+
+			// in -> out loop
+			go func() {
+				defer wg.Done()
+				defer signalDone()
+				for {
+					messageType, r, err := in.NextReader()
 					if err != nil {
 						return
 					}
-					if nn, err := w.Write(buf[:n]); err != nil || n != nn {
-						w.Close()
+					lastActive.Store(time.Now().UnixNano())
+					if messageType != websocket.BinaryMessage {
+						_ = in.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseUnsupportedData, "binary messages only"), time.Now().Add(5*time.Second))
 						return
 					}
-					if err := w.Close(); err != nil {
+					if _, err := io.Copy(out, r); err != nil {
 						return
 					}
 				}
-				if err != nil {
-					return
-				}
-			}
-		}()
+			}()
 
-		<-done
+			// out -> in loop
+			go func() {
+				defer wg.Done()
+				defer signalDone()
+				buf := make([]byte, 1024)
+				for {
+					n, err := out.Read(buf)
+					if n > 0 {
+						_ = in.SetWriteDeadline(time.Now().Add(30 * time.Second))
+						w, err := in.NextWriter(websocket.BinaryMessage)
+						if err != nil {
+							return
+						}
+						if nn, err := w.Write(buf[:n]); err != nil || n != nn {
+							w.Close()
+							return
+						}
+						if err := w.Close(); err != nil {
+							return
+						}
+						_ = in.SetWriteDeadline(time.Time{})
+					}
+					if err != nil {
+						return
+					}
+				}
+			}()
+
+			<-done
+			cancel()
+			_ = in.Close()
+			_ = out.Close()
+			wg.Wait()
+		})
+		if err != nil {
+			p.logErrorF("ERR %v", err)
+		}
 	})
 }

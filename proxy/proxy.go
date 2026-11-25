@@ -58,7 +58,7 @@ import (
 	"github.com/c2FmZQ/storage/autocertcache"
 	"github.com/c2FmZQ/storage/crypto"
 	"github.com/c2FmZQ/tpm"
-	"github.com/gorilla/websocket"
+	"github.com/c2FmZQ/websocket"
 	"github.com/pires/go-proxyproto"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
@@ -991,9 +991,10 @@ func (p *Proxy) Reconfigure(cfg *Config) error {
 	}
 	for _, ws := range cfg.WebSockets {
 		addLocalHandler(localHandler{
-			desc:    "WebSocket Endpoint",
-			handler: logHandler(p.webSocketHandler(*ws)),
-			scopes:  ws.Scopes,
+			desc:        "WebSocket Endpoint",
+			handler:     logHandler(p.webSocketHandler(*ws)),
+			noBodyLimit: true,
+			scopes:      ws.Scopes,
 		}, ws.Endpoint)
 	}
 	for _, be := range backends {
