@@ -21,6 +21,9 @@
 
 ### :wrench: Misc
 
+* Update go dependencies:
+  * upgraded github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261118221516-b4d49459d942 => v0.0.0-20261125155617-3535396d29cb
+  * upgraded github.com/c2FmZQ/websocket v0.0.0-20261124194418-a5ab079a99f5 => v0.1.0
 * Switch from `github.com/gorilla/websocket` to `github.com/c2FmZQ/websocket`, which adds Extended CONNECT support.
 * HTTP/2 Extended CONNECT is enabled with `GODEBUG=http2xconnect=1`. It is set automatically unless `GODEBUG` already
   has an explicit `http2xconnect` value.
