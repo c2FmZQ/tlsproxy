@@ -45,6 +45,7 @@ import (
 
 	"github.com/c2FmZQ/http3-go"
 	quicapi "github.com/c2FmZQ/quic-api"
+	"github.com/c2FmZQ/websocket"
 	"github.com/quic-go/quic-go"
 	"golang.org/x/time/rate"
 
@@ -1355,5 +1356,359 @@ func TestQUICStreamCloseCancelsReadAndProxyHeaderV1(t *testing.T) {
 	}
 	if got := len(serverQC.Streams()); got != 0 {
 		t.Errorf("len(serverQC.Streams()) after Close = %d, want 0", got)
+	}
+}
+
+func TestHTTP3ExtendedConnect(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	extCA, err := certmanager.New("root-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+	intCA, err := certmanager.New("internal-ca.example.com", t.Logf)
+	if err != nil {
+		t.Fatalf("certmanager.New: %v", err)
+	}
+
+	// TCP echo server for local WebSocket endpoints.
+	tcpListener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	defer tcpListener.Close()
+	go func() {
+		for {
+			c, err := tcpListener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				io.Copy(c, c)
+			}()
+		}
+	}()
+
+	// HTTP/3 backend server that echoes Extended CONNECT streams.
+	tc := intCA.TLSConfig()
+	tc.NextProtos = []string{"h3"}
+	ln, err := quicapi.ListenAddr("localhost:0", tc, &quic.Config{})
+	if err != nil {
+		t.Fatalf("ListenAddr: %v", err)
+	}
+	h3srv := &http3.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodConnect || r.Proto == "" || strings.HasPrefix(r.Proto, "HTTP/") {
+				http.Error(w, "not extended connect", http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("X-Backend-Protocol", r.Proto)
+			w.Header().Set("X-Got-Via", r.Header.Get("Via"))
+			w.WriteHeader(http.StatusOK)
+			http.NewResponseController(w).Flush()
+			io.Copy(w, r.Body)
+		}),
+	}
+	go h3srv.ServeListener(ln)
+	defer h3srv.Close()
+
+	// HTTP/2 backend server that echoes Extended CONNECT streams (for H3 -> H2 cross-protocol test).
+	h2BackendLn, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	defer h2BackendLn.Close()
+	h2Protocols := new(http.Protocols)
+	h2Protocols.SetUnencryptedHTTP2(true)
+	h2Srv := &http.Server{
+		Protocols: h2Protocols,
+		// Go 1.28+: HTTP2: &http.HTTP2Config{EnableConnectProtocol: true},
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.Method != http.MethodConnect || req.Header.Get(":protocol") == "" {
+				http.Error(w, "not extended connect", http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("X-Backend-Protocol", req.Header.Get(":protocol"))
+			w.Header().Set("X-Got-Via", req.Header.Get("Via"))
+			w.WriteHeader(http.StatusOK)
+			http.NewResponseController(w).Flush()
+			io.Copy(w, req.Body)
+		}),
+	}
+	go h2Srv.Serve(h2BackendLn)
+	defer h2Srv.Close()
+
+	// HTTP/1.1 WebSocket backend server (for H3 -> H1 WebSocket dynamic conversion).
+	h1WSLn, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	defer h1WSLn.Close()
+	wsUp := &websocket.Upgrader{
+		CheckOrigin: func(*http.Request) bool { return true },
+	}
+	h1WSSrv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			_ = wsUp.Serve(w, req, nil, func(c *websocket.Conn) {
+				for {
+					mt, msg, err := c.ReadMessage()
+					if err != nil {
+						return
+					}
+					if err := c.WriteMessage(mt, msg); err != nil {
+						return
+					}
+				}
+			})
+		}),
+	}
+	go h1WSSrv.Serve(h1WSLn)
+	defer h1WSSrv.Close()
+
+	h3Value := "h3"
+	h2Value := "h2"
+	h1Value := "http/1.1"
+	proxy := newTestProxy(
+		&Config{
+			HTTPAddr:   newPtr("localhost:0"),
+			TLSAddr:    newPtr("localhost:0"),
+			EnableQUIC: newPtr(true),
+			CacheDir:   newPtr(t.TempDir()),
+			MaxOpen:    newPtr(100),
+			WebSockets: []*WebSocketConfig{
+				{
+					Endpoint: "https://h3-enabled.example.com/ws",
+					Address:  tcpListener.Addr().String(),
+				},
+			},
+			Backends: []*Backend{
+				{
+					ServerNames:       Strings{"h3-enabled.example.com"},
+					Addresses:         Strings{ln.Addr().String()},
+					Mode:              "HTTPS",
+					BackendProto:      &h3Value,
+					ForwardRootCAs:    Strings{intCA.RootCAPEM()},
+					ForwardServerName: "h3-internal.example.com",
+				},
+				{
+					ServerNames:  Strings{"h3-to-h2.example.com"},
+					Addresses:    Strings{h2BackendLn.Addr().String()},
+					Mode:         "HTTP",
+					BackendProto: &h2Value,
+				},
+				{
+					ServerNames:  Strings{"h3-to-h1ws.example.com"},
+					Addresses:    Strings{h1WSLn.Addr().String()},
+					Mode:         "HTTP",
+					BackendProto: &h1Value,
+				},
+			},
+		},
+		extCA,
+	)
+	if err := proxy.Start(ctx); err != nil {
+		t.Fatalf("proxy.Start: %v", err)
+	}
+	defer proxy.Stop()
+
+	h3Addr := proxy.quicTransport.(*netw.QUICTransport).Addr().String()
+	newH3Transport := func(serverName string) *http3.Transport {
+		return &http3.Transport{
+			TLSClientConfig: &tls.Config{
+				ServerName: serverName,
+				RootCAs:    extCA.RootCACertPool(),
+				NextProtos: []string{"h3"},
+			},
+		}
+	}
+	h2ClientSupportsExt := h2TransportSupportsExtendedConnect()
+
+	// 1. HTTP/3 -> HTTP/3 and HTTP/3 -> HTTP/2 Extended CONNECT forwarding (with Via: HTTP/3.0).
+	for _, host := range []string{"h3-enabled.example.com", "h3-to-h2.example.com"} {
+		tr := newH3Transport(host)
+		defer tr.Close()
+		pr, pw := io.Pipe()
+		req, err := http.NewRequestWithContext(ctx, http.MethodConnect, "https://"+h3Addr+"/ext", pr)
+		if err != nil {
+			t.Fatalf("NewRequest: %v", err)
+		}
+		req.Host = host
+		req.Proto = "custom-h3"
+		go func() {
+			_, _ = pw.Write([]byte("hello-" + host))
+			pw.Close()
+		}()
+		resp, err := tr.RoundTrip(req)
+		if err != nil {
+			pr.Close()
+			t.Fatalf("%s RoundTrip: %v", host, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		pr.Close()
+		if host == "h3-to-h2.example.com" && !h2ClientSupportsExt {
+			if resp.StatusCode != http.StatusNotImplemented {
+				t.Errorf("%s status on Go 1.27 = %d, want 501", host, resp.StatusCode)
+			}
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("%s status = %d, want 200", host, resp.StatusCode)
+		}
+		if got := resp.Header.Get("X-Backend-Protocol"); got != "custom-h3" {
+			t.Errorf("%s X-Backend-Protocol = %q, want custom-h3", host, got)
+		}
+		if got := resp.Header.Get("X-Got-Via"); !strings.HasPrefix(got, "HTTP/3.0 ") {
+			t.Errorf("%s X-Got-Via = %q, want prefix 'HTTP/3.0 '", host, got)
+		}
+		if string(body) != "hello-"+host {
+			t.Errorf("%s body = %q, want %q", host, body, "hello-"+host)
+		}
+	}
+
+	// 2. Cross-protocol HTTP/2 client -> HTTP/3 backend Extended CONNECT forwarding.
+	{
+		pr, pw := io.Pipe()
+		go func() {
+			_, _ = pw.Write([]byte("cross-proto-payload"))
+			pw.Close()
+		}()
+		resp, err := doH2Connect(t, proxy.listener.Addr().String(), extCA, "h3-enabled.example.com", "/ext", "h2-to-h3", nil, pr)
+		if err != nil {
+			pr.Close()
+			t.Fatalf("h2->h3 doH2Connect: %v", err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		pr.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("h2->h3 status = %d, want 200", resp.StatusCode)
+		}
+		if got := resp.Header.Get("X-Backend-Protocol"); got != "h2-to-h3" {
+			t.Errorf("h2->h3 X-Backend-Protocol = %q, want h2-to-h3", got)
+		}
+		if string(body) != "cross-proto-payload" {
+			t.Errorf("h2->h3 body = %q, want cross-proto-payload", body)
+		}
+	}
+
+	// 3. HTTP/3 Extended CONNECT to local WebSocket endpoint with >100 KB payload.
+	{
+		host := "h3-enabled.example.com"
+		tr := newH3Transport(host)
+		defer tr.Close()
+		pr, pw := io.Pipe()
+		req, err := http.NewRequestWithContext(ctx, http.MethodConnect, "https://"+h3Addr+"/ws", pr)
+		if err != nil {
+			t.Fatalf("NewRequest: %v", err)
+		}
+		req.Host = host
+		req.Proto = "websocket"
+		req.Header.Set("Sec-Websocket-Version", "13")
+		resp, err := tr.RoundTrip(req)
+		if err != nil {
+			pr.Close()
+			pw.Close()
+			t.Fatalf("%s h3 ws RoundTrip: %v", host, err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			pr.Close()
+			pw.Close()
+			t.Fatalf("%s h3 ws status = %d, want 200", host, resp.StatusCode)
+		}
+		largePayload := bytes.Repeat([]byte("Q"), 150*1024)
+		go func() {
+			_, _ = pw.Write(buildMaskedWSFrame(websocket.BinaryMessage, largePayload))
+		}()
+		echoed, err := readWSDataBytes(resp.Body, len(largePayload))
+		if err != nil {
+			t.Fatalf("%s readWSDataBytes (>100KB H3 WS): %v", host, err)
+		}
+		if !bytes.Equal(echoed, largePayload) {
+			t.Errorf("%s echoed len = %d, want %d", host, len(echoed), len(largePayload))
+		}
+		pw.Close()
+		resp.Body.Close()
+		pr.Close()
+	}
+
+	// 4. HTTP/3 Extended CONNECT :protocol=websocket dynamically converted to HTTP/1.1 WebSocket
+	// on an http/1.1 backend.
+	{
+		tr := newH3Transport("h3-to-h1ws.example.com")
+		defer tr.Close()
+		pr, pw := io.Pipe()
+		req, err := http.NewRequestWithContext(ctx, http.MethodConnect, "https://"+h3Addr+"/chat", pr)
+		if err != nil {
+			t.Fatalf("NewRequest: %v", err)
+		}
+		req.Host = "h3-to-h1ws.example.com"
+		req.Proto = "websocket"
+		req.Header.Set("Sec-Websocket-Version", "13")
+		resp, err := tr.RoundTrip(req)
+		if err != nil {
+			pr.Close()
+			pw.Close()
+			t.Fatalf("h3->h1ws RoundTrip: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			pr.Close()
+			pw.Close()
+			t.Fatalf("h3->h1ws status = %d, want 200", resp.StatusCode)
+		}
+		payload := bytes.Repeat([]byte("H"), 120*1024)
+		go func() {
+			_, _ = pw.Write(buildMaskedWSFrame(websocket.BinaryMessage, payload))
+		}()
+		op, gotPayload, err := readUnmaskedWSFrame(resp.Body)
+		if err != nil {
+			t.Fatalf("h3->h1ws readUnmaskedWSFrame: %v", err)
+		}
+		if op != websocket.BinaryMessage || !bytes.Equal(gotPayload, payload) {
+			t.Errorf("h3->h1ws echoed op=%d len=%d, want BinaryMessage len=%d", op, len(gotPayload), len(payload))
+		}
+		pw.Close()
+		resp.Body.Close()
+		pr.Close()
+	}
+
+	// 5. Negative HTTP/3 cases: non-websocket Extended CONNECT to http/1.1 backend (501) and regular CONNECT (405).
+	{
+		trH1 := newH3Transport("h3-to-h1ws.example.com")
+		defer trH1.Close()
+		req, err := http.NewRequestWithContext(ctx, http.MethodConnect, "https://"+h3Addr+"/ext", nil)
+		if err != nil {
+			t.Fatalf("NewRequest: %v", err)
+		}
+		req.Host = "h3-to-h1ws.example.com"
+		req.Proto = "custom-h3"
+		resp, err := trH1.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("h3->h1 non-ws RoundTrip: %v", err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotImplemented {
+			t.Errorf("h3->h1 non-websocket extended CONNECT status = %d, want 501", resp.StatusCode)
+		}
+
+		trEn := newH3Transport("h3-enabled.example.com")
+		defer trEn.Close()
+		regReq, err := http.NewRequestWithContext(ctx, http.MethodConnect, "https://"+h3Addr, nil)
+		if err != nil {
+			t.Fatalf("NewRequest: %v", err)
+		}
+		regReq.Host = "h3-enabled.example.com"
+		regResp, err := trEn.RoundTrip(regReq)
+		if err != nil {
+			t.Fatalf("h3 regular CONNECT RoundTrip: %v", err)
+		}
+		regResp.Body.Close()
+		if regResp.StatusCode != http.StatusMethodNotAllowed {
+			t.Errorf("h3 regular CONNECT status = %d, want 405", regResp.StatusCode)
+		}
 	}
 }

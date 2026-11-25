@@ -1,5 +1,35 @@
 # TLSPROXY Release Notes
 
+## next
+
+### :warning: Breaking changes
+
+* `backendProto` (on backends and `pathOverrides`) is now validated. It must be one of `""`, `http/1.1`, `h2`, or
+  `h3`. `h3` is only accepted in `HTTPS` mode and in binaries built with QUIC support. Previously, invalid values
+  silently fell back to `http/1.1`.
+
+### :star2: New features
+
+* Support for HTTP/2 Extended CONNECT (RFC 8441) and HTTP/3 Extended CONNECT (RFC 9220), i.e. WebSockets over HTTP/2
+  and HTTP/3:
+  * The built-in `webSockets` endpoints accept WebSocket connections over HTTP/1.1, HTTP/2, and HTTP/3.
+  * In reverse proxy mode, Extended CONNECT requests are forwarded to `h3` backends as Extended CONNECT. WebSocket
+    requests are translated to HTTP/1.1 `Upgrade: websocket` requests for backends that don't support Extended
+    CONNECT. Other Extended CONNECT protocols get `501 Not Implemented` when the backend can't receive them.
+  * Forwarding Extended CONNECT to `h2` backends requires a Go version (or `-tags http2legacy`) whose HTTP/2 client
+    supports the `:protocol` pseudo-header. Until then, WebSocket requests to `h2` backends use HTTP/1.1.
+
+### :wrench: Misc
+
+* Switch from `github.com/gorilla/websocket` to `github.com/c2FmZQ/websocket`, which adds Extended CONNECT support.
+* HTTP/2 Extended CONNECT is enabled with `GODEBUG=http2xconnect=1`. It is set automatically unless `GODEBUG` already
+  has an explicit `http2xconnect` value.
+* Plain (non-extended) `CONNECT` requests are rejected with `405 Method Not Allowed`.
+* Proxied responses that fail mid-stream now abort the client connection or stream, instead of ending as if the
+  response was complete.
+* The `Via` header reports `HTTP/3.0` for HTTP/3 requests.
+* Writes from the `webSockets` endpoints to the client time out after 30 seconds.
+
 ## v0.26.8
 
 ### :wrench: Misc

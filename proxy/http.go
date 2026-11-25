@@ -72,6 +72,13 @@ func startInternalHTTPServer(handler http.Handler, conns <-chan net.Conn) *http.
 		IdleTimeout:       30 * time.Second,
 		ReadTimeout:       24 * time.Hour,
 		WriteTimeout:      24 * time.Hour,
+		// In Go 1.28+, HTTP2Config.EnableConnectProtocol enables RFC 8441
+		// Extended CONNECT per server without setting GODEBUG. For Go 1.27
+		// compatibility, Extended CONNECT is enabled via GODEBUG=http2xconnect=1
+		// (set in Dockerfile and via github.com/c2FmZQ/websocket/h2xconnect).
+		// HTTP2: &http.HTTP2Config{
+		// 	EnableConnectProtocol: true,
+		// },
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
 			return context.WithValue(ctx, connCtxKey, c)
 		},
