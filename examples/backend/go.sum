@@ -1,9 +1,9 @@
 github.com/blend/go-sdk v1.20240719.1 h1:eyispDP9DzQuNE+y7j1xSqwRm6ndMS4jgwlOQU4BTGY=
 github.com/blend/go-sdk v1.20240719.1/go.mod h1:aTw/exIbMHDYcJLTiqeWMMVhUs9+72BDe26AA0A6jno=
-github.com/c2FmZQ/tlsproxy v0.26.7 h1:3lpBBJT/eFDcSNu8IJ7JiogPR+mmzVALANVu4DLRL10=
-github.com/c2FmZQ/tlsproxy v0.26.7/go.mod h1:v7Thy/ScyXoIHEyfeChNjyK9bwfULH7nj4WrB2xPWAw=
-github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261118221516-b4d49459d942 h1:PavYA04FBmvkSoFZNFWgh2pgl3T8bNhpDFWT4oNoRuk=
-github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261118221516-b4d49459d942/go.mod h1:WfdfzY1e35KBYAAZqBsrQYPl5xi9xBvXcvvwFt2I2Vc=
+github.com/c2FmZQ/tlsproxy v0.26.8 h1:k9JCvsCY0128Src+ey/NL1gy/j3uqjyCE7T2ILonIjE=
+github.com/c2FmZQ/tlsproxy v0.26.8/go.mod h1:LDnIGlCpPFhvzMw4S3gMaO4UsJFPSs5jNZgG6lPezF8=
+github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261125155617-3535396d29cb h1:CA/4hAjcI/dQcYQIclVWGpIygUHz3frdsMPgR/hDLGY=
+github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261125155617-3535396d29cb/go.mod h1:WfdfzY1e35KBYAAZqBsrQYPl5xi9xBvXcvvwFt2I2Vc=
 github.com/fatih/color v1.16.0 h1:zmkK9Ngbjj+K0yRhTVONQh1p/HknKYSlNT+vZCzyokM=
 github.com/fatih/color v1.16.0/go.mod h1:fL2Sau1YI5c0pdGEVCbKQbLXB6edEj1ZgiY4NijnWvE=
 github.com/golang-jwt/jwt/v4 v4.5.2 h1:YtQM7lnr8iZ+j5q71MGKkNw9Mn7AjHM68uc9g5fXeUI=

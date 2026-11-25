@@ -1,11 +1,11 @@
 module github.com/c2FmZQ/tlsproxy/examples/backend
 
-go 1.27.0
+go 1.27.4
 
 require (
 	github.com/blend/go-sdk v1.20240719.1
-	github.com/c2FmZQ/tlsproxy v0.26.7
-	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261118221516-b4d49459d942
+	github.com/c2FmZQ/tlsproxy v0.26.8
+	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261125155617-3535396d29cb
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/quic-go/quic-go v0.66.0

@@ -13,10 +13,10 @@ require (
 	github.com/c2FmZQ/http3-go v0.66.0
 	github.com/c2FmZQ/quic-api v0.66.0
 	github.com/c2FmZQ/storage v0.3.4
-	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261118221516-b4d49459d942
+	github.com/c2FmZQ/tlsproxy/jwks v0.0.0-20261125155617-3535396d29cb
 	github.com/c2FmZQ/tpm v0.6.0
 	github.com/c2FmZQ/webauthn v0.1.0
-	github.com/c2FmZQ/websocket v0.0.0-20261124194418-a5ab079a99f5
+	github.com/c2FmZQ/websocket v0.1.0
 	github.com/fxamacker/cbor/v2 v2.10.0
 	github.com/go-test/deep v1.1.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
