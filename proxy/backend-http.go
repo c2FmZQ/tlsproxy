@@ -50,7 +50,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -624,29 +623,6 @@ func (be *Backend) reverseProxyTransport() http.RoundTripper {
 	})
 }
 
-type eofSignalReader struct {
-	r    io.Reader
-	once sync.Once
-	done chan struct{}
-}
-
-func newEOFSignalReader(r io.Reader) *eofSignalReader {
-	done := make(chan struct{})
-	if r == nil {
-		close(done)
-		return &eofSignalReader{r: http.NoBody, done: done}
-	}
-	return &eofSignalReader{r: r, done: done}
-}
-
-func (e *eofSignalReader) Read(p []byte) (int, error) {
-	n, err := e.r.Read(p)
-	if err != nil {
-		e.once.Do(func() { close(e.done) })
-	}
-	return n, err
-}
-
 var hopByHopHeaders = []string{
 	"Connection",
 	"Proxy-Connection",
@@ -714,22 +690,6 @@ func isExtendedConnectUnsupportedErr(err error) bool {
 		isH2TransportProtocolHeaderUnsupported(err)
 }
 
-func (be *Backend) halfCloseParams() (serverClose, clientClose bool, timeout time.Duration) {
-	serverClose = true
-	if be.ServerCloseEndsConnection != nil {
-		serverClose = *be.ServerCloseEndsConnection
-	}
-	clientClose = false
-	if be.ClientCloseEndsConnection != nil {
-		clientClose = *be.ClientCloseEndsConnection
-	}
-	timeout = time.Minute
-	if be.HalfCloseTimeout != nil {
-		timeout = *be.HalfCloseTimeout
-	}
-	return serverClose, clientClose, timeout
-}
-
 func prepareExtendedConnectHeaders(req *http.Request) {
 	removeHopByHopHeaders(req.Header, true)
 	if clientIP, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
@@ -757,10 +717,6 @@ func (be *Backend) forwardExtendedConnect(w http.ResponseWriter, req *http.Reque
 
 	isWS := strings.EqualFold(extProto, "websocket")
 	beProto := be.backendProto(req)
-	if beProto == "h3" && !quicIsEnabled {
-		beProto = "http/1.1"
-	}
-
 	if beProto != "h2" && beProto != "h3" {
 		if isWS {
 			be.forwardWebSocketViaH1(w, req, origBody, transport)
@@ -771,11 +727,14 @@ func (be *Backend) forwardExtendedConnect(w http.ResponseWriter, req *http.Reque
 	}
 
 	outReq := req.Clone(ctx)
-	eofBody := newEOFSignalReader(origBody)
 	// Protect origBody from being closed by transport.RoundTrip if the peer
 	// rejects Extended CONNECT before sending headers, allowing fallback to
 	// HTTP/1.1 WebSocket upgrade.
-	outReq.Body = io.NopCloser(eofBody)
+	var body io.Reader = http.NoBody
+	if origBody != nil {
+		body = origBody
+	}
+	outReq.Body = io.NopCloser(body)
 	if beProto == "h2" {
 		outReq.Header.Set(":protocol", extProto)
 	} else {
@@ -812,7 +771,8 @@ func (be *Backend) forwardExtendedConnect(w http.ResponseWriter, req *http.Reque
 	rc := http.NewResponseController(w)
 	_ = rc.Flush()
 
-	serverClose, _, halfCloseTimeout := be.halfCloseParams()
+	// The transport forwards the client's end of stream to the backend. The
+	// tunnel ends when the backend ends its stream.
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := resp.Body.Read(buf)
@@ -822,18 +782,13 @@ func (be *Backend) forwardExtendedConnect(w http.ResponseWriter, req *http.Reque
 			}
 			_ = rc.Flush()
 		}
+		if err == io.EOF {
+			return
+		}
 		if err != nil {
-			if err == io.EOF {
-				if !serverClose && resp.StatusCode == http.StatusOK {
-					select {
-					case <-eofBody.done:
-					case <-ctx.Done():
-					case <-time.After(halfCloseTimeout):
-					}
-				}
-				return
+			if ctx.Err() == nil {
+				be.logErrorF("ERR Extended CONNECT copy: %v", err)
 			}
-			be.logErrorF("ERR Extended CONNECT copy: %v", err)
 			panic(http.ErrAbortHandler)
 		}
 	}
@@ -911,49 +866,26 @@ func (be *Backend) forwardWebSocketViaH1(w http.ResponseWriter, req *http.Reques
 	rc := http.NewResponseController(w)
 	_ = rc.Flush()
 
-	serverClose, clientClose, halfCloseTimeout := be.halfCloseParams()
+	// The WebSocket closing handshake happens in-band, before either side
+	// ends its stream. So, the tunnel ends as soon as either direction ends.
 	var closing atomic.Bool
 	closeBack := func() {
 		closing.Store(true)
 		_ = backConn.Close()
 	}
+	stopOnCtx := context.AfterFunc(ctx, closeBack)
+	defer stopOnCtx()
 
 	var inReader io.Reader = http.NoBody
 	if origBody != nil {
 		inReader = origBody
 	}
-
 	reqDone := make(chan struct{})
-	var hcTimerMu sync.Mutex
-	var hcTimer *time.Timer
-	stopHCTimer := func() {
-		hcTimerMu.Lock()
-		if hcTimer != nil {
-			hcTimer.Stop()
-		}
-		hcTimerMu.Unlock()
-	}
-	defer stopHCTimer()
-
 	go func() {
 		defer close(reqDone)
-		_, copyErr := io.Copy(backConn, inReader)
-		if copyErr != nil || clientClose {
-			closeBack()
-			return
-		}
-		if cw, ok := backConn.(interface{ CloseWrite() error }); ok {
-			_ = cw.CloseWrite()
-		}
-		hcTimerMu.Lock()
-		if !closing.Load() {
-			hcTimer = time.AfterFunc(halfCloseTimeout, closeBack)
-		}
-		hcTimerMu.Unlock()
+		_, _ = io.Copy(backConn, inReader)
+		closeBack()
 	}()
-
-	stopOnCtx := context.AfterFunc(ctx, closeBack)
-	defer stopOnCtx()
 
 	buf := make([]byte, 32*1024)
 	var backendReadErr error
@@ -961,12 +893,7 @@ func (be *Backend) forwardWebSocketViaH1(w http.ResponseWriter, req *http.Reques
 		n, rerr := backConn.Read(buf)
 		if n > 0 {
 			if _, werr := w.Write(buf[:n]); werr != nil {
-				closeBack()
-				if origBody != nil {
-					_ = origBody.Close()
-				}
-				<-reqDone
-				return
+				break
 			}
 			_ = rc.Flush()
 		}
@@ -975,14 +902,6 @@ func (be *Backend) forwardWebSocketViaH1(w http.ResponseWriter, req *http.Reques
 				backendReadErr = rerr
 			}
 			break
-		}
-	}
-
-	if backendReadErr == nil && !serverClose {
-		select {
-		case <-reqDone:
-		case <-ctx.Done():
-		case <-time.After(halfCloseTimeout):
 		}
 	}
 

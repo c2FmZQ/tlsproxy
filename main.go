@@ -28,10 +28,6 @@
 // with SAML, OpenID Connect, and/or passkeys.
 package main
 
-// Enable HTTP/2 Extended CONNECT (RFC 8441) via GODEBUG=http2xconnect=1 before
-// net/http initializes (needed until Go 1.28's HTTP2Config.EnableConnectProtocol).
-import _ "github.com/c2FmZQ/websocket/h2xconnect"
-
 import (
 	"context"
 	"flag"
